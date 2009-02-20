@@ -1,0 +1,25 @@
+AC_INIT(Blister, 0.1)
+AM_INIT_AUTOMAKE
+
+AC_PROG_MAKE_SET
+
+AM_CONDITIONAL(OSX, test "`uname -s`" = Darwin)
+AM_CONDITIONAL(Linux, test "`uname -s`" = Linux)
+AM_CONDITIONAL(SunOS, test "`uname -s`" = SunOS)
+
+AC_PROG_MAKE_SET
+AC_PROG_CC
+AC_PROG_CXX
+AC_PROG_INSTALL
+AC_PROG_LD
+AC_PROG_LIBTOOL
+AC_PROG_LN_S
+
+AC_HAVE_LIBRARY(dl)
+AC_HAVE_LIBRARY(nsl)
+AC_HAVE_LIBRARY(pthread)
+AC_HAVE_LIBRARY(rt)
+AC_HAVE_LIBRARY(socket)
+
+AC_OUTPUT(Makefile lib/Makefile test/Makefile server/Makefile)
+

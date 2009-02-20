@@ -1,0 +1,19 @@
+#!/bin/bash -x
+TOOLDIR=/usr/local
+
+#export PATH=${TOOLDIR}/bin:$PATH
+#export LD_LIBRARY_PATH=${TOOLDIR}/lib
+
+make distclean > /dev/null 2>&1
+aclocal || exit 1
+#aclocal -I ${TOOLDIR}/share/aclocal || exit 1
+autoconf || exit 1
+if [ `uname` = "Darwin" ]; then
+    glibtoolize --automake || exit 1
+else
+    libtoolize --automake || exit 1
+fi
+automake -a || exit 1
+configure || exit 1
+make
+
