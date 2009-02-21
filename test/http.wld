@@ -1,0 +1,22 @@
+# httpload [-d] [-h host[:port]] [-k] [-l loops] [-m maxuser]
+#     [-r] [-s stattime] [-t threads] [-q|-v]* [-w timeout] cmdfile
+#
+# options:
+#    -b bodyfile/dir: RFC822 message file or directory
+#    -d: debug to debug.out
+#    -h host[:port]: SMTP host and port - default is localhost:25
+#    -l loops: total number of messages to send
+#    -k: use HTTP keepalives
+#    -m maxuser: maximum user id
+#    -q: quiet - don't output statistics results, just return 0 or 1 (failure)
+#    -r: randomize ids when used with variable expansion
+#    -s secs: print statistics at every n seconds
+#    -t threads: number of sending threads
+#    -v: verbose
+#    -w: HTTP timeout in ms
+
+var host=www.yahoo.com
+var url=/
+
+get / http://$(host)/$(url)
+

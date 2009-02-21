@@ -1,0 +1,26 @@
+# smtpload [-a [numfiles]] [-b bodyfile|bodydir] [-h host[:port]] [-l loops]
+#    [-m maxuser] [-q|-v]* [-r] [-s stattime] [-t threads] [-w timeout] cmdfile
+#
+# options:
+#    -a [numfiles]: send all files (or limit to numfiles) in bodydir
+#    -b bodyfile/dir: RFC822 message file or directory
+#    -h host[:port]: SMTP host and port - default is localhost:25
+#    -l loops: total number of messages to send
+#    -m maxuser: maximum user id
+#    -q: quiet - don't output statistics results, just output 0 or 1 (failure)
+#    -r: randomize ids when used with variable expansion
+#    -s secs: print statistics at every n seconds
+#    -t threads: number of sending threads
+#    -v: verbose
+#    -w: SMTP timeout in ms
+
+var domain=example.com
+var user=user
+var addr=$$(user)@$(domain)
+
+connect
+helo example.com
+from $(addr)
+rcpt $(addr)
+data
+quit
