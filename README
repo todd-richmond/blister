@@ -1,0 +1,15 @@
+Blister is an extremely fast, scaleable, C++ library for building async I/O
+servers and clients. It includes optimized, lightweight logging, configuration,
+networking and process/thread control.
+
+Linux, Solaris, MacOS and Windows systems are supported with Windows using an
+included lightweight POSIX emulation layer.
+
+Sample echo, HTTP servers are available as samples. SMTP and HTTP load clients
+are also included to help with performance testing.
+
+
+To build on UNIX, run the build/build script. For Windows, use the Visual Studio
+2008 solution file.
+
+	Todd Richmond
