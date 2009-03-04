@@ -10,7 +10,7 @@ class Config;
 class Log {
 public:
     enum Level {
-	None, Emerg, Alert, Crit, Err, Warn, Report, Note, Info, Debug, Trace, Suppress
+	None, Emerg, Alert, Crit, Err, Warn, Report, Note, Info, Debug, Trace
     };
     enum Type { Simple, Syslog, KeyVal, NoLevel };
 
@@ -80,7 +80,7 @@ public:
     Log &endlog(void) {
         Tlsdata *tlsd = tls.get();
 
-	if (tlsd->clvl <= lvl)
+	if (tlsd->clvl != None)
 	    endlog(tlsd, tlsd->clvl);
 	return *this;
     }
@@ -98,7 +98,7 @@ public:
     template<class C> Log &operator <<(const C &c) {
 	Tlsdata *tlsd = tls.get();
 
-	if (tlsd->clvl <= lvl) {
+	if (tlsd->clvl != None) {
 	    if (tlsd->space) {
 		tlsd->space = false;
 		tlsd->strm << ' ';
@@ -111,7 +111,7 @@ public:
     Log &operator <<(const Log::Level &l) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && (tlsd = tls.get())->clvl != Suppress)
+	if (l <= lvl && !(tlsd = tls.get())->suppress)
 	    tlsd->clvl = l;
 	return *this;
     }
@@ -119,7 +119,7 @@ public:
     Log &operator <<(const kv &kv) {
 	Tlsdata *tlsd = tls.get();
 
-	if (tlsd->clvl <= lvl)  {
+	if (tlsd->clvl != None) {
 	    if (tlsd->strm.size())
 		tlsd->strm << ' ';
 	    tlsd->strm << kv.str();
@@ -131,7 +131,7 @@ public:
     template<class C> void log(Level l, const C &c) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && (tlsd = tls.get())->clvl != Suppress) {
+	if (l <= lvl && !(tlsd = tls.get())->suppress) {
 	    tlsd->strm << c;
 	    endlog(tlsd, l);
 	}
@@ -140,7 +140,7 @@ public:
     template<class C, class D> void log(Level l, const C &c, const D &d) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && (tlsd = tls.get())->clvl != Suppress) {
+	if (l <= lvl && !(tlsd = tls.get())->suppress) {
 	    tlsd->strm << c << ' ' << d;
 	    endlog(tlsd, l);
 	}
@@ -150,7 +150,7 @@ public:
 	const D &d, const E &e) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && (tlsd = tls.get())->clvl != Suppress) {
+	if (l <= lvl && !(tlsd = tls.get())->suppress) {
 	    tlsd->strm << c << ' ' << d << ' ' << e;
 	    endlog(tlsd, l);
 	}
@@ -160,7 +160,7 @@ public:
 	const D &d, const E &e, const F &f) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && (tlsd = tls.get())->clvl != Suppress) {
+	if (l <= lvl && !(tlsd = tls.get())->suppress) {
 	    tlsd->strm << c << ' ' << d << ' ' << e << ' ' << f;
 	    endlog(tlsd, l);
 	}
@@ -240,6 +240,7 @@ private:
     	tstring prefix;
 	bool space;
 	tstring strbuf;
+	bool suppress;
 	bufferstream strm;
 
 	Tlsdata(): clvl(None), space(false) {}

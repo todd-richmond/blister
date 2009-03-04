@@ -386,7 +386,7 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
     static usec_t last_usec;
     static char gmtoff[8];
 
-    if (tlsd->clvl == Suppress)
+    if (tlsd->suppress)
 	return;
     lck.lock();
     if (ffd.enable && clvl <= ffd.lvl) {
@@ -517,7 +517,8 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
     }
     lck.unlock();
     strbuf.erase(strbuf.size() - 1);
-    tlsd->clvl = Suppress;
+    tlsd->suppress = true;
+    tlsd->clvl = None;
 #ifndef _WIN32_WCE
     if (syslogenable && clvl <= sysloglvl) {
 	string ss;
@@ -563,7 +564,7 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
 	}
     }
 #endif
-    tlsd->clvl = None;
+    tlsd->suppress = false;
 }
 
 void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
