@@ -1,7 +1,7 @@
 #ifndef Config_h
 #define Config_h
 
-#include <map>
+#include STL_HASH_MAP
 #include "Thread.h"
 
 class Config: nocopy {
@@ -13,6 +13,7 @@ public:
     Config(tistream &is): locker(0) { is >> *this; }
     ~Config() { clear(); }
 
+    void clear(void);
     const tstring get(const tchar *attr, const tchar *def = NULL,
 	const tchar *sect = NULL) const;
     const tstring get(const tstring &attr, const tstring &def,
@@ -57,27 +58,23 @@ public:
     bool read(tistream &is, bool app = false);
     bool write(tostream &os, bool app = false) const;
     bool write(const tchar *file = NULL, bool app = false) const;
-    const tstring senum(const tchar *sect) const;
-    const tstring senum(uint sectnum) const;
     friend tistream &operator >>(tistream &is, Config &cfg);
     friend tostream &operator <<(tostream &os, const Config &cfg);
 
 private:
-    typedef map<const tchar *, const tchar *, strless<tchar> > attrmap;
-    typedef map<const tchar *, attrmap *, strless<tchar> > sectmap;
+    typedef hash_map<const tchar *, const tchar *, strhash<tchar> > attrmap;
 
-    mutable tstring buf, buf2;
-    mutable Lock lck;
+    attrmap amap;
+    mutable tstring buf;
     tstring file;
+    mutable Lock lck;
     thread_t locker;
-    sectmap maps;
     tstring pre;
 
-    void clear(void);
-    const char *lookup(const tchar *attr, const tchar *sect) const;
+    const tchar *key(const tchar *attr, const tchar *sect) const;
+    const tchar *lookup(const tchar *attr, const tchar *sect) const;
     bool parse(tistream &is);
     void trim(tstring &str);
-    const tstring kenum(const attrmap &am) const;
     const tchar *stringdup(const tchar *str, size_t sz) const {
 	return (const tchar *)memcpy(new tchar[sz], str, sz * sizeof (tchar));
     }

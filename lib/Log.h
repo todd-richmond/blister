@@ -243,7 +243,7 @@ private:
 	bool suppress;
 	bufferstream strm;
 
-	Tlsdata(): clvl(None), space(false) {}
+	Tlsdata(): clvl(None), space(false), suppress(false) {}
     };
 
     TLS<Tlsdata> tls;

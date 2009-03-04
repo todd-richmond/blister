@@ -2,97 +2,52 @@
 #include <fstream>
 #include "Config.h"
 
-void Config::clear() {
-    for (sectmap::const_iterator it = maps.begin(); it != maps.end(); it++) {
-	const attrmap *am = (*it).second;
-	attrmap::const_iterator ait;
+const char *Config::lookup(const tchar *attr, const tchar *sect) const {
+    attrmap::const_iterator it;
+    const char *p, *pp, *ppp;
+    uint sz;
 
-	for (ait = am->begin(); ait != am->end(); ait++) {
-	    delete [] (*ait).first;
-	    delete [] (*ait).second;
-	}
-	delete [] (*it).first;
-	delete am;
+    attr = key(attr, sect);
+    it = amap.find(attr);
+    if (it == amap.end())
+	return NULL;
+    p = (*it).second;
+    if (p[0] && (p[0] == '"' || p[0] == '\'') &&
+	p[sz = strlen(p)] == p[0] && sz > 1) {
+	buf.assign(p + 1, sz - 2);
+	return buf.c_str();
     }
-    maps.clear();
+    while ((pp = strchr(p, '$')) != NULL && (pp[1] == '(' || pp[1] == '{')) {
+	if ((ppp = strchr(pp, pp[1] == '(' ? ')' : '}')) == NULL)
+	    return p;
+
+	tstring s(pp + 2, ppp - pp - 2);
+
+	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 &&
+	    s.size() > pre.size() + 1 && s[pre.size()] == '.')
+	    s.erase(0, pre.size() + 1);
+	it = amap.find(s.c_str());
+	if (it == amap.end())
+	    return p;
+	s.assign(pp, ppp - pp + 1);
+	if (s == (*it).second) {
+	    s.assign(p, pp - p);
+	    s.append(ppp + 1);
+	} else {
+	    s.assign(p, pp - p);
+	    s.append((*it).second);
+	    s.append(ppp + 1);
+	}
+	buf = s;
+	p = buf.c_str();
+    }
+    return p;
 }
 
-const char *Config::lookup(const tchar *attr, const tchar *sect) const {
-    sectmap::const_iterator it;
-    const char *p, *pp, *ppp;
+void Config::clear(void) {
+    Locker lkr(lck, !THREAD_ISSELF(locker));
 
-    if (sect && !*sect)
-	sect = NULL;
-    if (!sect && (p = strchr(attr, '.')) != NULL) {
-	buf.assign(attr, p - attr);
-	sect = buf.c_str();
-	attr = ++p;
-    } else if (sect && (p = strchr(sect, '.')) != NULL) {
-	buf.assign(sect, p - sect);
-	buf2.assign(p + 1);
-	buf2 += '.';
-	buf2 += attr;
-	sect = buf.c_str();
-	attr = buf2.c_str();
-    }
-    it = maps.find(sect ? sect : T(""));
-    if (it != maps.end()) {
-	const attrmap *am = (*it).second;
-	attrmap::const_iterator ait = am->find(attr);
-	uint sz;
-
-	if (ait != am->end()) {
-	    p = (*ait).second;
-	    if (p[0] && (p[0] == '"' || p[0] == '\'') &&
-		p[sz = strlen(p)] == p[0] && sz > 1) {
-		buf.append(p + 1, sz - 2);
-		return buf.c_str();
-	    } else while ((pp = strchr(p, '$')) != NULL &&
-		(pp[1] == '(' || pp[1] == '{')) {
-		if ((ppp = strchr(pp, pp[1] == '(' ? ')' : '}')) == NULL)
-		    return p;
-
-		tstring s(pp + 2, ppp - pp - 2);
-
-		if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 &&
-		    s.size() > pre.size() + 1 && s[pre.size()] == '.')
-		    s.erase(0, pre.size() + 1);
-		ait = am->find(s.c_str());
-		if (ait == am->end()) {
-		    tstring::size_type pos;
-		    tstring sect2;
-		    sectmap::const_iterator it2;
-
-		    if ((pos = s.find('.')) != s.npos) {
-			sect2.assign(s.c_str(), 0, pos);
-			s.erase(0, pos + 1);
-		    }
-		    it2 = maps.find(sect2.c_str());
-		    if (it2 != maps.end()) {
-			const attrmap *am2 = (*it2).second;
-
-			if ((ait = am2->find(s.c_str())) == am2->end())
-			    ait = am->end();
-		    }
-		}
-		if (ait == am->end())
-		    return p;
-		s.assign(pp, ppp - pp + 1);
-		if (s == (*ait).second) {
-		    s.assign(p, pp - p);
-		    s.append(ppp + 1);
-		} else {
-		    s.assign(p, pp - p);
-		    s.append((*ait).second);
-		    s.append(ppp + 1);
-		}
-		buf = s;
-		p = buf.c_str();
-	    }
-	    return p;
-	}
-    }
-    return NULL;
+    amap.clear();
 }
 
 const tstring Config::get(const tchar *attr, const tchar *def,
@@ -132,40 +87,24 @@ double Config::get(const tchar *attr, double def, const tchar *sect) const {
     return p ? tstrtod(p, NULL) : def;
 }
 
-void Config::set(const tchar *attr, const tchar *val, const tchar *sect) {
-    attrmap *am;
-    attrmap::const_iterator ait;
-    Locker lkr(lck, false);
+const tchar *Config::key(const tchar *attr, const tchar *sect) const {
+    if (!sect || !*sect)
+	return attr;
+    buf = sect;
+    buf += '.';
+    buf += attr;
+    return buf.c_str();
+}
 
-    val = stringdup(val);
-    if (!sect) {
-	if ((sect = strchr(attr, '.')) == NULL) {
-	    sect = T("");
-	} else {
-	    buf.assign(attr, sect - attr);
-	    attr = sect + 1;
-	    sect = buf.c_str();
-	}
-    }
-    if (!THREAD_ISSELF(locker))
-	lkr.lock();
-    sectmap::const_iterator it = maps.find(sect);
-    if (it == maps.end()) {
-	if ((am = new attrmap) != NULL) {
-	    maps[stringdup(sect)] = am;
-	    (*am)[stringdup(attr)] = val;
-	}
-    } else {
-	am = (*it).second;
-	ait = am->find(attr);
-	if (ait == am->end()) {
-	    attr = stringdup(attr);
-	} else {
-	    attr = (*ait).first;
-	    delete [] (*ait).second;
-	}
-	(*am)[attr] = val;
-    }
+void Config::set(const tchar *attr, const tchar *val, const tchar *sect) {
+    attrmap::const_iterator it;
+    Locker lkr(lck, !THREAD_ISSELF(locker));
+
+    attr = key(attr, sect);
+    it = amap.find(attr);
+    if (it != amap.end())
+	delete [] (*it).second;
+    amap[stringdup(attr)] = stringdup(val);
 }
 
 void Config::trim(tstring &s) {
@@ -185,20 +124,15 @@ void Config::trim(tstring &s) {
 	s = s.substr(i, j - i + 1);
 }
 
-#include "Log.h"
 bool Config::parse(tistream &is) {
     tstring s, attr, val, sect;
-    sectmap::const_iterator it = maps.find(T(""));
-    attrmap::iterator ait;
-    attrmap *am = NULL;
-    const tchar *p, *pp;
+    attrmap::iterator it;
+    const tchar *p;
     uint line = 0;
     bool head = true;
 
     if (!is)
 	return false;
-    if (it != maps.end())
-	am = (*it).second;
     while (getline(is, attr)) {
 	line++;
 	trim(attr);
@@ -215,9 +149,9 @@ bool Config::parse(tistream &is) {
 	if (attr.empty() || attr[0] == ';' || attr[0] == '#' || attr[0] == '=')
 	    continue;
 
-	int sz = attr.size();
 	tstring::size_type pos;
 	bool plus = false;
+	int sz = attr.size();
 
 	while (attr[sz - 1] == '\\') {
 	    if (getline(is, s)) {
@@ -243,15 +177,14 @@ bool Config::parse(tistream &is) {
 		plus = true;
 	    val = attr.substr(pos + 1, sz - pos);
 	    trim(val);
-	    attr = attr.substr(0, pos - (plus ? 1 : 0));
+	    attr.erase(pos - (plus ? 1 : 0), attr.size());
 	    trim(attr);
 	}
 	if (attr.size() > 2 && attr[0] == '*' && attr[1] == '.') {
 	    attr.erase(0, 2);
 	} else if (!pre.empty()) {
 	    if (attr.compare(0, pre.size(), pre) == 0 &&
-		attr.size() > pre.size() + 1 &&
-	        attr[pre.size()] == '.')
+		attr.size() > pre.size() + 1 && attr[pre.size()] == '.')
 		attr.erase(0, pre.size() + 1);
 	    else if (attr.find('.') != attr.npos)
 		continue;
@@ -259,78 +192,29 @@ bool Config::parse(tistream &is) {
 	if (attr[0] == '[') {
 	    sect = attr.substr(1, attr.size() - 2);
 	    trim(sect);
-	    head = sect.empty();
-	    pos = sect.find('=');
-	    if (pos != sect.npos) {
-		val = sect.substr(pos + 1, sect.size() - pos);
-		trim(val);
-		sect = sect.substr(0, pos);
-		trim(sect);
-	    }
 	    p = sect.c_str();
-	    if (!tstricmp(p, T("global")) || !tstricmp(p, T("common")))
+	    if (!tstricmp(p, T("common")) || !tstricmp(p, T("global")))
 		sect.erase();
-	    if ((it = maps.find(sect.c_str())) == maps.end()) {
-		if ((am = new attrmap) == NULL)
-		    break;
-		p = stringdup(sect);
-		maps.insert(pair<const tchar *, attrmap *> (p, am));
-	    } else {
-		am = (*it).second;
-	    }
-	    if (pos != sect.npos) {
-		it = maps.find(val.c_str());
-		if (it != maps.end()) {
-		    attrmap::const_iterator cait;
-		    attrmap *tmpam = (*it).second;
-
-		    for (cait = tmpam->begin(); cait != tmpam->end(); cait++) {
-			p = stringdup((*cait).first);
-			pp = stringdup((*cait).second);
-			am->insert(pair<const tchar *, const tchar *> (p, pp));
-		    }
-		}
-	    }
+	    head = sect.empty();
 	    continue;
-	} else if (head) {
-	    if ((pos = attr.find('.')) == attr.npos) {
-		sect.erase();
-	    } else {
-		sect.assign(attr, 0, pos);
-		attr.erase(0, pos + 1);
-	    }
-	    if ((it = maps.find(sect.c_str())) == maps.end())
-		am = NULL;
-	    else
-		am = (*it).second;
 	}
-	if (!am) {
-	    if ((am = new attrmap) == NULL)
-		break;
-	    p = stringdup(sect);
-	    maps.insert(pair<const tchar *, attrmap *> (p, am));
-	}
-	ait = am->find(attr.c_str());
-	if (ait == am->end()) {
-	    p = stringdup(attr);
-	    pp = stringdup(val);
+	p = key(attr.c_str(), sect.c_str());
+	it = amap.find(p);
+	if (it == amap.end()) {
+cout <<"tfr 1 "<<p<<" "<<val<<endl;
+	    amap[stringdup(p)] = stringdup(val);
 	} else {
-	    p = (*ait).first;
+	    p = (*it).first;
 	    if (plus) {
-		tchar *buf;
-
-		pos = tstrlen((*ait).second);
-		buf = new tchar [pos + val.size() + 1];
-		memcpy(buf, (*ait).second, pos);
-		memcpy(buf + pos, val.c_str(), (val.size() + 1) * sizeof (tchar));
-		pp = buf;
+		buf = (*it).second;
+		buf += val;
+		amap[p] = stringdup(buf);
 	    } else {
-		delete [] (*ait).second;
-		am->erase(ait);
-		pp = stringdup(val);
+		delete [] (*it).second;
+		amap[p] = stringdup(val);
 	    }
+cout <<"tfr 2 "<<p<<" "<<val<<endl;
 	}
-	am->insert(pair<const tchar *, const tchar *> (p, pp));
     }
     return true;
 }
@@ -356,14 +240,13 @@ bool Config::read(const tchar *f, bool app) {
 
 bool Config::write(tostream &os, bool app) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
-    sectmap::const_iterator it;
+    attrmap::const_iterator it;
+    string sect;
 
     if (app)
 	os.seekp(0, ios::end);
+/*
     for (it = maps.begin(); it != maps.end(); it++) {
-	attrmap::const_iterator ait;
-	const attrmap *am = (*it).second;
-
 	if (*(*it).first)
 	    os << T("[") << (*it).first << T("]") << endl;
 	for (ait = am->begin(); ait != am->end(); ait++) {
@@ -381,6 +264,7 @@ bool Config::write(tostream &os, bool app) const {
 	}
 	os << endl;
     }
+*/
     return os.good();
 }
 
@@ -393,42 +277,3 @@ bool Config::write(const tchar *f, bool app) const {
     return write(os, app);
 }
 
-const tstring Config::senum(const tchar *sect) const {
-    Locker lkr(lck, !THREAD_ISSELF(locker));
-    sectmap::const_iterator it = maps.find(sect ? sect : T(""));
-
-    if (it != maps.end()) 
-	return kenum(*(*it).second);
-    return T("");
-}
-
-const tstring Config::senum(uint sect) const {
-    Locker lkr(lck, !THREAD_ISSELF(locker));
-    sectmap::const_iterator it;
-
-    for (it = maps.begin(); it != maps.end(); it++) {	
-	if (!sect--)
-	    return kenum(*(*it).second);	    
-    }
-    return T("");
-}
-
-const tstring Config::kenum(const attrmap &am) const {
-    attrmap::const_iterator ait;
-    tstring s;
-
-    for (ait = am.begin(); ait != am.end(); ait++) {
-	s += (*ait).first;
-	s += '=';
-	if ((*ait).second[0] == ' ' || (*ait).second[0] == '\t' ||
-	    (*ait).second[0] == '\'' || (*ait).second[0] == '"') {
-	    s += '"';
-	    s += (*ait).second;
-	    s += '"';
-	} else {
-	    s += (*ait).second;	
-	}
-	s += '\n';
-    }
-    return s;
-}
