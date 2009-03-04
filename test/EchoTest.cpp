@@ -95,9 +95,9 @@ static TSNumber<usec_t> usecs;
 void EchoTest::EchoClientSocket::start() {
     close();
     out = 0;
+    dlogd("connecting");
     connect(addr, tmt);
     nagle(false);
-    dlog << Log::Debug << "Echo connect" << endlog;
 }
 
 void EchoTest::EchoClientSocket::output() {
@@ -112,25 +112,25 @@ void EchoTest::EchoClientSocket::output() {
 	loops--;
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
 	errs++;
-	dlog << Log::Err << "Echo write " <<
-	    (msg == Dispatcher::Timeout ? "timeout" : "close") << endlog;
+	dloge("client write", msg == Dispatcher::Timeout ? "timeout" : "close");
 	timeout(start, wait);
 	return;
     }
     if ((len = write(data + out, dsz - out)) < 0) {
 	errs++;
-	dlog << Log::Err << "Echo write failed " << endlog;
+	dloge("client write failed", len);
 	timeout(start, wait);
 	return;
     }
     out += len;
-    if (out != dsz) {
+    if (out == dsz) {
+	dlogt("client write", len);
+	in = 0;
+	readable(input, tmt);
+    } else {
+	dlogd("client partial write", len);
 	writeable(output, tmt);
-	dlog << Log::Debug << "Echo write " << len << endlog;
-	return;
     }
-    in = 0;
-    readable(input, tmt);
 }
 
 void EchoTest::EchoClientSocket::input() {
@@ -138,26 +138,26 @@ void EchoTest::EchoClientSocket::input() {
 
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
 	errs++;
-	dlog << Log::Err << "Echo read " <<
-	    (msg == Dispatcher::Timeout ? "timeout" : "close") << endlog;
+	dloge("client read", msg == Dispatcher::Timeout ? "timeout" : "close");
 	timeout(start, wait);
 	return;
     }
     if ((len = read(data + in, dsz - in)) < 0) {
 	errs++;
-	dlog << Log::Err << "Echo read failed " << endlog;
+	dloge("client read failed", len);
 	timeout(start, wait);
 	return;
     }
     in += len;
-    if (in != dsz) {
+    if (in == dsz) {
+	ops++;
+	usecs += uticks() - begin;
+	dlogt("client read", len);
+	timeout(repeat, wait + (wait < 2000 ? 0 : rand() % 50));
+    } else {
+	dlogd("client partial read", len);
 	readable(input, tmt);
-	dlog << Log::Debug << "Echo read " << len << endlog;
-	return;
     }
-    ops++;
-    usecs += uticks() - begin;
-    timeout(repeat, wait + (wait < 2000 ? 0 : rand() % 50));
 }
 
 void EchoTest::EchoClientSocket::repeat() {
@@ -171,23 +171,23 @@ void EchoTest::EchoServerSocket::input() {
     char tmp[MAXREAD];
 
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
-	dlog << Log::Note << "Echo read " <<
-	    (msg == Dispatcher::Timeout ? "timeout" : "close") << endlog;
-	delete this;
+	dloge("server read", msg == Dispatcher::Timeout ? "timeout" : "close");
+	erase();
     } else if ((in = read(tmp, sizeof (tmp))) < 0) {
-	dlog << Log::Warn << "Echo read failed: " << (err() == EOF ? "EOF" : strerror(err())) << endlog;
-	delete this;
+	dloge("server read failed:", err() == EOF ? "EOF" : strerror(err()));
+	erase();
     } else if (in == 0) {
 	readable(input);
     } else if (in == 1 && tmp[0] == '\0') {
-	delete this;
+	erase();
     } else if ((out = write(tmp, in)) < 0) {
-	dlog << Log::Err << "Echo write failed: " << (err() == EOF ? "EOF" :
-	    strerror(err())) << endlog;
-	delete this;
+	dloge("server write failed:", err() == EOF ? "EOF" : strerror(err()));
+	erase();
     } else if (in == out) {
+	dlogt("server write", out);
 	readable(input);
     } else {
+	dlogd("server partial write", out);
 	delete [] buf;
 	buf = new char[in - out];
 	memcpy(buf, tmp + out, in - out);
@@ -200,22 +200,23 @@ void EchoTest::EchoServerSocket::output() {
     int len;
 
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
-	dlog << Log::Note << "Echo write " <<
-	    (msg == Dispatcher::Timeout ? "timeout" : "close") << endlog;
-	delete this;
+	dloge("server write", msg == Dispatcher::Timeout ? "timeout" : "close");
+	erase();
 	return;
     }
     if ((len = write(buf + out, in - out)) < 0) {
-	dlog << Log::Err << "Echo write failed" << endlog;
-	delete this;
+	dloge("server write failed:", err() == EOF ? "EOF" : strerror(err()));
+	erase();
 	return;
     }
     out += (uint)len;
     if (out != in) {
+	dlogd("server partial write", len);
 	writeable(output);
-	return;
+    } else {
+	dlogt("server write", len);
+	readable(input);
     }
-    readable(input);
 }
 
 void EchoTest::connect(const Sockaddr &addr, ulong count, ulong delay,
@@ -254,7 +255,7 @@ int main(int argc, char *argv[]) {
 
     if (argc == 1 || !strcmp(argv[1], "-?")) {
 	cerr << "Usage: echotest [-c] [-d delay] [-h host[:port]] [-e sockets]\n"
-	    "\t[-l loops] [-s] [-v] [-t timeout] [-w wait] data | datafile" <<
+	    "\t[-l loops] [-s] [-v*] [-t timeout] [-w wait] data | datafile" <<
 	    endl;
 	return 1;
     }
@@ -283,7 +284,7 @@ int main(int argc, char *argv[]) {
 	} else if (!stricmp(argv[i], "-t")) {
 	    tmt = (ulong)atol(argv[++i]);
 	} else if (!stricmp(argv[i], "-v")) {
-	    dlog.level(Log::Debug);
+	    dlog.level(dlog.level() >= Log::Debug ? Log::Trace : Log::Debug);
 	} else if (!stricmp(argv[i], "-w")) {
 	    wait = (ulong)atol(argv[++i]);
 	} else if (*argv[i] != '-') {
@@ -315,8 +316,6 @@ int main(int argc, char *argv[]) {
 	return 1;
     if (client) {
 	dlog << Log::Info << "echo " << host << " " << path << endlog;
-	if (dlog.level() != Log::Debug)
-	    dlog.level(Log::Warn);
 	cout << "Op/Sec\t\tUs/Op\tErr" << endl;
 	ec.connect(addr, sockets, delay, tmt, wait);
 	Thread::priority(THREAD_HDL(), 10);
