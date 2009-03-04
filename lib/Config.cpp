@@ -2,16 +2,21 @@
 #include <fstream>
 #include "Config.h"
 
+Config::Config(const tchar *file, const tchar *pre): ini(false), locker(0) {
+    prefix(pre);
+    if (file)
+	read(file);
+}
+
 const char *Config::lookup(const tchar *attr, const tchar *sect) const {
     attrmap::const_iterator it;
     const char *p, *pp, *ppp;
     uint sz;
 
-    attr = key(attr, sect);
-    it = amap.find(attr);
+    it = amap.find(keystr(attr, sect));
     if (it == amap.end())
 	return NULL;
-    p = (*it).second;
+    p = it->second;
     if (p[0] && (p[0] == '"' || p[0] == '\'') &&
 	p[sz = strlen(p)] == p[0] && sz > 1) {
 	buf.assign(p + 1, sz - 2);
@@ -26,16 +31,16 @@ const char *Config::lookup(const tchar *attr, const tchar *sect) const {
 	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 &&
 	    s.size() > pre.size() + 1 && s[pre.size()] == '.')
 	    s.erase(0, pre.size() + 1);
-	it = amap.find(s.c_str());
+	it = amap.find(s);
 	if (it == amap.end())
 	    return p;
 	s.assign(pp, ppp - pp + 1);
-	if (s == (*it).second) {
+	if (s == it->second) {
 	    s.assign(p, pp - p);
 	    s.append(ppp + 1);
 	} else {
 	    s.assign(p, pp - p);
-	    s.append((*it).second);
+	    s.append(it->second);
 	    s.append(ppp + 1);
 	}
 	buf = s;
@@ -46,7 +51,10 @@ const char *Config::lookup(const tchar *attr, const tchar *sect) const {
 
 void Config::clear(void) {
     Locker lkr(lck, !THREAD_ISSELF(locker));
+    attrmap::iterator it;
 
+    for (it = amap.begin(); it != amap.end(); it++)
+	delete [] it->second;
     amap.clear();
 }
 
@@ -62,8 +70,8 @@ bool Config::get(const tchar *attr, bool def, const tchar *sect) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
     const tchar *p = lookup(attr, sect);
 
-    return p ? p[0] == '1' || totlower(p[0]) == 't' ||
-	totlower(p[0]) == 'y' || !tstricmp(p, T("on")) : def;
+    return p ? p[0] == L'1' || totlower(p[0]) == L't' ||
+	totlower(p[0]) == L'y' || !tstricmp(p, T("on")) : def;
 }
 
 long Config::get(const tchar *attr, long def, const tchar *sect) const {
@@ -87,24 +95,26 @@ double Config::get(const tchar *attr, double def, const tchar *sect) const {
     return p ? tstrtod(p, NULL) : def;
 }
 
-const tchar *Config::key(const tchar *attr, const tchar *sect) const {
-    if (!sect || !*sect)
-	return attr;
-    buf = sect;
-    buf += '.';
-    buf += attr;
-    return buf.c_str();
+const tstring &Config::keystr(const tchar *attr, const tchar *sect) const {
+    if (sect && *sect) {
+	key = sect;
+	key += '.';
+	key += attr;
+    } else {
+	key = attr;
+    }
+    return key;
 }
 
 void Config::set(const tchar *attr, const tchar *val, const tchar *sect) {
     attrmap::const_iterator it;
     Locker lkr(lck, !THREAD_ISSELF(locker));
+    const tstring &key(keystr(attr, sect));
 
-    attr = key(attr, sect);
-    it = amap.find(attr);
+    it = amap.find(key);
     if (it != amap.end())
-	delete [] (*it).second;
-    amap[stringdup(attr)] = stringdup(val);
+	delete [] it->second;
+    amap[key] = stringdup(val);
 }
 
 void Config::trim(tstring &s) {
@@ -196,25 +206,22 @@ bool Config::parse(tistream &is) {
 	    if (!tstricmp(p, T("common")) || !tstricmp(p, T("global")))
 		sect.erase();
 	    head = sect.empty();
+	    ini = true;
 	    continue;
 	}
-	p = key(attr.c_str(), sect.c_str());
-	it = amap.find(p);
-	if (it == amap.end()) {
-cout <<"tfr 1 "<<p<<" "<<val<<endl;
-	    amap[stringdup(p)] = stringdup(val);
-	} else {
-	    p = (*it).first;
+
+	const tstring &key(keystr(attr.c_str(), sect.c_str()));
+
+	it = amap.find(key);
+	if (it != amap.end()) {
 	    if (plus) {
-		buf = (*it).second;
+		buf = it->second;
 		buf += val;
-		amap[p] = stringdup(buf);
-	    } else {
-		delete [] (*it).second;
-		amap[p] = stringdup(val);
+		val = buf;
 	    }
-cout <<"tfr 2 "<<p<<" "<<val<<endl;
+	    delete [] it->second;
 	}
+	amap[key] = stringdup(val);
     }
     return true;
 }
@@ -238,42 +245,35 @@ bool Config::read(const tchar *f, bool app) {
     return read(is, app);
 }
 
-bool Config::write(tostream &os, bool app) const {
+bool Config::write(tostream &os, bool ini) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
     attrmap::const_iterator it;
+    vector<tstring> lines;
+    vector<tstring>::const_iterator lit;
+    string s;
     string sect;
 
-    if (app)
-	os.seekp(0, ios::end);
-/*
-    for (it = maps.begin(); it != maps.end(); it++) {
-	if (*(*it).first)
-	    os << T("[") << (*it).first << T("]") << endl;
-	for (ait = am->begin(); ait != am->end(); ait++) {
-	    os << (*ait).first;
-	    if (*(*ait).second) {
-		os << T("=");
-		if ((*ait).second[0] == ' ' || (*ait).second[0] == '\t' ||
-		    (*ait).second[0] == '\'' || (*ait).second[0] == '"') {
-		    os << '"' << (*ait).second << '"';
-		} else {
-		    os << (*ait).second;
-		}
-	    }
-	    os << endl;
-	}
-	os << endl;
+    for (it = amap.begin(); it != amap.end(); it++) {
+	s = it->first;
+	s += '=';
+	s += it->second;
+	lines.push_back(s);
     }
-*/
+    sort(lines.begin(), lines.end());
+    for (lit = lines.begin(); lit != lines.end(); lit++) {
+	os << *lit << endl;
+	(void)ini;
+	//os << T("[") << it->first << T("]") << endl;
+    }
     return os.good();
 }
 
-bool Config::write(const tchar *f, bool app) const {
+bool Config::write(const tchar *f, bool ini) const {
     if (!f)
 	f = file.c_str();
 
     tofstream os(tchartoa(f).c_str(), ios::binary);
 
-    return write(os, app);
+    return write(os, ini);
 }
 

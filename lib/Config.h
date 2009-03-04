@@ -6,11 +6,8 @@
 
 class Config: nocopy {
 public:
-    Config(const tchar *file = NULL, const tchar *pre = NULL): locker(0) {
-	prefix(pre);
-	if (file) read(file);
-    }
-    Config(tistream &is): locker(0) { is >> *this; }
+    Config(const tchar *file = NULL, const tchar *pre = NULL);
+    Config(tistream &is): ini(false), locker(0) { is >> *this; }
     ~Config() { clear(); }
 
     void clear(void);
@@ -37,41 +34,45 @@ public:
     ulong get(const tchar *attr, ulong def, const tchar *sect = NULL) const;
     void set(const tchar *attr, const tchar *val, const tchar *sect = NULL);
     void set(const tchar *attr, const bool val, const tchar *sect = NULL)
-	{ set (attr, val ? T("true") : T("false"), sect); }
+	{ set(attr, val ? T("true") : T("false"), sect); }
     void set(const tchar *attr, int val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%d"), val); set (attr, buf, sect); }
+	{ tchar buf[24]; tsprintf(buf, T("%d"), val); set(attr, buf, sect); }
     void set(const tchar *attr, uint val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%u"), val); set (attr, buf, sect); }
+	{ tchar buf[24]; tsprintf(buf, T("%u"), val); set(attr, buf, sect); }
     void set(const tchar *attr, long val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%ld"), val); set (attr, buf, sect); }
+	{ tchar buf[24]; tsprintf(buf, T("%ld"), val); set(attr, buf, sect); }
     void set(const tchar *attr, ulong val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%lu"), val); set (attr, buf, sect); }
+	{ tchar buf[24]; tsprintf(buf, T("%lu"), val); set(attr, buf, sect); }
     void set(const tchar *attr, float val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%f"), val); set (attr, buf, sect); }
+	{ tchar buf[24]; tsprintf(buf, T("%f"), val); set(attr, buf, sect); }
     void set(const tchar *attr, double val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%g"), val); set (attr, buf, sect); }
+	{ tchar buf[24]; tsprintf(buf, T("%g"), val); set(attr, buf, sect); }
     void lock(void) { lck.lock(); locker = THREAD_HDL(); }
     void unlock(void) { lck.unlock(); locker = 0; }
+    bool iniformat(void) const { return ini; }
     const tstring &prefix(void) const { return pre; }
     void prefix(const tchar *str) { pre = str ? str : ""; }
     bool read(const tchar *file, bool app = false);
     bool read(tistream &is, bool app = false);
-    bool write(tostream &os, bool app = false) const;
-    bool write(const tchar *file = NULL, bool app = false) const;
+    bool write(tostream &os) const { return write(os, ini); }
+    bool write(tostream &os, bool ini) const;
+    bool write(const tchar *file = NULL) const { return write(file, ini); }
+    bool write(const tchar *file, bool ini) const;
     friend tistream &operator >>(tistream &is, Config &cfg);
     friend tostream &operator <<(tostream &os, const Config &cfg);
 
 private:
-    typedef hash_map<const tchar *, const tchar *, strhash<tchar> > attrmap;
+    typedef hash_map<const tstring, const tchar *, strhash<tchar> > attrmap;
 
     attrmap amap;
-    mutable tstring buf;
+    mutable tstring buf, key;
     tstring file;
+    bool ini;
     mutable Lock lck;
     thread_t locker;
     tstring pre;
 
-    const tchar *key(const tchar *attr, const tchar *sect) const;
+    const tstring &keystr(const tchar *attr, const tchar *sect) const;
     const tchar *lookup(const tchar *attr, const tchar *sect) const;
     bool parse(tistream &is);
     void trim(tstring &str);
