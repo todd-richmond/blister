@@ -1,3 +1,21 @@
+/*
+ * Copyright 2001 - 2009 Todd Richmond
+ *
+ * This file is part of Blister - a light weight, scalable, high performance
+ * C++ server infrastructure.
+ *
+ * Blister is free software: you can redistribute it and/or modify it under the
+ * terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or any later version.
+ *
+ * Blister is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Lesser General Public License for details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with Blister. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include "stdapi.h"
 #include <algorithm>
 #include "Timing.h"
@@ -11,7 +29,7 @@ static Timing &_dtiming(void) {
 
 Timing &dtiming(_dtiming());
 
-timing_t Timing::add(const char *key, timing_t diff) {
+timing_t Timing::add(const tchar *key, timing_t diff) {
     uint slot;
     SpinLocker lkr(lck);
     Stats *stats = tmap[key];
@@ -50,10 +68,10 @@ void Timing::clear() {
     }
 }
 
-const string Timing::data(bool compact) const {
+const tstring Timing::data(bool compact) const {
     timingmap::const_iterator it;
     vector<string> keys;
-    string s;
+    tstring s;
     SpinLocker lkr(lck);
 
     if (!compact)
@@ -61,8 +79,9 @@ const string Timing::data(bool compact) const {
     for (it = tmap.begin(); it != tmap.end(); it++)
 	keys.push_back((*it).first);
     sort(keys.begin(), keys.end());
-    for (vector<string>::const_iterator kit = keys.begin(); kit != keys.end(); kit++) {
-	char abuf[16], buf[128], sbuf[16];
+    for (vector<tstring>::const_iterator kit = keys.begin(); kit != keys.end();
+	kit++) {
+	tchar abuf[16], buf[128], sbuf[16];
 	const Stats *stats;
 
 	it = tmap.find((*kit).c_str());
@@ -102,7 +121,7 @@ const string Timing::data(bool compact) const {
     return s;
 }
 
-void Timing::erase(const char *key) {
+void Timing::erase(const tchar *key) {
     SpinLocker lkr(lck);
     timingmap::iterator it = tmap.find(key);
 
@@ -112,13 +131,13 @@ void Timing::erase(const char *key) {
     }
 }
 
-timing_t Timing::record(const char *key) {
-    string caller;
+timing_t Timing::record(const tchar *key) {
+    tstring caller;
     timing_t diff;
     Tlsdata *tlsd = tls.get();
 
     do {
-	vector<string>::reverse_iterator it = tlsd->callers.rbegin();
+	vector<tstring>::reverse_iterator it = tlsd->callers.rbegin();
 
 	if (it == tlsd->callers.rend()) {
 	    cerr << "timing mismatch for " << (key ? key : "stack") << endl;
@@ -132,9 +151,9 @@ timing_t Timing::record(const char *key) {
 	tlsd->starts.pop_back();
     } while (!caller.empty() && caller != key);
     if (!caller.empty() && !tlsd->callers.empty()) {
-	string s;
+	tstring s;
 
-	for (vector<string>::const_iterator it = tlsd->callers.begin();
+	for (vector<tstring>::const_iterator it = tlsd->callers.begin();
 	    it != tlsd->callers.end(); it++) {
 	    if (!s.empty())
 		s += "->";
@@ -147,7 +166,7 @@ timing_t Timing::record(const char *key) {
     return add(key, diff);
 }
 
-timing_t Timing::start(const char *key) {
+timing_t Timing::start(const tchar *key) {
     Tlsdata *tlsd = tls.get();
     timing_t t = now();
 
@@ -165,7 +184,7 @@ void Timing::stop(uint lvl) {
     }
 }
 
-const char *Timing::format(timing_t t, char *buf) {
+const tchar *Timing::format(timing_t t, tchar *buf) {
     float f(t / 1000000.0f);
 
     if (f < 9.9995)
