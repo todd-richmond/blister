@@ -2,14 +2,11 @@ Blister is an extremely fast, scaleable, C++ library for building async I/O
 servers and clients. It includes optimized, lightweight logging, configuration,
 networking and process/thread control.
 
-Linux, Solaris, MacOS and Windows systems are supported with Windows using an
-included lightweight POSIX emulation layer.
+Linux, Solaris, MacOS and Windows systems are supported. Windows includes a
+lightweight POSIX emulation layer to make porting UNIX code simpler
 
-Sample echo, HTTP servers are available as samples. SMTP and HTTP load clients
-are also included to help with performance testing.
+Echo and HTTP servers are available as samples. SMTP and HTTP load clients
+are also included to help with performance testing. A dlog program can be used
+by other tools to enable common logging features such as rollover and size
+management
 
-
-To build on UNIX, run the build/build script. For Windows, use the Visual Studio
-2008 solution file.
-
-	Todd Richmond

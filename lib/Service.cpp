@@ -1256,10 +1256,6 @@ Daemon::~Daemon() {
     if (qflag != None)
 	dlog << Log::Note << Log::mod(name) <<
 	    Log::kv(T("sts"), T("stopped")) << endlog;
-#ifndef _WIN32
-    if (uid != (uid_t)-1)
-	dlog.setids(uid, gid);
-#endif
     if (lckfd != -1) {
 	if (!watch || child)
 	    unlink(lckfile.c_str());
@@ -1269,16 +1265,14 @@ Daemon::~Daemon() {
 }
 
 bool Daemon::update(Status status) {
-    if (status < stStatus) {
+    if (status < stStatus)
 	lockfile(lckfd, F_UNLCK, SEEK_SET, status, 0, 0);
-    } else {
+    else
 	lockfile(lckfd, F_WRLCK, SEEK_SET, 0, status, 0);
-    }
     return Service::update(status);
 }
 
 bool Daemon::setids() {
-#ifndef _WIN32
     if (uid != (uid_t)-1) {
 	fchown(lckfd, uid, gid);
 	dlog.setids(uid, gid);
@@ -1291,7 +1285,6 @@ bool Daemon::setids() {
 	    uid = (uid_t)-1;
 	}
     }
-#endif
     return true;
 }
 
@@ -1374,7 +1367,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     dlog << Log::Report << Log::mod(name) << Log::cmd(T("start")) <<
 	Log::kv(T("host"), Sockaddr::hostname()) <<
 	Log::kv(T("dir"), installdir.c_str()) <<
-	Log::kv(T("instance"), instance) << Log::kv(T("release"), ver) << endlog;
+	Log::kv(T("instance"), instance) <<
+	Log::kv(T("release"), ver) << endlog;
 #ifndef _WIN32
     struct rlimit rl;
     struct passwd *pwd;
@@ -1391,6 +1385,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    gid = pwd->pw_gid;
 	    uid = pwd->pw_uid;
 	    uidname = pwd->pw_name;
+	    dlog.setids(uid, gid);
+	    fchown(lckfd, uid, gid);
 	} else {
 	    dlog << Log::Err << Log::mod(name) << T(" unknown uid ") <<
 		uidname << endlog;
@@ -1498,7 +1494,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		    }
 		    if (qflag || kb > maxmem ||
 			(status() != Starting && !check(info))) {
-			uint waitlmt = cfg.get(T("watch.stop"), 30U);
+			uint waitlmt = cfg.get(T("watch.wait"), 30U);
 
 			if (!qflag)
 			    kill(child, SIGINT);

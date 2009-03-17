@@ -1,3 +1,21 @@
+/*
+ * Copyright 2001 - 2009 Todd Richmond
+ *
+ * This file is part of Blister - a light weight, scalable, high performance
+ * C++ server infrastructure.
+ *
+ * Blister is free software: you can redistribute it and/or modify it under the
+ * terms of the GNU Lesser General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or any later version.
+ *
+ * Blister is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+ * A PARTICULAR PURPOSE. See the GNU Lesser General Public License for details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with Blister. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include "stdapi.h"
 #include <fcntl.h>
 #include <signal.h>
@@ -16,8 +34,8 @@ const int MAXREAD = 16 * 1024;
 
 class EchoTest: public Dispatcher {
 public:
-    EchoTest(): Dispatcher(cfg), els(NULL) {}
-    virtual ~EchoTest() { delete els; }
+    EchoTest(): Dispatcher(cfg) {}
+    virtual ~EchoTest() {}
 
     class EchoClientSocket: public DispatchClientSocket {
     public:
@@ -82,7 +100,6 @@ public:
 
 private:
     Config cfg;
-    EchoListenSocket *els;
 };
 
 static int loops = -1;
@@ -229,7 +246,8 @@ void EchoTest::connect(const Sockaddr &addr, ulong count, ulong delay,
 }
 
 bool EchoTest::listen(const char *host, ulong timeout) {
-    els = new EchoListenSocket(*this, timeout);
+    EchoListenSocket *els = new EchoListenSocket(*this, timeout);
+
     if (!els->listen(host)) {
 	dlog << Log::Err << "mod=" << NAME << " cmd=listen addr=" <<
 	    els->address().str() << ' ' << strerror(els->err()) << endlog;

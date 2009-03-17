@@ -246,6 +246,10 @@ EXTERNC_
 #define kill(pid, sig)	sigsend(P_PID, pid, sig)
 #define	popen		_popen
 #define	pclose		_pclose
+#define setuid(uid)	0
+#define setgid(gid)	0
+#define seteuid		setuid
+#define setegid		setgid
 #define strcasecmp	stricmp
 #define strncasecmp	strnicmp
 #define snprintf	_snprintf
