@@ -1,5 +1,6 @@
 #include "stdapi.h"
 #include <fstream>
+#include <algorithm>
 #include "Config.h"
 
 Config::Config(const tchar *file, const tchar *pre): ini(false), locker(0) {

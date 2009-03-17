@@ -1,0 +1,47 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 10.00
+# Visual Studio 2008
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EchoTest", "..\test\EchoTest.vcproj", "{2DBFE77C-76D2-4026-A7A6-2D6085F8B082}"
+	ProjectSection(ProjectDependencies) = postProject
+		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Blister", "..\lib\Blister.vcproj", "{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPLoad", "..\test\HTTPLoad.vcproj", "{2DBFE71C-71D2-9026-A726-AD6085F3B082}"
+	ProjectSection(ProjectDependencies) = postProject
+		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SMTPLoad", "..\test\SMTPLoad.vcproj", "{2DEFA78C-76D2-9926-B726-ADC00593B082}"
+	ProjectSection(ProjectDependencies) = postProject
+		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2DBFE77C-76D2-4026-A7A6-2D6085F8B082}.Debug|Win32.ActiveCfg = Debug|Win32
+		{2DBFE77C-76D2-4026-A7A6-2D6085F8B082}.Debug|Win32.Build.0 = Debug|Win32
+		{2DBFE77C-76D2-4026-A7A6-2D6085F8B082}.Release|Win32.ActiveCfg = Release|Win32
+		{2DBFE77C-76D2-4026-A7A6-2D6085F8B082}.Release|Win32.Build.0 = Release|Win32
+		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}.Debug|Win32.ActiveCfg = Debug|Win32
+		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}.Debug|Win32.Build.0 = Debug|Win32
+		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}.Release|Win32.ActiveCfg = Release|Win32
+		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}.Release|Win32.Build.0 = Release|Win32
+		{2DBFE71C-71D2-9026-A726-AD6085F3B082}.Debug|Win32.ActiveCfg = Debug|Win32
+		{2DBFE71C-71D2-9026-A726-AD6085F3B082}.Debug|Win32.Build.0 = Debug|Win32
+		{2DBFE71C-71D2-9026-A726-AD6085F3B082}.Release|Win32.ActiveCfg = Release|Win32
+		{2DBFE71C-71D2-9026-A726-AD6085F3B082}.Release|Win32.Build.0 = Release|Win32
+		{2DEFA78C-76D2-9926-B726-ADC00593B082}.Debug|Win32.ActiveCfg = Debug|Win32
+		{2DEFA78C-76D2-9926-B726-ADC00593B082}.Debug|Win32.Build.0 = Debug|Win32
+		{2DEFA78C-76D2-9926-B726-ADC00593B082}.Release|Win32.ActiveCfg = Release|Win32
+		{2DEFA78C-76D2-9926-B726-ADC00593B082}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

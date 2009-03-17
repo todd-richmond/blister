@@ -760,9 +760,9 @@ private:
     thread_t id;
     Lock lock;
     Condvar cv;
-    Thread mainThread;
     volatile ThreadState state;
     set<Thread *> threads;
+    Thread mainThread;
     static Lock grouplck;
     static ulong nextId;
     static set<ThreadGroup *> groups;

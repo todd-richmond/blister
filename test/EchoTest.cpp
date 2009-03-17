@@ -67,7 +67,7 @@ public:
 	EchoServerSocket> {
     public:
 	EchoListenSocket(EchoTest &dspr, ulong timeout):
-	    SimpleDispatchListenSocket<EchoTest, EchoServerSocket>(dspr),
+	    SimpleDispatchListenSocket<EchoTest, EchoServerSocket>(dspr, SOCK_STREAM, false),
 	    tmt(timeout) {}
 
 	void start(EchoServerSocket &ess) { ess.timeout(tmt); ess.start(); }

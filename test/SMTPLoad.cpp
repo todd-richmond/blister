@@ -354,7 +354,7 @@ int SMTPLoad::onStart(void) {
     vector<LoadCmd *>::const_iterator it;
     attrmap::const_iterator ait;
 
-    srand(id ^ (uticks() >> 32 ^ time(NULL)));
+    srand(id ^ ((uint)(uticks() >> 32 ^ time(NULL))));
     if (mthread > 1)
 	msleep(rand() % 1000 * ((mthread / 20) + 1));
     while (!qflag) {
@@ -408,10 +408,11 @@ int SMTPLoad::onStart(void) {
 	    if (cmd->cmd == "connect") {
 		ret = sc.connect(cmd->addr, to);
 	    } else if (cmd->cmd == "auth") {
-		char *passwd;
+		string id;
 
-		strtok_r(buf, " \t", &passwd);
-		ret = sc.auth(buf, passwd);
+		p = strchr(buf, ' ');
+		id.assign(buf, p - buf);
+		ret = sc.auth(id.c_str(), p + 1);
 	    } else if (cmd->cmd == "ehlo") {
 		ret = sc.ehlo(buf);
 	    } else if (cmd->cmd == "helo") {
@@ -528,12 +529,12 @@ inline float round(ulong count, ulong div) {
 }
 
 void SMTPLoad::print(ostream &out, usec_t last) {
-    vector<LoadCmd *>::const_iterator it;
     LoadCmd *cmd;
+    vector<LoadCmd *>::const_iterator it;
+    ulong lusec = (ulong)(uticks() - last);
+    ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0, calls = 0;
     bufferstream os;
-    usec_t lusec = uticks() - last;
-    ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
 
     os << "CMD\t ops/sec msec/op maxmsec    errs OPS/SEC MSEC/OP    ERRS MINMSEC MAXMSEC" << endl;
     lock.lock();

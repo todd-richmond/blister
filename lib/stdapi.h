@@ -193,6 +193,11 @@ EXTERNC_
 #define S_IXOTH		00001
 #define S_IRWXO		S_IROTH | S_IWOTH | S_IXOTH
 
+#define F_OK		0
+#define X_OK		(1 << 0)
+#define W_OK		(1 << 1)
+#define R_OK		(1 << 2)
+
 #define F_ULOCK		0
 #define F_LOCK		1
 #define F_TLOCK		2
@@ -319,7 +324,7 @@ typedef struct statvfs {
 
 /* writev emulation */
 typedef struct iovec {
-    ulong  iov_len;
+    size_t iov_len;
     char *iov_base;
 } iovec_t;
 

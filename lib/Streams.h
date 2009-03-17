@@ -88,7 +88,7 @@ public:
 	char *pb = pbase(), *pp = pptr();
     
 	if (pp > pb) {
-	    if (fd.write(pb, pp - pb) != pp - pb)
+	    if (fd.write(pb, (streamsize)(pp - pb)) != pp - pb)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
@@ -121,7 +121,7 @@ public:
 
     virtual streamsize xsputn(const char *p, streamsize size) {
 	char *pb = pbase(), *pp = pptr();
-	streamsize room = bufsz - (pp - pb);
+	streamsize room = bufsz - (streamsize)(pp - pb);
 	streamsize sz = size;
     
 	if (room <= sz) {
@@ -138,7 +138,7 @@ public:
 	    memcpy(pp, p, sz);
 	    pbump(sz);
 	} else if (pp - pb) {
-	    if (fd.write(pb, pp - pb) != pp - pb)
+	    if (fd.write(pb, (streamsize)(pp - pb)) != pp - pb)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
@@ -147,7 +147,7 @@ public:
 
     virtual streamsize xsgetn(char *p, streamsize sz) {
 	streamsize in;
-	streamsize left = egptr() - gptr();
+	streamsize left = (streamsize)(egptr() - gptr());
     
 	if (left && left >= sz) {
 	    memcpy(p, gptr(), sz);
@@ -155,7 +155,7 @@ public:
 	} else {
 	    char *pb = pbase();
 	    
-	    in = pptr() - pb;
+	    in = (streamsize)(pptr() - pb);
 	    if (in) {			    // flush output
 		if (fd.write(pb, in) != in)
 		    return -1;

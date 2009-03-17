@@ -5,6 +5,7 @@
 #include <dirent.h>
 #endif
 #include <ctype.h>
+#include <fcntl.h>
 #include <fstream>
 #include <map>
 #include <signal.h>
@@ -447,7 +448,6 @@ int HTTPLoad::onStart(void) {
 		    char *d = read(u, io);
 
 		    hc.header("content-type", "application/octet-stream");
-		    //hc.header("content-type", "application/x-www-form-urlencoded");
 		    if (d) {
 			ret = hc.post(buf, d, bodysz[u]);
 			if (d != bodycache[u])
@@ -566,12 +566,12 @@ inline float round(ulong count, ulong div) {
 }
 
 void HTTPLoad::print(ostream &out, usec_t last) {
-    vector<LoadCmd *>::const_iterator it;
     LoadCmd *cmd;
+    vector<LoadCmd *>::const_iterator it;
+    ulong lusec = (ulong)(uticks() - last);
+    ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0, calls = 0;
     bufferstream os;
-    usec_t lusec = uticks() - last;
-    ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
 
     os << "CMD\t ops/sec msec/op maxmsec    errs OPS/SEC MSEC/OP    ERRS MINMSEC MAXMSEC" << endl;
     lock.lock();

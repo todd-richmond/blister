@@ -319,6 +319,7 @@ int Dispatcher::onStart() {
 #endif
     Socket isock(SOCK_DGRAM);
 
+    (void)buf;
     waddr.host(T("localhost"));
     if (!isock.bind(waddr) || !isock.sockname(waddr)) {
 	shutdown = 1;
