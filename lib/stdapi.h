@@ -31,16 +31,11 @@
 
 #define ZERO(x)	    memset((&x), 0, sizeof (x))
 
+typedef const char *cchar;
 typedef unsigned char byte;
 typedef unsigned char uchar;
 typedef unsigned short word;
 typedef unsigned long dword;
-#ifdef _WCHAR_T_DEFINED
-typedef wchar_t wchar;
-#else
-typedef unsigned short wchar;
-#endif
-typedef const char *cchar;
 
 #ifdef _WIN32
 
@@ -80,6 +75,14 @@ typedef const char *cchar;
 #undef __STDC__
 #include <stdlib.h>
 #include <string.h>
+#define _INO_T_DEFINED
+#define _STAT_DEFINED
+#define _WSTAT_DEFINED
+#include <wchar.h>
+#undef _INO_T_DEFINED
+#undef _STAT_DEFINED
+#undef _WSTAT_DEFINED
+
 #ifdef _WIN32_WCE
 #include <winsock.h>
 #else
@@ -155,7 +158,7 @@ EXTERNC_
 #endif
 
 #ifndef __cplusplus
-#define inline __inline
+#define inline		__inline
 #endif
 
 #define MAXCHAR		0x7f
@@ -266,6 +269,7 @@ typedef unsigned int uint;
 typedef unsigned long ulong;
 typedef __int64 int64;
 typedef unsigned __int64 uint64;
+typedef wchar_t wchar;
 
 typedef ushort gid_t;
 typedef int id_t;
@@ -414,8 +418,14 @@ EXTERNC_
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+
+#define __declspec(x)
+#define __cdecl
+#define __fastcall
+#define __stdcall
 
 #ifndef O_BINARY
 #define O_BINARY	0
@@ -427,18 +437,19 @@ EXTERNC_
 
 #define stricmp		strcasecmp
 #define strnicmp	strncasecmp
-#define __declspec(x)
-#define __cdecl
-#define __fastcall
-#define __stdcall
+#define wcsicmp		wcscasecmp
+
+typedef long long int64;
+typedef unsigned long long uint64;
+typedef wchar_t wchar;
 
 #ifdef __APPLE__
 typedef unsigned short ushort;
 typedef unsigned int uint;
 typedef unsigned long ulong;
+
+extern int wcscasecmp(const wchar *, const wchar *);
 #endif
-typedef long long int64;
-typedef unsigned long long uint64;
 
 #endif // _WIN32
 
@@ -455,7 +466,6 @@ typedef unsigned long long uint64;
 
 #ifdef _UNICODE
 #define UNICODE
-#include <wchar.h>
 
 #define T(str)	    L##str
 
@@ -666,19 +676,19 @@ using namespace __gnu_cxx;
 template<class C>
 struct ptrhash {
     size_t operator ()(const C *a) const { return (size_t)a; }
-    bool operator ()(const C *a, const C *b) const { return a < b; }
+    bool operator ()(const C *a, const C *b) const { return a == b; }
     STL_HASH_PARMS
 };
 
 struct int64hash {
     size_t operator ()(int64 a) const { return (size_t)((a >> 32) ^ a); }
-    bool operator ()(int64 a, int64 b) const { return a < b; }
+    bool operator ()(int64 a, int64 b) const { return a == b; }
     STL_HASH_PARMS
 };
 
 struct uint64hash {
     size_t operator ()(uint64 u) const { return (size_t)((u >> 32) ^ u); }
-    bool operator ()(uint64 a, uint64 b) const { return a < b; }
+    bool operator ()(uint64 a, uint64 b) const { return a == b; }
     STL_HASH_PARMS
 };
 
@@ -692,49 +702,23 @@ private:
     const nocopy& operator =(const nocopy &);
 };
 
-template<class C>
-inline int stringcmp(const C *a, const C *b) {
-    while (*a == *b) {
-	if (*a == '\0')
-	    break; 
-	a++;
-	b++;
-    }
-    return *b - *a;
-}
-
 inline int to_lower(int c) { return _tolower((uchar)(c)); }
 inline int to_upper(int c) { return _toupper((uchar)(c)); }
 
+inline int stringcmp(const char *a, const char *b) {
+    return strcmp(a, b);
+}
+
+inline int stringcmp(const wchar *a, const wchar *b) {
+    return wcscmp(a, b);
+}
+
 inline int stringicmp(const char *a, const char *b) {
-    while (to_upper(*a) == to_upper(*b)) {
-	if (*a == '\0')
-	    break; 
-	a++;
-	b++;
-    }
-    return to_upper(*b) - to_upper(*a);
+    return stricmp(a, b);
 }
 
-template<class C>
-inline bool stringeq(const C *a, const C *b) {
-    while (*a == *b) {
-	if (*a == '\0')
-	    return true;
-	a++;
-	b++;
-    }
-    return false;
-}
-
-inline bool stringieq(const char *a, const char *b) {
-    while (to_upper(*a) == to_upper(*b)) {
-	if (*a == '\0')
-	    return true;
-	a++;
-	b++;
-    }
-    return false;
+inline int stringicmp(const wchar *a, const wchar *b) {
+    return wcsicmp(a, b);
 }
 
 template<class C>
@@ -754,15 +738,6 @@ inline size_t stringihash(const char *s) {
     return ret;
 }
 
-#ifdef _UNICODE
-inline int stringicmp(const wchar *a, const wchar *b) {
-    return wcsicmp(a, b);
-}
-
-inline bool stringieq(const wchar *a, const wchar *b) {
-    return wcsicmp(a, b) == 0;
-}
-
 inline size_t stringihash(const wchar *s) {
     size_t ret = 0;
 
@@ -770,68 +745,80 @@ inline size_t stringihash(const wchar *s) {
 	ret += (ret << 3) + towupper(*s++);
     return ret;
 }
-#endif
 
-// case insensitive func for stl templates
-template<class C>
-struct strless: public binary_function<const C *, const C *, bool> {
-    bool operator ()(const C *a, const C *b) const {
-	return stringicmp(a, b) < 0;
-    }
-    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return operator ()(a.c_str(), b.c_str());
-    }
-};
-
-template<class C>
+template <class C>
 struct strhash {
     size_t operator ()(const C *s) const { return stringhash(s); }
     size_t operator ()(const basic_string<C> &s) const {
-	return operator ()(s.c_str());
+	return stringhash(s.c_str());
     }
     bool operator ()(const C *a, const C *b) const {
 	return stringcmp(a, b) < 0;
     }
     bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return operator ()(a.c_str(), b.c_str());
+	return stringcmp(a.c_str(), b.c_str()) < 0;
     }
     STL_HASH_PARMS
 };
 
-template<class C>
+template <class C>
 struct strihash {
     size_t operator ()(const C *s) const { return stringihash(s); }
     size_t operator ()(const basic_string<C> &s) const {
-	return operator ()(s.c_str());
+	return stringihash(s.c_str());
     }
-    bool operator ()(const char *a, const char *b) const {
+    bool operator ()(const C *a, const C *b) const {
 	return stringicmp(a, b) < 0;
     }
     bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return operator ()(a.c_str(), b.c_str());
+	return stringicmp(a.c_str(), b.c_str()) < 0;
     }
     STL_HASH_PARMS
 };
 
 template<class C>
-struct strhashcmp {
-    bool operator ()(const C *a, const C *b) const { return stringeq(a, b); }
-    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return operator ()(a.c_str(), b.c_str());
+struct strhasheq {
+    bool operator()(const C *a, const C *b) const {
+	return stringcmp(a, b) == 0;
+    }
+    bool operator()(const basic_string<C> &a, const basic_string<C> &b) const {
+	return stringcmp(a.c_str(), b.c_str()) == 0;
     }
 };
 
 template<class C>
-struct strihashcmp {
-    bool operator ()(const C *a, const C *b) const { return stringieq(a, b); }
-    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return operator ()(a.c_str(), b.c_str());
+struct strihasheq {
+    bool operator()(const C *a, const C *b) const {
+	return stringicmp(a, b) == 0;
+    }
+    bool operator()(const basic_string<C> &a, const basic_string<C> &b) const {
+	return stringicmp(a.c_str(), b.c_str()) == 0;
     }
 };
 
-#ifdef _WIN32
-#include <windows.h>
+template <class C>
+struct strless {
+    bool operator ()(const C *a, const C *b) const {
+	return stringcmp(a, b) < 0;
+    }
+    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
+	return stringcmp(a.c_str(), b.c_str()) < 0;
+    }
+    static bool less(const C *a, const C *b) { return stringcmp(a, b) < 0; }
+};
 
+template <class C>
+struct striless {
+    bool operator ()(const C *a, const C *b) const {
+	return stringicmp(a, b) < 0;
+    }
+    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
+	return stringicmp(a.c_str(), b.c_str()) < 0;
+    }
+    static bool less(const C *a, const C *b) { return stringicmp(a, b) < 0; }
+};
+
+#ifdef _WIN32
 inline const string widetoa(const wchar *s) {
     int len = WideCharToMultiByte(CP_ACP, 0, s, -1,
 	NULL, NULL, NULL, NULL);

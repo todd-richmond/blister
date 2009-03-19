@@ -29,7 +29,7 @@ class HTTPServerSocket: public DispatchServerSocket {
 public:
 #ifdef STL_HASH_MAP_4ARGS
     typedef hash_map<const char *, const char *, strihash<char>,
-	strihashcmp<char> > attrmap;
+	strihasheq<char> > attrmap;
 #else
     typedef hash_map<const char *, const char *, strihash<char> > attrmap;
 #endif

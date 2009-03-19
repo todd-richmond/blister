@@ -43,7 +43,8 @@ public:
 class HTTPClient: nocopy {
 public:
 #ifdef STL_HASH_MAP_4ARGS
-    typedef hash_multimap<string, string, strihash<char>, strihashcmp<char> > attrmap;
+    typedef hash_multimap<string, string, strihash<char>, strihasheq<char> >
+	attrmap;
 #else
     typedef hash_multimap<string, string, strihash<char> > attrmap;
 #endif

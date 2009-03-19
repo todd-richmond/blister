@@ -29,13 +29,16 @@ static Timing &_dtiming(void) {
 
 Timing &dtiming(_dtiming());
 
-timing_t Timing::add(const tchar *key, timing_t diff) {
-    uint slot;
+void Timing::add(const tchar *key, timing_t diff) {
     SpinLocker lkr(lck);
-    Stats *stats = tmap[key];
+    timingmap::const_iterator it = tmap.find(key);
+    uint slot;
+    Stats *stats;
 
-    if (!stats)
-	stats = tmap[key] = new Stats;
+    if (it == tmap.end())
+	stats = tmap[tstrdup(key)] = new Stats;
+    else
+	stats = it->second;
     stats->cnt++;
     if (diff < 10000)
 	slot = 0;
@@ -55,7 +58,6 @@ timing_t Timing::add(const tchar *key, timing_t diff) {
 	slot = 7;
     stats->cnts[slot]++;
     stats->tot += diff;
-    return diff;
 }
 
 void Timing::clear() {
@@ -63,60 +65,66 @@ void Timing::clear() {
     SpinLocker lkr(lck);
 
     while ((it = tmap.begin()) != tmap.end()) {
-	delete (*it).second;
+	const tchar *p = it->first;
+
+	delete it->second;
 	tmap.erase(it);
+	free((tchar *)p);
     }
 }
 
 const tstring Timing::data(bool compact) const {
     timingmap::const_iterator it;
-    vector<string> keys;
+    vector<const tchar *> keys;
     tstring s;
     SpinLocker lkr(lck);
 
     if (!compact)
-	s = "key                            sum    cnt    avg 1ms 1cs .1s  1s  5s 10s 30s  1m\n";
+	s = T("key                            sum    cnt    avg 1ms 1cs .1s  1s  5s 10s 30s  1m\n");
     for (it = tmap.begin(); it != tmap.end(); it++)
-	keys.push_back((*it).first);
-    sort(keys.begin(), keys.end());
-    for (vector<tstring>::const_iterator kit = keys.begin(); kit != keys.end();
-	kit++) {
-	tchar abuf[16], buf[128], sbuf[16];
+	keys.push_back(it->first);
+    sort(keys.begin(), keys.end(), strless<tchar>::less);
+    for (vector<const tchar *>::const_iterator kit = keys.begin();
+	kit != keys.end(); kit++) {
+	tchar abuf[16], buf[128], cbuf[16], sbuf[16];
 	const Stats *stats;
 
-	it = tmap.find((*kit).c_str());
-	stats = (*it).second;
+	it = tmap.find(*kit);
+	stats = it->second;
 	if (compact) {
 	    if (!s.empty())
-		s += ',';
-	    sprintf(buf, "%s,%s,%lu", (*it).first.c_str(),
-		format(stats->tot, sbuf), stats->cnt);
+		s += (tchar)',';
+	    sprintf(buf, "%s,%s,%lu", it->first, format(stats->tot, sbuf),
+		stats->cnt);
 	} else {
-	    sprintf(buf, "%-27s%7s%7lu%7s", (*it).first.c_str(),
-		format(stats->tot, sbuf), stats->cnt,
-		format(stats->tot / stats->cnt, abuf));
+	    if (stats->cnt >= 1000000)
+		tsprintf(cbuf, T("%6luk"), stats->cnt / 1000);
+	    else
+		tsprintf(cbuf, T("%6lu"), stats->cnt);
+	    sprintf(buf, "%-27s%7s%7s%7s", it->first, format(stats->tot, sbuf),
+		cbuf, format(stats->tot / stats->cnt, abuf));
 	}
 	s += buf;
 	for (uint u = 0; u < TIMINGSLOTS; u++) {
 	    ulong cnt = stats->cnts[u];
 
 	    if (compact) {
-		sprintf(buf, ",%lu", cnt);
+		tsprintf(buf, T(",%lu"), cnt);
 		s += buf;
 	    } else if (cnt == 0) {
 		s += "    ";
 	    } else if (cnt < 100) {
-		sprintf(buf, "%4lu", cnt);
+		tsprintf(buf, T("%4lu"), cnt);
 		s += buf;
 	    } else if (cnt == stats->cnt) {
 		s += "   *";
 	    } else {
-		sprintf(buf, "%3u%%", (uint)(cnt * 100 / stats->cnt));
+		tsprintf(buf, T("%3u%%"), (uint)(cnt * 100 / stats->cnt));
 		s += buf;
 	    }
 	}
 	if (!compact)
-	    s += "\n";
+	    s += T("\n");
     }
     return s;
 }
@@ -126,28 +134,33 @@ void Timing::erase(const tchar *key) {
     timingmap::iterator it = tmap.find(key);
 
     if (it != tmap.end()) {
-	delete (*it).second;
+	const tchar *p = it->first;
+
+	delete it->second;
 	tmap.erase(it);
+	free((tchar *)p);
     }
 }
 
 timing_t Timing::record(const tchar *key) {
     tstring caller;
     timing_t diff;
+    timing_t n = now();
     Tlsdata *tlsd = tls.get();
 
     do {
 	vector<tstring>::reverse_iterator it = tlsd->callers.rbegin();
 
 	if (it == tlsd->callers.rend()) {
-	    cerr << "timing mismatch for " << (key ? key : "stack") << endl;
+	    tcerr << T("timing mismatch for ") << (key ? key : T("stack")) <<
+		endl;
 	    return 0;
 	}
 	caller = *it;
 	tlsd->callers.pop_back();
 	if (!key)
 	    key = caller.c_str();
-	diff = uticks() - *(tlsd->starts.rbegin());
+	diff = n - *(tlsd->starts.rbegin());
 	tlsd->starts.pop_back();
     } while (!caller.empty() && caller != key);
     if (!caller.empty() && !tlsd->callers.empty()) {
@@ -156,23 +169,24 @@ timing_t Timing::record(const tchar *key) {
 	for (vector<tstring>::const_iterator it = tlsd->callers.begin();
 	    it != tlsd->callers.end(); it++) {
 	    if (!s.empty())
-		s += "->";
+		s += T("->");
 	    s += *it;
 	}
-	s += "->";
+	s += T("->");
 	s += key;
 	add(s.c_str(), diff);
     }
-    return add(key, diff);
+    add(key, diff);
+    return now();
 }
 
 timing_t Timing::start(const tchar *key) {
+    timing_t n;
     Tlsdata *tlsd = tls.get();
-    timing_t t = now();
 
-    tlsd->callers.push_back(key ? key : "");
-    tlsd->starts.push_back(t);
-    return t;
+    tlsd->callers.push_back(key ? key : T(""));
+    tlsd->starts.push_back(n = now());
+    return n;
 }
 
 void Timing::stop(uint lvl) {
@@ -188,11 +202,11 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
     float f(t / 1000000.0f);
 
     if (f < 9.9995)
-	sprintf(buf, "%.3f", f);
+	tsprintf(buf, T("%.3f"), f);
     else if (f < 99.995)
-        sprintf(buf, "%.2f", f);
+        tsprintf(buf, T("%.2f"), f);
     else
-        sprintf(buf, "%.0f", f + .5);
+        tsprintf(buf, T("%.0f"), f + .5);
     return buf;
 }
 

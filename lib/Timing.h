@@ -32,7 +32,7 @@ public:
     Timing() {}
     ~Timing() { clear(); }
 
-    timing_t add(const tchar *key, timing_t diff);
+    void add(const tchar *key, timing_t diff);
     void clear(void);
     const tstring data(bool compact = false) const;
     void erase(const tchar *key);
@@ -41,7 +41,8 @@ public:
     timing_t record(const tchar *key, timing_t start) {
 	timing_t n = now();
 
-	return add(key, n > start ? n - start : 0);
+	add(key, n - start);
+	return n;
     }
     timing_t start(void) const { return now(); }
     timing_t start(const tchar *key);
@@ -61,7 +62,12 @@ private:
 	vector<timing_t> starts;
     };
 
-    typedef hash_map<tstring, Stats *, strhash<tchar> > timingmap;
+#ifdef STL_HASH_MAP_4ARGS
+    typedef hash_map<const tchar *, Stats *, strhash<tchar>, strhasheq<tchar> >
+	timingmap;
+#else
+    typedef hash_map<const tchar *, Stats *, strhash<tchar> > timingmap;
+#endif
 
     mutable SpinLock lck;
     TLS<Tlsdata> tls;

@@ -80,7 +80,12 @@ public:
     friend tostream &operator <<(tostream &os, const Config &cfg);
 
 private:
+#ifdef STL_HASH_MAP_4ARGS
+    typedef hash_map<const tstring, const tchar *, strhash<tchar>,
+	strhasheq<tchar> > attrmap;
+#else
     typedef hash_map<const tstring, const tchar *, strhash<tchar> > attrmap;
+#endif
 
     attrmap amap;
     mutable tstring buf, key;

@@ -502,7 +502,7 @@ int HTTPLoad::onStart(void) {
 		    fs << cmd->cmd << " status: " << hc.status() << endl << endl;
 		rmap = hc.responses();
 		for (rit = rmap.begin(); rit != rmap.end(); rit++) {
-		    if (stringeq((*rit).first.c_str(), "set-cookie")) {
+		    if (!strcmp((*rit).first.c_str(), "set-cookie")) {
 			string::size_type pos;
 
 			s = (*rit).second;
