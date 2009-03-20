@@ -1608,7 +1608,7 @@ bool Daemon::onRefresh() {
     if (cfg.get(T("installdir")).empty())
 	cfg.set(T("installdir"), installdir.c_str());
     cfg.set(T("name"), name.c_str(), Log::section());
-    cfg.set(T("PACKAGEVERSION"), PACKAGE T(" ") T(VERSION));
+    cfg.set(T("version"), PACKAGE T(" ") T(VERSION));
     instance = cfg.get(T("instance"), T("default"));
     dlog.set(cfg);
     cfg.unlock();

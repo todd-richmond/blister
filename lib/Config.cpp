@@ -32,7 +32,7 @@ const char *Config::lookup(const tchar *attr, const tchar *sect) const {
     const char *p, *pp, *ppp;
     uint sz;
 
-    it = amap.find(keystr(attr, sect));
+    it = amap.find(expand(attr, sect));
     if (it == amap.end())
 	return NULL;
     p = it->second;
@@ -43,14 +43,14 @@ const char *Config::lookup(const tchar *attr, const tchar *sect) const {
     }
     while ((pp = strchr(p, '$')) != NULL && (pp[1] == '(' || pp[1] == '{')) {
 	if ((ppp = strchr(pp, pp[1] == '(' ? ')' : '}')) == NULL)
-	    return p;
+	    break;
 
 	tstring s(pp + 2, ppp - pp - 2);
 
 	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 &&
 	    s.size() > pre.size() + 1 && s[pre.size()] == '.')
 	    s.erase(0, pre.size() + 1);
-	it = amap.find(s);
+	it = amap.find(s.c_str());
 	if (it == amap.end())
 	    return p;
 	s.assign(pp, ppp - pp + 1);
@@ -69,12 +69,29 @@ const char *Config::lookup(const tchar *attr, const tchar *sect) const {
 }
 
 void Config::clear(void) {
-    Locker lkr(lck, !THREAD_ISSELF(locker));
     attrmap::iterator it;
+    Locker lkr(lck, !THREAD_ISSELF(locker));
 
-    for (it = amap.begin(); it != amap.end(); it++)
-	delete [] it->second;
-    amap.clear();
+    while ((it = amap.begin()) != amap.end()) {
+	const char *p = it->first;
+
+	free(it->second);
+	amap.erase(it);
+	free((char *)p);
+    }
+}
+
+void Config::erase(const tchar *attr) {
+    Locker lkr(lck, !THREAD_ISSELF(locker));
+    attrmap::iterator it = amap.find(attr);
+
+    if (it != amap.end()) {
+	const tchar *p = it->first;
+
+	free(it->second);
+	amap.erase(it);
+	free((tchar *)p);
+    }
 }
 
 const tstring Config::get(const tchar *attr, const tchar *def,
@@ -82,15 +99,15 @@ const tstring Config::get(const tchar *attr, const tchar *def,
     Locker lkr(lck, !THREAD_ISSELF(locker));
     const tchar *p = lookup(attr, sect);
 
-    return p ? p : def ? def : "";
+    return p ? p : def ? def : T("");
 }
 
 bool Config::get(const tchar *attr, bool def, const tchar *sect) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
     const tchar *p = lookup(attr, sect);
 
-    return p ? p[0] == L'1' || totlower(p[0]) == L't' ||
-	totlower(p[0]) == L'y' || !tstricmp(p, T("on")) : def;
+    return p ? p[0] == '1' || totlower(p[0]) == 't' ||
+	totlower(p[0]) == 'y' || !tstricmp(p, T("on")) : def;
 }
 
 long Config::get(const tchar *attr, long def, const tchar *sect) const {
@@ -114,26 +131,29 @@ double Config::get(const tchar *attr, double def, const tchar *sect) const {
     return p ? tstrtod(p, NULL) : def;
 }
 
-const tstring &Config::keystr(const tchar *attr, const tchar *sect) const {
+const tchar *Config::expand(const tchar *attr, const tchar *sect) const {
     if (sect && *sect) {
 	key = sect;
 	key += '.';
 	key += attr;
+	return key.c_str();
     } else {
-	key = attr;
+	return attr;
     }
-    return key;
 }
 
 void Config::set(const tchar *attr, const tchar *val, const tchar *sect) {
-    attrmap::const_iterator it;
+    attrmap::iterator it;
     Locker lkr(lck, !THREAD_ISSELF(locker));
-    const tstring &key(keystr(attr, sect));
+    const tchar *key = expand(attr, sect);
 
     it = amap.find(key);
-    if (it != amap.end())
-	delete [] it->second;
-    amap[key] = stringdup(val);
+    if (it == amap.end()) {
+	amap[stringdup(key)] = tstrdup(val);
+    } else {
+	free(it->second);
+	it->second = tstrdup(val);
+    }
 }
 
 void Config::trim(tstring &s) {
@@ -229,18 +249,20 @@ bool Config::parse(tistream &is) {
 	    continue;
 	}
 
-	const tstring &key(keystr(attr.c_str(), sect.c_str()));
+	const tchar *key = expand(attr.c_str(), sect.c_str());
 
 	it = amap.find(key);
-	if (it != amap.end()) {
+	if (it == amap.end()) {
+	    amap[tstrdup(key)] = stringdup(val);
+	} else {
 	    if (plus) {
 		buf = it->second;
 		buf += val;
 		val = buf;
 	    }
-	    delete [] it->second;
+	    free(it->second);
+	    it->second = stringdup(val);
 	}
-	amap[key] = stringdup(val);
     }
     return true;
 }

@@ -29,6 +29,7 @@ public:
     ~Config() { clear(); }
 
     void clear(void);
+    void erase(const tchar *attr);
     const tstring get(const tchar *attr, const tchar *def = NULL,
 	const tchar *sect = NULL) const;
     const tstring get(const tstring &attr, const tstring &def,
@@ -81,10 +82,10 @@ public:
 
 private:
 #ifdef STL_HASH_MAP_4ARGS
-    typedef hash_map<const tstring, const tchar *, strhash<tchar>,
+    typedef hash_map<const tchar *, tchar *, strhash<tchar>,
 	strhasheq<tchar> > attrmap;
 #else
-    typedef hash_map<const tstring, const tchar *, strhash<tchar> > attrmap;
+    typedef hash_map<const tchar *, tchar *, strhash<tchar> > attrmap;
 #endif
 
     attrmap amap;
@@ -95,17 +96,15 @@ private:
     thread_t locker;
     tstring pre;
 
-    const tstring &keystr(const tchar *attr, const tchar *sect) const;
+    const tchar *expand(const tchar *attr, const tchar *sect) const;
     const tchar *lookup(const tchar *attr, const tchar *sect) const;
     bool parse(tistream &is);
-    void trim(tstring &str);
-    const tchar *stringdup(const tchar *str, size_t sz) const {
-	return (const tchar *)memcpy(new tchar[sz], str, sz * sizeof (tchar));
+    tchar *stringdup(const tstring &s) const {
+	tstring::size_type sz = (s.size() + 1) * sizeof (tchar);
+
+	return (tchar *)memcpy(malloc(sz), s.c_str(), sz);
     }
-    const tchar *stringdup(const tchar *s) const
-	{ return stringdup(s, tstrlen(s) + 1); }
-    const tchar *stringdup(const string &s) const
-	{ return stringdup(s.c_str(), s.size() + 1); }
+    void trim(tstring &str);
 };
 
 inline tistream &operator >>(tistream &is, Config &cfg) { cfg.read(is, true); return is; }
