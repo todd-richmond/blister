@@ -30,6 +30,11 @@ public:
 
     void clear(void);
     void erase(const tchar *attr);
+    bool exists(const tchar *attr, const tchar *sect = NULL) {
+	Locker lkr(lck, !THREAD_ISSELF(locker));
+
+	return lookup(attr, sect) != NULL;
+    }
     const tstring get(const tchar *attr, const tchar *def = NULL,
 	const tchar *sect = NULL) const;
     const tstring get(const tstring &attr, const tstring &def,
@@ -81,11 +86,20 @@ public:
     friend tostream &operator <<(tostream &os, const Config &cfg);
 
 private:
+    class Value {
+    public:
+	Value(const tstring val);
+
+	bool expand;
+	tchar quote;
+	tstring value;
+    };
+
 #ifdef STL_HASH_MAP_4ARGS
-    typedef hash_map<const tchar *, tchar *, strhash<tchar>,
+    typedef hash_map<const tchar *, Value *, strhash<tchar>,
 	strhasheq<tchar> > attrmap;
 #else
-    typedef hash_map<const tchar *, tchar *, strhash<tchar> > attrmap;
+    typedef hash_map<const tchar *, Value *, strhash<tchar> > attrmap;
 #endif
 
     attrmap amap;
@@ -96,8 +110,20 @@ private:
     thread_t locker;
     tstring pre;
 
-    const tchar *expand(const tchar *attr, const tchar *sect) const;
-    const tchar *lookup(const tchar *attr, const tchar *sect) const;
+    const tstring &expand(const Value *val) const;
+    const tchar *keystr(const tchar *attr, const tchar *sect) const {
+	if (!sect)
+	    return attr;
+	key = sect;
+	key += '.';
+	key += attr;
+	return key.c_str();
+    }
+    const Value *lookup(const tchar *attr, const tchar *sect) const {
+	attrmap::const_iterator it = amap.find(keystr(attr, sect));
+
+	return it == amap.end() ? NULL : it->second;
+    }
     bool parse(tistream &is);
     tchar *stringdup(const tstring &s) const {
 	tstring::size_type sz = (s.size() + 1) * sizeof (tchar);

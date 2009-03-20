@@ -31,7 +31,7 @@
 
 #define ZERO(x)	    memset((&x), 0, sizeof (x))
 
-typedef const char *cchar;
+typedef const char cchar;
 typedef unsigned char byte;
 typedef unsigned char uchar;
 typedef unsigned short word;
@@ -291,7 +291,7 @@ extern void _dosmaperr(ulong oserrno);
  * replacement CLib calls support automic rename, deleting open files
  * and using sockets as fds
  */
-#define fileno(stream)  (_get_osfhandle((stream)->_file))
+#define fileno(stream)	(_get_osfhandle((stream)->_file))
 
 /* UNIX directory emulation */
 typedef struct dirent {
@@ -625,6 +625,7 @@ typedef wchar tchar;
 typedef char tchar;
 #endif // UNICODE
 
+typedef const tchar ctchar;
 typedef uint64 msec_t;
 typedef uint64 usec_t;
 

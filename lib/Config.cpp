@@ -21,51 +21,53 @@
 #include <algorithm>
 #include "Config.h"
 
+Config::Value::Value(const tstring val): expand(false), quote(0) {
+    tstring::size_type sz = val.size();
+
+    if (sz > 1 && (val[0] == '"' || val[0] == '\'') && val[sz] == val[0]) {
+	quote = val[0];
+	value.assign(val, 1, sz - 2);
+    } else {
+	tstring::size_type pos = val.find('$');
+
+	if (((pos = val.find(T("$("))) != val.npos ||
+	    (pos = val.find(T("${"))) != val.npos) &&
+	    val.find(val[pos + 1] == '(' ? ')' : '}', pos + 2) != val.npos)
+	    expand = true;
+	value = val;
+    }
+}
+
 Config::Config(const tchar *file, const tchar *pre): ini(false), locker(0) {
     prefix(pre);
     if (file)
 	read(file);
 }
 
-const char *Config::lookup(const tchar *attr, const tchar *sect) const {
-    attrmap::const_iterator it;
-    const char *p, *pp, *ppp;
-    uint sz;
+const string &Config::expand(const Value *value) const {
+    tstring::size_type spos, epos;
 
-    it = amap.find(expand(attr, sect));
-    if (it == amap.end())
-	return NULL;
-    p = it->second;
-    if (p[0] && (p[0] == '"' || p[0] == '\'') &&
-	p[sz = strlen(p)] == p[0] && sz > 1) {
-	buf.assign(p + 1, sz - 2);
-	return buf.c_str();
-    }
-    while ((pp = strchr(p, '$')) != NULL && (pp[1] == '(' || pp[1] == '{')) {
-	if ((ppp = strchr(pp, pp[1] == '(' ? ')' : '}')) == NULL)
+    if (!value->expand)
+	return value->value;
+    buf = value->value;
+    while ((spos = buf.find(T("$("))) != buf.npos ||
+	(spos = buf.find(T("${"))) != buf.npos) {
+	if ((epos = buf.find(buf[spos + 1] == '(' ? ')' : '}', spos + 2)) ==
+	    buf.npos)
 	    break;
 
-	tstring s(pp + 2, ppp - pp - 2);
+	attrmap::const_iterator it;
+	tstring s(buf, spos + 2, epos - spos - 2);
 
 	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 &&
 	    s.size() > pre.size() + 1 && s[pre.size()] == '.')
 	    s.erase(0, pre.size() + 1);
 	it = amap.find(s.c_str());
 	if (it == amap.end())
-	    return p;
-	s.assign(pp, ppp - pp + 1);
-	if (s == it->second) {
-	    s.assign(p, pp - p);
-	    s.append(ppp + 1);
-	} else {
-	    s.assign(p, pp - p);
-	    s.append(it->second);
-	    s.append(ppp + 1);
-	}
-	buf = s;
-	p = buf.c_str();
+	    break;
+	buf.replace(spos, epos - spos + 1, it->second->value);
     }
-    return p;
+    return buf;
 }
 
 void Config::clear(void) {
@@ -75,7 +77,7 @@ void Config::clear(void) {
     while ((it = amap.begin()) != amap.end()) {
 	const char *p = it->first;
 
-	free(it->second);
+	delete it->second;
 	amap.erase(it);
 	free((char *)p);
     }
@@ -88,7 +90,7 @@ void Config::erase(const tchar *attr) {
     if (it != amap.end()) {
 	const tchar *p = it->first;
 
-	free(it->second);
+	delete it->second;
 	amap.erase(it);
 	free((tchar *)p);
     }
@@ -97,62 +99,57 @@ void Config::erase(const tchar *attr) {
 const tstring Config::get(const tchar *attr, const tchar *def,
     const tchar *sect) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
-    const tchar *p = lookup(attr, sect);
+    const Value *val = lookup(attr, sect);
+    static tstring empty;
 
-    return p ? p : def ? def : T("");
+    return val ? expand(val) : def ? def : empty;
 }
 
 bool Config::get(const tchar *attr, bool def, const tchar *sect) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
-    const tchar *p = lookup(attr, sect);
+    const Value *val = lookup(attr, sect);
 
-    return p ? p[0] == '1' || totlower(p[0]) == 't' ||
-	totlower(p[0]) == 'y' || !tstricmp(p, T("on")) : def;
+    if (!val)
+	return def;
+
+    const tstring &s(expand(val));
+
+    return s[0] == '1' || totlower(s[0]) == 't' || totlower(s[0]) == 'y' ||
+	!tstricmp(s.c_str(), T("on"));
 }
 
 long Config::get(const tchar *attr, long def, const tchar *sect) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
-    const tchar *p = lookup(attr, sect);
+    const Value *val = lookup(attr, sect);
 
-    return p ? tstrtol(p, NULL, 10) : def;
+    return val ? tstrtol(expand(val).c_str(), NULL, 10) : def;
 }
 
 ulong Config::get(const tchar *attr, ulong def, const tchar *sect) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
-    const tchar *p = lookup(attr, sect);
+    const Value *val = lookup(attr, sect);
 
-    return p ? tstrtoul(p, NULL, 10) : def;
+    return val ? tstrtoul(expand(val).c_str(), NULL, 10) : def;
 }
 
 double Config::get(const tchar *attr, double def, const tchar *sect) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
-    const tchar *p = lookup(attr, sect);
+    const Value *val = lookup(attr, sect);
 
-    return p ? tstrtod(p, NULL) : def;
-}
-
-const tchar *Config::expand(const tchar *attr, const tchar *sect) const {
-    if (sect && *sect) {
-	key = sect;
-	key += '.';
-	key += attr;
-	return key.c_str();
-    } else {
-	return attr;
-    }
+    return val ? tstrtod(expand(val).c_str(), NULL) : def;
 }
 
 void Config::set(const tchar *attr, const tchar *val, const tchar *sect) {
     attrmap::iterator it;
     Locker lkr(lck, !THREAD_ISSELF(locker));
-    const tchar *key = expand(attr, sect);
+    const tchar *key = keystr(attr, sect);
 
     it = amap.find(key);
     if (it == amap.end()) {
-	amap[stringdup(key)] = tstrdup(val);
+	amap[stringdup(key)] = new Value(val);
     } else {
-	free(it->second);
-	it->second = tstrdup(val);
+	delete it->second;
+	it->second = new Value(val);
     }
 }
 
@@ -249,19 +246,16 @@ bool Config::parse(tistream &is) {
 	    continue;
 	}
 
-	const tchar *key = expand(attr.c_str(), sect.c_str());
+	const tchar *key = keystr(attr.c_str(), sect.c_str());
 
 	it = amap.find(key);
 	if (it == amap.end()) {
-	    amap[tstrdup(key)] = stringdup(val);
+	    amap[tstrdup(key)] = new Value(val);
 	} else {
-	    if (plus) {
-		buf = it->second;
-		buf += val;
-		val = buf;
-	    }
-	    free(it->second);
-	    it->second = stringdup(val);
+	    if (plus)
+		it->second->value += val;
+	    else
+	    	it->second->value = val;
 	}
     }
     return true;
@@ -295,15 +289,22 @@ bool Config::write(tostream &os, bool ini) const {
     string sect;
 
     for (it = amap.begin(); it != amap.end(); it++) {
+	Value *val = it->second;
+
 	s = it->first;
 	s += '=';
-	s += it->second;
+	if (val->quote)
+	    s += val->quote;
+	s += val->value;
+	if (val->quote)
+	    s += val->quote;
 	lines.push_back(s);
     }
     sort(lines.begin(), lines.end());
     for (lit = lines.begin(); lit != lines.end(); lit++) {
 	os << *lit << endl;
 	(void)ini;
+	// incomplete - write ini style cfg
 	//os << T("[") << it->first << T("]") << endl;
     }
     return os.good();
