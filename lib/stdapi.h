@@ -498,6 +498,8 @@ extern int wcscasecmp(const wchar *, const wchar *);
 #define tgetenv	    wgetenv
 #define istalnum    iswalnum
 #define istalpha    iswalpha
+#define istblank    iswblank
+#define istcntrl    iswcntrl
 #define istdigit    iswdigit
 #define istgraph    iswgraph
 #define istlower    iswlower
@@ -505,6 +507,7 @@ extern int wcscasecmp(const wchar *, const wchar *);
 #define istpunct    iswpunct
 #define istspace    iswspace
 #define istupper    iswupper
+#define istxdigit   iswxdigit
 #define totupper    towupper
 #define totlower    towlower
 #define tmain	    wmain
@@ -577,6 +580,8 @@ typedef wchar tchar;
 #define tgetenv	    getenv
 #define istalnum    isalnum
 #define istalpha    isalpha
+#define istblank    isblank
+#define istcntrl    iscntrl
 #define istdigit    isdigit
 #define istgraph    isgraph
 #define istlower    islower
@@ -584,6 +589,7 @@ typedef wchar tchar;
 #define istpunct    ispunct
 #define istspace    isspace
 #define istupper    isupper
+#define istxdigit   isxdigit
 #define totupper    toupper
 #define totlower    tolower
 #define tmain	    main
