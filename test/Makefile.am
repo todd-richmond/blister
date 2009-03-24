@@ -3,9 +3,12 @@ include $(top_srcdir)/build/Makefile.inc
 CPPFLAGS = -I../lib
 LDFLAGS = -L../lib -lblister
 
-noinst_PROGRAMS = dlog echotest httpd httpload smtpload
+bin_PROGRAMS = cfg dlog httpload smtpload
+noinst_PROGRAMS = echotest httpd
 sysconf_DATA = http.wld smtp.wld
 
+cfg_SOURCES = Cfg.cpp
+cfg_LDFLAGS = -static
 dlog_SOURCES = DLog.cpp
 dlog_LDFLAGS = -static
 echotest_SOURCES = EchoTest.cpp
