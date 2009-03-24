@@ -22,7 +22,7 @@
 int main(int argc, tchar *argv[]) {
     const tchar *attr = NULL, *file = NULL, *prefix = NULL, *section = NULL;
     Config cfg;
-    bool boolean = false, check = false, integer = false;
+    bool boolean = false, check = false, integer = false, nonewline = false;
     bool exists;
     int i;
     string s;
@@ -39,6 +39,9 @@ int main(int argc, tchar *argv[]) {
 	} else if (!tstrcmp(argv[i], T("-i")) ||
 	    !tstrcmp(argv[i], T("--integer"))) {
 	    integer = true;
+	} else if (!tstrcmp(argv[i], T("-n")) ||
+	    !tstrcmp(argv[i], T("--nonewline"))) {
+	    nonewline = true;
 	} else if (!tstrcmp(argv[i], T("-p")) ||
 	    !tstrcmp(argv[i], T("--prefix"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
@@ -62,6 +65,7 @@ int main(int argc, tchar *argv[]) {
 	    "\t[-b|--boolean]\n"
 	    "\t[-c|--check]\n"
 	    "\t[-i|--integer]\n"
+	    "\t[-n|--nonewline]\n"
 	    "\t[-p|--prefix prefix]\n"
 	    "\t[-s|--section section]\n"
 	    "\tattribute [file]\n") << endl;
@@ -83,7 +87,9 @@ int main(int argc, tchar *argv[]) {
     } else if (integer) {
 	return cfg.get(attr, 0, section);
     } else if (exists) {
-	tcout << cfg.get(attr, NULL, section) << endl;
+	tcout << cfg.get(attr, NULL, section);
+	if (!nonewline)
+	    tcout << endl;
 	return 0;
     } else {
 	tcerr << attr << T(" not found") << endl;
