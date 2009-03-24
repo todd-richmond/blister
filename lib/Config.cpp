@@ -246,7 +246,8 @@ bool Config::parse(tistream &is) {
 	    continue;
 	}
 
-	const tchar *key = keystr(attr.c_str(), sect.c_str());
+	const tchar *key = keystr(attr.c_str(), sect.empty() ? NULL :
+	    sect.c_str());
 
 	it = amap.find(key);
 	if (it == amap.end()) {
@@ -262,13 +263,16 @@ bool Config::parse(tistream &is) {
 }
 
 bool Config::read(tistream &is, bool app) {
-    Locker lkr(lck, !THREAD_ISSELF(locker));
+    bool ret;
 
     if (!is)
 	return false;
+    lock();
     if (!app)
 	clear();
-    return parse(is);
+    ret = parse(is);
+    unlock();
+    return ret;
 }
 
 bool Config::read(const tchar *f, bool app) {
