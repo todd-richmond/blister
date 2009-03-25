@@ -87,7 +87,7 @@ int main(int argc, tchar *argv[]) {
     } else if (integer) {
 	return cfg.get(attr, 0, section);
     } else if (exists) {
-	tcout << cfg.get(attr, NULL, section);
+	tcout << cfg.get(attr, (tchar *)NULL, section);
 	if (!nonewline)
 	    tcout << endl;
 	return 0;
