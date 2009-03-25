@@ -285,14 +285,14 @@ void Thread::clear(bool self) {
 }
 
 // setup thread and call it's main routine
-THREAD_FUNC Thread::threadInit(void *ags) {
-    Thread *thread = (Thread *)ags;
-    int status;
+THREAD_FUNC Thread::threadInit(void *arg) {
+    Thread *thread = (Thread *)arg;
     ThreadState istate = thread->state;
+    int status;
     
-    srand((uint)ags);
     thread->lck.lock();
     thread->id = THREAD_ID();
+    srand((uint)thread->id);
     thread->state = Running;
     thread->cv.set();
     thread->lck.unlock();
