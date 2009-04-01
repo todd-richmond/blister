@@ -26,12 +26,12 @@ static void signal_handler(int) {
     exit(1);
 }
 
-static void log(Log::Level lvl, const char *str) {
-    const char *p;
+static void log(Log::Level lvl, const tchar *str) {
+    const tchar *p;
 
-    if ((p = strchr(str, ' ')) != NULL || (p = strchr(str, '\t')) != NULL) {
+    if ((p = tstrchr(str, ' ')) != NULL || (p = tstrchr(str, '\t')) != NULL) {
 	Log::Level l;
-	string s;
+	tstring s;
 
 	s.assign(str, 0, p - str);
 	l = Log::str2enum(s.c_str());
@@ -43,25 +43,27 @@ static void log(Log::Level lvl, const char *str) {
     dlog.log(lvl, str);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, tchar *argv[]) {
     int i;
     Log::Level lvl = Log::Info;
     ulong ka = 0;
     bool out = false;
-    string s;
+    tstring s;
 
     signal(SIGINT, signal_handler);
+    dlog.setmp(true);
     for (i = 1; i < argc; i++) {
-	if (!stricmp(argv[i], "-?") || !stricmp(argv[i], "--help")) {
+	if (!tstricmp(argv[i], T("-?")) || !tstricmp(argv[i], T("--help"))) {
 	    break;
-	} else if (!stricmp(argv[i], "-a") || !stricmp(argv[i], "--alert")) {
+	} else if (!tstricmp(argv[i], T("-a")) || !tstricmp(argv[i],
+	    T("--alert"))) {
 	    ulong cnt = 3, sz = 10 * 1024 * 1024, tm = 0;
-	    const char *file;
+	    const tchar *file;
 	    Log::Level lvl = Log::Err;
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
-	    file = strcmp(argv[i], "-") ? argv[i] : "stderr";
+	    file = strcmp(argv[i], T("-")) ? argv[i] : T("stderr");
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
 	    	if ((lvl = Log::str2enum(argv[++i])) == Log::None)
 		    break;
@@ -73,16 +75,19 @@ int main(int argc, char *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 	    	tm = atol(argv[++i]);
 	    dlog.alert(lvl, file, cnt, sz, tm);
-	} else if (!stricmp(argv[i], "-b") || !stricmp(argv[i], "--buffer")) {
+	} else if (!tstricmp(argv[i], T("-b")) || !tstricmp(argv[i],
+	    T("--buffer"))) {
 	    ulong sz = 32 * 1024, msec = 1000;
 
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		sz = (ulong)atol(argv[++i]);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		msec = (ulong)atol(argv[++i]);
+	    dlog.setmp(false);
 	    dlog.buffer(sz, msec);
-	} else if (!stricmp(argv[i], "-c") || !stricmp(argv[i], "--config")) {
-	    const char *file, *pre = NULL;
+	} else if (!tstricmp(argv[i], T("-c")) || !tstricmp(argv[i],
+	    T("--config"))) {
+	    const tchar *file, *pre = NULL;
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
@@ -93,18 +98,20 @@ int main(int argc, char *argv[]) {
 	    Config cfg(file, pre);
 
 	    dlog.set(cfg);
-	} else if (!stricmp(argv[i], "-d") || !stricmp(argv[i], "--date")) {
+	} else if (!tstricmp(argv[i], T("-d")) || !tstricmp(argv[i],
+	    T("--date"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    dlog.format(argv[i]);
-	} else if (!stricmp(argv[i], "-f") || !stricmp(argv[i], "--file")) {
+	} else if (!tstricmp(argv[i], T("-f")) || !tstricmp(argv[i],
+	    T("--file"))) {
 	    ulong cnt = 3, sz = 10 * 1024 * 1024, tm = 0;
-	    const char *file;
+	    const tchar *file;
 	    Log::Level lvl = Log::Info;
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
-	    file = strcmp(argv[i], "-") ? argv[i] : "stdout";
+	    file = strcmp(argv[i], T("-")) ? argv[i] : T("stdout");
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
 	    	if ((lvl = Log::str2enum(argv[++i])) == Log::None)
 		    break;
@@ -116,20 +123,23 @@ int main(int argc, char *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 	    	tm = atol(argv[++i]);
 	    dlog.file(lvl, file, cnt, sz, tm);
-	} else if (!stricmp(argv[i], "-k") || !stricmp(argv[i], "--keepalive")) {
+	} else if (!tstricmp(argv[i], T("-k")) || !tstricmp(argv[i],
+	    T("--keepalive"))) {
 	    ka = 1000;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		ka = (ulong)atol(argv[++i]);
-	} else if (!stricmp(argv[i], "-l") || !stricmp(argv[i], "--level")) {
+	} else if (!tstricmp(argv[i], T("-l")) || !tstricmp(argv[i],
+	    T("--level"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    if ((lvl = Log::str2enum(argv[i])) == Log::None)
 		break;
 	    dlog.level(lvl);
-	} else if (!stricmp(argv[i], "-m") || !stricmp(argv[i], "--mail")) {
-	    const char *to;
-	    const char *from = "<>";
-	    const char *host = "localhost";
+	} else if (!tstricmp(argv[i], T("-m")) || !tstricmp(argv[i],
+	    T("--mail"))) {
+	    const tchar *to;
+	    const tchar *from = T("<>");
+	    const tchar *host = T("localhost");
 	    Log::Level lvl = Log::Err;
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
@@ -144,20 +154,24 @@ int main(int argc, char *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		host = argv[++i];
 	    dlog.mail(lvl, to, from, host);
-	} else if (!stricmp(argv[i], "-n") || !stricmp(argv[i], "--name")) {
+	} else if (!tstricmp(argv[i], T("-n")) || !tstricmp(argv[i],
+	    T("--name"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    dlog.source(argv[i]);
-	} else if (!stricmp(argv[i], "-o") || !stricmp(argv[i], "--output")) {
+	} else if (!tstricmp(argv[i], T("-o")) || !tstricmp(argv[i],
+	    T("--output"))) {
 	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
-	} else if (!stricmp(argv[i], "-p") || !stricmp(argv[i], "--prefix")) {
+	} else if (!tstricmp(argv[i], T("-p")) || !tstricmp(argv[i],
+	    T("--prefix"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    dlog.prefix(argv[i]);
-	} else if (!stricmp(argv[i], "-s") || !stricmp(argv[i], "--syslog")) {
+	} else if (!tstricmp(argv[i], T("-s")) || !tstricmp(argv[i],
+	    T("--syslog"))) {
 	    uint fac = 1;
-	    const char *host = "localhost";
+	    const tchar *host = T("localhost");
 	    Log::Level lvl = Log::Err;
 
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -169,15 +183,19 @@ int main(int argc, char *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		fac = atoi(argv[++i]);
 	    dlog.syslog(lvl, host, fac);
-	} else if (!stricmp(argv[i], "-t") || !stricmp(argv[i], "--type")) {
+	} else if (!tstricmp(argv[i], T("-t")) || !tstricmp(argv[i],
+	    T("--type"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
-	    if (!stricmp(argv[i], "keyval"))
+	    if (!tstricmp(argv[i], T("keyval")))
 		dlog.type(Log::KeyVal);
-	    else if (!stricmp(argv[i], "nolevel"))
+	    else if (!tstricmp(argv[i], T("nolevel")))
 		dlog.type(Log::NoLevel);
-	    else if (!stricmp(argv[i], "syslog"))
+	    else if (!tstricmp(argv[i], T("syslog")))
 		dlog.type(Log::Syslog);
+	} else if (!tstricmp(argv[i], T("-u")) || !tstricmp(argv[i],
+	    T("--unlocked"))) {
+	    dlog.setmp(false);
 	} else if (argv[i][0] != '-') {
 	    log(lvl, argv[i]);
 	    out = true;
@@ -186,7 +204,7 @@ int main(int argc, char *argv[]) {
 	}
     }
     if (i < argc) {
-	cerr << "Usage: dlog\n"
+	cerr << T("Usage: dlog\n"
 	    "\t[-a|--alert file [level [count [size [time]]]]]\n"
 	    "\t[-b|--buffer [msec [size]]]\n"
 	    "\t[-c|--config cfgfile [prefix]]\n"
@@ -200,7 +218,8 @@ int main(int argc, char *argv[]) {
 	    "\t[-p|--prefix logstr]\n"
 	    "\t[-s|--syslog [level [host [facility]]]]\n"
 	    "\t[-t|--type keyval|nolevel|simple|syslog]\n"
-	    "\t[logstr]*\n" << endl;
+	    "\t[-u|--unlocked]\n"
+	    "\t[logstr]*\n") << endl;
 	    return 1;
     }
     while (!out) {
