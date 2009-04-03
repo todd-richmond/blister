@@ -26,6 +26,7 @@
 #include "Config.h"
 #include "Dispatch.h"
 #include "Log.h"
+#include "Timing.h"
 
 static const tchar *NAME = "echo";
 
@@ -157,6 +158,7 @@ void EchoTest::EchoClientSocket::input() {
 	errs++;
 	dloge("client read", msg == Dispatcher::Timeout ? "timeout" : "close");
 	timeout(start, wait);
+	dtiming.add(T("error"), 0);
 	return;
     }
     if ((len = read(data + in, dsz - in)) < 0) {
@@ -169,6 +171,7 @@ void EchoTest::EchoClientSocket::input() {
     if (in == dsz) {
 	ops++;
 	usecs += uticks() - begin;
+	dtiming.add(T("echo"), uticks() - begin);
 	dlogt("client read", len);
 	timeout(repeat, wait + (wait < 2000 ? 0 : rand() % 50));
     } else {
@@ -271,6 +274,18 @@ int main(int argc, char *argv[]) {
     struct stat sbuf;
     ulong delay = 20, sockets = 20, tmt = TIMEOUT, wait = 0;
 
+dtiming.add("x", 0);
+dtiming.add("x", 0);
+dtiming.add("y", 10000);
+dtiming.add("z", 1000000);
+/*
+dtiming.add("x", 1);
+dtiming.add("x", 10);
+dtiming.add("x", 100);
+dtiming.add("x", 1000);
+*/
+cout << dtiming.data(10) << endl;
+return 0;
     if (argc == 1 || !strcmp(argv[1], "-?")) {
 	cerr << "Usage: echotest [-c] [-d delay] [-h host[:port]] [-e sockets]\n"
 	    "\t[-l loops] [-s] [-v*] [-t timeout] [-w wait] data | datafile" <<
@@ -355,5 +370,6 @@ int main(int argc, char *argv[]) {
     }
     ec.stop();
     delete [] data;
+    cout << dtiming.data() << endl;
     return qflag ? -1 : 0;
 }
