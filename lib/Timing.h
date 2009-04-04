@@ -23,7 +23,8 @@
 #include STL_HASH_MAP
 #include "Thread.h"
 
-#define TIMINGSLOTS	8
+#define TIMINGSLOTS	10
+#define TIMINGCOLUMNS	8
 
 typedef usec_t timing_t;
 
@@ -34,7 +35,7 @@ public:
 
     void add(const tchar *key, timing_t diff);
     void clear(void);
-    const tstring data(bool compact = false) const;
+    const tstring data(uint columns = TIMINGCOLUMNS) const;
     void erase(const tchar *key);
     timing_t now(void) const { return uticks(); }
     timing_t record(const tchar *key = NULL);

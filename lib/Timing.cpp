@@ -34,28 +34,20 @@ void Timing::add(const tchar *key, timing_t diff) {
     timingmap::const_iterator it = tmap.find(key);
     uint slot;
     Stats *stats;
+    static timing_t limits[TIMINGSLOTS] = {
+	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000,
+	60000000
+    };
 
     if (it == tmap.end())
 	stats = tmap[tstrdup(key)] = new Stats;
     else
 	stats = it->second;
     stats->cnt++;
-    if (diff < 10000)
-	slot = 0;
-    else if (diff < 100000)
-	slot = 1;
-    else if (diff < 1000000)
-	slot = 2;
-    else if (diff < 5000000)
-	slot = 3;
-    else if (diff < 10000000)
-	slot = 4;
-    else if (diff < 30000000)
-	slot = 5;
-    else if (diff < 60000000)
-	slot = 6;
-    else
-	slot = 7;
+    for (slot = 0; slot < TIMINGSLOTS; slot++) {
+	if (diff <= limits[slot])
+	    break;
+    }
     stats->cnts[slot]++;
     stats->tot += diff;
 }
@@ -73,58 +65,98 @@ void Timing::clear() {
     }
 }
 
-const tstring Timing::data(bool compact) const {
+const tstring Timing::data(uint columns) const {
     timingmap::const_iterator it;
     vector<const tchar *> keys;
-    tstring s;
+    vector<const tchar *>::const_iterator kit;
+    uint last = 0, start = 0;
     SpinLocker lkr(lck);
+    bool msec = true;
+    tstring s;
+    const Stats *stats;
+    uint u;
+    static const tchar *hdrs[TIMINGSLOTS] = {
+	T("10u"), T(".1m"), T("1m"), T("10m"), T(".1s"), T(" 1s"), T(" 5s"),
+	T("10s"), T("30s"), T(" 1M")
+    };
 
-    if (!compact)
-	s = T("key                            sum    cnt    avg 1ms 1cs .1s  1s  5s 10s 30s  1m\n");
     for (it = tmap.begin(); it != tmap.end(); it++)
 	keys.push_back(it->first);
     sort(keys.begin(), keys.end(), strless<tchar>::less);
-    for (vector<const tchar *>::const_iterator kit = keys.begin();
-	kit != keys.end(); kit++) {
+    for (kit = keys.begin(); kit != keys.end(); kit++) {
+	it = tmap.find(*kit);
+	stats = it->second;
+	if (stats->tot > 1000000)
+	    msec = false;
+	for (u = TIMINGSLOTS - 1; u > last; u--) {
+	    if (stats->cnts[u]) {
+		last = u;
+		break;
+	    }
+	}
+    }
+    if (columns) {
+	if (columns > TIMINGSLOTS)
+	    columns = TIMINGSLOTS;
+	start = last < columns ? 0 : last - columns + 1;
+	s = T("key                          sum(");
+	s += msec ? (tchar)'m' : (tchar)'s';
+	s += T(")   cnt    avg");
+	for (u = start; u <= last; u++) {
+	    s += (tchar)' ';
+	    s += hdrs[u];
+	}
+	s += (tchar)'\n';
+    }
+    for (kit = keys.begin(); kit != keys.end(); kit++) {
 	tchar abuf[16], buf[128], cbuf[16], sbuf[16];
-	const Stats *stats;
+	ulong sum = 0;
+	timing_t tot;
 
 	it = tmap.find(*kit);
 	stats = it->second;
-	if (compact) {
-	    if (!s.empty())
-		s += (tchar)',';
-	    sprintf(buf, "%s,%s,%lu", it->first, format(stats->tot, sbuf),
-		stats->cnt);
-	} else {
+	tot = stats->tot;
+	if (columns) {
+	    for (u = 0; u <= start; u++)
+		sum += stats->cnts[u];
 	    if (stats->cnt >= 1000000)
 		tsprintf(cbuf, T("%6luk"), stats->cnt / 1000);
 	    else
 		tsprintf(cbuf, T("%6lu"), stats->cnt);
-	    sprintf(buf, "%-27s%7s%7s%7s", it->first, format(stats->tot, sbuf),
-		cbuf, format(stats->tot / stats->cnt, abuf));
+	    if (msec)
+		tot *= 1000;
+	    if (tot)
+		tsprintf(buf, T("%-27s%7s%7s%7s"), it->first, format(tot, sbuf),
+		    cbuf, format(tot / stats->cnt, abuf));
+	    else
+		tsprintf(buf, T("%-34s%7s"), it->first, cbuf);
+	} else {
+	    if (!s.empty())
+		s += (tchar)',';
+	    tsprintf(buf, T("%s,%s,%lu"), it->first, format(tot, sbuf),
+		stats->cnt);
 	}
 	s += buf;
-	for (uint u = 0; u < TIMINGSLOTS; u++) {
-	    ulong cnt = stats->cnts[u];
+	for (u = start; u <= last && tot; u++) {
+	    ulong cnt = (columns && u == start) ? sum : stats->cnts[u];
 
-	    if (compact) {
+	    if (!columns) {
 		tsprintf(buf, T(",%lu"), cnt);
 		s += buf;
 	    } else if (cnt == 0) {
-		s += "    ";
+		s += T("    ");
 	    } else if (cnt < 100) {
 		tsprintf(buf, T("%4lu"), cnt);
 		s += buf;
 	    } else if (cnt == stats->cnt) {
-		s += "   *";
+		s += T("   *");
 	    } else {
 		tsprintf(buf, T("%3u%%"), (uint)(cnt * 100 / stats->cnt));
 		s += buf;
 	    }
 	}
-	if (!compact)
-	    s += T("\n");
+	if (columns)
+	    s += (tchar)'\n';
     }
     return s;
 }
