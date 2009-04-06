@@ -35,7 +35,7 @@ public:
 
     void add(const tchar *key, timing_t diff);
     void clear(void);
-    const tstring data(uint columns = TIMINGCOLUMNS) const;
+    const tstring data(bool byname = false, uint columns = TIMINGCOLUMNS) const;
     void erase(const tchar *key);
     timing_t now(void) const { return uticks(); }
     timing_t record(const tchar *key = NULL);
@@ -51,10 +51,11 @@ public:
 
 private:
     struct Stats {
-	Stats(): cnt(0), tot(0) { ZERO(cnts); }
+	Stats(const char *n): cnt(0), name(n), tot(0) { ZERO(cnts); }
 
 	ulong cnt;
 	ulong cnts[TIMINGSLOTS];
+	const char *name;
 	timing_t tot;
     };
 
@@ -75,6 +76,12 @@ private:
     timingmap tmap;
 
     static const tchar *format(timing_t tot, tchar *buf);
+    static bool less_name(const Stats *a, const Stats *b) {
+	return stringcmp(a->name, b->name) < 0;
+    }
+    static bool less_time(const Stats *a, const Stats *b) {
+	return a->tot > b->tot;
+    }
 };
 
 extern Timing &dtiming;

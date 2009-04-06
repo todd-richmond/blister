@@ -39,10 +39,12 @@ void Timing::add(const tchar *key, timing_t diff) {
 	60000000
     };
 
-    if (it == tmap.end())
-	stats = tmap[tstrdup(key)] = new Stats;
-    else
+    if (it == tmap.end()) {
+	key = tstrdup(key);
+	stats = tmap[key] = new Stats(key);
+    } else {
 	stats = it->second;
+    }
     stats->cnt++;
     for (slot = 0; slot < TIMINGSLOTS; slot++) {
 	if (diff <= limits[slot])
@@ -65,27 +67,26 @@ void Timing::clear() {
     }
 }
 
-const tstring Timing::data(uint columns) const {
+const tstring Timing::data(bool sortbyname, uint columns) const {
     timingmap::const_iterator it;
-    vector<const tchar *> keys;
-    vector<const tchar *>::const_iterator kit;
     uint last = 0, start = 0;
     SpinLocker lkr(lck);
     bool msec = true;
     tstring s;
+    vector<const Stats *>::const_iterator sit;
+    vector<const Stats *> sorted;
     const Stats *stats;
     uint u;
     static const tchar *hdrs[TIMINGSLOTS] = {
-	T("10u"), T(".1m"), T("1m"), T("10m"), T(".1s"), T(" 1s"), T(" 5s"),
+	T("10u"), T(".1m"), T(" 1m"), T("10m"), T(".1s"), T(" 1s"), T(" 5s"),
 	T("10s"), T("30s"), T(" 1M")
     };
 
     for (it = tmap.begin(); it != tmap.end(); it++)
-	keys.push_back(it->first);
-    sort(keys.begin(), keys.end(), strless<tchar>::less);
-    for (kit = keys.begin(); kit != keys.end(); kit++) {
-	it = tmap.find(*kit);
-	stats = it->second;
+	sorted.push_back(it->second);
+    sort(sorted.begin(), sorted.end(), sortbyname ? less_name : less_time);
+    for (sit = sorted.begin(); sit != sorted.end(); sit++) {
+	stats = *sit;
 	if (stats->tot > 1000000)
 	    msec = false;
 	for (u = TIMINGSLOTS - 1; u > last; u--) {
@@ -108,14 +109,15 @@ const tstring Timing::data(uint columns) const {
 	}
 	s += (tchar)'\n';
     }
-    for (kit = keys.begin(); kit != keys.end(); kit++) {
+    for (sit = sorted.begin(); sit != sorted.end(); sit++) {
 	tchar abuf[16], buf[128], cbuf[16], sbuf[16];
 	ulong sum = 0;
 	timing_t tot;
 
-	it = tmap.find(*kit);
-	stats = it->second;
+	cout<<"tfr"<<endl;
+	stats = *sit;
 	tot = stats->tot;
+	cout<<"tfr bb"<<endl;
 	if (columns) {
 	    for (u = 0; u <= start; u++)
 		sum += stats->cnts[u];
@@ -126,14 +128,14 @@ const tstring Timing::data(uint columns) const {
 	    if (msec)
 		tot *= 1000;
 	    if (tot)
-		tsprintf(buf, T("%-27s%7s%7s%7s"), it->first, format(tot, sbuf),
-		    cbuf, format(tot / stats->cnt, abuf));
+		tsprintf(buf, T("%-27s%7s%7s%7s"), stats->name, format(tot,
+		    sbuf), cbuf, format(tot / stats->cnt, abuf));
 	    else
-		tsprintf(buf, T("%-34s%7s"), it->first, cbuf);
+		tsprintf(buf, T("%-34s%7s"), stats->name, cbuf);
 	} else {
 	    if (!s.empty())
 		s += (tchar)',';
-	    tsprintf(buf, T("%s,%s,%lu"), it->first, format(tot, sbuf),
+	    tsprintf(buf, T("%s,%s,%lu"), stats->name, format(tot, sbuf),
 		stats->cnt);
 	}
 	s += buf;
