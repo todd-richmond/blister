@@ -114,10 +114,8 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	ulong sum = 0;
 	timing_t tot;
 
-	cout<<"tfr"<<endl;
 	stats = *sit;
 	tot = stats->tot;
-	cout<<"tfr bb"<<endl;
 	if (columns) {
 	    for (u = 0; u <= start; u++)
 		sum += stats->cnts[u];
