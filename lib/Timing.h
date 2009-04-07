@@ -51,11 +51,11 @@ public:
 
 private:
     struct Stats {
-	Stats(const char *n): cnt(0), name(n), tot(0) { ZERO(cnts); }
+	Stats(const tchar *n): cnt(0), name(n), tot(0) { ZERO(cnts); }
 
 	ulong cnt;
 	ulong cnts[TIMINGSLOTS];
-	const char *name;
+	const tchar *name;
 	timing_t tot;
     };
 
@@ -80,7 +80,7 @@ private:
 	return stringcmp(a->name, b->name) < 0;
     }
     static bool less_time(const Stats *a, const Stats *b) {
-	return a->tot > b->tot;
+	return a->tot == b->tot ? less_name(a, b) : a->tot > b->tot;
     }
 };
 

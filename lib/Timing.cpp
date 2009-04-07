@@ -96,13 +96,14 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	    }
 	}
     }
+last = 7;
     if (columns) {
 	if (columns > TIMINGSLOTS)
 	    columns = TIMINGSLOTS;
 	start = last < columns ? 0 : last - columns + 1;
-	s = T("key                          sum(");
-	s += msec ? (tchar)'m' : (tchar)'s';
-	s += T(")   cnt    avg");
+	s = T("key                            ");
+	s += msec ? T("msec") : T(" sec");
+	s += T("   cnt   avg");
 	for (u = start; u <= last; u++) {
 	    s += (tchar)' ';
 	    s += hdrs[u];
@@ -119,17 +120,19 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	if (columns) {
 	    for (u = 0; u <= start; u++)
 		sum += stats->cnts[u];
-	    if (stats->cnt >= 1000000)
-		tsprintf(cbuf, T("%6luk"), stats->cnt / 1000);
+	    if (stats->cnt >= 100000000)
+		tsprintf(cbuf, T("%5luM"), (stats->cnt + 499999) / 1000);
+	    else if (stats->cnt >= 100000)
+		tsprintf(cbuf, T("%5luK"), (stats->cnt + 499) / 1000);
 	    else
-		tsprintf(cbuf, T("%6lu"), stats->cnt);
+		tsprintf(cbuf, T("%5lu"), stats->cnt);
 	    if (msec)
 		tot *= 1000;
 	    if (tot)
-		tsprintf(buf, T("%-27s%7s%7s%7s"), stats->name, format(tot,
+		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->name, format(tot,
 		    sbuf), cbuf, format(tot / stats->cnt, abuf));
 	    else
-		tsprintf(buf, T("%-34s%7s"), stats->name, cbuf);
+		tsprintf(buf, T("%-35s%6s"), stats->name, cbuf);
 	} else {
 	    if (!s.empty())
 		s += (tchar)',';
@@ -146,12 +149,12 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	    } else if (cnt == 0) {
 		s += T("    ");
 	    } else if (cnt < 100) {
-		tsprintf(buf, T("%4lu"), cnt);
+		tsprintf(buf, T(" %3lu"), cnt);
 		s += buf;
 	    } else if (cnt == stats->cnt) {
 		s += T("   *");
 	    } else {
-		tsprintf(buf, T("%3u%%"), (uint)(cnt * 100 / stats->cnt));
+		tsprintf(buf, T(" %2u%%"), (uint)(cnt * 100 / stats->cnt));
 		s += buf;
 	    }
 	}
@@ -238,7 +241,6 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
     else if (f < 99.995)
         tsprintf(buf, T("%.2f"), f);
     else
-        tsprintf(buf, T("%.0f"), f + .5);
+        tsprintf(buf, T("%.0f"), f + .4999);
     return buf;
 }
-
