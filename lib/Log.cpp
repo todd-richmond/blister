@@ -96,7 +96,7 @@ void Log::kv::set(const tchar *key, const tchar *val) {
 		} else if ((uchar)*p < ' ' && *p != '\t') {
 		    tchar tmp[5];
 
-		    sprintf(tmp, "\\%03o", *p);
+		    tsprintf(tmp, T("\\%03o"), *p);
 		    s += tmp;
 		} else {
 		    s += *p;
@@ -137,7 +137,7 @@ void Log::LogFile::lock() {
 	if (len == (ulong)-1) {
 	    close();
 	    fd = -3;
-	    cerr << T("unable to lock log ") << path << endl;
+	    tcerr << T("unable to lock log ") << path << endl;
 	} else {
 	    locked = true;
 	}
@@ -155,7 +155,7 @@ ulong Log::LogFile::lockfd(int fd) {
     return len;
 }
 
-void Log::LogFile::print(const char *buf, size_t sz) {
+void Log::LogFile::print(const tchar *buf, size_t sz) {
     if (fd < 0) {
 #ifdef _WIN32_WCE
 	OutputDebugString(buf);
@@ -186,7 +186,7 @@ bool Log::LogFile::reopen(void) {
     close();
     if ((fd = ::open(tstringtoa(path).c_str(),
 	O_WRONLY | O_CREAT | O_BINARY | O_SEQUENTIAL, 0640)) == -1) {
-	cerr << T("unable to open log ") << path << endl;
+	tcerr << T("unable to open log ") << path << endl;
 	fd = -3;
 	ret = false;
     } else {
@@ -194,18 +194,18 @@ bool Log::LogFile::reopen(void) {
 	if (!len && path != file) {
 	    char buf[1024];
 	    time_t now = ::time(NULL);
-	    string s(path);
 	    struct tm tmbuf, *tm = gmt ? gmtime_r(&now, &tmbuf) :
 		localtime_r(&now, &tmbuf);
 
-	    tstrftime(buf, sizeof (buf), file.c_str(), tm);
-	    link(path.c_str(), buf);
+	    strftime(buf, sizeof (buf) / sizeof (tchar), tstringtoa(file).c_str(), tm);
+	    link(tstringtoa(path).c_str(), buf);
 	}
     }
     return ret;
 }
 
 void Log::LogFile::roll(void) {
+    string afile(tstringtoa(file)), apath(tstringtoa(path));
     char buf[1024];
     DIR *dir;
     struct dirent *ent;
@@ -223,7 +223,7 @@ void Log::LogFile::roll(void) {
     lock();
     now = cnt && !tm && fstat(fd, &sbuf) == 0 ? (time_t)sbuf.st_ctime :
 	::time(NULL);
-    s1 = path;
+    s1 = apath;
     if ((pos = s1.rfind('/')) == s1.npos && (pos = s1.rfind('\\')) == s1.npos) {
 	sep = '/';
 	s2 = s1;
@@ -240,7 +240,7 @@ void Log::LogFile::roll(void) {
 	    files = 0;
 	    while ((ent = readdir(dir)) != NULL) {
 		if (strncmp(ent->d_name, s2.c_str(), s2.size()) ||
-		    (path == ent->d_name && path != file))
+		    (apath == ent->d_name && path != file))
 		    continue;
 		if (s1.empty()) {
 		    s3 = ent->d_name;
@@ -249,7 +249,7 @@ void Log::LogFile::roll(void) {
 		    s3 += sep;
 		    s3 += ent->d_name;
 		}
-		if ((s3 == path && path != file))
+		if ((s3 == apath && path != file))
 		    continue;
 		files++;
 		if (stat(s3.c_str(), &sbuf) == 0 &&
@@ -274,17 +274,17 @@ void Log::LogFile::roll(void) {
     }
     if (cnt && path == file) {
 	sprintf(buf, ".%u", files);
-	s1 = file + buf;
+	s1 = afile + buf;
 	for (uint u = files; u > 1; u--) {
 	    unlink(s1.c_str());
 	    sprintf(buf, ".%u", u - 1);
-	    s2 = file + buf;
+	    s2 = afile + buf;
 	    rename(s2.c_str(), s1.c_str());
 	    s1 = s2;
 	}
-	rename(file.c_str(), s1.c_str());
+	rename(afile.c_str(), s1.c_str());
     } else if (path != file) {
-	unlink(path.c_str());
+	unlink(apath.c_str());
     }
     close();
     lock();
@@ -304,7 +304,7 @@ void Log::LogFile::set(const Config &cfg, const tchar *sect,
     set(lvl, f.c_str(), cnt, sz, tm);
     if (fd == -1 && !tstrchr(file.c_str(), '/') &&
 	!tstrchr(file.c_str(), '\\')) {
-	string dir(cfg.get(T("installdir")));
+	tstring dir(cfg.get(T("installdir")));
 
 	if (!dir.empty()) {
 	    dir += T("/log");
@@ -337,12 +337,12 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
     } else if (file == T("console")) {
 	fd = -4;
     } else if (file[0] == '>') {
-	fd = atoi(file.c_str() + 1);
+	fd = ttoi(file.c_str() + 1);
     } else {
-	const char *p;
+	const tchar *p;
 
 	fd = -1;
-	if ((p = strchr(path.c_str(), '%')) != NULL) {
+	if ((p = tstrchr(path.c_str(), '%')) != NULL) {
 	    if (p[-1] == '.')
 		p--;
 	    path.erase(p - path.c_str());
@@ -394,7 +394,7 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
     uint lvllen, tmlen;
     time_t now_sec;
     usec_t now_usec;
-    string &strbuf(tlsd->strbuf);
+    tstring &strbuf(tlsd->strbuf);
     size_t sz = tlsd->strm.size();
     tchar tmp[8];
     static tstring::size_type spos;
@@ -402,7 +402,7 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
     static tchar tbuf[96];
     static time_t last_sec;
     static usec_t last_usec;
-    static char gmtoff[8];
+    static tchar gmtoff[8];
 
     if (tlsd->suppress)
 	return;
@@ -512,7 +512,7 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
 	if (src.empty()) {
 	    afd.print(strbuf);
 	} else {
-	    string ss(strbuf.substr(0, lvllen));
+	    tstring ss(strbuf.substr(0, lvllen));
 
 	    ss += T("src=");
 	    ss += src;
@@ -566,17 +566,17 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
 	SMTPClient smtp;
 
 	if (smtp.connect(mailhost.c_str())) {
-	    string ss(tstringtoa(mailfrom));
+	    tstring ss(mailfrom);
 
 	    smtp.helo();
 	    if (ss.find_first_of('@') == ss.npos) {
 	    	ss += '@';
-		ss += tstringtoa(Sockaddr::hostname());
+		ss += Sockaddr::hostname();
 	    }
 	    smtp.from(ss.c_str());
-	    smtp.to(tstringtoa(mailto).c_str());
-	    smtp.subject(tstringtoa(strbuf.substr(tmlen, tmlen + 69)).c_str());
-	    smtp.data(false, tstringtoa(strbuf).c_str());
+	    smtp.to(mailto.c_str());
+	    smtp.subject(strbuf.substr(tmlen, tmlen + 69).c_str());
+	    smtp.data(false, strbuf.c_str());
 	    smtp.enddata();
 	    smtp.quit();
 	}

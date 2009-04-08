@@ -219,10 +219,10 @@ class nullstream {
 public:
     nullstream() {}
 
-    template<class C> nullstream &operator <<(const C &c) { return *this; }
+    template<class C> nullstream &operator <<(const C &) { return *this; }
     size_t pcount(void) const { return 0; }
     size_t size(void) const { return 0; }
-    const char *str(void) const { return NULL; }
+    const tchar *str(void) const { return NULL; }
     void reset(void) {}
 };
 
@@ -230,24 +230,27 @@ public:
 #if !defined(_STLP_NO_OWN_IOSTREAMS) || defined(_WIN32)
 #include <sstream>
 
-class bufferstream: public ostream {
+template <class C>
+class bufferstream: public basic_ostream<C> {
 public:
-    bufferstream(): ostream(&sb), sb(out) {}
+    bufferstream(): basic_ostream<C>(&sb), sb(ios::out) {}
     virtual ~bufferstream() {}
 
     size_t pcount(void) const { return sb.pcount(); }
     size_t size(void) const { return sb.pcount(); }
-    const char *str(void) const { return sb.str(); }
+    const C *str(void) const { return sb.str(); }
 
-    void reset(void) { if (pcount()) seekp(0, ios::beg); }
+    void reset(void) { if (pcount()) basic_ostream<C>::seekp(0, ios::beg); }
 
 private:
-    class bufferbuf: public stringbuf {
+    class bufferbuf: public basic_stringbuf<C> {
     public:
-	bufferbuf(ios::openmode m): stringbuf(m) {}
+	bufferbuf(ios::openmode m): basic_stringbuf<C>(m) {}
 
-	size_t pcount(void) const { return pptr() - pbase(); }
-	const char *str(void) const { return pbase(); }
+	size_t pcount(void) const {
+	    return basic_stringbuf<C>::pptr() - basic_stringbuf<C>::pbase();
+	}
+	const C *str(void) const { return basic_stringbuf<C>::pbase(); }
     };
 
     bufferbuf sb;
@@ -257,13 +260,14 @@ private:
 
 #include <strstream>
 
-class bufferstream: public ostrstream {
+template <class C>
+class bufferstream: public basic_ostrstream<C> {
 public:
     bufferstream() {}
     virtual ~bufferstream() { freeze(false); }
 
     void reset(void) { if (pcount()) { freeze(false); seekp(0, ios::beg); } }
-    size_t size(void) const { return ((ostrstream *)this)->pcount(); }
+    size_t size(void) const { return ((basic_ostrstream<C> *)this)->pcount(); }
 };
 #endif
 

@@ -43,10 +43,10 @@ public:
 class HTTPClient: nocopy {
 public:
 #ifdef STL_HASH_MAP_4ARGS
-    typedef hash_multimap<string, string, strihash<char>, strihasheq<char> >
+    typedef hash_multimap<tstring, tstring, strihash<tchar>, strihasheq<tchar> >
 	attrmap;
 #else
-    typedef hash_multimap<string, string, strihash<char> > attrmap;
+    typedef hash_multimap<tstring, tstring, strihash<tchar> > attrmap;
 #endif
 
     HTTPClient();
@@ -65,29 +65,34 @@ public:
     bool close(void) { return sock.close(); }
     bool connect(const Sockaddr &addr, bool keepalive = false, 
 	ulong timeout = SOCK_INFINITE);
-    bool connect(const char *host, ushort port = 80, bool keepalive = false,
+    bool connect(const tchar *host, ushort port = 80, bool keepalive = false,
 	ulong timeout = SOCK_INFINITE) {
 	return connect(Sockaddr(host, port), keepalive, timeout);
     }
-    template<class H, class V> void header(const H &hdr, const V &val)
-	{ hstrm << hdr << ": " << val << "\r\n"; }
-    bool del(const tchar *path) { return send("DELETE", path); }
-    bool get(const tchar *path) { return send("GET", path); }
-    bool head(const tchar *path) { return send("HEAD", path); }
+    template<class C> void header(const tchar *hdr, const C &val) {
+	hstrm << hdr << T(": ") << val << T("\r\n");
+    }
+    template<class C> void header(const tstring &hdr, const C &val) {
+	hstrm << hdr << T(": ") << val << T("\r\n");
+    }
+    bool cmd(const tchar *cmd, const tchar *path) { return send(cmd, path); }
+    bool del(const tchar *path) { return send(T("DELETE"), path); }
+    bool get(const tchar *path) { return send(T("GET"), path); }
+    bool head(const tchar *path) { return send(T("HEAD"), path); }
     bool post(const tchar *path, const void *data, uint len)
-	{ return send("POST", path, data, len); }
+	{ return send(T("POST"), path, data, len); }
     bool put(const tchar *path, const void *data, uint len)
-	{ return send("PUT", path, data, len); }
-    const char *response(const string &name) const {
+	{ return send(T("PUT"), path, data, len); }
+    const tchar *response(const tstring &name) const {
 	attrmap::const_iterator it = reshdrs.find(name);
-	return it == reshdrs.end() ? NULL: (*it).second.c_str();
+	return it == reshdrs.end() ? NULL : it->second.c_str();
     }
     const attrmap &responses(void) const { return reshdrs; }
     void timeout(ulong r, ulong w = SOCK_INFINITE) { rto = r; wto = w; }
 
 protected:
     Sockaddr addr;
-    bufferstream hstrm;
+    bufferstream<tchar> hstrm;
     Socket sock;
     bool ka;
     attrmap reshdrs;
@@ -98,7 +103,7 @@ protected:
     uint sts;
     ulong sz;
 
-    bool send(const char *op, const tchar *path, const void *data = NULL,
+    bool send(const tchar *op, const tchar *path, const void *data = NULL,
 	long datasz = 0);
 };
 

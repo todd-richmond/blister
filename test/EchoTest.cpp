@@ -28,7 +28,7 @@
 #include "Log.h"
 #include "Timing.h"
 
-static const tchar *NAME = "echo";
+static const tchar *NAME = T("echo");
 
 const int TIMEOUT = 10 * 1000;
 const int MAXREAD = 16 * 1024;
@@ -95,7 +95,7 @@ public:
 	ulong tmt;
     };
 
-    bool listen(const char *host, ulong timeout);
+    bool listen(const tchar *host, ulong timeout);
     void connect(const Sockaddr &a, ulong count, ulong delay, ulong timeout,
 	ulong wait);
 
@@ -113,7 +113,7 @@ static TSNumber<usec_t> usecs;
 void EchoTest::EchoClientSocket::start() {
     close();
     out = 0;
-    dlogd("connecting");
+    dlogd(T("connecting"));
     connect(addr, tmt);
     nagle(false);
 }
@@ -122,7 +122,7 @@ void EchoTest::EchoClientSocket::output() {
     int len;
 
     if (!loops || qflag) {
-	write("", 1);
+	write(T(""), 1);
 	erase();
 	return;
     }
@@ -130,23 +130,24 @@ void EchoTest::EchoClientSocket::output() {
 	loops--;
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
 	errs++;
-	dloge("client write", msg == Dispatcher::Timeout ? "timeout" : "close");
+	dloge(T("client write"), msg == Dispatcher::Timeout ? T("timeout") :
+	    T("close"));
 	timeout(start, wait);
 	return;
     }
     if ((len = write(data + out, dsz - out)) < 0) {
 	errs++;
-	dloge("client write failed", len);
+	dloge(T("client write failed"), len);
 	timeout(start, wait);
 	return;
     }
     out += len;
     if (out == dsz) {
-	dlogt("client write", len);
+	dlogt(T("client write"), len);
 	in = 0;
 	readable(input, tmt);
     } else {
-	dlogd("client partial write", len);
+	dlogd(T("client partial write"), len);
 	writeable(output, tmt);
     }
 }
@@ -156,14 +157,15 @@ void EchoTest::EchoClientSocket::input() {
 
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
 	errs++;
-	dloge("client read", msg == Dispatcher::Timeout ? "timeout" : "close");
+	dloge(T("client read"), msg == Dispatcher::Timeout ? T("timeout") :
+	    T("close"));
 	timeout(start, wait);
 	dtiming.add(T("error"), 0);
 	return;
     }
     if ((len = read(data + in, dsz - in)) < 0) {
 	errs++;
-	dloge("client read failed", len);
+	dloge(T("client read failed"), len);
 	timeout(start, wait);
 	return;
     }
@@ -172,10 +174,10 @@ void EchoTest::EchoClientSocket::input() {
 	ops++;
 	usecs += uticks() - begin;
 	dtiming.add(T("echo"), uticks() - begin);
-	dlogt("client read", len);
+	dlogt(T("client read"), len);
 	timeout(repeat, wait + (wait < 2000 ? 0 : rand() % 50));
     } else {
-	dlogd("client partial read", len);
+	dlogd(T("client partial read"), len);
 	readable(input, tmt);
     }
 }
@@ -191,23 +193,26 @@ void EchoTest::EchoServerSocket::input() {
     char tmp[MAXREAD];
 
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
-	dloge("server read", msg == Dispatcher::Timeout ? "timeout" : "close");
+	dloge(T("server read"), msg == Dispatcher::Timeout ? T("timeout") :
+	    T("close"));
 	erase();
     } else if ((in = read(tmp, sizeof (tmp))) < 0) {
-	dloge("server read failed:", err() == EOF ? "EOF" : strerror(err()));
+	dloge(T("server read failed:"), err() == EOF ? T("EOF") :
+	    tstrerror(err()));
 	erase();
     } else if (in == 0) {
 	readable(input);
     } else if (in == 1 && tmp[0] == '\0') {
 	erase();
     } else if ((out = write(tmp, in)) < 0) {
-	dloge("server write failed:", err() == EOF ? "EOF" : strerror(err()));
+	dloge(T("server write failed:"), err() == EOF ? T("EOF") :
+	    tstrerror(err()));
 	erase();
     } else if (in == out) {
-	dlogt("server write", out);
+	dlogt(T("server write"), out);
 	readable(input);
     } else {
-	dlogd("server partial write", out);
+	dlogd(T("server partial write"), out);
 	delete [] buf;
 	buf = new char[in - out];
 	memcpy(buf, tmp + out, in - out);
@@ -220,21 +225,23 @@ void EchoTest::EchoServerSocket::output() {
     int len;
 
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
-	dloge("server write", msg == Dispatcher::Timeout ? "timeout" : "close");
+	dloge(T("server write"), msg == Dispatcher::Timeout ? T("timeout") :
+	    T("close"));
 	erase();
 	return;
     }
-    if ((len = write(buf + out, in - out)) < 0) {
-	dloge("server write failed:", err() == EOF ? "EOF" : strerror(err()));
+    if ((len = write((char *)buf + out, in - out)) < 0) {
+	dloge(T("server write failed:"), err() == EOF ? T("EOF") :
+	    tstrerror(err()));
 	erase();
 	return;
     }
     out += (uint)len;
     if (out != in) {
-	dlogd("server partial write", len);
+	dlogd(T("server partial write"), len);
 	writeable(output);
     } else {
-	dlogt("server write", len);
+	dlogt(T("server write"), len);
 	readable(input);
     }
 }
@@ -248,12 +255,12 @@ void EchoTest::connect(const Sockaddr &addr, ulong count, ulong delay,
     }
 }
 
-bool EchoTest::listen(const char *host, ulong timeout) {
+bool EchoTest::listen(const tchar *host, ulong timeout) {
     EchoListenSocket *els = new EchoListenSocket(*this, timeout);
 
     if (!els->listen(host)) {
-	dlog << Log::Err << "mod=" << NAME << " cmd=listen addr=" <<
-	    els->address().str() << ' ' << strerror(els->err()) << endlog;
+	dlog << Log::Err << T("mod=") << NAME << T(" cmd=listen addr=") <<
+	    els->address().str() << ' ' << tstrerror(els->err()) << endlog;
 	return false;
     }
     return true;
@@ -261,34 +268,22 @@ bool EchoTest::listen(const char *host, ulong timeout) {
 
 static void signal_handler(int) { qflag = true; }
 
-int main(int argc, char *argv[]) {
+int tmain(int argc, tchar *argv[]) {
     Sockaddr addr;
     bool client = true, server = true;
     EchoTest ec;
     int fd;
-    const char *host = NULL;
+    const tchar *host = NULL;
     int i;
-    const char *path = "echo this short test string as quickly as possible";
+    const tchar *path = T("echo this short test string as quickly as possible");
     msec_t last, now;
-    string s;
+    tstring s;
     struct stat sbuf;
     ulong delay = 20, sockets = 20, tmt = TIMEOUT, wait = 0;
 
-dtiming.add("x", 0);
-dtiming.add("x", 0);
-dtiming.add("y", 10000);
-dtiming.add("z", 1000000);
-/*
-dtiming.add("x", 1);
-dtiming.add("x", 10);
-dtiming.add("x", 100);
-dtiming.add("x", 1000);
-*/
-cout << dtiming.data(10) << endl;
-return 0;
-    if (argc == 1 || !strcmp(argv[1], "-?")) {
-	cerr << "Usage: echotest [-c] [-d delay] [-h host[:port]] [-e sockets]\n"
-	    "\t[-l loops] [-s] [-v*] [-t timeout] [-w wait] data | datafile" <<
+    if (argc == 1 || !tstrcmp(argv[1], T("-?"))) {
+	tcerr << T("Usage: echotest [-c] [-d delay] [-h host[:port]] [-e sockets]\n")
+	    T("\t[-l loops] [-s] [-v*] [-t timeout] [-w wait] data | datafile") <<
 	    endl;
 	return 1;
     }
@@ -302,31 +297,33 @@ return 0;
     }
 #endif
     for (i = 1; i < argc; i++) {
-	if (!stricmp(argv[i], "-c")) {
+	if (!tstricmp(argv[i], T("-c"))) {
 	    server = false;
-	} else if (!stricmp(argv[i], "-d")) {
-	    delay = (ulong)atol(argv[++i]);
-	} else if (!stricmp(argv[i], "-e")) {
-	    sockets = (uint)atol(argv[++i]);
-	} else if (!stricmp(argv[i], "-h")) {
+	} else if (!tstricmp(argv[i], T("-d"))) {
+	    delay = (ulong)ttol(argv[++i]);
+	} else if (!tstricmp(argv[i], T("-e"))) {
+	    sockets = (uint)ttol(argv[++i]);
+	} else if (!tstricmp(argv[i], T("-h"))) {
 	    host = argv[++i];
-	} else if (!stricmp(argv[i], "-l")) {
-	    loops = atol(argv[++i]);
-	} else if (!stricmp(argv[i], "-s")) {
+	} else if (!tstricmp(argv[i], T("-l"))) {
+	    loops = ttol(argv[++i]);
+	} else if (!tstricmp(argv[i], T("-s"))) {
 	    client = false;
-	} else if (!stricmp(argv[i], "-t")) {
-	    tmt = (ulong)atol(argv[++i]);
-	} else if (!stricmp(argv[i], "-v")) {
+	} else if (!tstricmp(argv[i], T("-t"))) {
+	    tmt = (ulong)ttol(argv[++i]);
+	} else if (!tstricmp(argv[i], T("-v"))) {
 	    dlog.level(dlog.level() >= Log::Debug ? Log::Trace : Log::Debug);
-	} else if (!stricmp(argv[i], "-w")) {
-	    wait = (ulong)atol(argv[++i]);
+	} else if (!tstricmp(argv[i], T("-w"))) {
+	    wait = (ulong)ttol(argv[++i]);
 	} else if (*argv[i] != '-') {
 	    path = argv[i];
 	}
     }
-    if (access(path, 0) == 0) {
-	if ((fd = open(path, O_RDONLY)) == -1 || fstat(fd, &sbuf)) {
-	    cerr << "echotest: unable to open " << path << endl;
+    if (access(tchartoa(path).c_str(), 0) == 0) {
+	ZERO(sbuf);
+	if ((fd = open(tchartoa(path).c_str(), O_RDONLY)) == -1 || fstat(fd,
+	    &sbuf)) {
+	    tcerr << T("echotest: unable to open ") << path << endl;
 	    return 1;
 	}
 	dsz = (ulong)sbuf.st_size;
@@ -334,22 +331,22 @@ return 0;
 	read(fd, data, dsz);
 	close(fd);
     } else {
-	dsz = strlen(path) + 1;
-	data = new char[dsz];
-	memcpy(data, path, dsz);
+	dsz = tstrlen(path);
+	data = new char[(dsz + 1) * sizeof (tchar)];
+	memcpy(data, path, dsz * sizeof (tchar));
     }
     if (!host)
-	host = "localhost:8888";
+	host = T("localhost:8888");
     if (!addr.set(host)) {
-	cerr << "echo: unknown host " << host << endl;
+	tcerr << T("echo: unknown host ") << host << endl;
 	return 1;
     }
     ec.start(8, 32 * 1024);
     if (server && !ec.listen(host, tmt))
 	return 1;
     if (client) {
-	dlog << Log::Info << "echo " << host << " " << path << endlog;
-	cout << "Op/Sec\t\tUs/Op\tErr" << endl;
+	dlog << Log::Info << T("echo ") << host << T(" ") << path << endlog;
+	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	ec.connect(addr, sockets, delay, tmt, wait);
 	Thread::priority(THREAD_HDL(), 10);
 	last = uticks();
@@ -358,9 +355,9 @@ return 0;
 	    usecs = 0;
 	    msleep(1000);
 	    now = uticks();
-	    cout << ((uint64)(ops + errs) * 1000000 / (now - last)) << "\t\t" <<
-		(ulong)(usecs / (ops ? (uint)ops : (uint)errs + 1)) << '\t' <<
-		errs << endl;
+	    tcout << ((uint64)(ops + errs) * 1000000 / (now - last)) <<
+		T("\t\t") << (ulong)(usecs / (ops ? (uint)ops : (uint)errs +
+		1)) << '\t' << errs << endl;
 	    last = now;
 	} while (!qflag && loops);
 	msleep(1000);
@@ -370,6 +367,6 @@ return 0;
     }
     ec.stop();
     delete [] data;
-    cout << dtiming.data() << endl;
+    tcout << dtiming.data() << endl;
     return qflag ? -1 : 0;
 }

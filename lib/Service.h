@@ -58,8 +58,8 @@ public:
 
     long error(void) const { return errnum; }
     tstring errstr(void) const;
-    string version(void) const { return ver; }
-    void version(string s) { ver = ver; }
+    tstring version(void) const { return ver; }
+    void version(tstring s) { ver = s; }
     Status status(void);
     bool install(const tchar *path = NULL, const tchar *desc = NULL,
 	const tchar * const *depend = NULL, bool manual = false);
@@ -91,16 +91,16 @@ protected:
     static bool aborted, console, exiting, restart;
     static Service *service;
     static volatile int sigpid;
-    static string ver, srvcpath;
+    static tstring ver, srvcpath;
 
     void *open(uint mapsz);
     void exit(int code);
     void handle(ulong sig);
     bool running(void) { return update(Running); }
-    virtual int command(const char *cmd, int argc, const char * const *argv)
+    virtual int command(const tchar *cmd, int argc, const tchar * const *argv)
 	{ return -1; }
     virtual int onStart(int argc, const tchar * const *argv);
-    virtual void onAbort(void) { fprintf(stderr, "abnormal termination\n"); }
+    virtual void onAbort(void) { tcerr << T("abnormal termination") << endl; }
     virtual void onStop(bool fast = false) {}
     virtual void onPause(void) {}
     virtual bool onRefresh(void) { return true; }
@@ -184,7 +184,7 @@ protected:
     tstring cfgfile, instance, installdir;
     pid_t child;
     int lckfd;
-    string lckfile;
+    tstring lckfile;
     bool refreshed;
     time_t start;
     bool watch;

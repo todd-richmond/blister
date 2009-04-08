@@ -44,7 +44,7 @@ Config::Config(const tchar *file, const tchar *pre): ini(false), locker(0) {
 	read(file);
 }
 
-const string &Config::expand(const Value *value) const {
+const tstring &Config::expand(const Value *value) const {
     tstring::size_type spos, epos;
 
     if (!value->expand)
@@ -75,11 +75,11 @@ void Config::clear(void) {
     Locker lkr(lck, !THREAD_ISSELF(locker));
 
     while ((it = amap.begin()) != amap.end()) {
-	const char *p = it->first;
+	const tchar *p = it->first;
 
 	delete it->second;
 	amap.erase(it);
-	free((char *)p);
+	free((tchar *)p);
     }
 }
 
@@ -289,8 +289,8 @@ bool Config::write(tostream &os, bool ini) const {
     attrmap::const_iterator it;
     vector<tstring> lines;
     vector<tstring>::const_iterator lit;
-    string s;
-    string sect;
+    tstring s;
+    tstring sect;
 
     for (it = amap.begin(); it != amap.end(); it++) {
 	Value *val = it->second;

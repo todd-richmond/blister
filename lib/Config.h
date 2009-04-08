@@ -75,7 +75,7 @@ public:
     void unlock(void) { lck.unlock(); locker = 0; }
     bool iniformat(void) const { return ini; }
     const tstring &prefix(void) const { return pre; }
-    void prefix(const tchar *str) { pre = str ? str : ""; }
+    void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(const tchar *file, bool app = false);
     bool read(tistream &is, bool app = false);
     bool write(tostream &os) const { return write(os, ini); }

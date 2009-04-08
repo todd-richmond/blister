@@ -367,6 +367,9 @@ void HTTPServerSocket::exec(void) {
 }
 
 void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
+#ifdef UNICODE // TODO
+    (void)buf; (void)amap;
+#else
     char *p = buf, *pp;
 
     amap.clear();
@@ -384,6 +387,7 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 	    amap[buf] = pp;
 	}
     }
+#endif
 }
 
 inline void HTTPServerSocket::keepalive(void) {
@@ -473,7 +477,7 @@ void HTTPServerSocket::reply(const char *data, ulong len) {
     iov[2].iov_base = (char *)data;
     iov[2].iov_len = len;
     dlog << (_status < 400 ? Log::Info : Log::Note) << cmd << ' ' << path <<
-	": " << _status << endlog;
+	T(": ") << _status << endlog;
     send();
 }
 
@@ -603,10 +607,10 @@ void HTTPServerSocket::get(bool head) {
 	return;
     }
     if ((val = attr("if-modified-since")) != NULL) {
-	if (parse_date(val) >= sbuf.st_mtime)
+	if (parse_date(atotstring(val).c_str()) >= sbuf.st_mtime)
 	    sts = 304;
     } else if ((val = attr("if-unmodified-since")) != NULL) {
-	if (parse_date(val) < sbuf.st_mtime)
+	if (parse_date(atotstring(val).c_str()) < sbuf.st_mtime)
 	    sts = 304;
     }
     if (val && (val = strchr(val, ';')) != NULL &&

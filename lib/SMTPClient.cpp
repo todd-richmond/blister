@@ -23,93 +23,91 @@
 
 string SMTPClient::crlf("\r\n");
 
-SMTPClient::SMTPClient(): fstrm(NULL), sstrm(sock), strm(&sstrm), lmtp(false) {}
+SMTPClient::SMTPClient(): sstrm(sock), lmtp(false) {}
 
-bool SMTPClient::add(vector<string> &v, const char *id) {
+bool SMTPClient::add(vector<tstring> &v, const tchar *id) {
     RFC822Addr addrs(id);
     bool ret = true;
 
     if (!addrs.size())
 	return false;
     for (uint u = 0; u < addrs.size(); u++) {
-	ret = cmd("RCPT TO:", addrs.address(u).c_str()) && ret;
+	ret = cmd(T("RCPT TO:"), addrs.address(u).c_str()) && ret;
 	v.push_back(addrs.address(u, true));
     }
     return ret;
 }
 
-void SMTPClient::attribute(const char *attr, const char *val) {
-    string s(attr);
+void SMTPClient::attribute(const tchar *attr, const tchar *val) {
+    tstring s(attr);
 
-    s += ": ";
+    s += T(": ");
     s += val;
     hdrv.push_back(s);
 }
 
-bool SMTPClient::auth(const char *id, const char *pass) {
-    uint idlen = strlen(id) + 1;
-    uint passlen = strlen(pass) + 1;
+bool SMTPClient::auth(const tchar *id, const tchar *pass) {
+    uint idlen = tstrlen(id) + 1;
+    uint passlen = tstrlen(pass) + 1;
     uint uusz;
     char *buf, *uubuf;
     bool ret = false;
 
-    if (exts.find("AUTH ") == exts.npos) {
+    if (exts.find(T("AUTH ")) == exts.npos) {
 	// return "success" if server is open and does not allow auth
 	ret = true;
-    } else if (exts.find(" PLAIN") != exts.npos) {
+    } else if (exts.find(T(" PLAIN")) != exts.npos) {
 	buf = (char *)malloc(idlen + passlen + 1);
 	buf[0] = '\0';
-	memcpy(buf + 1, id, idlen);
-	memcpy(buf + 1 + idlen, pass, passlen);
-	base64encode(buf, idlen + passlen, uubuf, uusz);
+	memcpy(buf + 1, tchartoa(id).c_str(), idlen);
+	memcpy(buf + 1 + idlen, tchartoa(pass).c_str(), passlen);
+	base64encode(buf, idlen + passlen, (void *&)uubuf, uusz);
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
-	ret = cmd("AUTH PLAIN", uubuf, 235);
+	ret = cmd(T("AUTH PLAIN"), atotstring(uubuf).c_str(), 235);
 	delete [] buf;
 	delete [] uubuf;
-    } else if (exts.find(" LOGIN") != exts.npos) {
-	base64encode(id, idlen, uubuf, uusz);
+    } else if (exts.find(T(" LOGIN")) != exts.npos) {
+	base64encode(id, idlen, (void *&)uubuf, uusz);
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
-	ret = cmd("AUTH LOGIN", uubuf, 334);
+	ret = cmd(T("AUTH LOGIN"), atotstring(uubuf).c_str(), 334);
 	delete [] uubuf;
-	base64encode(pass, passlen, uubuf, uusz);
+	base64encode(pass, passlen, (void *&)uubuf, uusz);
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
-	ret = ret && cmd(uubuf, NULL, 235);
+	ret = ret && cmd(atotstring(uubuf).c_str(), NULL, 235);
 	delete [] uubuf;
     }
     return ret;
 }
 
-bool SMTPClient::cmd(const char *s1, const char *s2, int retcode) {
+bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
+    string asts;
+    
     multi.erase();
-    if (fstrm) {
-	char buf[8];
-
-	sprintf(buf, "%d", retcode);
-	multi = sts = buf;
-	return true;
-    } else if (s1) {
-	*strm << s1;
+    if (s1) {
+	sstrm << tchartoa(s1);
 	if (s2) {
-	    if (s1[strlen(s1)-1] != ':')
-		*strm << ' ';
-	    *strm << s2;
+	    if (s1[tstrlen(s1)-1] != ':')
+		sstrm << ' ';
+	    sstrm << tchartoa(s2);
 	}
-	*strm << crlf;
+	sstrm << crlf;
     }
     do {
 	sts.erase();
 	if (!sstrm) {
 	    dlogd(T("mod=smtp status=closed"));
 	    return false;
-	} else if (!getline(sstrm, sts)) {
+	} else if (!getline(sstrm, asts)) {
 	    sock.close();
 	    sts = T("000 socket disconnect");
 	    dlogd(T("mod=smtp action=disconnect"));
 	    return false;
-	} else if (sts.length() < 3 || (sts[3] != '-' && sts[3] != ' ')) {
+	}
+	sts = atotstring(asts.c_str());
+	if (sts.length() < 3 || (sts[3] != '-' && sts[3] != ' ')) {
 	    dlogd(T("mod=smtp data=invalid"),
 		Log::kv(T("reply"), sts.c_str()));
 	    return false;
@@ -128,8 +126,6 @@ bool SMTPClient::cmd(const char *s1, const char *s2, int retcode) {
 bool SMTPClient::connect(const Sockaddr &addr, ulong to) {
     bool ret;
 
-    if (fstrm)
-	return true;
     sock.close();
     if (!addr.port()) {
 	Sockaddr tmp(addr);
@@ -149,8 +145,8 @@ bool SMTPClient::connect(const Sockaddr &addr, ulong to) {
     return cmd(NULL, NULL, 220);
 }
 
-bool SMTPClient::ehlo(const char *domain) {
-    if (cmd("EHLO", domain ? domain : Sockaddr::hostname().c_str())) {
+bool SMTPClient::ehlo(const tchar *domain) {
+    if (cmd(T("EHLO"), domain ? domain : Sockaddr::hostname().c_str())) {
 	exts = multi;
 	return true;
     } else {
@@ -158,7 +154,7 @@ bool SMTPClient::ehlo(const char *domain) {
     }
 }
 
-bool SMTPClient::from(const char *id) {
+bool SMTPClient::from(const tchar *id) {
     RFC822Addr addr(id);
 
     tov.clear();
@@ -166,24 +162,24 @@ bool SMTPClient::from(const char *id) {
     bccv.clear();
     hdrv.clear();
     sub.erase();
-    strm->flush();
-    strm->clear();
+    sstrm.flush();
+    sstrm.clear();
     datasent = false;
     mime = false;
     parts = 0;
     if (!addr.size())
 	return false;
     frm =  addr.address(0, true);
-    return cmd("MAIL FROM:", addr.address().c_str());
+    return cmd(T("MAIL FROM:"), addr.address().c_str());
 }
 
-bool SMTPClient::helo(const char *domain) {
+bool SMTPClient::helo(const tchar *domain) {
     exts.erase();
-    return cmd("HELO", domain ? domain : Sockaddr::hostname().c_str());
+    return cmd(T("HELO"), domain ? domain : Sockaddr::hostname().c_str());
 }
 
-bool SMTPClient::lhlo(const char *domain) {
-    if (cmd("LHLO", domain ? domain : Sockaddr::hostname().c_str())) {
+bool SMTPClient::lhlo(const tchar *domain) {
+    if (cmd(T("LHLO"), domain ? domain : Sockaddr::hostname().c_str())) {
 	exts = multi;
 	lmtp = true;
 	return true;
@@ -193,41 +189,41 @@ bool SMTPClient::lhlo(const char *domain) {
 }
 
 bool SMTPClient::quit() {
-    bool ret = cmd("QUIT", NULL, 221);
+    bool ret = cmd(T("QUIT"), NULL, 221);
 
     sock.close();
     return ret || code() == 421;
 }
 
-void SMTPClient::recip(const char *hdr, const vector<string> &v) {
-    vector<string>::const_iterator it;
+void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
+    vector<tstring>::const_iterator it;
 
     if (v.empty())
 	return;
-    *strm << hdr;
+    sstrm << tchartoa(hdr);
     for (it = v.begin(); it != v.end(); it++) {
 	if (it != v.begin())
-	    *strm << ",\r\n\t";
-	*strm << *it;
+	    sstrm << ",\r\n\t";
+	sstrm << tstringtoa(*it);
     }
-    *strm << crlf;
+    sstrm << crlf;
 }
 
-bool SMTPClient::rcpt(const char *id) {
+bool SMTPClient::rcpt(const tchar *id) {
     RFC822Addr addr(id);
 
-    return cmd("RCPT TO:", addr.address().c_str());
+    return cmd(T("RCPT TO:"), addr.address().c_str());
 }
 
-bool SMTPClient::vrfy(const char *id) {
+bool SMTPClient::vrfy(const tchar *id) {
     RFC822Addr addr(id);
 
-    return cmd("VRFY", addr.address(0, false, false).c_str());
+    return cmd(T("VRFY"), addr.address(0, false, false).c_str());
 }
 
 bool SMTPClient::data(const void *start, uint sz, bool dotstuff) {
     if (!datasent) {
-	if (!cmd("DATA", NULL, 354))
+	if (!cmd(T("DATA"), NULL, 354))
 	    return false;
 	datasent = true;
     }
@@ -236,34 +232,34 @@ bool SMTPClient::data(const void *start, uint sz, bool dotstuff) {
     } else if (dotstuff) {
 	return stuff(start, sz);
     } else {
-	strm->write((const char *)start, sz);
-	*strm << crlf;
-	return strm->good();
+	sstrm.write(start, sz);
+	sstrm << crlf;
+	return sstrm.good();
     }
 }
 
-bool SMTPClient::data(bool m, const char *txt) {
+bool SMTPClient::data(bool m, const tchar *txt) {
     static TSNumber<uint64> nextmid((time(NULL) << 18) & uticks());
     char buf[64], gmtoff[8];
     int diff;
     char *encbuf;
     uint encbufsz;
-    vector<string>::const_iterator it;
+    vector<tstring>::const_iterator it;
     uint64 mid = nextmid++;
     time_t now;
     uint pid = getpid();
     tm *tm, tmbuf, *tm2, tm2buf;
 
     mime = m;
-    if (!cmd("DATA", NULL, 354))
+    if (!cmd(T("DATA"), NULL, 354))
 	return false;
     memcpy(buf, &pid, 4);
     memcpy(buf + 4, &mid, 8);
-    base64encode(buf, 12, encbuf, encbufsz);
+    base64encode(buf, 12, (void *&)encbuf, encbufsz);
     encbuf[encbufsz - 2] = '\0';
-    *strm << "Message-ID: <" << encbuf << '@' << Sockaddr::hostname() <<
-	'>' << crlf;
-    delete[] encbuf;
+    sstrm << "Message-ID: <" << encbuf << '@' <<
+	tstringtoa(Sockaddr::hostname()) << '>' << crlf;
+    delete [] encbuf;
     time(&now);
     tm = localtime_r(&now, &tmbuf);
     tm2 = gmtime_r(&now, &tm2buf);
@@ -276,57 +272,57 @@ bool SMTPClient::data(bool m, const char *txt) {
 	sprintf(gmtoff, "-%04d", -1 * diff);
     else
 	sprintf(gmtoff, "+%04d", diff);
-    *strm << "Date: " << buf << gmtoff << crlf;
-    *strm << "From: " << frm << crlf;
-    recip("To: ", tov);
-    recip("Cc: ", ccv);
-    *strm << "Subject: " << sub << crlf;
+    sstrm << "Date: " << buf << gmtoff << crlf;
+    sstrm << "From: " << tstringtoa(frm) << crlf;
+    recip(T("To: "), tov);
+    recip(T("Cc: "), ccv);
+    sstrm << "Subject: " << tstringtoa(sub) << crlf;
     for (it = hdrv.begin(); it != hdrv.end(); it++)
-	*strm << *it << crlf;
+	sstrm << tstringtoa(*it) << crlf;
     if (mime) {
 	sprintf(buf, "--%x%x%x%x", rand(), rand(), rand(), rand());
 	boundary = buf;
-	*strm << "MIME-Version: 1.0" << crlf;
-	*strm << "Content-Type: multipart/mixed; boundary=\"" << boundary <<
+	sstrm << "MIME-Version: 1.0" << crlf;
+	sstrm << "Content-Type: multipart/mixed; boundary=\"" << boundary <<
 	    '"' << crlf << crlf <<
 	    "This is a multi-part message in MIME format." << crlf << crlf;
 	if (txt) {
-	    *strm << "--" << boundary << crlf;
-	    *strm << "Content-Type: " << "txt/plain" << crlf << crlf;
-	    stuff(txt, strlen(txt));
-	    *strm << crlf << "--" << boundary << "--" << crlf;
+	    sstrm << "--" << boundary << crlf;
+	    sstrm << "Content-Type: " << "txt/plain" << crlf << crlf;
+	    stuff(tchartoa(txt).c_str(), tstrlen(txt));
+	    sstrm << crlf << "--" << boundary << "--" << crlf;
 	}
     } else {
-	*strm << crlf;
+	sstrm << crlf;
 	if (txt)
-	    stuff(txt, strlen(txt));
+	    stuff(tchartoa(txt).c_str(), tstrlen(txt));
     }
-    return strm->good();
+    return sstrm.good();
 }
 
-bool SMTPClient::data(const void *p, uint sz, const char *type,
-    const char *desc, const char *encoding, const char *disp,
-    const char *name) {
+bool SMTPClient::data(const void *p, uint sz, const tchar *type,
+    const tchar *desc, const tchar *encoding, const tchar *disp,
+    const tchar *name) {
     if (mime)
-	*strm << "--" << boundary << crlf;
+	sstrm << "--" << boundary << crlf;
     if (type && *type)
-	*strm << "Content-Type: " << type << crlf;
+	sstrm << "Content-Type: " << tchartoa(type) << crlf;
     if (desc && *desc)
-	*strm << "Content-Description: " << desc << crlf;
+	sstrm << "Content-Description: " << tchartoa(desc) << crlf;
     if (encoding && *encoding)
-	*strm << "Content-Transfer-Encoding: " << encoding << crlf;
-    *strm << "Content-Disposition: " << (disp && *disp ? disp : "inline");
+	sstrm << "Content-Transfer-Encoding: " << tchartoa(encoding) << crlf;
+    sstrm << "Content-Disposition: " << tchartoa(disp && *disp ? disp : T("inline"));
     if (name && *name)
-	*strm << "; filename=" << name << crlf;
-    *strm << crlf;
+	sstrm << "; filename=" << tchartoa(name) << crlf;
+    sstrm << crlf;
     stuff(p, sz);
-    return strm->good();
+    return sstrm.good();
 }
 
 bool SMTPClient::enddata() {
     if (mime)
-	*strm << "--" << boundary << "--" << crlf;
-    return cmd(".");
+	sstrm << "--" << boundary << "--" << crlf;
+    return cmd(T("."));
 }
 
 bool SMTPClient::stuff(const void *data, uint sz) {
@@ -336,19 +332,19 @@ bool SMTPClient::stuff(const void *data, uint sz) {
 
     for (p = pp = start; p <= end; p++) {
 	if (*p == '.' && (p == start || p[-1] == '\n')) {
-	    strm->write(pp, p - pp);
-	    *strm << "..";
+	    sstrm.write(pp, p - pp);
+	    sstrm << "..";
 	    pp = p + 1;
 	} else if (*p == '\n' && (p == start || p[-1] != '\r')) {
-	    strm->write(pp, p - pp);
-	    *strm << crlf;
+	    sstrm.write(pp, p - pp);
+	    sstrm << crlf;
 	    pp = p + 1;
 	}
     }
-    strm->write(pp, p - pp);
+    sstrm.write(pp, p - pp);
     if (*end != '\n')
-	*strm << crlf;
-    return strm->good();
+	sstrm << crlf;
+    return sstrm.good();
 }
 
 #define IS_ATEXT(c) (chartraits[(uchar)(c)] & (1 + 2 + 8))
@@ -390,23 +386,23 @@ static const uchar chartraits[] = {
     0,    0,    0,    0,    0,    0,    0,    0 	// 0xf8..0xff
 };
 
-static const char *NonASCII = "Non-ASCII character";
+static const tchar *NonASCII = T("Non-ASCII character");
 
-void RFC821Addr::parseaddr(const char *&input) {
+void RFC821Addr::parseaddr(const tchar *&input) {
     uint angledepth = 0;
     uint parendepth = 0;
     bool saw_colon = false;
-    string::size_type anglelast = string::npos;
+    tstring::size_type anglelast = tstring::npos;
 
     addr.erase();
     domain_buf.erase();
     err.erase();
     local_part.erase();
-    while (isspace(*input))
+    while (istspace(*input))
 	++input;
     // Pass 1
     for (;;) {
-	uchar c = *input++;
+	tuchar c = *input++;
 	if (c & 0x80) {
 	    err = NonASCII;
 	    goto fail;
@@ -432,7 +428,7 @@ void RFC821Addr::parseaddr(const char *&input) {
 		    goto fail;
 		}
 		if (!c) {
-		    err = "Unbalanced '\"'";
+		    err = T("Unbalanced '\"'");
 		    goto fail;
 		}
 	    }
@@ -455,14 +451,14 @@ void RFC821Addr::parseaddr(const char *&input) {
 		    goto fail;
 		}
 		if (!c) {
-		    err = "Unbalanced '('";
+		    err = T("Unbalanced '('");
 		    goto fail;
 		}
 	    } while (parendepth);
 	    break;
 
 	case ')':
-	    err = "Unbalanced ')'";
+	    err = T("Unbalanced ')'");
 	    goto fail;
 
 	case '<':
@@ -473,12 +469,11 @@ void RFC821Addr::parseaddr(const char *&input) {
 
 	case '>':
 	    if (!angledepth--) {
-		err = "Unbalanced '>'";
+		err = T("Unbalanced '>'");
 		goto fail;
 	    }
-	    if (anglelast == string::npos) {
+	    if (anglelast == string::npos)
 		anglelast = addr.length();
-	    }
 	    break;
 
 	case '\\':
@@ -512,16 +507,15 @@ void RFC821Addr::parseaddr(const char *&input) {
 
  pass1done:
     if (angledepth) {
-	err = "Unbalanced '<'";
+	err = T("Unbalanced '<'");
 	goto fail;
     }
-    if (anglelast != string::npos) {
+    if (anglelast != string::npos)
 	addr.erase(anglelast);
-    }
-
     // Pass 2
-    for (string::size_type pos = 0; pos < addr.length();) {
-	uchar c = addr[pos++];
+    for (tstring::size_type pos = 0; pos < addr.length();) {
+	tuchar c = addr[pos++];
+
 	switch (c) {
 	case '@':
 	    parsedomain(pos);
@@ -529,7 +523,7 @@ void RFC821Addr::parseaddr(const char *&input) {
 		goto fail;
 	    if (pos == addr.length()) {
 		if (domain_buf.empty()) {
-		    err = "Hostname required";
+		    err = T("Hostname required");
 		    goto fail;
 		}
 		goto pass2done;
@@ -538,7 +532,7 @@ void RFC821Addr::parseaddr(const char *&input) {
 	    case ',':
 		if (!local_part.empty()) {
 	    case '@':
-		    err = "Invalid route address";
+		    err = T("Invalid route address");
 		    goto fail;
 		}
 	    case ':':
@@ -548,13 +542,14 @@ void RFC821Addr::parseaddr(const char *&input) {
 		continue;
 
 	    default:
-		err = "Invalid domain";
+		err = T("Invalid domain");
 		goto fail;
 	    }
 
 	case '"':
 	    while ((c = addr[pos++]) != '"') {
-		if (c == '\\') c = addr[pos++];
+		if (c == '\\')
+		    c = addr[pos++];
 		local_part += c;
 	    }
 	    continue;
@@ -579,7 +574,7 @@ void RFC821Addr::parseaddr(const char *&input) {
 
 	case ';':
 	    if (saw_colon) {
-		err = "List:; syntax illegal";
+		err = T("List:; syntax illegal");
 		goto fail;
 	    }
 	    // FALL THROUGH
@@ -588,7 +583,7 @@ void RFC821Addr::parseaddr(const char *&input) {
 	    continue;
 
 	case ',':
-	    err = "Invalid route address";
+	    err = T("Invalid route address");
 	    goto fail;
 
 	case ':':
@@ -600,7 +595,7 @@ void RFC821Addr::parseaddr(const char *&input) {
 
  pass2done:
     if (local_part.empty()) {
-	err = "User address required";
+	err = T("User address required");
 	goto fail;
     }
 
@@ -613,11 +608,11 @@ void RFC821Addr::parseaddr(const char *&input) {
     local_part.erase();
 }
 
-void RFC821Addr::parsedomain(string::size_type &pos) {
+void RFC821Addr::parsedomain(tstring::size_type &pos) {
     bool sawspace = false;
 
     while (pos < addr.length()) {
-	uchar c = addr[pos++];
+	tuchar c = addr[pos++];
 
 	switch (c) {
 	case '.':
@@ -643,7 +638,7 @@ void RFC821Addr::parsedomain(string::size_type &pos) {
 	    domain_buf += c;
 	    for (;;) {
 		if (pos == addr.length()) {
-		    err = "Invalid domain";
+		    err = T("Invalid domain");
 		    return;
 		}
 		c = addr[pos++];
@@ -653,7 +648,7 @@ void RFC821Addr::parsedomain(string::size_type &pos) {
 		}
 		if (c == '\\') {
 		    if (pos == addr.length()) {
-			err = "Invalid domain";
+			err = T("Invalid domain");
 			return;
 		    }
 		    c = addr[pos++];
@@ -672,7 +667,7 @@ void RFC821Addr::parsedomain(string::size_type &pos) {
 	case '\\':
 	    sawspace = false;
 	    if (pos == addr.length()) {
-		err = "Invalid domain";
+		err = T("Invalid domain");
 		return;
 	    }
 	    c = addr[pos++];
@@ -705,22 +700,23 @@ void RFC821Addr::parsedomain(string::size_type &pos) {
     while (!domain_buf.empty() && domain_buf[domain_buf.length()-1] == '.')
 	domain_buf.erase(domain_buf.length()-1);
     if (domain_buf.empty())
-	err = "Invalid domain";
+	err = T("Invalid domain");
 }
 
-void RFC821Addr::setDomain(const char *domain) {
+void RFC821Addr::setDomain(const tchar *domain) {
     domain_buf = domain;
     make_address();
 }
 
 void RFC821Addr::make_address() {
-    string::size_type pos;
+    tstring::size_type pos;
 
     for (pos = 0; pos < local_part.length(); ++pos) {
-	uchar c = local_part[pos];
+	tuchar c = local_part[pos];
+
 	if (c == '.') {
 	    if (pos == 0 || pos == local_part.length()-1 ||
-		local_part[pos+1] == '.')
+		local_part[pos + 1] == '.')
 		break;
 	} else if (!IS_ATEXT(c)) {
 	    break;
@@ -729,10 +725,10 @@ void RFC821Addr::make_address() {
     if (pos < local_part.length()) {
 	addr = '"';
 	for (pos = 0; pos < local_part.length(); ++pos) {
-	    uchar c = local_part[pos];
-	    if (c == '"' || c == '\\') {
+	    tuchar c = local_part[pos];
+
+	    if (c == '"' || c == '\\')
 		addr += '\\';
-	    }
 	    addr += c;
 	}
 	addr += '"';
@@ -745,10 +741,10 @@ void RFC821Addr::make_address() {
     }
 }
 
-uint RFC822Addr::parse(const char *addrs) {
-    char *d, *m, *n, *r, *unused;
-    uint len = strlen(addrs) + 1;
-    char *phrase, *s;
+uint RFC822Addr::parse(const tchar *addrs) {
+    tchar *d, *m, *n, *r, *unused;
+    uint len = tstrlen(addrs) + 1;
+    tchar *phrase, *s;
     int tok = ' ';
 
     if (buf) {
@@ -759,19 +755,19 @@ uint RFC822Addr::parse(const char *addrs) {
 	name.clear();
 	route.clear();
     }
-    if ((!strrchr(addrs, '<') && !strrchr(addrs, ';') &&
-	!strrchr(addrs, ',')) || !strrchr(addrs, '>')) {
-	s = buf = new char [len + 2];
+    if ((!tstrrchr(addrs, '<') && !tstrrchr(addrs, ';') &&
+	!tstrrchr(addrs, ',')) || !tstrrchr(addrs, '>')) {
+	s = buf = new tchar [len + 2];
 	s[0] = '<';
 	memcpy(s + 1, addrs, len - 1);
 	s[len] = '>';
 	s[len + 1] = '\0';
     } else {
-	s = buf = new char [len];
+	s = buf = new tchar [len];
 	memcpy(s, addrs, len);
     }
     while (tok) {
-	tok = parse_phrase(s, phrase, ",@<;:");
+	tok = parse_phrase(s, phrase, T(",@<;:"));
 	switch (tok) {
 	case ',':
 	case '\0':
@@ -785,21 +781,21 @@ uint RFC822Addr::parse(const char *addrs) {
 	    parse_append(n, NULL, phrase, d);
 	    continue;
 	case '<':
-	    tok = parse_phrase(s, m, "@>");
+	    tok = parse_phrase(s, m, T("@>"));
 	    if (tok == '@') {
 		r = 0;
 		if (!*m) {
 		    *--s = '@';
 		    tok = parse_route(s, r);
 		    if (tok != ':') {
-			parse_append(phrase, r, "", "");
+			parse_append(phrase, r, T(""), T(""));
 			while (tok && tok != '>')
 			    tok = *s++;
 			continue;
 		    }
-		    tok = parse_phrase(s, m, "@>");
+		    tok = parse_phrase(s, m, T("@>"));
 		    if (tok != '@') {
-			parse_append(phrase, r, m, "");
+			parse_append(phrase, r, m, T(""));
 			continue;
 		    }
 		}
@@ -809,24 +805,24 @@ uint RFC822Addr::parse(const char *addrs) {
 		    tok = *s++;
 		continue;		// effectively inserts a comma
 	    } else {
-		parse_append(phrase, NULL, m, "");
+		parse_append(phrase, NULL, m, T(""));
 	    }
 	}
     }
     return name.size();
 }
 
-void RFC822Addr::parse_append(const char *n, const char *r, const char *m,
-    const char *d) {
-    domain.push_back(d ? d : "");
-    name.push_back(n ? n : "");
-    mbox.push_back(m ? m : "");
-    route.push_back(r ? r : "");
+void RFC822Addr::parse_append(const tchar *n, const tchar *r, const tchar *m,
+    const tchar *d) {
+    domain.push_back(d ? d : T(""));
+    name.push_back(n ? n : T(""));
+    mbox.push_back(m ? m : T(""));
+    route.push_back(r ? r : T(""));
 }
 
-int RFC822Addr::parse_phrase(char *&in, char *&phrase, const char *specials) {
-    char c;
-    char *dst, *src = in;
+int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials) {
+    tchar c;
+    tchar *dst, *src = in;
 
     rfc822whitespace(src);
     phrase = dst = src;
@@ -851,7 +847,7 @@ int RFC822Addr::parse_phrase(char *&in, char *&phrase, const char *specials) {
 	    src--;
 	    rfc822whitespace(src);
 	    *dst++ = ' ';
-	} else if (!c || strchr(specials, c)) {
+	} else if (!c || tstrchr(specials, c)) {
 	    if (dst > phrase && dst[-1] == ' ')
 		dst--;
 	    *dst = '\0';
@@ -863,11 +859,11 @@ int RFC822Addr::parse_phrase(char *&in, char *&phrase, const char *specials) {
     }
 }
 
-int RFC822Addr::parse_domain(char *&in, char *&dom, char *&cmt) {
-    char c;
-    char *cdst;
+int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
+    tchar c;
+    tchar *cdst;
     int cnt;
-    char *dst, *src = in;
+    tchar *dst, *src = in;
 
     cmt = NULL;
     rfc822whitespace(src);
@@ -900,7 +896,7 @@ int RFC822Addr::parse_domain(char *&in, char *&dom, char *&cmt) {
 		    *cdst++ = c;
 	    }
 	    *cdst = '\0';
-	} else if (!isspace(c)) {
+	} else if (!istspace(c)) {
 	    if (dst > dom && dst[-1] == '.')
 		dst--;
 	    *dst = '\0';
@@ -910,9 +906,9 @@ int RFC822Addr::parse_domain(char *&in, char *&dom, char *&cmt) {
     }
 }
 
-int RFC822Addr::parse_route(char *&in, char *&rte) {
-    char c;
-    char *dst, *src = in;
+int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
+    tchar c;
+    tchar *dst, *src = in;
 
     rfc822whitespace(src);
     rte = dst = src;
@@ -938,15 +934,15 @@ int RFC822Addr::parse_route(char *&in, char *&rte) {
     }
 }
 
-const string RFC822Addr::address(uint u, bool n, bool b) const {
-    string s;
+const tstring RFC822Addr::address(uint u, bool n, bool b) const {
+    tstring s;
 
     if (mbox.empty())
 	return s;
     if (n && *name[u]) {
 	s += '"';
 	s += name[u];
-	s += "\" ";
+	s += T("\" ");
     }
     if (n || b)
 	s += '<';
@@ -969,8 +965,10 @@ static const uint maxlen = 45;
 #define	DEC(c) (((c) - ' ') & 077)
 #define ENC(c) (table[(c) & 077])
 
-static inline void encode(const char *data, uint len, char *out, uint &outsz,
+static inline void encode(const void *input, uint len, void *output, uint &outsz,
     const uchar *table, bool base64) {
+    const char *in = (const char *)input;
+    char *out = (char *)output;
     uint n = 0;
 
     while (len) {
@@ -981,13 +979,13 @@ static inline void encode(const char *data, uint len, char *out, uint &outsz,
 	}
 	len -= n;
 	while (n >= 3) {
-	    out[0] = ENC(data[0] >> 2);
-	    out[1] = ENC(((data[0] << 4) & 060) | ((data[1] >> 4) & 017));
-	    out[2] = ENC(((data[1] << 2) & 074) | ((data[2] >> 6) & 03));
-	    out[3] = ENC(data[2] & 077);
+	    out[0] = ENC(in[0] >> 2);
+	    out[1] = ENC(((in[0] << 4) & 060) | ((in[1] >> 4) & 017));
+	    out[2] = ENC(((in[1] << 2) & 074) | ((in[2] >> 6) & 03));
+	    out[3] = ENC(in[2] & 077);
 	    out += 4;
 	    outsz += 4;
-	    data += 3;
+	    in += 3;
 	    n -= 3;
 	}
 	if (!n) {
@@ -997,8 +995,8 @@ static inline void encode(const char *data, uint len, char *out, uint &outsz,
 	}
     }
     if (n) {
-	char c1 = data[0];
-	char c2 = n == 1 ? '\0' : data[1];
+	char c1 = in[0];
+	char c2 = n == 1 ? '\0' : in[1];
 
 	out[0] = ENC(c1 >> 2);
 	out[1] = ENC(((c1 << 4) & 060) | ((c2 >> 4) & 017));
@@ -1015,7 +1013,7 @@ static inline void encode(const char *data, uint len, char *out, uint &outsz,
     *out = '\0';
 }
 
-bool base64encode(const char *data, uint len, char *&out, uint &outsz) {
+bool base64encode(const void *input, uint len, void *&output, uint &outsz) {
     static const uchar table[64] = {
       'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
       'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
@@ -1028,14 +1026,16 @@ bool base64encode(const char *data, uint len, char *&out, uint &outsz) {
     };
 
     outsz = 0;
-    if ((out = new char[(len + 2) * 4 / 3 + (len / maxlen * 2) + 8]) == NULL)
+    if ((output = new char[(len + 2) * 4 / 3 + (len / maxlen * 2) + 8]) == NULL)
 	return false;
-    encode(data, len, out, outsz, table, true);
+    encode(input, len, output, outsz, table, true);
     return true;
 }
 
-bool uuencode(const char *file, const char *data, uint len, char *&out,
+bool uuencode(const tchar *file, const void *input, uint len, void *&output,
     uint &outsz) {
+    char *out = (char *)output;
+
     static const char begin[] = "begin 644 ";
     static const char end[] = "\r\nend\r\n";
     static const uchar table[64] = {
@@ -1049,25 +1049,26 @@ bool uuencode(const char *file, const char *data, uint len, char *&out,
       'X', 'Y', 'Z', '[', '\\', ']', '^', '_'
     };
 
-    outsz = strlen(file);
+    outsz = tstrlen(file);
     if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) == NULL)
 	return false;
     memcpy(out, begin, sizeof (begin) - 1);
-    memcpy(out + sizeof (begin) - 1, file, outsz);
+    memcpy(out + sizeof (begin) - 1, tchartoa(file).c_str(), outsz);
     outsz += sizeof (begin) - 1;
     out[outsz++] = '\r';
     out[outsz++] = '\n';
-    encode(data, len, out + outsz, outsz, table, false);
+    encode(input, len, out + outsz, outsz, table, false);
     out[outsz++] = ENC('\0');
     memcpy(out + outsz, end, sizeof (end));
     outsz += sizeof (end) - 1;
     return true;
 }
 
-bool uudecode(const char *data, uint sz, uint &perm, string &file,
-    char *&output, uint &outsz) {
+bool uudecode(const void *input, uint sz, uint &perm, tstring &file,
+    void *&output, uint &outsz) {
+    const char *in = (const char *)input;
     char *out;
-    const char *p = data;
+    const char *p = in;
 
     outsz = 0;
     while (isspace(*p))
@@ -1087,8 +1088,8 @@ bool uudecode(const char *data, uint sz, uint &perm, string &file,
     file.erase();
     while (*p != '\r' && *p != '\n'&& !isspace(*p))
 	file.append(1, *p++);
-    sz -= p - data;
-    if ((out = output = new char[sz * 3 / 4 + 8]) == NULL)
+    sz -= p - in;
+    if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
 	return false;
     while (sz) {
 	if (isspace(*p)) {
@@ -1143,8 +1144,9 @@ bool uudecode(const char *data, uint sz, uint &perm, string &file,
     return true;
 }
 
-bool base64decode(const char *data, uint sz, char *&output, uint &outsz) {
+bool base64decode(const void *input, uint sz, void *&output, uint &outsz) {
     int add_bits;
+    const char *in = (const char *)input;
     int mask;
     char *out;
     int out_byte = 0, out_bits = 0;
@@ -1184,13 +1186,13 @@ bool base64decode(const char *data, uint sz, char *&output, uint &outsz) {
     };
 
     outsz = 0;
-    if ((out = output = new char[sz * 3 / 4 + 8]) == NULL)
+    if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
 	return false;
     while (sz) {
-	add_bits = table[(int)*data++];
+	add_bits = table[(int)*in++];
 	sz--;
 	if (add_bits >= 64) {
-	    if (data[0] == '=' && data[1] == '=' && data[2] == '=')
+	    if (in[0] == '=' && in[1] == '=' && in[2] == '=')
 		break;
 	    else
 		continue;
@@ -1223,9 +1225,9 @@ bool base64decode(const char *data, uint sz, char *&output, uint &outsz) {
     return true;
 }
 
-static void parse_rfc822space(const char **s) {
+static void parse_rfc822space(const tchar *&s) {
     uint cmt = 0;
-    const char *p = *s;
+    const tchar *p = s;
 
     if (!p)
 	return;
@@ -1233,7 +1235,7 @@ static void parse_rfc822space(const char **s) {
 	if (*p == '\n') {
 	    p++;
 	    if (*p != ' ' && *p != '\t') {
-		*s = 0;
+		s = NULL;
 		return;
 	    }
 	} else if (*p == '(') {
@@ -1247,7 +1249,7 @@ static void parse_rfc822space(const char **s) {
 			break;
 		    // FALL THROUGH
 		case '\0':
-		    *s = 0;
+		    s = NULL;
 		    return;
 		case '\\':
 		    p++;
@@ -1265,11 +1267,7 @@ static void parse_rfc822space(const char **s) {
 	    p++;
 	}
     }
-    if (*p == 0) {
-	*s = 0;
-    } else {
-	*s = p;
-    }
+    s = *p ? p : NULL;
 }
 
 static int tmcomp(const tm *const atmp, const tm *const btmp) {
@@ -1324,96 +1322,96 @@ time_t mkgmtime(tm *const tmp) {
     return t;
 }
 
-time_t parse_date(const char *hdr, int adjhr, int adjmin) {
+time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {
     int hour = 0, min = 0;
-    char month[4];
-    char *p;
+    tchar month[4];
+    tchar *p;
     bool rfcerr = false;
     tm tm;
     time_t t;
-    static const char *monthname[] = {
-	"jan", "feb", "mar", "apr", "may", "jun",
-	"jul", "aug", "sep", "oct", "nov", "dec"
+    static const tchar *monthname[] = {
+	T("jan"), T("feb"), T("mar"), T("apr"), T("may"), T("jun"), T("jul"),
+	T("aug"), T("sep"), T("oct"), T("nov"), T("dec")
     };
 
     ZERO(tm);
-    parse_rfc822space(&hdr);
+    parse_rfc822space(hdr);
     if (!hdr)
 	return 0;
-    if (isalpha(*hdr)) {
+    if (istalpha(*hdr)) {
 	// skip day name
 	hdr++;
-	if (!isalpha(*hdr))
+	if (!istalpha(*hdr))
 	    return 0;
 	hdr++;
-	if (!isalpha(*hdr))
+	if (!istalpha(*hdr))
 	    return 0;
 	hdr++;
-	parse_rfc822space(&hdr);
+	parse_rfc822space(hdr);
 	if (!hdr)
 	    return 0;
 	if (*hdr == ',')
 	    hdr++;
-	parse_rfc822space(&hdr);
+	parse_rfc822space(hdr);
 	if (!hdr)
 	    return 0;
     }
-    if (isdigit(*hdr)) {
+    if (istdigit(*hdr)) {
 	tm.tm_mday = *hdr++ - '0';
-	if (isdigit(*hdr))
-	    tm.tm_mday = tm.tm_mday*10 + *hdr++ - '0';
+	if (istdigit(*hdr))
+	    tm.tm_mday = tm.tm_mday * 10 + *hdr++ - '0';
     } else {
 	rfcerr = true;
     }
     // parse month
-    parse_rfc822space(&hdr);
+    parse_rfc822space(hdr);
     if (!hdr)
 	return 0;
     month[0] = *hdr++;
-    if (!isalpha(month[0]))
+    if (!istalpha(month[0]))
 	return 0;
     month[1] = *hdr++;
-    if (!isalpha(month[1]))
+    if (!istalpha(month[1]))
 	return 0;
     month[2] = *hdr++;
-    if (!isalpha(month[2]))
+    if (!istalpha(month[2]))
 	return 0;
     month[3] = '\0';
     for (p = month; *p; p++)
     	*p = (char)tolower(*p);
     for (tm.tm_mon = 0; tm.tm_mon < 12; tm.tm_mon++) {
-	if (!strcmp(month, monthname[tm.tm_mon]))
+	if (!tstrcmp(month, monthname[tm.tm_mon]))
 	    break;
     }
     if (tm.tm_mon == 12)
 	return 0;
     if (rfcerr) {
-	parse_rfc822space(&hdr);
-	if (!hdr || !isdigit(*hdr))
+	parse_rfc822space(hdr);
+	if (!hdr || !istdigit(*hdr))
 	    return 0;
 	tm.tm_mday = *hdr++ - '0';
-	if (isdigit(*hdr))
-	    tm.tm_mday = tm.tm_mday*10 + *hdr++ - '0';
-	parse_rfc822space(&hdr);
+	if (istdigit(*hdr))
+	    tm.tm_mday = tm.tm_mday * 10 + *hdr++ - '0';
+	parse_rfc822space(hdr);
 	if (!hdr)
 	    return 0;
 	if (*hdr == ',')
 	    hdr++;
     }
     // parse year
-    parse_rfc822space(&hdr);
-    if (!hdr || !isdigit(*hdr))
+    parse_rfc822space(hdr);
+    if (!hdr || !istdigit(*hdr))
 	return 0;
     tm.tm_year = *hdr++ - '0';
-    if (!isdigit(*hdr))
+    if (!istdigit(*hdr))
 	return 0;
     tm.tm_year = tm.tm_year * 10 + *hdr++ - '0';
-    if (isdigit(*hdr)) {
+    if (istdigit(*hdr)) {
 	if (tm.tm_year < 19)
 	    return 0;
 	tm.tm_year -= 19;
 	tm.tm_year = tm.tm_year * 10 + *hdr++ - '0';
-	if (!isdigit(*hdr))
+	if (!istdigit(*hdr))
 	    return 0;
 	tm.tm_year = tm.tm_year * 10 + *hdr++ - '0';
     } else if (tm.tm_year < 70) {
@@ -1422,19 +1420,19 @@ time_t parse_date(const char *hdr, int adjhr, int adjmin) {
     tm.tm_isdst = -1;
     tm.tm_hour = 12;
     /* Parse time if available */
-    parse_rfc822space(&hdr);
+    parse_rfc822space(hdr);
     if (!hdr)
 	goto gmt;
-    if (!isdigit(*hdr))
+    if (!istdigit(*hdr))
 	goto gmt;
     tm.tm_hour = *hdr++ - '0';
-    if (isdigit(*hdr))
+    if (istdigit(*hdr))
 	tm.tm_hour = tm.tm_hour * 10 + *hdr++ - '0';
     hdr++;
-    if (!isdigit(*hdr))
+    if (!istdigit(*hdr))
 	goto gmt;
     tm.tm_min = *hdr++ - '0';
-    if (isdigit(*hdr))
+    if (istdigit(*hdr))
 	tm.tm_min = tm.tm_min * 10 + *hdr++ - '0';
     hdr++;
     if (isdigit(*hdr)) {
@@ -1442,26 +1440,26 @@ time_t parse_date(const char *hdr, int adjhr, int adjmin) {
 	if (isdigit(*hdr))
 	    tm.tm_sec = tm.tm_sec * 10 + *hdr++ - '0';
     } else {
-	parse_rfc822space(&hdr);
+	parse_rfc822space(hdr);
 	if (hdr && toupper(hdr[1]) == 'M') {
 	    if (toupper(*hdr) == 'P' && tm.tm_hour < 12)
 		tm.tm_hour += 12;
 	    hdr += 2;
 	}
     }
-    parse_rfc822space(&hdr);
+    parse_rfc822space(hdr);
     // parse GMT offset
     if (!hdr) {
 	goto gmt;
-    } else if (isdigit(*hdr) || *hdr == '-' || *hdr == '+') {
+    } else if (istdigit(*hdr) || *hdr == '-' || *hdr == '+') {
 	bool neg = *hdr == '-';
 
-	if (!isdigit(*hdr))
+	if (!istdigit(*hdr))
 	    hdr++;
-	if (!isdigit(hdr[0]) || !isdigit(hdr[1]) || !isdigit(hdr[2]))
+	if (!istdigit(hdr[0]) || !istdigit(hdr[1]) || !istdigit(hdr[2]))
 	    goto gmt;
 	hour = *hdr++ - '0';
-	if (isdigit(hdr[2]))
+	if (istdigit(hdr[2]))
 	    hour = hour * 10 + *hdr++ - '0';
 	min = (*hdr++ - '0') * 10;
 	min += *hdr++ - '0';
@@ -1469,7 +1467,7 @@ time_t parse_date(const char *hdr, int adjhr, int adjmin) {
 	    hour *= -1;
 	    min *= -1;
 	}
-    } else if (isalpha(*hdr) && (isspace(hdr[1]) || hdr[1] == '\0')) {
+    } else if (istalpha(*hdr) && (istspace(hdr[1]) || hdr[1] == '\0')) {
 	char zone = (char)toupper(*hdr);
 
 	/* military time */
@@ -1479,15 +1477,15 @@ time_t parse_date(const char *hdr, int adjhr, int adjmin) {
 	    hour = zone - 'A';
 	else if (zone < 'Z')
 	    hour = (zone - 'M') * -1;
-    } else if (!strnicmp(hdr, "EDT", 3)) {
+    } else if (!tstrnicmp(hdr, T("EDT"), 3)) {
 	hour = -4;
-    } else if (!strnicmp(hdr, "EST", 3) || !strnicmp(hdr, "CDT", 3)) {
+    } else if (!tstrnicmp(hdr, T("EST"), 3) || !tstrnicmp(hdr, T("CDT"), 3)) {
 	hour = -5;
-    } else if (!strnicmp(hdr, "CST", 3) || !strnicmp(hdr, "MDT", 3)) {
+    } else if (!tstrnicmp(hdr, T("CST"), 3) || !tstrnicmp(hdr, T("MDT"), 3)) {
 	hour = -6;
-    } else if (!strnicmp(hdr, "MST", 3) || !strnicmp(hdr, "PDT", 3)) {
+    } else if (!tstrnicmp(hdr, T("MST"), 3) || !tstrnicmp(hdr, T("PDT"), 3)) {
 	hour = -7;
-    } else if (!strnicmp(hdr, "PST", 3)) {
+    } else if (!tstrnicmp(hdr, T("PST"), 3)) {
 	hour = -8;
     }
     tm.tm_min = tm.tm_min - min + adjmin;
@@ -1501,8 +1499,8 @@ gmt:
     return t == (time_t)-1 ? 0 : t;
 }
 
-void rfc822whitespace(char *&s) {
-    char c;
+void rfc822whitespace(tchar *&s) {
+    tchar c;
     uint cmt = 0;
 
     while ((c = *s) != 0) {
@@ -1520,7 +1518,7 @@ void rfc822whitespace(char *&s) {
 		    cmt--;
 	    }
 	    s--;
-	} else if (!isspace(c)) {
+	} else if (!istspace(c)) {
 	    break;
 	} else if (c == '\n' && s[1] != ' '&& s[1] != '\t') {
 	    break;
@@ -1528,4 +1526,3 @@ void rfc822whitespace(char *&s) {
 	s++;
     }
 }
-

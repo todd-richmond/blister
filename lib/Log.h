@@ -35,7 +35,7 @@ public:
     class kv {
     public:
 	template<class C> kv(const tchar *k, const C &v) {
-	    bufferstream buf;
+	    bufferstream<tchar> buf;
 
 	    buf << v << '\0';
 	    set(k, buf.str());
@@ -56,7 +56,7 @@ public:
 
     bool alert(void) const { return afd.enable; }
     void alert(bool b) { afd.enable = b; }
-    void alert(Level L, const char *file = NULL, uint cnt = 0,
+    void alert(Level L, const tchar *file = NULL, uint cnt = 0,
 	ulong sz = 10 * 1024 * 1024, ulong tm = 0);
     const tchar *alertname(void) const { return afd.filename(); }
     const tchar *alertpath(void) const { return afd.pathname(); }
@@ -231,7 +231,7 @@ private:
 	bool close(void);
 	void flush(void);
 	void lock(void);
-	void print(const char *buf, size_t len);
+	void print(const tchar *buf, size_t len);
 	void print(const tstring &s) { print(s.c_str(), s.size()); }
 	bool reopen(void);
 	void roll(void);
@@ -259,7 +259,7 @@ private:
 	bool space;
 	tstring strbuf;
 	bool suppress;
-	bufferstream strm;
+	bufferstream<tchar> strm;
 
 	Tlsdata(): clvl(None), space(false), suppress(false) {}
     };
@@ -269,7 +269,7 @@ private:
     bool bufenable, mailenable, syslogenable;
     uint bufsz;
     ulong buftm;
-    bufferstream bufstrm;
+    bufferstream<tchar> bufstrm;
     tstring fmt;
     bool gmt, mp;
     Level lvl, maillvl, sysloglvl;

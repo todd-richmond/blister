@@ -307,8 +307,8 @@ inline bool DLLibrary::open(const tchar *dll) {
     close();
     file = dll ? dll : T("self");
     hdl = dll ? LoadLibrary(dll) : GetModuleHandle(NULL);
-    if (!hdl && dll && !tstrstr(file.c_str(), ".dll")) {
-	file += ".dll";
+    if (!hdl && dll && !tstrstr(file.c_str(), T(".dll"))) {
+	file += T(".dll");
 	hdl = LoadLibrary(file.c_str());
     }
     return hdl != 0;

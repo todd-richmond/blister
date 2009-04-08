@@ -355,16 +355,16 @@ public:
 	    detach();
     }
 
-    bool listen(const char *host = NULL, bool enable = true,
+    bool listen(const tchar *host = NULL, bool enable = true,
 	int backlog = LISTEN_BACKLOG) {
-	string s(dspr.config().get("host", host, S::section()));
+	tstring s(dspr.config().get(T("host"), host, S::section()));
 
-	if (!dspr.config().get("enable", enable, S::section()))
+	if (!dspr.config().get(T("enable"), enable, S::section()))
 	    return true;
-	backlog = dspr.config().get("backlog", backlog, S::section());
+	backlog = dspr.config().get(T("backlog"), backlog, S::section());
 	if (DispatchListenSocket::listen(Sockaddr(s.c_str()), true, backlog)) {
-	    dlog << Log::Info << "mod=" << S::section() <<
-		" cmd=listen addr=" << s << endlog;
+	    dlog << Log::Info << T("mod=") << S::section() <<
+		T(" cmd=listen addr=") << s << endlog;
 	    return true;
 	}
 	return false;

@@ -66,7 +66,7 @@ protected:
     uint datasz, postsz, postin, sz;
     bool delpost, ka, nagleon;
     char *fmap;
-    bufferstream hdrs, ss;
+    bufferstream<char> hdrs, ss;
     iovec iov[3];
     uint rto, wto;
     char savechar;

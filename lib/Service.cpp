@@ -33,11 +33,10 @@ bool Service::aborted;
 bool Service::console;
 bool Service::exiting;
 bool Service::restart;
-string Service::srvcpath;
+tstring Service::srvcpath;
 Service *Service::service;
 volatile int Service::sigpid;
-string Service::ver(T(PACKAGE) T(" ") T(VERSION) T(" ") T(__DATE__) T(" ")
-    T(__TIME__));
+tstring Service::ver(T(__DATE__) T(" ") T(__TIME__));
 
 #ifdef __linux__
 typedef void (*KillFunc)(void);
@@ -426,8 +425,8 @@ bool Service::update(Status status) {
 #endif
 }
 
-bool Service::install(const char *file, const char *desc,
-    const char * const * depend, bool manual) {
+bool Service::install(const tchar *file, const tchar *desc,
+    const tchar * const * depend, bool manual) {
 #ifdef _WIN32_WCE
     return false;
 #else
@@ -1123,7 +1122,7 @@ string Service::errstr() const {
 int Service::execute(int argc, const tchar * const *argv) {
     int ac = argc;
     const tchar **av;
-    const tchar *cmd = "";
+    const tchar *cmd = T("");
     int ret = 0;
     Service::Status sts;
 
@@ -1136,7 +1135,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 #ifndef _WIN32_WCE
     if (path[0] != '/' && path[1] != ':') {
 	uint sz = 1024 + 2 + path.size();
-	char *buf = new tchar[sz];
+	tchar *buf = new tchar[sz];
 
 	tgetcwd(buf, sz);
 	tstrcat(buf, T("/"));
@@ -1258,7 +1257,7 @@ Daemon::~Daemon() {
 	    Log::kv(T("sts"), T("stopped")) << endlog;
     if (lckfd != -1) {
 	if (!watch || child)
-	    unlink(lckfile.c_str());
+	    unlink(tstringtoa(lckfile).c_str());
 	lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 	::close(lckfd);
     }
@@ -1298,9 +1297,9 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     time(&start);
     splitpath(argv[0], name.c_str(), installdir, s);
     srvcpath = path;
-    lckfile = tstringtoa(installdir + T("var/run/"));
-    if (access(lckfile.c_str(), 0))
-    	lckfile = tstringtoa(installdir);
+    lckfile = installdir + T("var/run/");
+    if (access(tstringtoa(lckfile).c_str(), 0))
+    	lckfile = installdir;
     lckfile += name;
     lckfile += T(".pid");
     s = T("");
@@ -1309,7 +1308,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     dlog.source(name.c_str());
     stStatus = Starting;
     do {
-	lckfd = ::open(lckfile.c_str(), O_CREAT|O_WRONLY, S_IREAD | S_IWRITE);
+	lckfd = ::open(tstringtoa(lckfile).c_str(), O_CREAT|O_WRONLY,
+	    S_IREAD | S_IWRITE);
 	if (lckfd == -1 || lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 1)) {
 	    dlog << Log::Warn << Log::mod(name) << T("sts=running") << endlog;
 	    if (lckfd != -1)
@@ -1317,7 +1317,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    lckfd = -1;
 	    return 1;
 	}
-	if (fstat(lckfd, &sbuf) || stat(lckfile.c_str(), &sfile) ||
+	if (fstat(lckfd, &sbuf) || stat(tstringtoa(lckfile).c_str(), &sfile) ||
 	    sbuf.st_ino != sfile.st_ino) {
 	    ::close(lckfd);
 	    lckfd = -1;
@@ -1327,7 +1327,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     sprintf(buf, "%d", getpid());
     write(lckfd, buf, strlen(buf));
     for (int i = 1; i < argc; i++) {
-	const char *p = argv[i];
+	const tchar *p = argv[i];
 
 	if (*p == '-')
 	    while (*p == '-')
@@ -1608,7 +1608,7 @@ bool Daemon::onRefresh() {
     if (cfg.get(T("installdir")).empty())
 	cfg.set(T("installdir"), installdir.c_str());
     cfg.set(T("name"), name.c_str(), Log::section());
-    cfg.set(T("version"), PACKAGE T(" ") T(VERSION));
+    cfg.set(T("version"), ver.c_str());
     instance = cfg.get(T("instance"), T("default"));
     dlog.set(cfg);
     cfg.unlock();
@@ -1650,9 +1650,10 @@ void Daemon::watch_handler(int sig) {
 
 
 WatchDaemon::WatchDaemon(int argc, const tchar * const *argv,
-    const tchar *dname): Daemon(dname ? dname : ""), interval(60), maxmem(0) {
+    const tchar *dname): Daemon(dname ? dname : T("")), interval(60),
+    maxmem(0) {
     int ac;
-    const char *prog = tstrrchr(argv[0], '/');
+    const tchar *prog = tstrrchr(argv[0], '/');
 
     if (!prog && (prog = tstrrchr(argv[0], '\\')) == NULL)
 	prog = argv[0];
@@ -1726,7 +1727,7 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
 	dlog << Log::Info << Log::mod(name) << Log::kv(T("args"), args) <<
 	    endlog;
     dlog.close();
-    execvp(argv[ac], (char **)&argv[ac]);
+    texecvp(argv[ac], (tchar **)&argv[ac]);
     dlog << Log::Err << Log::mod(name) << Log::cmd(T("exec")) <<
 	Log::kv(T("err"), strerror(errno)) << endlog;
     return 2;

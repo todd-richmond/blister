@@ -19,13 +19,13 @@
 #include "stdapi.h"
 #include "Config.h"
 
-int main(int argc, tchar *argv[]) {
+int tmain(int argc, tchar *argv[]) {
     const tchar *attr = NULL, *file = NULL, *prefix = NULL, *section = NULL;
     Config cfg;
     bool boolean = false, check = false, integer = false, nonewline = false;
     bool exists;
     int i;
-    string s;
+    tstring s;
 
     for (i = 1; i < argc; i++) {
 	if (!tstrcmp(argv[i], T("-?")) || !tstrcmp(argv[i], T("--help"))) {
@@ -61,14 +61,14 @@ int main(int argc, tchar *argv[]) {
 	}
     }
     if (i < argc || !attr) {
-	tcerr << T("Usage: cfg\n"
-	    "\t[-b|--boolean]\n"
-	    "\t[-c|--check]\n"
-	    "\t[-i|--integer]\n"
-	    "\t[-n|--nonewline]\n"
-	    "\t[-p|--prefix prefix]\n"
-	    "\t[-s|--section section]\n"
-	    "\tattribute [file]\n") << endl;
+	tcerr << T("Usage: cfg\n")
+	    T("\t[-b|--boolean]\n")
+	    T("\t[-c|--check]\n")
+	    T("\t[-i|--integer]\n")
+	    T("\t[-n|--nonewline]\n")
+	    T("\t[-p|--prefix prefix]\n")
+	    T("\t[-s|--section section]\n")
+	    T("\tattribute [file]\n") << endl;
 	    return -1;
     }
     if (file) {
@@ -77,7 +77,7 @@ int main(int argc, tchar *argv[]) {
 	    return -1;
 	}
     } else {
-	cfg.read(cin);
+	cfg.read(tcin);
     }
     exists = cfg.exists(attr, section);
     if (check) {

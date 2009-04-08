@@ -181,51 +181,57 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, ulong to) {
     return true;
 }
 
-bool HTTPClient::send(const char *op, const tchar *path, const void *data,
+bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     long datasz) {
-    bufferstream bstrm;
+    char buf[16];
     bool first = true;
     streamsize in;
-    iovec iov[3];
+    iovec iov[2];
     bool keep = false;
     const char *p, *pp;
+    const tchar *resp;
     bool ret = false;
-    string s, ss, sss;
+    string req, s, ss, sss;
     bool sent;
     msec_t start;
-    static char connection[] = "Connection";
-    static char contentlen[] = "Content-Length";
-    static char keep_alive[] = "Keep-Alive";
-    static char pragma[] = "Pragma";
+    static tchar connection[] = T("Connection");
+    static tchar contentlen[] = T("Content-Length");
+    static tchar keep_alive[] = T("Keep-Alive");
+    static tchar pragma[] = T("Pragma");
 
     sts = 0;
     s.reserve(128);
     reshdrs.clear();
-    bstrm << op << ' ' << tchartoa(path) << " HTTP/1.0\r\nContent-Length: " <<
-	datasz << "\r\n";
-    if (ka)
-	bstrm << "Pragma: Keep-Alive\r\nConnection: Keep-Alive\r\n";
-    if (hstrm.size()) {
-	hstrm << "\r\n";
-	iov[1].iov_base = (char *)hstrm.str();
-	iov[1].iov_len = hstrm.size();
-    } else {
-	bstrm << "\r\n";
-	iov[1].iov_base = NULL;
-	iov[1].iov_len = 0;
+    req = tchartoa(op);
+    req += ' ';
+    req += tchartoa(path);
+    req += " HTTP/1.0\r\n";
+    if (datasz) {
+	req += "Content-Length: ";
+	sprintf(buf, "%lu", datasz);
+	req += buf;
+	req += "\r\n";
     }
-    iov[0].iov_base = (char *)bstrm.str();
-    iov[0].iov_len = bstrm.size();
-    iov[2].iov_base = (char *)data;
-    iov[2].iov_len = datasz;
+    if (ka)
+	req += "Pragma: Keep-Alive\r\nConnection: Keep-Alive\r\n";
+    if (hstrm.size())
+	req += tchartoa(hstrm.str());
+    req += "\r\n";
+    iov[0].iov_base = (char *)req.c_str();
+    iov[0].iov_len = req.size();
+    iov[1].iov_base = (char *)data;
+    iov[1].iov_len = datasz;
 loop:
     if (!connect(addr, ka))
 	goto done;
     start = mticks();
-    // shutdown causes huge cpu spikes on NT - not sure why - TFR
-    if ((sent = (ulong)sock.writev(iov, 3) == (ulong)(bstrm.size() +
-	hstrm.size() + datasz)) == false ||
-	(false && !ka && !sock.shutdown(false, true)) || !getline(sstrm, s)) {
+    if ((sent = (ulong)sock.writev(iov, 2) == (ulong)(req.size() + datasz)) ==
+	false ||
+	// shutdown causes huge cpu spikes on NT - not sure why
+#if 0
+	(!ka && !sock.shutdown(false, true)) ||
+#endif
+	!getline(sstrm, s)) {
 	sock.close();
 	if (first && ka && (!sent || rto - (mticks() - start) > 200)) {
 	    dlog << Log::Debug << T("mod=http action=reconnect") << endlog;
@@ -258,24 +264,24 @@ loop:
 	} while (*pp && (*pp == '\r' || *pp == ' ' || *pp == '\t'));
 	sss.assign(pp, strlen(pp) - 1);
 	
-	pair<string, string> pr(ss, sss);
+	pair<tstring, tstring> pr(atotstring(ss.c_str()), atotstring(sss.c_str()));
 
 	reshdrs.insert(pr);
     }
     if (!sstrm)
 	goto done;
     if (ka) {
-	if ((p = response(connection)) != NULL &&
-	    !strnicmp(p, keep_alive, sizeof (keep_alive) - 1))
+	if ((resp = response(connection)) != NULL &&
+	    !tstrnicmp(resp, keep_alive, sizeof (keep_alive) - 1))
 	    keep = true;
-	else if ((p = response(pragma)) != NULL &&
-	    !strnicmp(p, keep_alive, sizeof (keep_alive) - 1))
+	else if ((resp = response(pragma)) != NULL &&
+	    !tstrnicmp(resp, keep_alive, sizeof (keep_alive) - 1))
 	    keep = true;
     }
-    if ((p = response(contentlen)) == NULL)
+    if ((resp = response(contentlen)) == NULL)
 	ressz = (ulong)-1;
     else
-	ressz = strtoul(p, NULL, 10);
+	ressz = tstrtoul(resp, NULL, 10);
     if (keep && !sz && ressz != (ulong)-1)
 	sock.nagle(false);
     if (ressz && ressz != (ulong)-1) {
@@ -325,7 +331,7 @@ ostream &HTTPClient::operator <<(ostream &os) {
 
     os << sts << endl;
     for (it = reshdrs.begin(); it != reshdrs.end(); it++)
-	os << (*it).first << ": " << (*it).second << endl;
+	os << tstringtoa(it->first) << ": " << tstringtoa(it->second) << endl;
     os.write(result, ressz);
     os << endl;
     return os;

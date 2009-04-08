@@ -146,9 +146,9 @@ static uint rename_lock(const char *path) {
 		usleep(1);
 	} else {
 	    init1 = TRUE;
-	    if ((lockhdl = CreateFileMapping((HANDLE)0xFFFFFFFF, NULL,
+	    if ((lockhdl = CreateFileMappingA((HANDLE)0xFFFFFFFF, NULL,
 		PAGE_READWRITE, 0, HASH_SIZE * sizeof (long),
-		T("rename_locks"))) != NULL) {
+		"rename_locks")) != NULL) {
 		if ((locks = MapViewOfFile(lockhdl, FILE_MAP_WRITE, 0, 0,
 		    HASH_SIZE * sizeof (long))) == NULL) {
 		    CloseHandle(lockhdl);
@@ -408,7 +408,7 @@ int copy_file(const char *f, const char *t, int check) {
 
     TPATH(f, from);
     TPATH(t, to);
-    return CopyFile(from, to, check) ? 0 : -1;
+    return CopyFileA(from, to, check) ? 0 : -1;
 }
 
 DIR *opendir(const char *name) {
@@ -444,7 +444,7 @@ DIR *opendir(const char *name) {
     memcpy(&dirp->path, name, len);
     dirp->path[len] = '\0';
     TPATH(dirp->path, path);
-    if ((attr = GetFileAttributes(path)) == (DWORD)-1 ||
+    if ((attr = GetFileAttributesA(path)) == (DWORD)-1 ||
 	!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
 	errno = ENOTDIR;
 	free(dirp);
@@ -476,11 +476,11 @@ struct dirent *readdir(DIR *dirp) {
 
     TPATH(dirp->path, path);
     if (!dirp->hdl) {
-	dirp->hdl = FindFirstFile(path, dirp->wfd);
+	dirp->hdl = FindFirstFileA(path, dirp->wfd);
 	if (dirp->hdl == INVALID_HANDLE_VALUE)
 	    return NULL;
     } else {
-	if (!FindNextFile(dirp->hdl, dirp->wfd))
+	if (!FindNextFileA(dirp->hdl, dirp->wfd))
 	    return NULL;
 	dirp->dir.d_off++;
     }
@@ -527,7 +527,7 @@ int link(const char *from, const char *to) {
 	errno = EINVAL;
 	return ret;
     }
-    if (GetFileAttributes(to) != (DWORD)-1) {
+    if (GetFileAttributesA(to) != (DWORD)-1) {
 	errno = EEXIST;
 	return ret;
     }
@@ -543,7 +543,7 @@ int link(const char *from, const char *to) {
 	return ret;
     }
     lck = rename_lock(from);
-    if ((hdl = CreateFile(from, 0,
+    if ((hdl = CreateFileA(from, 0,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE) {
 	rename_unlock(lck);
@@ -678,7 +678,7 @@ int open(const char *p, int oflag, ...) {
 
     /* try to open/create the file */
     lck = rename_lock(p);
-    hdl = CreateFile(path, fileaccess, fileshare, &sa,
+    hdl = CreateFileA(path, fileaccess, fileshare, &sa,
 	filecreate, fileattrib, NULL);
     rename_unlock(lck);
     if (hdl == (HANDLE)0xffffffff ) {
@@ -740,7 +740,7 @@ int rename(const char *f, const char *t) {
 
     TPATH(f, from);
     TPATH(t, to);
-    if (MoveFileEx(from, to, MOVEFILE_REPLACE_EXISTING))
+    if (MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING))
 	return ret;
     strcpy(oldbuf, t);
     if ((p = strrchr(oldbuf, '/')) != NULL)
@@ -749,21 +749,21 @@ int rename(const char *f, const char *t) {
 	sprintf(oldbuf, "%s%lu.tmp", to, GetTickCount() ^ rand());
     lck = rename_lock(t);
     TPATH(oldbuf, old);
-    if (!MoveFileEx(to, old, MOVEFILE_REPLACE_EXISTING)) {
+    if (!MoveFileExA(to, old, MOVEFILE_REPLACE_EXISTING)) {
 	_dosmaperr(GetLastError());
 	if (errno == ENOENT)
 	    oldbuf[0] = '\0';
 	else
 	    ret = -1;
     }
-    if (!ret && !MoveFileEx(from, to, MOVEFILE_REPLACE_EXISTING)) {
+    if (!ret && !MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING)) {
 	_dosmaperr(GetLastError());
-	MoveFile(old, to);
+	MoveFileA(old, to);
 	ret = -1;
     }
     rename_unlock(lck);
     if (!ret && oldbuf[0])
-	DeleteFile(old);
+	DeleteFileA(old);
     return ret;
 }
 
@@ -776,7 +776,7 @@ int stat(const char *p, struct stat *buf) {
 
     TPATH(p, path);
     lck = rename_lock(p);
-    hdl = CreateFile(path, 0,
+    hdl = CreateFileA(path, 0,
 	FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
 	NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     rename_unlock(lck);
@@ -860,7 +860,7 @@ static int dir_stat(const char *d, struct stat *buf) {
     TPATHVAR(dir);
 
     TPATH(d, dir);
-    if (!GetFileAttributesEx(dir, GetFileExInfoStandard, &fad)) {
+    if (!GetFileAttributesExA(dir, GetFileExInfoStandard, &fad)) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
@@ -937,10 +937,10 @@ int statvfs(const char *path, struct statvfs *buf) {
 	    size = sizeof (rootdir) - 1;
 	strncpy(rootdir, path, size);
 	rootdir[size] = '\0';
-	rc = GetDiskFreeSpace(rootdir, &sectorsPerCluster, &bytesPerSector,
+	rc = GetDiskFreeSpaceA(rootdir, &sectorsPerCluster, &bytesPerSector,
 	    &freeClusters, &totalClusters);
     } else {
-	rc = GetDiskFreeSpace(path, &sectorsPerCluster, &bytesPerSector,
+	rc = GetDiskFreeSpaceA(path, &sectorsPerCluster, &bytesPerSector,
 	    &freeClusters, &totalClusters);
     }
     if (!rc) {

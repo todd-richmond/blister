@@ -43,7 +43,7 @@ static void log(Log::Level lvl, const tchar *str) {
     dlog.log(lvl, str);
 }
 
-int main(int argc, tchar *argv[]) {
+int tmain(int argc, tchar *argv[]) {
     int i;
     Log::Level lvl = Log::Info;
     ulong ka = 0;
@@ -63,26 +63,26 @@ int main(int argc, tchar *argv[]) {
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
-	    file = strcmp(argv[i], T("-")) ? argv[i] : T("stderr");
+	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stderr");
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
 	    	if ((lvl = Log::str2enum(argv[++i])) == Log::None)
 		    break;
 	    }
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	cnt = atol(argv[++i]);
+	    	cnt = ttol(argv[++i]);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	sz = atol(argv[++i]);
+	    	sz = ttol(argv[++i]);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	tm = atol(argv[++i]);
+	    	tm = ttol(argv[++i]);
 	    dlog.alert(lvl, file, cnt, sz, tm);
 	} else if (!tstricmp(argv[i], T("-b")) || !tstricmp(argv[i],
 	    T("--buffer"))) {
 	    ulong sz = 32 * 1024, msec = 1000;
 
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		sz = (ulong)atol(argv[++i]);
+		sz = (ulong)ttol(argv[++i]);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		msec = (ulong)atol(argv[++i]);
+		msec = (ulong)ttol(argv[++i]);
 	    dlog.setmp(false);
 	    dlog.buffer(sz, msec);
 	} else if (!tstricmp(argv[i], T("-c")) || !tstricmp(argv[i],
@@ -111,23 +111,23 @@ int main(int argc, tchar *argv[]) {
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
-	    file = strcmp(argv[i], T("-")) ? argv[i] : T("stdout");
+	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stdout");
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
 	    	if ((lvl = Log::str2enum(argv[++i])) == Log::None)
 		    break;
 	    }
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	cnt = atol(argv[++i]);
+	    	cnt = ttol(argv[++i]);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	sz = atol(argv[++i]);
+	    	sz = ttol(argv[++i]);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	tm = atol(argv[++i]);
+	    	tm = ttol(argv[++i]);
 	    dlog.file(lvl, file, cnt, sz, tm);
 	} else if (!tstricmp(argv[i], T("-k")) || !tstricmp(argv[i],
 	    T("--keepalive"))) {
 	    ka = 1000;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		ka = (ulong)atol(argv[++i]);
+		ka = (ulong)ttol(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-l")) || !tstricmp(argv[i],
 	    T("--level"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
@@ -181,7 +181,7 @@ int main(int argc, tchar *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		host = argv[++i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		fac = atoi(argv[++i]);
+		fac = ttoi(argv[++i]);
 	    dlog.syslog(lvl, host, fac);
 	} else if (!tstricmp(argv[i], T("-t")) || !tstricmp(argv[i],
 	    T("--type"))) {
@@ -204,31 +204,31 @@ int main(int argc, tchar *argv[]) {
 	}
     }
     if (i < argc) {
-	cerr << T("Usage: dlog\n"
-	    "\t[-a|--alert file [level [count [size [time]]]]]\n"
-	    "\t[-b|--buffer [msec [size]]]\n"
-	    "\t[-c|--config cfgfile [prefix]]\n"
-	    "\t[-d|--date strftime]\n"
-	    "\t[-f|--file file [level [count [size [time]]]]]\n"
-	    "\t[-k|--keepalive [polltime]]\n"
-	    "\t[-l|--level emerg|alert|crit|err|warn|report|note|info|debug|trace]\n"
-	    "\t[-m|--mail to [level [from [host]]]]\n"
-	    "\t[-n|--name sourcename]\n"
-	    "\t[-o|--output logstr ...]\n"
-	    "\t[-p|--prefix logstr]\n"
-	    "\t[-s|--syslog [level [host [facility]]]]\n"
-	    "\t[-t|--type keyval|nolevel|simple|syslog]\n"
-	    "\t[-u|--unlocked]\n"
-	    "\t[logstr]*\n") << endl;
+	tcerr << T("Usage: dlog\n")
+	    T("\t[-a|--alert file [level [count [size [time]]]]]\n")
+	    T("\t[-b|--buffer [msec [size]]]\n")
+	    T("\t[-c|--config cfgfile [prefix]]\n")
+	    T("\t[-d|--date strftime]\n")
+	    T("\t[-f|--file file [level [count [size [time]]]]]\n")
+	    T("\t[-k|--keepalive [polltime]]\n")
+	    T("\t[-l|--level emerg|alert|crit|err|warn|report|note|info|debug|trace]\n")
+	    T("\t[-m|--mail to [level [from [host]]]]\n")
+	    T("\t[-n|--name sourcename]\n")
+	    T("\t[-o|--output logstr ...]\n")
+	    T("\t[-p|--prefix logstr]\n")
+	    T("\t[-s|--syslog [level [host [facility]]]]\n")
+	    T("\t[-t|--type keyval|nolevel|simple|syslog]\n")
+	    T("\t[-u|--unlocked]\n")
+	    T("\t[logstr]*\n") << endl;
 	    return 1;
     }
     while (!out) {
-	while (getline(cin, s)) {
+	while (getline(tcin, s)) {
 	    if (!s.empty())
 		log(lvl, s.c_str());
 	}
 	if (ka) {
-	    cin.clear();
+	    tcin.clear();
 	    msleep(ka);
 	} else {
 	    break;
