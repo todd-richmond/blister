@@ -71,7 +71,6 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
     timingmap::const_iterator it;
     uint last = 0, start = 0;
     SpinLocker lkr(lck);
-    bool msec = true;
     tstring s;
     vector<const Stats *>::const_iterator sit;
     vector<const Stats *> sorted;
@@ -87,8 +86,6 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
     sort(sorted.begin(), sorted.end(), sortbyname ? less_name : less_time);
     for (sit = sorted.begin(); sit != sorted.end(); sit++) {
 	stats = *sit;
-	if (stats->tot > 1000000)
-	    msec = false;
 	for (u = TIMINGSLOTS - 1; u > last; u--) {
 	    if (stats->cnts[u]) {
 		last = u;
@@ -96,14 +93,11 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	    }
 	}
     }
-last = 7;
     if (columns) {
 	if (columns > TIMINGSLOTS)
 	    columns = TIMINGSLOTS;
 	start = last < columns ? 0 : last - columns + 1;
-	s = T("key                            ");
-	s += msec ? T("msec") : T(" sec");
-	s += T("   cnt   avg");
+	s = T("key                            msec   cnt   avg");
 	for (u = start; u <= last; u++) {
 	    s += (tchar)' ';
 	    s += hdrs[u];
@@ -121,13 +115,11 @@ last = 7;
 	    for (u = 0; u <= start; u++)
 		sum += stats->cnts[u];
 	    if (stats->cnt >= 100000000)
-		tsprintf(cbuf, T("%5luM"), (stats->cnt + 499999) / 1000);
+		tsprintf(cbuf, T("%5lum"), (stats->cnt + 499999) / 1000000);
 	    else if (stats->cnt >= 100000)
-		tsprintf(cbuf, T("%5luK"), (stats->cnt + 499) / 1000);
+		tsprintf(cbuf, T("%5luk"), (stats->cnt + 499) / 1000);
 	    else
 		tsprintf(cbuf, T("%5lu"), stats->cnt);
-	    if (msec)
-		tot *= 1000;
 	    if (tot)
 		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->name, format(tot,
 		    sbuf), cbuf, format(tot / stats->cnt, abuf));
@@ -234,13 +226,17 @@ void Timing::stop(uint lvl) {
 }
 
 const tchar *Timing::format(timing_t t, tchar *buf) {
-    float f(t / 1000000.0f);
+    float f(t / 1000.0f);
 
-    if (f < 9.9995)
+    if (f < 10)
 	tsprintf(buf, T("%.3f"), f);
-    else if (f < 99.995)
+    else if (f < 100)
         tsprintf(buf, T("%.2f"), f);
+    else if (f < 10000)
+        tsprintf(buf, T("%.0f"), f);
+    else if (f < 1000000)
+        tsprintf(buf, T("%.0fk"), f / 1000);
     else
-        tsprintf(buf, T("%.0f"), f + .4999);
+        tsprintf(buf, T("%.0fm"), f / 1000000);
     return buf;
 }
