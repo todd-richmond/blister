@@ -154,7 +154,7 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect) {
 }
 
 void Config::trim(tstring &s) {
-    int i, j = s.size();
+    tstring::size_type i, j = s.size();
 
     for (i = 0; i < j; i++)
 	if (!istspace(s[i]))
@@ -166,7 +166,7 @@ void Config::trim(tstring &s) {
     for (j--; j; j--)
 	if (!istspace(s[j]))
 	    break;
-    if (i || j != (int)s.size() - 1)
+    if (i || j != s.size() - 1)
 	s = s.substr(i, j - i + 1);
 }
 
@@ -195,9 +195,9 @@ bool Config::parse(tistream &is) {
 	if (attr.empty() || attr[0] == ';' || attr[0] == '#' || attr[0] == '=')
 	    continue;
 
-	tstring::size_type pos;
 	bool plus = false;
-	int sz = attr.size();
+	tstring::size_type pos;
+	tstring::size_type sz = attr.size();
 
 	while (attr[sz - 1] == '\\') {
 	    if (getline(is, s)) {

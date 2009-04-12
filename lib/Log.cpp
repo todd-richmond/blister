@@ -174,9 +174,9 @@ void Log::LogFile::print(const tchar *buf, size_t sz) {
 	}
 #endif
     } else {
-	write(fd, buf, sz);
+	write(fd, buf, (uint)sz);
 	if (file[0] != '>')
-	    len += sz;
+	    len += (ulong)sz;
     }
 }
 
@@ -391,7 +391,7 @@ bool Log::close(void) {
 }
 
 void Log::endlog(Tlsdata *tlsd, Level clvl) {
-    uint lvllen, tmlen;
+    size_t lvllen, tmlen;
     time_t now_sec;
     usec_t now_usec;
     tstring &strbuf(tlsd->strbuf);
@@ -525,7 +525,7 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
     if (ffd.enable && clvl <= ffd.lvl) {
 	if (ft.getState() == Running) {
 	    bufstrm.write(strbuf.c_str(), strbuf.size());
-	    if (bufstrm.size() > bufsz)
+	    if ((uint)bufstrm.size() > bufsz)
 		_flush();
 	} else {
 	    ffd.print(strbuf);

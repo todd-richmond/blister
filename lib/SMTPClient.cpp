@@ -47,9 +47,9 @@ void SMTPClient::attribute(const tchar *attr, const tchar *val) {
 }
 
 bool SMTPClient::auth(const tchar *id, const tchar *pass) {
-    uint idlen = tstrlen(id) + 1;
-    uint passlen = tstrlen(pass) + 1;
-    uint uusz;
+    size_t idlen = tstrlen(id) + 1;
+    size_t passlen = tstrlen(pass) + 1;
+    size_t uusz;
     char *buf, *uubuf;
     bool ret = false;
 
@@ -221,7 +221,7 @@ bool SMTPClient::vrfy(const tchar *id) {
     return cmd(T("VRFY"), addr.address(0, false, false).c_str());
 }
 
-bool SMTPClient::data(const void *start, uint sz, bool dotstuff) {
+bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
     if (!datasent) {
 	if (!cmd(T("DATA"), NULL, 354))
 	    return false;
@@ -243,7 +243,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     char buf[64], gmtoff[8];
     int diff;
     char *encbuf;
-    uint encbufsz;
+    size_t encbufsz;
     vector<tstring>::const_iterator it;
     uint64 mid = nextmid++;
     time_t now;
@@ -325,7 +325,7 @@ bool SMTPClient::enddata() {
     return cmd(T("."));
 }
 
-bool SMTPClient::stuff(const void *data, uint sz) {
+bool SMTPClient::stuff(const void *data, size_t sz) {
     const char *start = (const char *)data;
     const char *p, *pp;
     const char *end = start + sz - 1;
@@ -743,7 +743,7 @@ void RFC821Addr::make_address() {
 
 uint RFC822Addr::parse(const tchar *addrs) {
     tchar *d, *m, *n, *r, *unused;
-    uint len = tstrlen(addrs) + 1;
+    size_t len = tstrlen(addrs) + 1;
     tchar *phrase, *s;
     int tok = ' ';
 
@@ -809,7 +809,7 @@ uint RFC822Addr::parse(const tchar *addrs) {
 	    }
 	}
     }
-    return name.size();
+    return (uint)name.size();
 }
 
 void RFC822Addr::parse_append(const tchar *n, const tchar *r, const tchar *m,
@@ -965,11 +965,11 @@ static const uint maxlen = 45;
 #define	DEC(c) (((c) - ' ') & 077)
 #define ENC(c) (table[(c) & 077])
 
-static inline void encode(const void *input, uint len, void *output, uint &outsz,
-    const uchar *table, bool base64) {
+static inline void encode(const void *input, size_t len, void *output,
+    size_t &outsz, const uchar *table, bool base64) {
     const char *in = (const char *)input;
     char *out = (char *)output;
-    uint n = 0;
+    size_t n = 0;
 
     while (len) {
 	n = len < maxlen ? len : maxlen;
@@ -1013,7 +1013,7 @@ static inline void encode(const void *input, uint len, void *output, uint &outsz
     *out = '\0';
 }
 
-bool base64encode(const void *input, uint len, void *&output, uint &outsz) {
+bool base64encode(const void *input, size_t len, void *&output, size_t &outsz) {
     static const uchar table[64] = {
       'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
       'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
@@ -1032,8 +1032,8 @@ bool base64encode(const void *input, uint len, void *&output, uint &outsz) {
     return true;
 }
 
-bool uuencode(const tchar *file, const void *input, uint len, void *&output,
-    uint &outsz) {
+bool uuencode(const tchar *file, const void *input, size_t len, void *&output,
+    size_t &outsz) {
     char *out = (char *)output;
 
     static const char begin[] = "begin 644 ";
@@ -1049,7 +1049,7 @@ bool uuencode(const tchar *file, const void *input, uint len, void *&output,
       'X', 'Y', 'Z', '[', '\\', ']', '^', '_'
     };
 
-    outsz = tstrlen(file);
+    outsz = (uint)tstrlen(file);
     if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) == NULL)
 	return false;
     memcpy(out, begin, sizeof (begin) - 1);
@@ -1064,8 +1064,8 @@ bool uuencode(const tchar *file, const void *input, uint len, void *&output,
     return true;
 }
 
-bool uudecode(const void *input, uint sz, uint &perm, tstring &file,
-    void *&output, uint &outsz) {
+bool uudecode(const void *input, size_t sz, uint &perm, tstring &file,
+    void *&output, size_t &outsz) {
     const char *in = (const char *)input;
     char *out;
     const char *p = in;
@@ -1088,7 +1088,7 @@ bool uudecode(const void *input, uint sz, uint &perm, tstring &file,
     file.erase();
     while (*p != '\r' && *p != '\n'&& !isspace(*p))
 	file.append(1, *p++);
-    sz -= p - in;
+    sz -= (uint)(p - in);
     if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
 	return false;
     while (sz) {
@@ -1144,7 +1144,7 @@ bool uudecode(const void *input, uint sz, uint &perm, tstring &file,
     return true;
 }
 
-bool base64decode(const void *input, uint sz, void *&output, uint &outsz) {
+bool base64decode(const void *input, size_t sz, void *&output, size_t &outsz) {
     int add_bits;
     const char *in = (const char *)input;
     int mask;

@@ -36,6 +36,8 @@
 #define socklen_t int
 #define SSET_FD(i)  fds->fd_array[i]
 
+typedef SOCKET socket_t;
+
 inline int sockerrno(void) { return WSAGetLastError(); }
 
 #else
@@ -48,11 +50,14 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
+#define INVALID_SOCKET -1
 #define SSET_FD(i)  fds[i].fd
 #define WSAEINTR    EINTR
 
+typedef int socket_t;
+
 inline int sockerrno(void) { return errno; }
-inline int closesocket(int fd) { return ::close(fd); }
+inline int closesocket(socket_t fd) { return ::close(fd); }
 #endif
 
 #include <errno.h>
@@ -152,13 +157,13 @@ inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
 // CIDR/Network range class
 class CIDR {
 public:
-    CIDR(const char *addrs = NULL) { add(addrs); }
+    CIDR(const tchar *addrs = NULL) { add(addrs); }
 
-    bool add(const char *addrs);
+    bool add(const tchar *addrs);
     void erase(void) { ranges.erase(ranges.begin(), ranges.end()); }
-    bool find(const char *addr) const;
+    bool find(const tchar *addr) const;
     bool find(uint addr) const;
-    bool set(const char *addrs) { erase(); return add(addrs); }
+    bool set(const tchar *addrs) { erase(); return add(addrs); }
 
 private:
     class Range {
@@ -179,26 +184,26 @@ private:
 // Berkeley/WinSock Socket class
 class Socket {
 public:
-    Socket(int type = SOCK_STREAM, int sock = -1):
-	sbuf(new SocketBuf(type, sock, sock == -1)) {}
+    Socket(int type = SOCK_STREAM, socket_t sock = INVALID_SOCKET):
+	sbuf(new SocketBuf(type, sock, sock == INVALID_SOCKET)) {}
     Socket(const Socket &r) { r.sbuf->count++; sbuf = r.sbuf; }
     ~Socket() { if (--sbuf->count == 0) delete sbuf; }
 
-    const Socket &operator =(int sock);
+    const Socket &operator =(socket_t sock);
     const Socket &operator =(const Socket &r);
-    bool operator ==(int sock) const { return sbuf->sock == sock; }
+    bool operator ==(socket_t sock) const { return sbuf->sock == sock; }
     bool operator ==(const Socket &r) const
 	{ return sbuf == r.sbuf || sbuf->sock == r.sbuf->sock; }
     bool operator !=(const Socket &r) const { return !operator ==(r); }
-    operator void *(void) const { return sbuf->sock == -1 ? NULL : sbuf; }
-    bool operator !(void) const { return sbuf->sock == -1; }
-    operator int() const { return sbuf->sock; }
+    operator void *(void) const { return sbuf->sock == INVALID_SOCKET ? NULL : sbuf; }
+    bool operator !(void) const { return sbuf->sock == INVALID_SOCKET; }
+    operator socket_t() const { return sbuf->sock; }
 
     bool blocked(void) const { return ::blocked(sbuf->err); }
     bool interrupted(void) const { return ::interrupted(sbuf->err); }
     int err(void) const { return sbuf->err; }
-    int fd(void) const { return sbuf->sock; }
-    bool open(void) const { return sbuf->sock != -1; }
+    socket_t fd(void) const { return sbuf->sock; }
+    bool open(void) const { return sbuf->sock != INVALID_SOCKET; }
 
     bool accept(Socket &sock);
     bool bind(const Sockaddr &addr, bool reuse = true);
@@ -207,7 +212,7 @@ public:
     bool listen(int queue = LISTEN_BACKLOG);
     bool listen(const Sockaddr &addr, bool reuse = true, int queue = LISTEN_BACKLOG)
     	{ return bind(addr, reuse) && listen(queue); }
-    bool movehigh(void) { return (sbuf->sock = movehigh(sbuf->sock)) != -1; }
+    bool movehigh(void) { return (sbuf->sock = movehigh(sbuf->sock)) != INVALID_SOCKET; }
     bool open(int family);
     bool peername(Sockaddr &addr);
     bool proxysockname(Sockaddr &addr);
@@ -245,12 +250,12 @@ public:
     bool rwindow(int size) { return setsockopt(SOL_SOCKET, SO_RCVLOWAT, size); }
     int wwindow(void) const { return getsockopt(SOL_SOCKET, SO_SNDLOWAT); }
     bool wwindow(int size) { return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size); }
-    int read(void *buf, int len) const;
-    int read(void *buf, int len, Sockaddr &addr) const;
+    int read(void *buf, size_t len) const;
+    int read(void *buf, size_t len, Sockaddr &addr) const;
     long readv(iovec *iov, int count) const;
     long readv(iovec *iov, int count, const Sockaddr &addr) const;
-    int write(const void *buf, int len) const;
-    int write(const void *buf, int len, const Sockaddr &addr) const;
+    int write(const void *buf, size_t len) const;
+    int write(const void *buf, size_t len, const Sockaddr &addr) const;
     long writev(const iovec *iov, int count) const;
     long writev(const iovec *iov, int count, const Sockaddr &addr) const;
     template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
@@ -278,8 +283,8 @@ public:
 protected:
     class SocketBuf {
     public:
-	SocketBuf(int t, int s, bool o): blck(true), count(1), err(0), own(o),
-	    sock(s), type(t), rto(SOCK_INFINITE), wto(SOCK_INFINITE) {}
+	SocketBuf(int t, socket_t s, bool o): blck(true), count(1), err(0),
+	    own(o), sock(s), type(t), rto(SOCK_INFINITE), wto(SOCK_INFINITE) {}
 	~SocketBuf() { if (own) close(); }
 
 	bool blocked(void) const { return ::blocked(err); }
@@ -293,12 +298,12 @@ protected:
 	    }
 	}
 	bool close(void) {
-	    if (sock == -1) {
+	    if (sock == INVALID_SOCKET) {
 		err = EINVAL;
 		return false;
 	    } else {
 		bool b = check(::closesocket(sock));
-		sock = -1;
+		sock = INVALID_SOCKET;
 		return b;
 	    }
 	}
@@ -309,7 +314,7 @@ protected:
 	uint count;
 	mutable int err;
 	bool own;
-	int sock;
+	socket_t sock;
 	int type;
 	ulong rto, wto;
 
@@ -318,7 +323,7 @@ protected:
     
 protected:
     bool check(int ret) const { return sbuf->check(ret); }
-    int movehigh(int fd);
+    socket_t movehigh(socket_t fd);
     bool rwpoll(bool rd) const;
 
     SocketBuf *sbuf;
@@ -332,17 +337,19 @@ public:
     ~SocketSet() { delete [] fds; }
     
     const SocketSet &operator =(const SocketSet &r);
-    template<class C> int operator [](C at) const { return SSET_FD((uint)at); }
+    template<class C> socket_t operator [](C at) const {
+	return SSET_FD((uint)at);
+    }
 
     bool empty(void) const { return sz == 0; }
-    bool get(int fd) const;
+    bool get(socket_t fd) const;
     bool get(const Socket &sock) const { return get(sock.fd()); }
     uint size(void) const { return sz; }
     
     void clear(void) { sz = 0; }
-    bool set(int fd);
+    bool set(socket_t fd);
     bool set(const Socket &sock) { return set(sock.fd()); }
-    bool unset(int fd);
+    bool unset(socket_t fd);
     bool unset(const Socket &sock) { return unset(sock.fd()); }
     bool iselect(SocketSet &iset, SocketSet &eset, ulong msec = SOCK_INFINITE);
     bool ioselect(SocketSet &iset, SocketSet &oset, SocketSet &eset,
@@ -372,9 +379,9 @@ inline SocketSet::SocketSet(uint maxfds): maxsz(maxfds), sz(0) {
 #endif
 }
 
-inline bool SocketSet::get(int fd) const {
+inline bool SocketSet::get(socket_t fd) const {
     for (uint u = 0; u < sz; u++)
-	if ((int)SSET_FD(u) == fd)
+	if (SSET_FD(u) == fd)
 	    return true;
     return false;
 }
@@ -387,7 +394,7 @@ inline const SocketSet &SocketSet::operator =(const SocketSet &ss) {
 	delete [] fds;
 	fds = (fd_set *)new int[maxsz + 1];
     }
-    memcpy(fds, ss.fds, (sz + 1) * sizeof (int));
+    memcpy(fds, ss.fds, (sz + 1) * sizeof (socket_t));
 #else
     if (maxsz < sz) {
 	maxsz = ss.maxsz;
@@ -399,13 +406,13 @@ inline const SocketSet &SocketSet::operator =(const SocketSet &ss) {
     return *this;
 }
 
-inline bool SocketSet::set(int fd) {
+inline bool SocketSet::set(socket_t fd) {
     if (sz == maxsz) {
 	maxsz = maxsz ? maxsz * 2 : 32;
 #ifdef _WIN32
 	fd_set *p = (fd_set *)new int[maxsz + 1];
 
-	memcpy(p, fds, (sz + 1) * sizeof (int));
+	memcpy(p, fds, (sz + 1) * sizeof (socket_t));
 #else
 	pollfd *p = new pollfd[maxsz];
 
@@ -418,9 +425,9 @@ inline bool SocketSet::set(int fd) {
     return true;
 }
 
-inline bool SocketSet::unset(int fd) {
+inline bool SocketSet::unset(socket_t fd) {
     for (uint u = 0; u < sz; u++) {
-	if ((int)SSET_FD(u) == fd) {
+	if (SSET_FD(u) == fd) {
 	    SSET_FD(u) = SSET_FD(--sz);
 	    return true;
 	}
@@ -441,9 +448,9 @@ public:
 
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
-    void str(char *p, int sz) { sb.setbuf(p, sz); }
-    int read(void *p, int sz) { return sb.read(p, sz); }
-    template<class C>int read(C &c) { return sb.read(&c, sizeof (c)); }
+    void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
+    streamsize read(void *p, streamsize sz) { return sb.read(p, sz); }
+    template<class C> streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
 
 private:
     socketbuf sb;
@@ -459,9 +466,9 @@ public:
 
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
-    void str(char *p, int sz) { sb.setbuf(p, sz); }
-    int write(const void *p, int sz) { return sb.write(p, sz); }
-    template<class C>int write(const C &c) { return sb.write(&c, sizeof (c)); }
+    void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
+    streamsize write(const void *p, streamsize sz) { return sb.write(p, sz); }
+    template<class C> streamsize write(const C &c) { return sb.write(&c, sizeof (c)); }
 
 private:
     socketbuf sb;
@@ -477,11 +484,11 @@ public:
 
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
-    void str(char *p, int sz) { sb.setbuf(p, sz); }
-    int read(void *p, int sz) { return sb.read(p, sz); }
-    int write(const void *p, int sz) { return sb.write(p, sz); }
-    template<class C>int read(C &c) { return sb.read(&c, sizeof (c)); }
-    template<class C>int write(const C &c) { return sb.write(&c, sizeof (c)); }
+    void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
+    streamsize read(void *p, streamsize sz) { return sb.read(p, sz); }
+    streamsize write(const void *p, streamsize sz) { return sb.write(p, sz); }
+    template<class C> streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
+    template<class C> streamsize write(const C &c) { return sb.write(&c, sizeof (c)); }
 
 private:
     socketbuf sb;

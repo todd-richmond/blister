@@ -182,10 +182,10 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, ulong to) {
 }
 
 bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
-    long datasz) {
+    size_t datasz) {
     char buf[16];
     bool first = true;
-    streamsize in;
+    size_t in;
     iovec iov[2];
     bool keep = false;
     const char *p, *pp;
@@ -293,7 +293,7 @@ loop:
 	ret = (ulong)sstrm.read(result, ressz) == ressz;
     } else if (ressz) {
 	char *newres;
-	ulong room = sz;
+	size_t room = sz;
 
 	keep = false;
 	ressz = 0;
@@ -310,7 +310,7 @@ loop:
 		ressz += in;
 		ret = true;
 	    }
-	    if (in == -1 || (ulong)in < room)
+	    if (in == (size_t)-1 || (ulong)in < room)
 		break;
 	    room -= in;
 	}

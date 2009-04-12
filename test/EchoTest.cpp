@@ -331,7 +331,7 @@ int tmain(int argc, tchar *argv[]) {
 	read(fd, data, dsz);
 	close(fd);
     } else {
-	dsz = tstrlen(path);
+	dsz = (uint)tstrlen(path);
 	data = new char[(dsz + 1) * sizeof (tchar)];
 	memcpy(data, path, dsz * sizeof (tchar));
     }

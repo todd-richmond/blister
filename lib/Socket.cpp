@@ -34,6 +34,7 @@
 #endif
 #pragma warning(disable: 4389)
 
+#define SIZE_T int
 Sockaddr::SockInit Sockaddr::init;
 
 #else
@@ -43,7 +44,8 @@ Sockaddr::SockInit Sockaddr::init;
 #include <sys/filio.h>
 #endif
 
-#define ioctlsocket	ioctl
+#define SIZE_T size_t
+#define ioctlsocket ioctl
 
 #endif
 
@@ -230,38 +232,38 @@ const tstring &Sockaddr::hostname() {
 #define VALID_IP(ip) (ip[0] < 256 && ip[1] < 256 && ip[2] < 256 && ip[3] < 256)
 #define BUILD_IP(ip) ((ip[0] << 24) | (ip[1] << 16) | (ip[2] << 8) | ip[3])
 
-bool CIDR::add(const char *addrs) {
+bool CIDR::add(const tchar *addrs) {
     uint ip1[4], ip2[4];
     int maskbits = 32;
-    const char *p;
+    const tchar *p;
     Range range;
-    uint sz = ranges.size();
+    size_t sz = ranges.size();
 
     while (addrs) {
-	if (strchr(addrs, '/') && (sscanf(addrs, "%u.%u.%u.%u/%d", &ip1[0],
+	if (tstrchr(addrs, '/') && (tsscanf(addrs, T("%u.%u.%u.%u/%d"), &ip1[0],
 	    &ip1[1], &ip1[2], &ip1[3], &maskbits) == 5) && VALID_IP(ip1) &&
 	    maskbits >= 1 && maskbits <= 32) {
 	    range.min = BUILD_IP(ip1) & (~((1 << (32 - maskbits)) - 1) &
 		0xFFFFFFFF);
 	    range.max = range.min | (((1 << (32 - maskbits)) - 1) & 0xFFFFFFFF);
 	    ranges.push_back(range);
-	} else if (strchr(addrs, '-') && (sscanf(addrs,
-	    "%u.%u.%u.%u-%u.%u.%u.%u", &ip1[0], &ip1[1], &ip1[2], &ip1[3],
+	} else if (tstrchr(addrs, '-') && (tsscanf(addrs,
+	    T("%u.%u.%u.%u-%u.%u.%u.%u"), &ip1[0], &ip1[1], &ip1[2], &ip1[3],
 	    &ip2[0], &ip2[1], &ip2[2], &ip2[3]) == 8) &&
 	    VALID_IP(ip1) && VALID_IP(ip2)) {
 	    range.min = BUILD_IP(ip1);
 	    range.max = BUILD_IP(ip2);
 	    if (range.max >= range.min)
 		ranges.push_back(range);
-	} else if ((sscanf(addrs, "%u.%u.%u.%u", &ip1[0], &ip1[1], &ip1[2],
+	} else if ((tsscanf(addrs, T("%u.%u.%u.%u"), &ip1[0], &ip1[1], &ip1[2],
 	    &ip1[3]) == 4) && VALID_IP(ip1)) {
 	    range.min = range.max = BUILD_IP(ip1);
 	    ranges.push_back(range);
 	}
 	p = addrs;
-	if ((addrs = strchr(p, ',')) != NULL ||
-	    (addrs = strchr(p, ';')) != NULL ||
-	    (addrs = strchr(p, ' ')) != NULL)
+	if ((addrs = tstrchr(p, ',')) != NULL ||
+	    (addrs = tstrchr(p, ';')) != NULL ||
+	    (addrs = tstrchr(p, ' ')) != NULL)
 	    addrs++;
     }
     if (ranges.size() != sz) {
@@ -272,10 +274,10 @@ bool CIDR::add(const char *addrs) {
     }
 }
 
-bool CIDR::find(const char *addr) const {
+bool CIDR::find(const tchar *addr) const {
     uint ip[4];
 
-    return sscanf(addr, "%u.%u.%u.%u", &ip[0], &ip[1], &ip[2], &ip[3]) == 4 &&
+    return tsscanf(addr, T("%u.%u.%u.%u"), &ip[0], &ip[1], &ip[2], &ip[3]) == 4 &&
 	VALID_IP(ip) && find(BUILD_IP(ip));
 }
 
@@ -292,7 +294,7 @@ bool CIDR::find(uint addr) const {
     return false;
 }
 
-const Socket &Socket::operator =(int sock) {
+const Socket &Socket::operator =(socket_t sock) {
     int type = sbuf->type;
 
     if (--sbuf->count == 0)
@@ -318,7 +320,8 @@ bool Socket::accept(Socket &sock) {
 
     sock.close();
     do {
-	if (check(sock.sbuf->sock = movehigh(::accept(sbuf->sock, &sa, &sz)))) {
+	if (check((sock.sbuf->sock = movehigh(::accept(sbuf->sock, &sa,
+	    &sz))) == INVALID_SOCKET ? -1 : 0)) {
 	    sock.sbuf->type = sbuf->type;
 	    return true;
 	}
@@ -368,7 +371,7 @@ bool Socket::listen(int queue) {
     return check(::listen(sbuf->sock, queue));
 }
 
-int Socket::movehigh(int fd) {
+socket_t Socket::movehigh(socket_t fd) {
 #ifndef _WIN32
     if (fd > 2 && fd < 1024) {
 	int newfd = fcntl(fd, F_DUPFD, 1024);
@@ -389,7 +392,8 @@ int Socket::movehigh(int fd) {
 
 bool Socket::open(int family) {
     close();
-    return check(sbuf->sock = movehigh(::socket(family, sbuf->type, 0)));
+    return check((sbuf->sock = movehigh(::socket(family, sbuf->type,
+	0))) == INVALID_SOCKET ? -1 : 0);
 }
 
 bool Socket::shutdown(bool in, bool out) {
@@ -494,13 +498,13 @@ bool Socket::rwpoll(bool rd) const {
     return ret;
 }
 
-int Socket::read(void *buf, int sz) const {
+int Socket::read(void *buf, size_t sz) const {
     int in;
 
     do {
 	if (!rwpoll(true))
 	    return -1;
-	check(in = recv(sbuf->sock, (char *)buf, sz, 0));
+	check(in = recv(sbuf->sock, (char *)buf, (SIZE_T)sz, 0));
     } while (interrupted());
     if (in) {
 	return blocked() ? 0 : in;
@@ -510,14 +514,15 @@ int Socket::read(void *buf, int sz) const {
     }
 }
 
-int Socket::read(void *buf, int sz, Sockaddr &addr) const {
+int Socket::read(void *buf, size_t sz, Sockaddr &addr) const {
     socklen_t asz = sizeof (sockaddr);
     int in;
     
     do {
 	if (!rwpoll(true))
 	    return -1;
-	check(in = recvfrom(sbuf->sock, (char *)buf, sz, 0, &addr, &asz));
+	check(in = recvfrom(sbuf->sock, (char *)buf, (SIZE_T)sz, 0, &addr,
+	    &asz));
     } while (interrupted());
     if (in) {
 	return blocked() ? 0 : in;
@@ -527,24 +532,24 @@ int Socket::read(void *buf, int sz, Sockaddr &addr) const {
     }
 }
 
-int Socket::write(const void *buf, int sz) const {
+int Socket::write(const void *buf, size_t sz) const {
     int out;
 
     do {
 	if (!rwpoll(false))
 	    return -1;
-	check(out = send(sbuf->sock, (const char *)buf, sz, 0));
+	check(out = send(sbuf->sock, (const char *)buf, (SIZE_T)sz, 0));
     } while (interrupted());
     return blocked() ? 0 : out;
 }
 
-int Socket::write(const void *buf, int sz, const Sockaddr &addr) const {
+int Socket::write(const void *buf, size_t sz, const Sockaddr &addr) const {
     int out;
     
     do {
 	if (!rwpoll(false))
 	    return -1;
-	check(out = sendto(sbuf->sock, (const char *)buf, sz, 0,
+	check(out = sendto(sbuf->sock, (const char *)buf, (SIZE_T)sz, 0,
 	    &addr, sizeof (sockaddr)));
     } while (interrupted());
     return blocked() ? 0 : out;

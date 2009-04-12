@@ -239,7 +239,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 		buf << endl;
 	    return false;
 	}
-	len = tstrlen(buf);
+	len = (int)tstrlen(buf);
 	cmd = tstrtok(buf, T(" \t"));
 	if (!tstricmp(cmd, T("hdr")) || !tstricmp(cmd, T("var"))) {
 	    tchar *attr, *val;

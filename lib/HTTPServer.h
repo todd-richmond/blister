@@ -48,7 +48,7 @@ public:
 protected:
     void header(const char *attr, const char *val);
     void error(int errnum);
-    void reply(const char *data = NULL, ulong len = 0);
+    void reply(const char *data = NULL, size_t len = 0);
     void reply(int fd, size_t sz);
     void reply(int sts) { status(sts, NULL); reply(); }
     void status(int sts, const char *type = "text",
@@ -63,7 +63,7 @@ protected:
     attrmap attrs, args, postargs;
     const char *cmd, *path, *prot;
     char *data, *postdata;
-    uint datasz, postsz, postin, sz;
+    ulong datasz, postsz, postin, sz;
     bool delpost, ka, nagleon;
     char *fmap;
     bufferstream<char> hdrs, ss;

@@ -55,7 +55,7 @@ public:
     void header(const tchar *hdr) { hdrv.push_back(hdr); }
     void subject(const tchar *s) { sub = s; }
     bool data(bool mime = false, const tchar *txt = NULL);
-    bool data(const void *p, uint sz, bool dotstuff = true);
+    bool data(const void *p, size_t sz, bool dotstuff = true);
     bool data(const tstring &s) {
 	return data(tstringtoa(s).c_str(), s.size());
     }
@@ -87,7 +87,7 @@ private:
 
     bool add(vector<tstring> &v, const tchar *id);
     void recip(const tchar *hdr, const vector<tstring> &v);
-    bool stuff(const void *p, uint sz);    
+    bool stuff(const void *p, size_t sz);    
 };
 
 class RFC821Addr: nocopy {
@@ -123,7 +123,7 @@ public:
     vector<const tchar *> domain, mbox, name, route;
 
     const tstring address(uint u = 0, bool name = false, bool brkt = true) const;
-    uint size(void) const { return mbox.size(); }
+    size_t size(void) const { return mbox.size(); }
 
     uint parse(const tchar *addrs);
 
@@ -137,12 +137,12 @@ private:
     int parse_route(tchar *&in, tchar *&route);
 };
 
-bool base64encode(const void *in, uint len, void *&out, uint &outsz);
-bool base64decode(const void *in, uint sz, void *&out, uint &outsz);
-bool uuencode(const tchar *file, const void *in, uint len, void *&out,
-    uint &outsz);
-bool uudecode(const void *in, uint sz, uint &perm, tstring &file,
-    void *&out, uint &outsz);
+bool base64encode(const void *in, size_t len, void *&out, size_t &outsz);
+bool base64decode(const void *in, size_t sz, void *&out, size_t &outsz);
+bool uuencode(const tchar *file, const void *in, size_t len, void *&out,
+    size_t &outsz);
+bool uudecode(const void *in, size_t sz, uint &perm, tstring &file,
+    void *&out, size_t &outsz);
 
 time_t mkgmtime(struct tm *const tmp);
 time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);

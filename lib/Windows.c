@@ -52,6 +52,8 @@ int _timezone;
 #endif
 
 #pragma comment(lib, "winmm.lib")
+#pragma warning(disable: 4305)
+#pragma warning(disable: 4306)
 
 static HANDLE lockhdl;
 static long *locks;
@@ -146,7 +148,7 @@ static uint rename_lock(const char *path) {
 		usleep(1);
 	} else {
 	    init1 = TRUE;
-	    if ((lockhdl = CreateFileMappingA((HANDLE)0xFFFFFFFF, NULL,
+	    if ((lockhdl = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL,
 		PAGE_READWRITE, 0, HASH_SIZE * sizeof (long),
 		"rename_locks")) != NULL) {
 		if ((locks = MapViewOfFile(lockhdl, FILE_MAP_WRITE, 0, 0,
@@ -365,17 +367,17 @@ long writev(int fd, const struct iovec *io , int num) {
     int out;
 
     if (num == 1)
-	return write(fd, io->iov_base, io->iov_len);
+	return write(fd, io->iov_base, (int)io->iov_len);
     for (i = 0; i < num; i++, io++) {
 	if (p - buf + io->iov_len > sizeof (buf)) {
 	    if (p != buf) {
-		if ((out = write(fd, buf, p - buf)) == -1)
+		if ((out = write(fd, buf, (uint)(p - buf))) == -1)
 		    return len;
 		len += out;
 		p = buf;
 	    }
 	    if (io->iov_len > sizeof (buf) || i == num - 1) {
-		if ((out = write(fd, io->iov_base, io->iov_len)) == -1)
+		if ((out = write(fd, io->iov_base, (int)io->iov_len)) == -1)
 		    return len;
 		len += out;
 		continue;
@@ -385,7 +387,7 @@ long writev(int fd, const struct iovec *io , int num) {
 	p += io->iov_len;
     }
     if (p != buf) {
-	if ((out = write(fd, buf, p - buf)) == -1)
+	if ((out = write(fd, buf, (int)(p - buf))) == -1)
 	    return len;
 	len += out;
     }
@@ -416,7 +418,7 @@ DIR *opendir(const char *name) {
     DWORD attr;
     const char *p;
     const char *wild = NULL;
-    int len;
+    size_t len;
     TPATHVAR(path);
 
     len = strlen(name);
@@ -535,7 +537,7 @@ int link(const char *from, const char *to) {
     (void)buf;
     sz = GetFullPathName(to, MAX_PATH, FileLink, &FilePart);
 #else
-    MultiByteToWideChar(CP_ACP, 0, to, strlen(to) + 1, buf, sizeof (buf));
+    MultiByteToWideChar(CP_ACP, 0, to, (int)strlen(to) + 1, buf, sizeof (buf));
     sz = GetFullPathNameW(buf, MAX_PATH, FileLink, &FilePart);
 #endif
     if (sz == 0) {
@@ -556,7 +558,7 @@ int link(const char *from, const char *to) {
     sid.dwStreamNameSize = 0;
     sid.Size.HighPart = 0;
     sid.Size.LowPart = (sz + 1) * sizeof (WCHAR);
-    out = (LPBYTE)&sid.cStreamName - (LPBYTE)&sid;
+    out = (int)((LPBYTE)&sid.cStreamName - (LPBYTE)&sid);
     if (!BackupWrite(hdl, (LPBYTE)&sid, out, &out, FALSE, FALSE, &lpContext)) {
 	_dosmaperr(GetLastError());
 	CloseHandle(hdl);
@@ -681,7 +683,7 @@ int open(const char *p, int oflag, ...) {
     hdl = CreateFileA(path, fileaccess, fileshare, &sa,
 	filecreate, fileattrib, NULL);
     rename_unlock(lck);
-    if (hdl == (HANDLE)0xffffffff ) {
+    if (hdl == INVALID_HANDLE_VALUE) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
@@ -931,7 +933,7 @@ int statvfs(const char *path, struct statvfs *buf) {
      */
     cp = strchr(path, ':');
     if (cp) {
-	int size = cp - path + 1;
+	size_t size = cp - path + 1;
 
 	if (size >= sizeof (rootdir))
 	    size = sizeof (rootdir) - 1;

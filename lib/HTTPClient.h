@@ -57,7 +57,7 @@ public:
     int err(void) const { return sock.err(); }
     bool keepalive(void) const { return ka; }
     long rtimeout(void) const { return rto; }
-    long size(void) const { return ressz; }
+    size_t size(void) const { return ressz; }
     uint status(void) const { return sts; }
     long wtimeout(void) const { return wto; }
 
@@ -79,9 +79,9 @@ public:
     bool del(const tchar *path) { return send(T("DELETE"), path); }
     bool get(const tchar *path) { return send(T("GET"), path); }
     bool head(const tchar *path) { return send(T("HEAD"), path); }
-    bool post(const tchar *path, const void *data, uint len)
+    bool post(const tchar *path, const void *data, size_t len)
 	{ return send(T("POST"), path, data, len); }
-    bool put(const tchar *path, const void *data, uint len)
+    bool put(const tchar *path, const void *data, size_t len)
 	{ return send(T("PUT"), path, data, len); }
     const tchar *response(const tstring &name) const {
 	attrmap::const_iterator it = reshdrs.find(name);
@@ -96,15 +96,15 @@ protected:
     Socket sock;
     bool ka;
     attrmap reshdrs;
-    ulong ressz;
+    size_t ressz;
     char *result;
     ulong rto, wto;
     sockstream sstrm;
     uint sts;
-    ulong sz;
+    size_t sz;
 
     bool send(const tchar *op, const tchar *path, const void *data = NULL,
-	long datasz = 0);
+	size_t datasz = 0);
 };
 
 #endif // HTTPClient_h

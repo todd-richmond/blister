@@ -329,7 +329,7 @@ void HTTPServerSocket::parse(void) {
     else
 	postsz = 0;
     if (postsz) {
-	postin = datasz - (postdata - data);
+	postin = datasz - (ulong)(postdata - data);
 	if (postin > postsz)
 	    postin = postsz;
 	if (postin == postsz) {
@@ -449,7 +449,7 @@ void HTTPServerSocket::send(void) {
     }
     if (ka && out != (ulong)-1) {
 	eos();
-	datasz -= delpost ? datasz : postsz + (postdata - data);
+	datasz -= delpost ? datasz : postsz + (ulong)(postdata - data);
 	if (datasz) {
 	    postdata[postsz] = savechar;
 	    memmove(data, postdata + postsz, datasz);
@@ -462,7 +462,7 @@ void HTTPServerSocket::send(void) {
     }
 }
 
-void HTTPServerSocket::reply(const char *data, ulong len) {
+void HTTPServerSocket::reply(const char *data, size_t len) {
     char buf[64];
     int i;
 
@@ -485,7 +485,7 @@ void HTTPServerSocket::reply(int fd, size_t len) {
     char buf[1024];
 
     if (len < sizeof (buf)) {
-	if ((size_t)::read(fd, buf, len) != len) {
+	if ((size_t)::read(fd, buf, (uint)len) != len) {
 	    error(404);
 	    return;
 	}
@@ -496,7 +496,7 @@ void HTTPServerSocket::reply(int fd, size_t len) {
 	HANDLE hdl;
 
 	if ((hdl = CreateFileMapping((HANDLE)fd, NULL, PAGE_READONLY,
-	    0, len, NULL)) == NULL) {
+	    0, (DWORD)len, NULL)) == NULL) {
 	    error(404);
 	    return;
 	}
@@ -521,7 +521,7 @@ void HTTPServerSocket::status(int sts, const char *type,
     const char *subtype, time_t mtime) {
     struct tm tmbuf, *tmptr;
     char buf[64];
-    int i;
+    size_t i;
 
     hdrs.reset();
     ss.reset();

@@ -238,7 +238,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 		buf << endl;
 	    return false;
 	}
-	len = tstrlen(buf);
+	len = (int)tstrlen(buf);
 	cmt = tstrtok(buf, T(" \t"));
 	if (*cmt == '*') {
 	    cmt++;

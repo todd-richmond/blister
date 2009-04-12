@@ -32,8 +32,8 @@ public:
     void attach(C &c) { fd = c; }
     const char *str(void) const { return buf; }
     void str(char *p, streamsize sz) { setbuf(p, sz); }
-    streamsize read(void *in, int sz) { return xsgetn((char *)in, sz); }
-    streamsize write(const void *in, int sz) { return xsputn((const char *)in, sz); }
+    streamsize read(void *in, streamsize sz) { return xsgetn((char *)in, sz); }
+    streamsize write(const void *in, streamsize sz) { return xsputn((const char *)in, sz); }
     template<class T> streamsize read(T &t) { return read(t, sizeof (t)); }
     template<class T> streamsize write(const T &t) { return write(&t, sizeof (t)); }
 
@@ -154,7 +154,7 @@ public:
 	    setp(pb, pb + bufsz);
 	} else if (sz) {
 	    memcpy(pp, p, sz);
-	    pbump(sz);
+	    pbump((int)sz);
 	} else if (pp - pb) {
 	    if (fd.write(pb, (streamsize)(pp - pb)) != pp - pb)
 		return -1;
@@ -169,7 +169,7 @@ public:
     
 	if (left && left >= sz) {
 	    memcpy(p, gptr(), sz);
-	    gbump(sz);
+	    gbump((int)sz);
 	} else {
 	    char *pb = pbase();
 	    
@@ -191,7 +191,7 @@ public:
 		    p += in;
 		}
 	    } else if (left || !sz) {	    // read into stream buf
-		int len;
+		streamsize len;
 		
 		do {
 		    if ((in = fd.read(buf, bufsz)) <= 0)
@@ -220,8 +220,8 @@ public:
     nullstream() {}
 
     template<class C> nullstream &operator <<(const C &) { return *this; }
-    size_t pcount(void) const { return 0; }
-    size_t size(void) const { return 0; }
+    streamsize pcount(void) const { return 0; }
+    streamsize size(void) const { return 0; }
     const tchar *str(void) const { return NULL; }
     void reset(void) {}
 };
@@ -236,8 +236,8 @@ public:
     bufferstream(): basic_ostream<C>(&sb), sb(ios::out) {}
     virtual ~bufferstream() {}
 
-    size_t pcount(void) const { return sb.pcount(); }
-    size_t size(void) const { return sb.pcount(); }
+    streamsize pcount(void) const { return sb.pcount(); }
+    streamsize size(void) const { return sb.pcount(); }
     const C *str(void) const { return sb.str(); }
 
     void reset(void) { if (pcount()) basic_ostream<C>::seekp(0, ios::beg); }
@@ -247,7 +247,7 @@ private:
     public:
 	bufferbuf(ios::openmode m): basic_stringbuf<C>(m) {}
 
-	size_t pcount(void) const {
+	streamsize pcount(void) const {
 	    return basic_stringbuf<C>::pptr() - basic_stringbuf<C>::pbase();
 	}
 	const C *str(void) const { return basic_stringbuf<C>::pbase(); }
@@ -267,7 +267,7 @@ public:
     virtual ~bufferstream() { freeze(false); }
 
     void reset(void) { if (pcount()) { freeze(false); seekp(0, ios::beg); } }
-    size_t size(void) const { return ((basic_ostrstream<C> *)this)->pcount(); }
+    streamsize size(void) const { return ((basic_ostrstream<C> *)this)->pcount(); }
 };
 #endif
 

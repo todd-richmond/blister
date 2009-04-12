@@ -671,7 +671,7 @@ void Dispatcher::removeTimer(DispatchTimer &dt) {
 }
 
 void Dispatcher::cancelSocket(DispatchSocket &ds) {
-    int fd;
+    socket_t fd;
     Locker lkr(lock);
 
     if (ds.flags & DSP_ReadyAll)

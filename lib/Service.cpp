@@ -433,7 +433,7 @@ bool Service::install(const tchar *file, const tchar *desc,
     tchar buf[MAX_PATH];
     tchar *p = NULL, *pp;
     tstring root, prog;
-    int i, sz;
+    size_t i, sz;
 
     if (uninstall())
 	open();
@@ -605,7 +605,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
     HKEY key;
     DWORD size;
     DWORD type;
-    uint namesz;
+    DWORD namesz;
     PERF_INSTANCE_DEFINITION *pid;
     PERF_COUNTER_BLOCK *pcb;
     static Lock lock;
@@ -644,12 +644,12 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    return 1;
 	}
 	CloseHandle(hdl);
-	namesz = name.length() * 2;
+	namesz = (DWORD)name.length() * 2;
 	if (namesz)
 	    namesz += sizeof (WCHAR);
 	size = sizeof (PERF_OBJECT_TYPE) +
 	    ctrs * sizeof (PERF_COUNTER_DEFINITION);
-	datasz = size + sizeof (PERF_INSTANCE_DEFINITION) + DWORD_MULTIPLE(namesz) +
+	datasz = (size_t)size + sizeof (PERF_INSTANCE_DEFINITION) + DWORD_MULTIPLE(namesz) +
 	    sizeof (PERF_COUNTER_BLOCK);
 	if ((data = new tchar [datasz]) == NULL) {
 	    UnmapViewOfFile(map);
@@ -1134,7 +1134,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     path = argv[0];
 #ifndef _WIN32_WCE
     if (path[0] != '/' && path[1] != ':') {
-	uint sz = 1024 + 2 + path.size();
+	int sz = 1024 + 2 + (int)path.size();
 	tchar *buf = new tchar[sz];
 
 	tgetcwd(buf, sz);
@@ -1325,7 +1325,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     } while (lckfd == -1);
     ftruncate(lckfd, 0);
     sprintf(buf, "%d", getpid());
-    write(lckfd, buf, strlen(buf));
+    write(lckfd, buf, (uint)strlen(buf));
     for (int i = 1; i < argc; i++) {
 	const tchar *p = argv[i];
 
@@ -1551,7 +1551,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	ftruncate(lckfd, 0);
 	sprintf(buf, "%d", sigpid);
 	lseek(lckfd, 0, SEEK_SET);
-	write(lckfd, buf, strlen(buf));
+	write(lckfd, buf, (uint)strlen(buf));
 	dlog.buffer(buffer);
     }
     return ret;

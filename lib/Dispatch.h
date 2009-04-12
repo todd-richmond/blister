@@ -90,7 +90,7 @@ protected:
     const Config &cfg;
 
 private:
-    typedef hash_map<int, DispatchSocket *> socketmap;
+    typedef hash_map<socket_t, DispatchSocket *> socketmap;
     typedef multimap<msec_t, DispatchTimer *> timermap;
 
     friend class DispatchObj;
