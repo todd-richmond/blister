@@ -70,7 +70,7 @@ bool Sockaddr::set(const hostent *h) {
 	sa_family = h->h_addrtype;
 	sz = h->h_length;
 	memcpy(&((sockaddr_in *)this)->sin_addr, h->h_addr, sz);
-	name = atotstring(h->h_name);
+	name = achartotstring(h->h_name);
     } else {
 	name.erase();
 	sz = 0;
@@ -96,7 +96,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
     name.erase();
     if (host && *host && *host != '*' && tstricmp(host, T("INADDR_ANY"))) {
 	if (istdigit(*host) &&
-	    (addr = inet_addr(tchartoa(host).c_str())) != (ulong)-1) {
+	    (addr = inet_addr(tchartoachar(host))) != (ulong)-1) {
 	    ((sockaddr_in *)this)->sin_addr.s_addr = addr;
 	    ret = true;
 	} else {
@@ -104,7 +104,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 	    gethostbyname_r(tchartoa(host).c_str(), &hbuf, buf, sizeof (buf),
 		&h, &err);
 #else
-	    h = gethostbyname_r(tchartoa(host).c_str(), &hbuf, buf,
+	    h = gethostbyname_r(tchartoachar(host), &hbuf, buf,
 		sizeof (buf), &err);
 #endif
 	    if (h)
@@ -141,9 +141,9 @@ const tstring &Sockaddr::host(void) const {
 	if (((sockaddr_in *)this)->sin_addr.s_addr == INADDR_ANY) {
 	    name = '*';
 	} else {
-	    hostent *h = NULL, hbuf;
 	    char buf[512];
 	    int err;
+	    hostent *h = NULL, hbuf;
 
 #ifdef __linux__
 	    gethostbyaddr_r((const char *)&((sockaddr_in *)this)->sin_addr,
@@ -153,7 +153,7 @@ const tstring &Sockaddr::host(void) const {
 		sz, sa_family, &hbuf, buf, sizeof (buf), &err);
 #endif
 	    if (h)
-		name = atotstring(h->h_name);
+		name = achartotstring(h->h_name);
 	    else
 		name = ip();
 	}
@@ -182,7 +182,8 @@ bool Sockaddr::port(const tchar *service, Proto proto) {
 #ifdef __linux__
     getservbyname_r(service, protos[proto], &sbuf, buf, sizeof (buf), &s);
 #elif !defined(_WIN32_WCE)
-    s = getservbyname_r(tchartoa(service).c_str(), protos[proto], &sbuf, buf, sizeof (buf));
+    s = getservbyname_r(tchartoachar(service), protos[proto], &sbuf, buf,
+	sizeof (buf));
 #endif
     port((ushort)(s ? s->s_port : 0));
     return s != NULL;
@@ -198,9 +199,8 @@ tstring Sockaddr::service(ushort port, Proto proto) {
 #elif !defined(_WIN32_WCE)
     s = getservbyport_r(port, protos[proto], &sbuf, buf, sizeof (buf));
 #endif
-    return s ? atotstring(s->s_name) : T("");
+    return s ? achartotstring(s->s_name) : T("");
 }
-
 
 const tstring &Sockaddr::hostname() {
     static tstring name;
@@ -223,7 +223,7 @@ const tstring &Sockaddr::hostname() {
 
 	    hostent *hp = gethostbyname(buf);
 	    
-	    name = atotstring(hp ? hp->h_name : buf);
+	    name = achartotstring(hp ? hp->h_name : buf);
 	}
     }
     return name;
