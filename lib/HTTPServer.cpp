@@ -468,7 +468,7 @@ void HTTPServerSocket::reply(const char *data, size_t len) {
 
     if (!len && data)
 	len = strlen(data);
-    i = sprintf(buf, "Content-Length: %lu\r\n\r\n", ss.size() + len);
+    i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)ss.size() + len);
     hdrs.write(buf, i);
     iov[0].iov_base = (char *)hdrs.str();
     iov[0].iov_len = hdrs.size();

@@ -208,7 +208,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     req += " HTTP/1.0\r\n";
     if (datasz) {
 	req += "Content-Length: ";
-	sprintf(buf, "%lu", datasz);
+	sprintf(buf, "%lu", (ulong)datasz);
 	req += buf;
 	req += "\r\n";
     }
