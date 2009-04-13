@@ -522,9 +522,6 @@ extern int wcscasecmp(const wchar *, const wchar *);
 #define totupper	towupper
 #define totlower	towlower
 #define tmain		wmain
-#define tcerr		wcerr
-#define tcin		wcin
-#define tcout		wcout
 
 #define tfprintf	fwprintf
 #define tprintf		fwprintf
@@ -535,28 +532,6 @@ extern int wcscasecmp(const wchar *, const wchar *);
 #define tfscanf		fwscanf
 #define tscanf		wscanf
 #define tsscanf		swscanf
-
-#define tstreambuf	wstreambuf
-#define tistream	wistream
-#define tostream	wostream
-#define tiostream	wiostream
-#define tfstream	wfstream
-#define tifstream	wifstream
-#define tofstream	wofstream
-#define tstringstream	wstringstream
-#define tistringstream	wistringstream
-#define tostringstream	wostringstream
-#define tstrstream	wstrstream
-#define tistrstream	wistrstream
-#define tostrstream	wostrstream
-#define tstringbuf	wstringbuf
-
-#define atotstring(s)	atowide(s)
-#define wtotstring(s)	string(s)
-#define tchartoa(s)	widetoa(s)
-#define tchartow(s)	wstring(s)
-#define tstringtoa(s)	widetoa((s).c_str())
-#define tstringtow(s)	(s)
 
 typedef wchar tchar;
 typedef wchar tuchar;
@@ -608,24 +583,6 @@ typedef wchar tuchar;
 #define totupper	toupper
 #define totlower	tolower
 #define tmain		main
-#define tcerr		cerr
-#define tcin		cin
-#define tcout		cout
-
-#define tstreambuf	streambuf
-#define tistream	istream
-#define tostream	ostream
-#define tiostream	iostream
-#define tfstream	fstream
-#define tifstream	ifstream
-#define tofstream	ofstream
-#define tstringstream	stringstream
-#define tistringstream	istringstream
-#define tostringstream	ostringstream
-#define tstrstream	strstream
-#define tistrstream	istrstream
-#define tostrstream	ostrstream
-#define tstringbuf	wstringbuf
 
 #define tfprintf	fprintf
 #define tprintf		fprintf
@@ -636,13 +593,6 @@ typedef wchar tuchar;
 #define tfscanf		fscanf
 #define tscanf		scanf
 #define tsscanf		sscanf
-
-#define atotstring(s)	string(s)
-#define wtotstring(s)	widetoa(s)
-#define tchartoa(s)	string(s)
-#define tchartow(s)	atowide((s).c_str())
-#define tstringtoa(s)	(s)
-#define tstringtow(s)	atowide((s).c_str())
 
 typedef char tchar;
 typedef uchar tuchar;
@@ -682,6 +632,99 @@ using namespace std;
 using namespace stdext;
 #endif
 #endif
+
+extern const wstring _achartowstring(const char *s, int len);
+extern const string _wchartoastring(const wchar *s, int len);
+
+inline const wstring astringtowstring(const string &s) {
+    return _achartowstring(s.c_str(), (int)s.size() + 1);
+}
+
+inline const string wstringtoastring(const wstring &s) {
+    return _wchartoastring(s.c_str(), (int)s.size() + 1);
+}
+
+#define achartowchar(s)	    achartowstring(s).c_str()
+#define achartowstring(s)   _achartowstring((s), -1)
+#define astringtoachar(s)   (s).c_str()
+#define astringtowchar(s)   astringtowstring(s).c_str()
+#define wchartoachar(s)	    wchartoastring(s).c_str()
+#define wchartoastring(s)   _wchartoastring((s), -1)
+#define wstringtoachar(s)   wstringtoastring(s).c_str()
+#define wstringtowchar(s)   (s).c_str()
+
+#ifdef UNICODE
+#define achartotchar(s)	    achartowchar(s)
+#define achartotstring(s)   achartowstring(s)
+#define astringtotchar(s)   astringtowchar(s)
+#define astringtotstring(s) astringtowstring(s)
+#define tchartoachar(s)	    wchartoachar(s)
+#define tchartowchar(s)	    (s)
+#define tchartotstring(s)   wstring(s)
+#define tstringtoachar(s)   wstringtoachar(s)
+#define tstringtoastring(s) wstringtoastring(s)
+#define tstringtowchar(s)   wstringtowchar(s)
+#define tstringtowstring(s) (s)
+#define wchartotchar(s)	    wchartowchar(s)
+#define wchartotstring(s)   wchartowstring(s)
+#define wstringtotchar(s)   wstringtowchar(s)
+#define wstringtotstring(s) wstringtowstring(s)
+
+#define tcerr		    wcerr
+#define tcin		    wcin
+#define tcout		    wcout
+#define tstreambuf	    wstreambuf
+#define tistream	    wistream
+#define tostream	    wostream
+#define tiostream	    wiostream
+#define tfstream	    wfstream
+#define tifstream	    wifstream
+#define tofstream	    wofstream
+#define tstringstream	    wstringstream
+#define tistringstream	    wistringstream
+#define tostringstream	    wostringstream
+#define tstrstream	    wstrstream
+#define tistrstream	    wistrstream
+#define tostrstream	    wostrstream
+#define tstringbuf	    wstringbuf
+
+#else
+
+#define achartotchar(s)	    (s)
+#define achartotstring(s)   string(s)
+#define astringtotchar(s)   astringtoachar(s)
+#define astringtotstring(s) (s)
+#define tchartoachar(s)	    (s)
+#define tchartowchar(s)	    achartowchar(s)
+#define tchartotstring(s)   string(s)
+#define tstringtoachar(s)   astringtoachar(s)
+#define tstringtoastring(s) (s)
+#define tstringtowchar(s)   astringtowchar(s)
+#define tstringtowstring(s) astringtowstring(s)
+#define wchartotchar(s)	    wchartoachar(s)
+#define wchartotstring(s)   wchartoastring(s)
+#define wstringtotchar(s)   wstringtoachar(s)
+#define wstringtotstring(s) wstringtoastring(s)
+
+#define tcerr		    cerr
+#define tcin		    cin
+#define tcout		    cout
+#define tstreambuf	    streambuf
+#define tistream	    istream
+#define tostream	    ostream
+#define tiostream	    iostream
+#define tfstream	    fstream
+#define tifstream	    ifstream
+#define tofstream	    ofstream
+#define tstringstream	    stringstream
+#define tistringstream	    istringstream
+#define tostringstream	    ostringstream
+#define tstrstream	    strstream
+#define tistrstream	    istrstream
+#define tostrstream	    ostrstream
+#define tstringbuf	    stringbuf
+#endif
+
 #if defined(__GNUC__)
 #if __GNUC__ >= 3
 using namespace __gnu_cxx;
@@ -691,9 +734,9 @@ using namespace __gnu_cxx;
 #define STL_HASH_MAP_4ARGS
 #define STL_HASH_PARMS
 #else
-#define STL_HASH_MAP	<hash_map>
-#define STL_HASH_SET    <hash_set>	
-#define STL_HASH_PARMS	enum { bucket_size = 4, min_buckets = 8 };
+#define STL_HASH_MAP	    <hash_map>
+#define STL_HASH_SET	    <hash_set>	
+#define STL_HASH_PARMS	    enum { bucket_size = 4, min_buckets = 8 };
 #endif
 
 // structs useful for hash maps
@@ -841,39 +884,6 @@ struct striless {
     }
     static bool less(const C *a, const C *b) { return stringicmp(a, b) < 0; }
 };
-
-#ifdef _WIN32
-inline const string widetoa(const wchar *s) {
-    int len = WideCharToMultiByte(CP_ACP, 0, s, -1,
-	NULL, NULL, NULL, NULL);
-    char sbuf[256];
-    char *buf = sbuf;
-    string ret;
-
-    if (len > sizeof (sbuf))
-	buf = new char[len];
-    WideCharToMultiByte(CP_ACP, 0, s, -1, buf, len, NULL, NULL);
-    ret = buf;
-    if (len > sizeof (sbuf))
-	delete [] buf;
-    return ret;
-}
-
-inline const wstring atowide(const char *s) {
-    int len = MultiByteToWideChar(CP_ACP, 0, s, -1, NULL, NULL);
-    wchar sbuf[128];
-    wchar *buf = sbuf;
-    wstring ret;
-
-    if (len > sizeof (sbuf) / sizeof (wchar))
-	buf = new wchar[len];
-    MultiByteToWideChar(CP_ACP, 0, s, -1, buf, len);
-    ret = buf;
-    if (len > sizeof (sbuf))
-	delete [] buf;
-    return ret;
-}
-#endif
 
 #endif
 

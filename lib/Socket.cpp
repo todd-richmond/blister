@@ -101,11 +101,11 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 	    ret = true;
 	} else {
 #ifdef __linux__
-	    gethostbyname_r(tchartoa(host).c_str(), &hbuf, buf, sizeof (buf),
-		&h, &err);
+	    gethostbyname_r(tchartoachar(host), &hbuf, buf, sizeof (buf), &h,
+		&err);
 #else
-	    h = gethostbyname_r(tchartoachar(host), &hbuf, buf,
-		sizeof (buf), &err);
+	    h = gethostbyname_r(tchartoachar(host), &hbuf, buf, sizeof (buf),
+		&err);
 #endif
 	    if (h)
 		ret = set(h);

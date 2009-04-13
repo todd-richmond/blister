@@ -61,7 +61,7 @@ public:
     uint status(void) const { return sts; }
     long wtimeout(void) const { return wto; }
 
-    ostream &operator <<(ostream &os);
+    tostream &operator <<(tostream &os);
     bool close(void) { return sock.close(); }
     bool connect(const Sockaddr &addr, bool keepalive = false, 
 	ulong timeout = SOCK_INFINITE);

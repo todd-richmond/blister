@@ -202,9 +202,9 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     sts = 0;
     s.reserve(128);
     reshdrs.clear();
-    req = tchartoa(op);
+    req = tchartoachar(op);
     req += ' ';
-    req += tchartoa(path);
+    req += tchartoachar(path);
     req += " HTTP/1.0\r\n";
     if (datasz) {
 	req += "Content-Length: ";
@@ -215,7 +215,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     if (ka)
 	req += "Pragma: Keep-Alive\r\nConnection: Keep-Alive\r\n";
     if (hstrm.size())
-	req += tchartoa(hstrm.str());
+	req += tchartoachar(hstrm.str());
     req += "\r\n";
     iov[0].iov_base = (char *)req.c_str();
     iov[0].iov_len = req.size();
@@ -264,7 +264,7 @@ loop:
 	} while (*pp && (*pp == '\r' || *pp == ' ' || *pp == '\t'));
 	sss.assign(pp, strlen(pp) - 1);
 	
-	pair<tstring, tstring> pr(atotstring(ss.c_str()), atotstring(sss.c_str()));
+	pair<tstring, tstring> pr(astringtotstring(ss), astringtotstring(sss));
 
 	reshdrs.insert(pr);
     }
@@ -326,13 +326,13 @@ done:
     return ret;
 }
 
-ostream &HTTPClient::operator <<(ostream &os) {
+tostream &HTTPClient::operator <<(tostream &os) {
     attrmap::const_iterator it;
 
     os << sts << endl;
     for (it = reshdrs.begin(); it != reshdrs.end(); it++)
-	os << tstringtoa(it->first) << ": " << tstringtoa(it->second) << endl;
-    os.write(result, ressz);
+	os << it->first << ": " << it->second << endl;
+    os.write(achartotchar(result), ressz);
     os << endl;
     return os;
 }

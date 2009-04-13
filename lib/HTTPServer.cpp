@@ -607,10 +607,10 @@ void HTTPServerSocket::get(bool head) {
 	return;
     }
     if ((val = attr("if-modified-since")) != NULL) {
-	if (parse_date(atotstring(val).c_str()) >= sbuf.st_mtime)
+	if (parse_date(achartotchar(val)) >= sbuf.st_mtime)
 	    sts = 304;
     } else if ((val = attr("if-unmodified-since")) != NULL) {
-	if (parse_date(atotstring(val).c_str()) < sbuf.st_mtime)
+	if (parse_date(achartotchar(val)) < sbuf.st_mtime)
 	    sts = 304;
     }
     if (val && (val = strchr(val, ';')) != NULL &&

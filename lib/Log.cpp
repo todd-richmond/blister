@@ -184,8 +184,8 @@ bool Log::LogFile::reopen(void) {
     bool ret = true;
 
     close();
-    if ((fd = ::open(tstringtoa(path).c_str(),
-	O_WRONLY | O_CREAT | O_BINARY | O_SEQUENTIAL, 0640)) == -1) {
+    if ((fd = ::open(tstringtoachar(path), O_WRONLY | O_CREAT | O_BINARY |
+	O_SEQUENTIAL, 0640)) == -1) {
 	tcerr << T("unable to open log ") << path << endl;
 	fd = -3;
 	ret = false;
@@ -197,15 +197,15 @@ bool Log::LogFile::reopen(void) {
 	    struct tm tmbuf, *tm = gmt ? gmtime_r(&now, &tmbuf) :
 		localtime_r(&now, &tmbuf);
 
-	    strftime(buf, sizeof (buf) / sizeof (tchar), tstringtoa(file).c_str(), tm);
-	    link(tstringtoa(path).c_str(), buf);
+	    strftime(buf, sizeof (buf) / sizeof (tchar), tstringtoachar(file), tm);
+	    link(tstringtoachar(path), buf);
 	}
     }
     return ret;
 }
 
 void Log::LogFile::roll(void) {
-    string afile(tstringtoa(file)), apath(tstringtoa(path));
+    string afile(tstringtoastring(file)), apath(tstringtoastring(path));
     char buf[1024];
     DIR *dir;
     struct dirent *ent;
@@ -308,7 +308,7 @@ void Log::LogFile::set(const Config &cfg, const tchar *sect,
 
 	if (!dir.empty()) {
 	    dir += T("/log");
-	    if (access(tstringtoa(dir).c_str(), 0))
+	    if (access(tstringtoachar(dir), 0))
 		dir = cfg.get(T("installdir"));
 	    dir += T("/");
 	    file = dir + file;
@@ -552,14 +552,14 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
 	    if (_type == KeyVal)
 		ss += "nm=";
 	    if ((pos = mailfrom.find_first_of('@')) == ss.npos)
-		ss += tstringtoa(mailfrom);
+		ss += tstringtoastring(mailfrom);
 	    else
-		ss += tstringtoa(mailfrom.substr(0, pos));
+		ss += tstringtoastring(mailfrom.substr(0, pos));
 	}
 	if (_type == Syslog)
 	    ss += ':';
 	ss += ' ';
-	ss += tstringtoa(strbuf.substr(tmlen));
+	ss += tstringtoastring(strbuf.substr(tmlen));
 	syslogsock.write(ss.c_str(), ss.size(), syslogaddr);
     }
     if (mailenable && clvl <= maillvl && !mailto.empty()) {

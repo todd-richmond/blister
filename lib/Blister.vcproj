@@ -621,7 +621,7 @@
 				>
 			</File>
 			<File
-				RelativePath=".\Windows.cpp"
+				RelativePath=".\WindowsCPP.cpp"
 				>
 			</File>
 		</Filter>

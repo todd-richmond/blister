@@ -109,8 +109,9 @@ public:
     void family(ushort fam) { sa_family = fam; }
     const tstring &host(void) const;
     bool host(const tchar *host) { return set(host, port()); }
-    const tstring ip(void) const
-	{ return atotstring(inet_ntoa(((const sockaddr_in *)this)->sin_addr)); }
+    const tstring ip(void) const {
+	return achartotstring(inet_ntoa(((const sockaddr_in *)this)->sin_addr));
+    }
     const tstring str(void) const {
 	tchar buf[12]; tsprintf(buf, T(":%u"), port());
 	return host() + buf;

@@ -198,11 +198,11 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 	DIR *dir;
 	struct dirent *ent;
 
-	if (stat(tchartoa(bodyfile).c_str(), &sbuf) != -1 &&
-	    sbuf.st_mode & S_IFREG) {
+	if (stat(tchartoachar(bodyfile), &sbuf) != -1 && sbuf.st_mode &
+	    S_IFREG) {
 	    bodycnt = 1;
 	    add(bodyfile);
-	} else if ((dir = opendir(tchartoa(bodyfile).c_str())) != NULL) {
+	} else if ((dir = opendir(tchartoachar(bodyfile))) != NULL) {
 	    while ((ent = readdir(dir)) != NULL)
 		bodycnt++;
 	    rewinddir(dir);
@@ -212,7 +212,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 		if (*ent->d_name == '.')
 		    continue;
 		s += '/';
-		s += atotstring(ent->d_name);
+		s += achartotstring(ent->d_name);
 		add(s.c_str());
 	    }
 	    closedir(dir);
@@ -314,8 +314,7 @@ char *SMTPLoad::read(uint idx, usec_t &iousec) {
 	return bodycache[idx];
     }
     iousec = uticks();
-    if ((fd = open(tchartoa(file).c_str(), O_RDONLY|O_BINARY|O_SEQUENTIAL)) !=
-	-1) {
+    if ((fd = open(tchartoachar(file), O_RDONLY|O_BINARY|O_SEQUENTIAL)) != -1) {
 	ret = new char [filelen + 1];
 	if (::read(fd, ret, filelen) == (int)filelen) {
 	    ret[filelen] = '\0';
@@ -345,8 +344,7 @@ void SMTPLoad::add(const tchar *file) {
 	bodycnt = 0;
     }
     ZERO(sbuf);
-    if (access(tchartoa(file).c_str(), R_OK) || stat(tchartoa(file).c_str(),
-	&sbuf)) {
+    if (access(tchartoachar(file), R_OK) || stat(tchartoachar(file), &sbuf)) {
 	tcerr << T("invalid body file: ") << file << endl;
     } else {
 	body[bodycnt] = new tchar [tstrlen(file) + 1];
@@ -465,7 +463,7 @@ int SMTPLoad::onStart(void) {
 		    char *d = read(u, io);
 		    
 		    if (d) {
-			ret = sc.data(false, atotstring(d).c_str()) &&
+			ret = sc.data(false, achartotchar(d)) &&
 			    sc.enddata();
 			if (d != bodycache[u])
 			    delete [] d;

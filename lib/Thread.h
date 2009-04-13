@@ -325,7 +325,7 @@ inline void *DLLibrary::get(const tchar *symbol) const {
 #ifdef _WIN32_WCE
     return GetProcAddress((HMODULE)hdl, symbol);
 #else
-    return GetProcAddress((HMODULE)hdl, tchartoa(symbol).c_str());
+    return GetProcAddress((HMODULE)hdl, tchartoachar(symbol));
 #endif
 }
 

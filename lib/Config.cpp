@@ -186,7 +186,7 @@ bool Config::parse(tistream &is) {
 	    attr = attr.substr(9, attr.size() - 9);
 	    trim(attr);
 
-	    tifstream is(tstringtoa(attr).c_str());
+	    tifstream is(tstringtoachar(attr));
 
 	    if (!parse(is))
 		return false;
@@ -279,7 +279,7 @@ bool Config::read(const tchar *f, bool app) {
     if (f)
 	file = f;
 
-    tifstream is(tstringtoa(file).c_str());
+    tifstream is(tstringtoachar(file));
 
     return read(is, app);
 }
@@ -308,7 +308,7 @@ bool Config::write(tostream &os, bool ini) const {
     for (lit = lines.begin(); lit != lines.end(); lit++) {
 	os << *lit << endl;
 	(void)ini;
-	// incomplete - write ini style cfg
+	// TODO - write ini style cfg
 	//os << T("[") << it->first << T("]") << endl;
     }
     return os.good();
@@ -318,7 +318,7 @@ bool Config::write(const tchar *f, bool ini) const {
     if (!f)
 	f = file.c_str();
 
-    tofstream os(tchartoa(f).c_str(), ios::binary);
+    tofstream os(tchartoachar(f), ios::binary);
 
     return write(os, ini);
 }

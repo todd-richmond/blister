@@ -1257,7 +1257,7 @@ Daemon::~Daemon() {
 	    Log::kv(T("sts"), T("stopped")) << endlog;
     if (lckfd != -1) {
 	if (!watch || child)
-	    unlink(tstringtoa(lckfile).c_str());
+	    unlink(tstringtoachar(lckfile));
 	lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 	::close(lckfd);
     }
@@ -1298,7 +1298,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     splitpath(argv[0], name.c_str(), installdir, s);
     srvcpath = path;
     lckfile = installdir + T("var/run/");
-    if (access(tstringtoa(lckfile).c_str(), 0))
+    if (access(tstringtoachar(lckfile), 0))
     	lckfile = installdir;
     lckfile += name;
     lckfile += T(".pid");
@@ -1308,8 +1308,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     dlog.source(name.c_str());
     stStatus = Starting;
     do {
-	lckfd = ::open(tstringtoa(lckfile).c_str(), O_CREAT|O_WRONLY,
-	    S_IREAD | S_IWRITE);
+	lckfd = ::open(tstringtoachar(lckfile), O_CREAT|O_WRONLY, S_IREAD |
+	    S_IWRITE);
 	if (lckfd == -1 || lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 1)) {
 	    dlog << Log::Warn << Log::mod(name) << T("sts=running") << endlog;
 	    if (lckfd != -1)
@@ -1317,7 +1317,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    lckfd = -1;
 	    return 1;
 	}
-	if (fstat(lckfd, &sbuf) || stat(tstringtoa(lckfile).c_str(), &sfile) ||
+	if (fstat(lckfd, &sbuf) || stat(tstringtoachar(lckfile), &sfile) ||
 	    sbuf.st_ino != sfile.st_ino) {
 	    ::close(lckfd);
 	    lckfd = -1;
@@ -1341,11 +1341,11 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     }
     if (cfgfile.empty()) {
 	s = installdir + T("etc/") + name + T(".cfg");
-	if (access(tstringtoa(s).c_str(), 0)) {
+	if (access(tstringtoachar(s), 0)) {
 	    s = installdir + name + T(".cfg");
-	    if (access(tstringtoa(s).c_str(), 0)) {
+	    if (access(tstringtoachar(s), 0)) {
 		s = name + T(".cfg");
-		if (access(tstringtoa(s).c_str(), 0))
+		if (access(tstringtoachar(s), 0))
 		    s.erase();
 	    }
 	}
@@ -1569,8 +1569,8 @@ void Daemon::onAbort() {
     if (restart && !exiting) {
 #ifdef _WIN32_WCE
 #elif defined(_WIN32)
-	if (spawnlp(P_NOWAIT, tstringtoa(srvcpath).c_str(),
-	    tstringtoa(srvcpath).c_str(), "restart", NULL) < 0)
+	if (spawnlp(P_NOWAIT, tstringtoachar(srvcpath),
+	    tstringtoachar(srvcpath), "restart", NULL) < 0)
 #else
 	string s(srvcpath + " restart");
 

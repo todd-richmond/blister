@@ -57,7 +57,13 @@ public:
     bool data(bool mime = false, const tchar *txt = NULL);
     bool data(const void *p, size_t sz, bool dotstuff = true);
     bool data(const tstring &s) {
-	return data(tstringtoa(s).c_str(), s.size());
+#ifdef UNICODE
+	string as(tstringtoastring(s));
+
+	return data(as.c_str(), as.size());
+#else
+	return data(s.c_str(), s.size());
+#endif
     }
     bool data(const void *p, uint sz, const tchar *type,
 	const tchar *desc = NULL, const tchar *encoding = NULL,

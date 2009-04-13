@@ -59,24 +59,24 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
     } else if (exts.find(T(" PLAIN")) != exts.npos) {
 	buf = (char *)malloc(idlen + passlen + 1);
 	buf[0] = '\0';
-	memcpy(buf + 1, tchartoa(id).c_str(), idlen);
-	memcpy(buf + 1 + idlen, tchartoa(pass).c_str(), passlen);
+	memcpy(buf + 1, tchartoachar(id), idlen);
+	memcpy(buf + 1 + idlen, tchartoachar(pass), passlen);
 	base64encode(buf, idlen + passlen, (void *&)uubuf, uusz);
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
-	ret = cmd(T("AUTH PLAIN"), atotstring(uubuf).c_str(), 235);
+	ret = cmd(T("AUTH PLAIN"), achartotchar(uubuf), 235);
 	delete [] buf;
 	delete [] uubuf;
     } else if (exts.find(T(" LOGIN")) != exts.npos) {
 	base64encode(id, idlen, (void *&)uubuf, uusz);
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
-	ret = cmd(T("AUTH LOGIN"), atotstring(uubuf).c_str(), 334);
+	ret = cmd(T("AUTH LOGIN"), achartotchar(uubuf), 334);
 	delete [] uubuf;
 	base64encode(pass, passlen, (void *&)uubuf, uusz);
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
-	ret = ret && cmd(atotstring(uubuf).c_str(), NULL, 235);
+	ret = ret && cmd(achartotchar(uubuf), NULL, 235);
 	delete [] uubuf;
     }
     return ret;
@@ -87,11 +87,11 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
     
     multi.erase();
     if (s1) {
-	sstrm << tchartoa(s1);
+	sstrm << tchartoachar(s1);
 	if (s2) {
 	    if (s1[tstrlen(s1)-1] != ':')
 		sstrm << ' ';
-	    sstrm << tchartoa(s2);
+	    sstrm << tchartoachar(s2);
 	}
 	sstrm << crlf;
     }
@@ -106,7 +106,7 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 	    dlogd(T("mod=smtp action=disconnect"));
 	    return false;
 	}
-	sts = atotstring(asts.c_str());
+	sts = achartotstring(asts.c_str());
 	if (sts.length() < 3 || (sts[3] != '-' && sts[3] != ' ')) {
 	    dlogd(T("mod=smtp data=invalid"),
 		Log::kv(T("reply"), sts.c_str()));
@@ -200,11 +200,11 @@ void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
 
     if (v.empty())
 	return;
-    sstrm << tchartoa(hdr);
+    sstrm << tchartoachar(hdr);
     for (it = v.begin(); it != v.end(); it++) {
 	if (it != v.begin())
 	    sstrm << ",\r\n\t";
-	sstrm << tstringtoa(*it);
+	sstrm << tstringtoachar(*it);
     }
     sstrm << crlf;
 }
@@ -258,7 +258,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     base64encode(buf, 12, (void *&)encbuf, encbufsz);
     encbuf[encbufsz - 2] = '\0';
     sstrm << "Message-ID: <" << encbuf << '@' <<
-	tstringtoa(Sockaddr::hostname()) << '>' << crlf;
+	tstringtoastring(Sockaddr::hostname()) << '>' << crlf;
     delete [] encbuf;
     time(&now);
     tm = localtime_r(&now, &tmbuf);
@@ -273,12 +273,12 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     else
 	sprintf(gmtoff, "+%04d", diff);
     sstrm << "Date: " << buf << gmtoff << crlf;
-    sstrm << "From: " << tstringtoa(frm) << crlf;
+    sstrm << "From: " << tstringtoastring(frm) << crlf;
     recip(T("To: "), tov);
     recip(T("Cc: "), ccv);
-    sstrm << "Subject: " << tstringtoa(sub) << crlf;
+    sstrm << "Subject: " << tstringtoastring(sub) << crlf;
     for (it = hdrv.begin(); it != hdrv.end(); it++)
-	sstrm << tstringtoa(*it) << crlf;
+	sstrm << tstringtoastring(*it) << crlf;
     if (mime) {
 	sprintf(buf, "--%x%x%x%x", rand(), rand(), rand(), rand());
 	boundary = buf;
@@ -289,13 +289,20 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	if (txt) {
 	    sstrm << "--" << boundary << crlf;
 	    sstrm << "Content-Type: " << "txt/plain" << crlf << crlf;
-	    stuff(tchartoa(txt).c_str(), tstrlen(txt));
-	    sstrm << crlf << "--" << boundary << "--" << crlf;
 	}
     } else {
 	sstrm << crlf;
-	if (txt)
-	    stuff(tchartoa(txt).c_str(), tstrlen(txt));
+    }
+    if (txt) {
+#ifdef UNICODE
+	string as(wchartoastring(txt));
+
+	stuff(as.c_str(), as.size());
+#else
+	stuff(txt, strlen(txt));
+#endif
+	if (mime)
+	    sstrm << crlf << "--" << boundary << "--" << crlf;
     }
     return sstrm.good();
 }
@@ -306,14 +313,15 @@ bool SMTPClient::data(const void *p, uint sz, const tchar *type,
     if (mime)
 	sstrm << "--" << boundary << crlf;
     if (type && *type)
-	sstrm << "Content-Type: " << tchartoa(type) << crlf;
+	sstrm << "Content-Type: " << tchartoachar(type) << crlf;
     if (desc && *desc)
-	sstrm << "Content-Description: " << tchartoa(desc) << crlf;
+	sstrm << "Content-Description: " << tchartoachar(desc) << crlf;
     if (encoding && *encoding)
-	sstrm << "Content-Transfer-Encoding: " << tchartoa(encoding) << crlf;
-    sstrm << "Content-Disposition: " << tchartoa(disp && *disp ? disp : T("inline"));
+	sstrm << "Content-Transfer-Encoding: " << tchartoachar(encoding) << crlf;
+    sstrm << "Content-Disposition: " << tchartoachar(disp && *disp ? disp :
+	T("inline"));
     if (name && *name)
-	sstrm << "; filename=" << tchartoa(name) << crlf;
+	sstrm << "; filename=" << tchartoachar(name) << crlf;
     sstrm << crlf;
     stuff(p, sz);
     return sstrm.good();
@@ -1053,7 +1061,7 @@ bool uuencode(const tchar *file, const void *input, size_t len, void *&output,
     if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) == NULL)
 	return false;
     memcpy(out, begin, sizeof (begin) - 1);
-    memcpy(out + sizeof (begin) - 1, tchartoa(file).c_str(), outsz);
+    memcpy(out + sizeof (begin) - 1, tchartoachar(file), outsz);
     outsz += sizeof (begin) - 1;
     out[outsz++] = '\r';
     out[outsz++] = '\n';

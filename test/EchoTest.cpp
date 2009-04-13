@@ -319,9 +319,9 @@ int tmain(int argc, tchar *argv[]) {
 	    path = argv[i];
 	}
     }
-    if (access(tchartoa(path).c_str(), 0) == 0) {
+    if (access(tchartoachar(path), 0) == 0) {
 	ZERO(sbuf);
-	if ((fd = open(tchartoa(path).c_str(), O_RDONLY)) == -1 || fstat(fd,
+	if ((fd = open(tchartoachar(path), O_RDONLY)) == -1 || fstat(fd,
 	    &sbuf)) {
 	    tcerr << T("echotest: unable to open ") << path << endl;
 	    return 1;
