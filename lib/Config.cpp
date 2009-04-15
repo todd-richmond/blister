@@ -17,8 +17,8 @@
  */
 
 #include "stdapi.h"
-#include <fstream>
 #include <algorithm>
+#include <fstream>
 #include "Config.h"
 
 Config::Value::Value(const tstring val): expand(false), quote(0) {
@@ -186,7 +186,7 @@ bool Config::parse(tistream &is) {
 	    attr = attr.substr(9, attr.size() - 9);
 	    trim(attr);
 
-	    tifstream is(tstringtoachar(attr));
+	    tifstream is(attr.c_str());
 
 	    if (!parse(is))
 		return false;
@@ -279,7 +279,7 @@ bool Config::read(const tchar *f, bool app) {
     if (f)
 	file = f;
 
-    tifstream is(tstringtoachar(file));
+    tifstream is(file.c_str());
 
     return read(is, app);
 }
