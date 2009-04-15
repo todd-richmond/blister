@@ -211,6 +211,7 @@ void Log::LogFile::roll(void) {
     struct dirent *ent;
     uint files = 0;
     time_t now;
+    uint oldext = 0;
     string oldfile;
     string::size_type pos;
     string s1, s2, s3;
@@ -235,6 +236,7 @@ void Log::LogFile::roll(void) {
     }
     if ((dir = opendir(s1.empty() ? "." : s1.c_str())) != NULL) {
 	for (;;) {
+	    uint ext;
 	    ulong oldtime = (ulong)-1;
 
 	    files = 0;
@@ -252,8 +254,15 @@ void Log::LogFile::roll(void) {
 		if ((s3 == apath && path != file))
 		    continue;
 		files++;
-		if (stat(s3.c_str(), &sbuf) == 0 &&
-		    (ulong)sbuf.st_mtime < (ulong)oldtime) {
+		if (stat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
+		    (ulong)oldtime) {
+		    if ((pos = s3.rfind('.')) != s3.npos && isdigit(s3[++pos])) {
+			ext = atoi(s3.c_str() + pos);
+			if (ext < oldext)
+			    continue;
+			else
+			    oldext = ext;
+		    }
 		    oldfile = s3;
 		    oldtime = (time_t)sbuf.st_mtime;
 		}
