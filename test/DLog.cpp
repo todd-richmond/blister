@@ -17,6 +17,7 @@
  */
 
 #include "stdapi.h"
+#include <fstream>
 #include <signal.h>
 #include "Config.h"
 #include "Log.h"
@@ -45,9 +46,11 @@ static void log(Log::Level lvl, const tchar *str) {
 
 int tmain(int argc, tchar *argv[]) {
     int i;
+    tifstream ifs;
     Log::Level lvl = Log::Info;
     ulong ka = 0;
     bool out = false;
+    bool roll = false;
     tstring s;
 
     signal(SIGINT, signal_handler);
@@ -105,11 +108,11 @@ int tmain(int argc, tchar *argv[]) {
 	    dlog.format(argv[i]);
 	} else if (!tstricmp(argv[i], T("-f")) || !tstricmp(argv[i],
 	    T("--file"))) {
-	    ulong cnt = 3, sz = 10 * 1024 * 1024, tm = 0;
+	    ulong cnt = 10, sz = 10 * 1024 * 1024, tm = 0;
 	    const tchar *file;
 	    Log::Level lvl = Log::Info;
 
-	    if (i + 1 == argc || argv[++i][0] == '-')
+	    if (++i == argc)
 		break;
 	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stdout");
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
@@ -123,6 +126,17 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 	    	tm = ttol(argv[++i]);
 	    dlog.file(lvl, file, cnt, sz, tm);
+	} else if (!tstricmp(argv[i], T("-i")) || !tstricmp(argv[i],
+	    T("--input"))) {
+	    if (++i == argc)
+		break;
+	    if (tstrcmp(argv[i], T("-"))) {
+		ifs.open(tchartoachar(argv[i]));
+		if (!ifs.good()) {
+		    tcerr<< T("unable to open ") << argv[i] << endl;
+		    break;
+		}
+	    }
 	} else if (!tstricmp(argv[i], T("-k")) || !tstricmp(argv[i],
 	    T("--keepalive"))) {
 	    ka = 1000;
@@ -168,6 +182,10 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    dlog.prefix(argv[i]);
+	} else if (!tstricmp(argv[i], T("-r")) || !tstricmp(argv[i],
+	    T("--roll"))) {
+	    roll = true;
+	    dlog.roll();
 	} else if (!tstricmp(argv[i], T("-s")) || !tstricmp(argv[i],
 	    T("--syslog"))) {
 	    uint fac = 1;
@@ -196,6 +214,10 @@ int tmain(int argc, tchar *argv[]) {
 	} else if (!tstricmp(argv[i], T("-u")) || !tstricmp(argv[i],
 	    T("--unlocked"))) {
 	    dlog.setmp(false);
+	} else if (!tstricmp(argv[i], T("-w")) || !tstricmp(argv[i],
+	    T("--write"))) {
+	    log(lvl, argv[++i]);
+	    out = true;
 	} else if (argv[i][0] != '-') {
 	    log(lvl, argv[i]);
 	    out = true;
@@ -210,20 +232,22 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[-c|--config cfgfile [prefix]]\n")
 	    T("\t[-d|--date strftime]\n")
 	    T("\t[-f|--file file [level [count [size [time]]]]]\n")
+	    T("\t[-i|--input file]\n")
 	    T("\t[-k|--keepalive [polltime]]\n")
 	    T("\t[-l|--level emerg|alert|crit|err|warn|report|note|info|debug|trace]\n")
 	    T("\t[-m|--mail to [level [from [host]]]]\n")
 	    T("\t[-n|--name sourcename]\n")
 	    T("\t[-o|--output logstr ...]\n")
 	    T("\t[-p|--prefix logstr]\n")
+	    T("\t[-r|--roll]\n")
 	    T("\t[-s|--syslog [level [host [facility]]]]\n")
 	    T("\t[-t|--type keyval|nolevel|simple|syslog]\n")
 	    T("\t[-u|--unlocked]\n")
-	    T("\t[logstr]*\n") << endl;
+	    T("\t[[-w|--write] logstr]*\n") << endl;
 	    return 1;
     }
     while (!out) {
-	while (getline(tcin, s)) {
+	while (getline(ifs.is_open() ? ifs : tcin, s)) {
 	    if (!s.empty())
 		log(lvl, s.c_str());
 	}
