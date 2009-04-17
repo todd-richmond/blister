@@ -109,7 +109,7 @@ private:
     friend class DispatchSocket;
     void cancelSocket(DispatchSocket &ds);
     void eraseSocket(DispatchSocket &ds);
-    void selectSocket(DispatchSocket &ds, Msg msg, ulong timeout);
+    void selectSocket(DispatchSocket &ds, ulong timeout, Msg msg);
 
     bool exec(volatile DispatchObj *&aobj, thread_t tid);
     int run(void);
@@ -175,9 +175,8 @@ private:
     };
 
 public:
-    DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL):
-	dspr(d), dcb(cb), flags(0), msg(Dispatcher::Nomsg),
-	group(new Group), next(NULL) {}
+    DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dspr(d), dcb(cb),
+	flags(0), msg(Dispatcher::Nomsg), group(new Group), next(NULL) {}
     DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL):
 	dspr(parent.dspr), dcb(cb), flags(0), msg(Dispatcher::Nomsg),
 	group(&parent.group->addref()), next(NULL) {}
@@ -213,19 +212,20 @@ private:
 };
 
 // handle objects with timeouts
-#define DSP_FOREVER	static_cast<ulong>(-1)
+#define DSP_NEVER	static_cast<ulong>(-1)
 #define DSP_PREVIOUS	static_cast<ulong>(-2)
+#define DSP_NEVER_DUE	static_cast<msec_t>(-1)
 
 class DispatchTimer: public DispatchObj {
 public:
-    DispatchTimer(Dispatcher &d, ulong msec = DSP_FOREVER):
-	DispatchObj(d), to(msec), due(0) {}
+    DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
+	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) {}
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
-	DispatchObj(d), due(0) { timeout(cb, msec); }
-    DispatchTimer(DispatchObj &parent, ulong msec = DSP_FOREVER):
-	DispatchObj(parent), to(msec), due(0) {}
+	DispatchObj(d), due(DSP_NEVER_DUE) { timeout(cb, msec); }
+    DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
+	DispatchObj(parent), to(msec), due(DSP_NEVER_DUE) {}
     DispatchTimer(DispatchObj &parent, ulong msec, DispatchObjCB cb):
-	DispatchObj(parent), due(0) { timeout(cb, msec); }
+	DispatchObj(parent), due(DSP_NEVER_DUE) { timeout(cb, msec); }
     virtual ~DispatchTimer() { DispatchTimer::cancel(); }
 
     msec_t expires(void) const { return due; }
@@ -251,13 +251,13 @@ private:
 // handle socket events
 class DispatchSocket: public DispatchTimer, public Socket {
 public:
-    DispatchSocket(Dispatcher &d, int type = SOCK_STREAM,
-    	ulong msec = DSP_FOREVER);
-    DispatchSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_FOREVER);
-    DispatchSocket(DispatchObj &parent, int type = SOCK_STREAM,
-    	ulong msec = DSP_FOREVER);
-    DispatchSocket(DispatchObj &parent, const Socket &sock,
-	ulong msec = DSP_FOREVER);
+    DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =
+	DSP_NEVER);
+    DispatchSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER);
+    DispatchSocket(DispatchObj &parent, int type = SOCK_STREAM, ulong msec =
+	DSP_NEVER);
+    DispatchSocket(DispatchObj &parent, const Socket &sock, ulong msec =
+	DSP_NEVER);
     virtual ~DispatchSocket() { DispatchSocket::cancel(); }
 
     bool close(void) { cancel(); return Socket::close(); }
@@ -268,7 +268,7 @@ protected:
 	callback(cb);
 	if (msec != DSP_PREVIOUS)
 	    to = msec;
-	dspr.selectSocket(*this, msg, to);
+	dspr.selectSocket(*this, to, msg);
     }
 
     bool block, mapped;
@@ -279,34 +279,34 @@ protected:
 class DispatchIOSocket: public DispatchSocket {
 public:
     DispatchIOSocket(Dispatcher &d, int type = SOCK_STREAM,
-    	ulong msec = DSP_FOREVER): DispatchSocket(d, type, msec) {}
+    	ulong msec = DSP_NEVER): DispatchSocket(d, type, msec) {}
     DispatchIOSocket(DispatchObj &parent, int type = SOCK_STREAM,
-    	ulong msec = DSP_FOREVER): DispatchSocket(parent, type, msec) {}
-    DispatchIOSocket(Dispatcher &d, const Socket &sock, ulong msec =
-	DSP_FOREVER): DispatchSocket(d, sock) {}
+    	ulong msec = DSP_NEVER): DispatchSocket(parent, type, msec) {}
+    DispatchIOSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER):
+	DispatchSocket(d, sock) {}
     DispatchIOSocket(DispatchObj &parent, const Socket &sock, ulong msec =
-	DSP_FOREVER): DispatchSocket(parent, sock) {}
+	DSP_NEVER): DispatchSocket(parent, sock) {}
 
-    void closeable(DispatchObjCB cb = NULL,
-	ulong msec = 15000) { select(cb, msec, Dispatcher::Close); }
-    void readable(DispatchObjCB cb = NULL,
-	ulong msec = DSP_PREVIOUS) { select(cb, msec, Dispatcher::Read); }
-    void writeable(DispatchObjCB cb = NULL,
-	ulong msec = DSP_PREVIOUS) { select(cb, msec, Dispatcher::Write); }
-    void rwable(DispatchObjCB cb = NULL,
-	ulong msec = DSP_PREVIOUS) { select(cb, msec, Dispatcher::ReadWrite); }
+    void closeable(DispatchObjCB cb = NULL, ulong msec = 15000)
+	{ select(cb, msec, Dispatcher::Close); }
+    void readable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
+	{ select(cb, msec, Dispatcher::Read); }
+    void writeable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
+	{ select(cb, msec, Dispatcher::Write); }
+    void rwable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
+	{ select(cb, msec, Dispatcher::ReadWrite); }
 };
 
 class DispatchClientSocket: public DispatchIOSocket {
 public:
     DispatchClientSocket(Dispatcher &d, int type = SOCK_STREAM,
-	ulong msec = DSP_FOREVER): DispatchIOSocket(d, type, msec) {}
+	ulong msec = DSP_NEVER): DispatchIOSocket(d, type, msec) {}
     DispatchClientSocket(DispatchObj &parent, int type = SOCK_STREAM,
-	ulong msec = DSP_FOREVER): DispatchIOSocket(parent, type, msec) {}
+	ulong msec = DSP_NEVER): DispatchIOSocket(parent, type, msec) {}
     DispatchClientSocket(Dispatcher &d, const Socket &sock,
-	ulong msec = DSP_FOREVER): DispatchIOSocket(d, sock, msec) {}
+	ulong msec = DSP_NEVER): DispatchIOSocket(d, sock, msec) {}
     DispatchClientSocket(DispatchObj &parent, const Socket &sock,
-	ulong msec = DSP_FOREVER): DispatchIOSocket(parent, sock, msec) {}
+	ulong msec = DSP_NEVER): DispatchIOSocket(parent, sock, msec) {}
 
     void connect(const Sockaddr &addr, ulong msec = 40000);
 
@@ -320,7 +320,7 @@ private:
 class DispatchServerSocket: public DispatchIOSocket {
 public:
     DispatchServerSocket(Dispatcher &d, const Socket &sock,
-	ulong msec = DSP_FOREVER): DispatchIOSocket(d, sock, msec) {}
+	ulong msec = DSP_NEVER): DispatchIOSocket(d, sock, msec) {}
 
     virtual void start(void) = 0;
 };
@@ -335,7 +335,7 @@ public:
     const Sockaddr address(void) { return sa; }
     bool listen(const Sockaddr &addr, bool reuse = true, int queue =
 	LISTEN_BACKLOG);
-    void relisten() { select(connection, DSP_FOREVER, Dispatcher::Accept); }
+    void relisten() { select(connection, DSP_PREVIOUS, Dispatcher::Accept); }
 
 protected:
     Sockaddr sa;
@@ -390,10 +390,9 @@ protected:
 inline void DispatchObjList::push_back(DispatchObj *obj) {
     obj->next = NULL;
     if (back)
-	back->next = obj;
+	back = back->next = obj;
     else
-	front = obj;
-    back = obj;
+	back = front = obj;
 }
 
 inline void DispatchObjList::push_front(DispatchObj *obj) {

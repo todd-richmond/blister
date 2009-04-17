@@ -742,6 +742,7 @@ public:
     ThreadState getState(void) const { return state; }
     thread_t getId(void) const { return id; }
     thread_t getMainId(void) const { return mainThread.getId(); }
+    size_t size(void) const { return threads.size(); }
     
     bool operator ==(const ThreadGroup &t) const { return id == t.id; }
     bool operator !=(const ThreadGroup &t) const { return id != t.id; }

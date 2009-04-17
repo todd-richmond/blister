@@ -25,7 +25,6 @@ static const ulong MAX_SELECT_TIMER = 5 * 1000;
 static const uint MAX_WAKE_THREAD = 8;
 static const int MAX_WAIT_TIME = 4 * 60 * 1000;
 static const int MIN_IDLE_TIMER = 2 * 1000;
-static const msec_t DSP_NEVER = static_cast<msec_t>(-1);
 
 static const uint DSP_Socket = 0x0001;
 static const uint DSP_Detached = 0x0002;
@@ -70,10 +69,10 @@ uint Dispatcher::socketmsg;
 
 #endif
 
-Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER),
+Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
     shutdown(-1), threads(0), lifo(lock),
 #ifdef DSP_WIN32_ASYNC
-    wnd(0), interval(DSP_FOREVER)
+    wnd(0), interval(DSP_NEVER)
 #else
     epollfd(-1), wsock(SOCK_DGRAM)
 #endif
@@ -179,12 +178,14 @@ int Dispatcher::run() {
     Lifo::Waiting waiting(lifo);
     thread_t tid = THREAD_SELF();
 
-    priority(-1);
     activeobj.set(&aobj);
+    priority(-1);
     lock.lock();
     while (!shutdown) {
-	if (!exec(aobj, tid) && !lifo.wait(waiting, MAX_WAIT_TIME) && threads > 1)
-	    break;
+	if (!exec(aobj, tid)) {
+	    if (shutdown || (!lifo.wait(waiting, MAX_WAIT_TIME) && threads > 1))
+		break;
+	}
     }
     threads--;
     lock.unlock();
@@ -223,7 +224,7 @@ int Dispatcher::onStart() {
 
 	    lock.lock();
 	    if ((it = smap.find(msg.wParam)) != smap.end()) {
-		ds = (DispatchSocket *)(*it).second;
+		ds = (DispatchSocket *)it->second;
 		removeTimer(*ds);
 		if (ds->flags & DSP_Scheduled) {
 		    // uint err = WSAGETSELECTERROR(msg.lParam);
@@ -266,7 +267,7 @@ int Dispatcher::onStart() {
 	    now = mticks();
 	    lock.lock();
 	    while ((tit = timers.begin()) != timers.end()) {
-		dt = (*tit).second;
+		dt = tit->second;
 		if (now < dt->due)
 		    break;
 		timers.erase(tit);
@@ -279,8 +280,8 @@ int Dispatcher::onStart() {
 	    }
 	    if (tit == timers.end()) {
 		if (interval < MIN_IDLE_TIMER) {
-		    due = DSP_NEVER;
-		    interval = DSP_FOREVER;
+		    due = DSP_NEVER_DUE;
+		    interval = DSP_NEVER;
 		    KillTimer(wnd, DSP_TimerID);
 		}
 	    } else if (dt->due - now < interval || interval < MIN_IDLE_TIMER) {
@@ -366,10 +367,10 @@ int Dispatcher::onStart() {
 	    iwset = wset;
 	}
 	if ((tit = timers.begin()) == timers.end()) {
-	    msec = count ? MAX_SELECT_TIMER : DSP_NEVER;
-	    due = count ? (now + MAX_SELECT_TIMER) : DSP_NEVER;
+	    msec = count ? MAX_SELECT_TIMER : DSP_NEVER_DUE;
+	    due = count ? (now + MAX_SELECT_TIMER) : DSP_NEVER_DUE;
 	} else {
-	    dt = (*tit).second;
+	    dt = tit->second;
 	    msec = dt->due > now ? static_cast<ulong>(dt->due - now) : 0;
 	    due = now + msec;
 	}
@@ -446,7 +447,7 @@ int Dispatcher::onStart() {
 	    rset.unset(orset[u]);
 	    if ((sit = smap.find(orset[u])) == smap.end())
 		continue;
-	    ds = (*sit).second;
+	    ds = sit->second;
 	    if (ds->flags & DSP_SelectWrite)
 		wset.unset(orset[u]);
 	    if (ds->flags & DSP_Scheduled) {
@@ -471,7 +472,7 @@ int Dispatcher::onStart() {
 	    wset.unset(owset[u]);
 	    if ((sit = smap.find(owset[u])) == smap.end())
 		continue;
-	    ds = (*sit).second;
+	    ds = sit->second;
 	    if (ds->flags & DSP_SelectRead)
 		rset.unset(owset[u]);
 	    if (ds->flags & DSP_Scheduled) {
@@ -495,7 +496,7 @@ int Dispatcher::onStart() {
 		wset.unset(oeset[u]);
 	    if ((sit = smap.find(oeset[u])) == smap.end())
 		continue;
-	    ds = (*sit).second;
+	    ds = sit->second;
 	    if (ds->flags & DSP_Scheduled) {
 		ds->msg = Close;
 		ds->flags = (ds->flags & ~(DSP_Scheduled | DSP_SelectAll)) |
@@ -511,11 +512,11 @@ int Dispatcher::onStart() {
 	    removeTimer(*ds);
 	}
 	while ((tit = timers.begin()) != timers.end()) {
-	    dt = (*tit).second;
+	    dt = tit->second;
 	    if (now < dt->due)
 		break;
 	    timers.erase(tit);
-	    dt->due = DSP_NEVER;
+	    dt->due = DSP_NEVER_DUE;
 	    dt->flags = (dt->flags & ~DSP_Scheduled) | DSP_Ready;
 	    dt->msg = Timeout;
 	    if (!(dt->flags & DSP_Active)) {
@@ -526,10 +527,13 @@ int Dispatcher::onStart() {
 	if (count)
 	    wake(count);
     }
-    lifo.broadcast();
-    lock.unlock();
-    while ((t = wait(30000)) != NULL)
-	delete t;
+    do {
+	lifo.broadcast();
+	lock.unlock();
+	if ((t = wait(30000)) != NULL)
+	    delete t;
+	lock.lock();
+    } while (t);
     rlist.push_front(flist);
     while (rlist) {
 	DispatchObj *obj = rlist.pop_front();
@@ -537,17 +541,23 @@ int Dispatcher::onStart() {
 
 	if (group->glist)
 	    obj = group->glist.pop_front();
+	lock.unlock();
 	if (obj->flags & DSP_Freed) {
 	    delete obj;
 	} else {
 	    obj->cancel();
 	    obj->terminate();
 	}
+	lock.lock();
     }
     while ((tit = timers.begin()) != timers.end()) {
-	(*tit).second->cancel();
-	(*tit).second->terminate();
+	dt = tit->second;
+	lock.unlock();
+	dt->cancel();
+	dt->terminate();
+	lock.lock();
     }
+    lock.unlock();
     return 0;
 }
 
@@ -602,8 +612,8 @@ void Dispatcher::wake(uint tasks) {
 
 	    threads++;
 	    lock.unlock();
-	    t = new Thread;
-	    t->start(worker, this, stacksz);
+	    t = new Thread();
+	    t->start(worker, this, stacksz, false, false, this);
 	    while ((t = wait(0)) != NULL)
 		delete t;
 	    lock.lock();
@@ -612,10 +622,10 @@ void Dispatcher::wake(uint tasks) {
 }
 
 bool Dispatcher::timer(DispatchTimer &dt, msec_t tmt) {
-    if (dt.due != DSP_NEVER)
+    if (dt.due != DSP_NEVER_DUE)
 	removeTimer(dt);
     dt.due = tmt;
-    if (tmt != DSP_NEVER) {
+    if (tmt != DSP_NEVER_DUE) {
 	pair<msec_t, DispatchTimer *> p(tmt, &dt);
 
 	timers.insert(p);
@@ -629,23 +639,25 @@ bool Dispatcher::timer(DispatchTimer &dt, msec_t tmt) {
 
 void Dispatcher::addTimer(DispatchTimer &dt, ulong tm) {
     msec_t now = tm ? mticks() : 0;
-    bool wake;
+    bool notify;
 
     lock.lock();
     if (tm) {
-	wake = timer(dt, tm == DSP_FOREVER ? DSP_NEVER : now + tm);
+	notify = timer(dt, tm == DSP_NEVER ? DSP_NEVER_DUE : now + tm);
     } else {
 	removeTimer(dt);
 	ready(dt);
-	wake = false;
+	if (!threads)
+	    wake(1);
+	notify = false;
     }
     lock.unlock();
-    if (wake)
+    if (notify)
 	wakeup(now, dt.due);
 }
 
 void Dispatcher::cancelTimer(DispatchTimer &dt) {
-    if (dt.due != DSP_NEVER) {
+    if (dt.due != DSP_NEVER_DUE) {
 	lock.lock();
 	removeReady(dt);
 	removeTimer(dt);
@@ -655,7 +667,7 @@ void Dispatcher::cancelTimer(DispatchTimer &dt) {
 
 void Dispatcher::removeTimer(DispatchTimer &dt) {
     dt.flags &= ~DSP_Scheduled;
-    if (dt.due == DSP_NEVER)
+    if (dt.due == DSP_NEVER_DUE)
     	return;
     for (timermap::iterator it = timers.find(dt.due); it != timers.end(); ++it) {
 	DispatchTimer *p = (*it).second;
@@ -667,7 +679,7 @@ void Dispatcher::removeTimer(DispatchTimer &dt) {
 	    break;
 	}
     }
-    dt.due = DSP_NEVER;
+    dt.due = DSP_NEVER_DUE;
 }
 
 void Dispatcher::cancelSocket(DispatchSocket &ds) {
@@ -717,7 +729,7 @@ void Dispatcher::eraseSocket(DispatchSocket &ds) {
 	flist.push_back(&ds);
 }
 
-void Dispatcher::selectSocket(DispatchSocket &ds, Msg m, ulong tm) {
+void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
     uint ioflags;
     msec_t now = mticks();
     static uint ioarray[] = {
@@ -764,7 +776,7 @@ void Dispatcher::selectSocket(DispatchSocket &ds, Msg m, ulong tm) {
 	return;
     }
 
-    msec_t tmt = tm == DSP_FOREVER ? DSP_NEVER : now + tm;
+    msec_t tmt = tm == DSP_NEVER ? DSP_NEVER_DUE : now + tm;
     bool wake = timer(ds, tmt);
 
     ds.flags |= DSP_Scheduled;
@@ -835,6 +847,8 @@ void Dispatcher::addReady(DispatchObj &obj, bool hipri, Msg reason) {
 	rlist.push_back(&obj);
     if (!lifo.empty())
 	lifo.set();
+    else if (!threads)
+	wake(1);
 }
 
 void Dispatcher::ready(DispatchObj &obj, bool hipri) {
@@ -949,22 +963,22 @@ bool DispatchListenSocket::listen(const Sockaddr &addr, bool reuse, int queue) {
 	return false;
     blocking(false);
     msleep(1);
-    select(connection, DSP_FOREVER, Dispatcher::Accept);
+    select(connection, DSP_NEVER, Dispatcher::Accept);
     return true;
 }
 
 void DispatchListenSocket::connection() {
     Socket s;
-    bool reselect = true;
+    bool again = true;
 
     if (msg != Dispatcher::Close && accept(s)) {
 #ifdef __linux__
     	s.blocking(false);
 #endif
 	s.movehigh();
-	reselect = onAccept(s);
+	again = onAccept(s);
     }
-    if (reselect)
-	select(connection, DSP_PREVIOUS, Dispatcher::Accept);
+    if (again)
+	relisten();
 }
 
