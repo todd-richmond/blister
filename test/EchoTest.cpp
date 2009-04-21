@@ -51,7 +51,7 @@ public:
 	usec_t begin;
 	uint in, out, tmt, wait;
 
-	virtual void onConnect(void) { begin = uticks(); output(); }
+	virtual void onConnect(void);
 
 	DSP_DECLARE(EchoClientSocket, input);
 	DSP_DECLARE(EchoClientSocket, output);
@@ -110,12 +110,24 @@ static volatile bool qflag;
 static TSNumber<uint> ops, errs;
 static TSNumber<usec_t> usecs;
 
+void EchoTest::EchoClientSocket::onConnect(void) {
+    if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
+	errs++;
+	dloge(T("client connect"), msg == Dispatcher::Timeout ? T("timeout") :
+	    T("close"));
+	erase();
+    } else {
+	nagle(false);
+	begin = uticks();
+	output();
+    }
+}
+
 void EchoTest::EchoClientSocket::start() {
     close();
     out = 0;
     dlogd(T("connecting"));
     connect(addr, tmt);
-    nagle(false);
 }
 
 void EchoTest::EchoClientSocket::output() {
@@ -341,7 +353,7 @@ int tmain(int argc, tchar *argv[]) {
 	tcerr << T("echo: unknown host ") << host << endl;
 	return 1;
     }
-    ec.start(8, 32 * 1024);
+    ec.start(20, 32 * 1024);
     if (server && !ec.listen(host, tmt))
 	return 1;
     if (client) {
