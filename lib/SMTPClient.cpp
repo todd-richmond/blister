@@ -57,23 +57,23 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	// return "success" if server is open and does not allow auth
 	ret = true;
     } else if (exts.find(T(" PLAIN")) != exts.npos) {
-	buf = (char *)malloc(idlen + passlen + 1);
+	buf = new char[idlen + passlen + 1];
 	buf[0] = '\0';
 	memcpy(buf + 1, tchartoachar(id), idlen);
 	memcpy(buf + 1 + idlen, tchartoachar(pass), passlen);
-	base64encode(buf, idlen + passlen, (void *&)uubuf, uusz);
+	base64encode(buf, idlen + passlen, uubuf, uusz);
+	delete [] buf;
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
 	ret = cmd(T("AUTH PLAIN"), achartotchar(uubuf), 235);
-	delete [] buf;
 	delete [] uubuf;
     } else if (exts.find(T(" LOGIN")) != exts.npos) {
-	base64encode(id, idlen, (void *&)uubuf, uusz);
+	base64encode(id, idlen, uubuf, uusz);
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
 	ret = cmd(T("AUTH LOGIN"), achartotchar(uubuf), 334);
 	delete [] uubuf;
-	base64encode(pass, passlen, (void *&)uubuf, uusz);
+	base64encode(pass, passlen, uubuf, uusz);
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
 	ret = ret && cmd(achartotchar(uubuf), NULL, 235);
@@ -255,7 +255,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	return false;
     memcpy(buf, &pid, 4);
     memcpy(buf + 4, &mid, 8);
-    base64encode(buf, 12, (void *&)encbuf, encbufsz);
+    base64encode(buf, 12, encbuf, encbufsz);
     encbuf[encbufsz - 2] = '\0';
     sstrm << "Message-ID: <" << encbuf << '@' <<
 	tstringtoastring(Sockaddr::hostname()) << '>' << crlf;
@@ -1021,7 +1021,7 @@ static inline void encode(const void *input, size_t len, void *output,
     *out = '\0';
 }
 
-bool base64encode(const void *input, size_t len, void *&output, size_t &outsz) {
+bool base64encode(const void *input, size_t len, char *&output, size_t &outsz) {
     static const uchar table[64] = {
       'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
       'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
@@ -1040,7 +1040,7 @@ bool base64encode(const void *input, size_t len, void *&output, size_t &outsz) {
     return true;
 }
 
-bool uuencode(const tchar *file, const void *input, size_t len, void *&output,
+bool uuencode(const tchar *file, const void *input, size_t len, char *&output,
     size_t &outsz) {
     char *out = (char *)output;
 
@@ -1072,7 +1072,7 @@ bool uuencode(const tchar *file, const void *input, size_t len, void *&output,
     return true;
 }
 
-bool uudecode(const void *input, size_t sz, uint &perm, tstring &file,
+bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     void *&output, size_t &outsz) {
     const char *in = (const char *)input;
     char *out;
@@ -1152,7 +1152,7 @@ bool uudecode(const void *input, size_t sz, uint &perm, tstring &file,
     return true;
 }
 
-bool base64decode(const void *input, size_t sz, void *&output, size_t &outsz) {
+bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
     int add_bits;
     const char *in = (const char *)input;
     int mask;

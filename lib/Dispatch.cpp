@@ -670,7 +670,7 @@ void Dispatcher::removeTimer(DispatchTimer &dt) {
     if (dt.due == DSP_NEVER_DUE)
     	return;
     for (timermap::iterator it = timers.find(dt.due); it != timers.end(); ++it) {
-	DispatchTimer *p = (*it).second;
+	DispatchTimer *p = it->second;
 
 	if (p == &dt) {
 	    timers.erase(it);

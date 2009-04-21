@@ -143,11 +143,11 @@ private:
     int parse_route(tchar *&in, tchar *&route);
 };
 
-bool base64encode(const void *in, size_t len, void *&out, size_t &outsz);
-bool base64decode(const void *in, size_t sz, void *&out, size_t &outsz);
-bool uuencode(const tchar *file, const void *in, size_t len, void *&out,
+bool base64encode(const void *in, size_t len, char *&out, size_t &outsz);
+bool base64decode(const void *in, size_t sz, char *&out, size_t &outsz);
+bool uuencode(const tchar *file, const char *in, size_t len, void *&out,
     size_t &outsz);
-bool uudecode(const void *in, size_t sz, uint &perm, tstring &file,
+bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
     void *&out, size_t &outsz);
 
 time_t mkgmtime(struct tm *const tmp);
