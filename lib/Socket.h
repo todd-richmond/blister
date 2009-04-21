@@ -374,7 +374,7 @@ inline SocketSet::SocketSet(uint maxfds): maxsz(maxfds), sz(0) {
 #ifdef _WIN32
     if (!maxsz)
 	maxsz = 32;
-    fds = (fd_set *)new int[maxsz + 1];
+    fds = (fd_set *)new socket_t[maxsz + 1];
 #else
     fds = maxsz ? new pollfd[maxsz] : NULL;
 #endif
@@ -393,7 +393,7 @@ inline const SocketSet &SocketSet::operator =(const SocketSet &ss) {
     if (maxsz < sz) {
 	maxsz = ss.maxsz;
 	delete [] fds;
-	fds = (fd_set *)new int[maxsz + 1];
+	fds = (fd_set *)new socket_t[maxsz + 1];
     }
     memcpy(fds, ss.fds, (sz + 1) * sizeof (socket_t));
 #else
@@ -411,7 +411,7 @@ inline bool SocketSet::set(socket_t fd) {
     if (sz == maxsz) {
 	maxsz = maxsz ? maxsz * 2 : 32;
 #ifdef _WIN32
-	fd_set *p = (fd_set *)new int[maxsz + 1];
+	fd_set *p = (fd_set *)new socket_t[maxsz + 1];
 
 	memcpy(p, fds, (sz + 1) * sizeof (socket_t));
 #else
