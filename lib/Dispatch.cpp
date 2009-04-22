@@ -70,7 +70,7 @@ uint Dispatcher::socketmsg;
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
-    shutdown(-1), threads(0), lifo(lock),
+    lifo(lock), shutdown(-1), threads(0),
 #ifdef DSP_WIN32_ASYNC
     wnd(0), interval(DSP_NEVER)
 #else
@@ -114,10 +114,10 @@ bool Dispatcher::exec(volatile DispatchObj *&aobj, thread_t tid) {
 	    obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
 	    group->glist.push_back(obj);
 	} else {
+	    group->active = tid;
 	    break;
 	}
     }
-    group->active = tid;
     do {
 	aobj = obj;
 	obj->flags = (obj->flags & ~DSP_ReadyAll) | DSP_Active;
@@ -199,13 +199,12 @@ int Dispatcher::worker(void *parm) {
 #ifdef DSP_WIN32_ASYNC
 
 int Dispatcher::onStart() {
-    Thread *t;
+    uint count = 0;
     DispatchSocket *ds = NULL;
     DispatchTimer *dt = NULL;
     timermap::iterator tit;
-    msec_t now;
     MSG msg;
-    uint count = 0;
+    msec_t now;
 
     if ((wnd = CreateWindow(DispatchClass, T("Dispatch Window"), 0, 0, 0,
 	CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, GetModuleHandle(NULL), 0)) == NULL) {
@@ -225,7 +224,6 @@ int Dispatcher::onStart() {
 	    lock.lock();
 	    if ((it = smap.find(msg.wParam)) != smap.end()) {
 		ds = (DispatchSocket *)it->second;
-		removeTimer(*ds);
 		if (ds->flags & DSP_Scheduled) {
 		    // uint err = WSAGETSELECTERROR(msg.lParam);
 		    ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_Ready;
@@ -243,7 +241,7 @@ int Dispatcher::onStart() {
 			if (ds->msg == Nomsg)
 			    ds->msg = Close;
 		    	else
-			    ds->flags |= DSP_Closeble;
+			    ds->flags |= DSP_Closeable;
 		    }
 		    if (!(ds->flags & DSP_Active)) {
 			if (ds->msg == Accept)
@@ -262,6 +260,7 @@ int Dispatcher::onStart() {
 		    if (evt & FD_CLOSE)
 			ds->flags |= DSP_Closeable;
 		}
+		removeTimer(*ds);
 	    }
 	} else if (msg.message == WM_TIMER) {
 	    now = mticks();
@@ -286,8 +285,8 @@ int Dispatcher::onStart() {
 		}
 	    } else if (dt->due - now < interval || interval < MIN_IDLE_TIMER) {
 		due = dt->due;
-		interval = dt->due - now;
-		SetTimer(hwnd, DSP_TimerID, interval, NULL);
+		interval = (ulong)(dt->due - now);
+		SetTimer(wnd, DSP_TimerID, interval, NULL);
 	    } else {
 		due = now + interval;
 	    }
@@ -295,40 +294,38 @@ int Dispatcher::onStart() {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
 	}
+	rlist.push_front(flist);
 	if (count)
 	    wake(count);
 	lock.unlock();
     }
     lock.lock();
     KillTimer(wnd, DSP_TimerID);
+    cleanup();
     DestroyWindow(wnd);
     wnd = 0;
-    lifo.broadcast();
     lock.unlock();
-    while ((t = wait(30000)) != NULL)
-	delete t;
     return 0;
 }
 
 #else
 
 int Dispatcher::onStart() {
-    Thread *t;
+    char buf[16];
+    uint count = 0;
     DispatchSocket *ds = NULL;
     DispatchTimer *dt = NULL;
+    SocketSet irset, iwset, orset, owset, oeset;
+    ulong msec;
     msec_t now;
     socketmap::const_iterator sit;
     timermap::iterator tit;
-    char buf[16];
-    uint count = 0;
+    uint u;
 
 #ifdef DSP_EPOLL
     epoll_event event[64];
     int nevents = 0;
 #endif
-    SocketSet irset, iwset, orset, owset, oeset;
-    uint u;
-    ulong msec;
 #ifndef _WIN32
     sigset_t sigs;
 
@@ -371,7 +368,7 @@ int Dispatcher::onStart() {
 	    due = count ? (now + MAX_SELECT_TIMER) : DSP_NEVER_DUE;
 	} else {
 	    dt = tit->second;
-	    msec = dt->due > now ? static_cast<ulong>(dt->due - now) : 0;
+	    msec = dt->due > now ? (ulong)(dt->due - now) : 0;
 	    due = now + msec;
 	}
 	polling = true;
@@ -396,9 +393,9 @@ int Dispatcher::onStart() {
 	count = 0;
 	now = mticks();
 	lock.lock();
-	rlist.push_front(flist);
 	if (shutdown)
 	    break;
+	rlist.push_front(flist);
 #ifdef DSP_EPOLL
 	for (u = 0; u < (uint)nevents; u++) {
 	    ds = (DispatchSocket *)event[u].data.ptr;
@@ -527,6 +524,17 @@ int Dispatcher::onStart() {
 	if (count)
 	    wake(count);
     }
+    cleanup();
+    lock.unlock();
+    return 0;
+}
+
+#endif
+
+void Dispatcher::cleanup(void) {
+    timermap::iterator tit;
+    Thread *t;
+
     do {
 	lifo.broadcast();
 	lock.unlock();
@@ -551,17 +559,14 @@ int Dispatcher::onStart() {
 	lock.lock();
     }
     while ((tit = timers.begin()) != timers.end()) {
-	dt = tit->second;
+	DispatchTimer *dt = tit->second;
+
 	lock.unlock();
 	dt->cancel();
 	dt->terminate();
 	lock.lock();
     }
-    lock.unlock();
-    return 0;
 }
-
-#endif
 
 bool Dispatcher::start(uint mthreads, uint stack, bool autoterm) {
     bool ret;
@@ -720,15 +725,6 @@ void Dispatcher::cancelSocket(DispatchSocket &ds) {
     }
 }
 
-void Dispatcher::eraseSocket(DispatchSocket &ds) {
-    Locker lkr(lock);
-
-    if (shutdown)
-	delete &ds;
-    else
-	flist.push_back(&ds);
-}
-
 void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
     uint ioflags;
     msec_t now = mticks();
@@ -830,43 +826,6 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 	wakeup(now, tmt);
 }
 
-void Dispatcher::addReady(DispatchObj &obj, bool hipri, Msg reason) {
-    Locker lkr(lock);
-
-    obj.msg = reason;
-    obj.flags |= DSP_Ready;
-    if (obj.flags & DSP_Active)
-	return;
-    if (obj.group && obj.group->active && THREAD_ISSELF(obj.group->active)) {
-	obj.group->glist.push_front(&obj);
-	return;
-    }
-    if (hipri)
-	rlist.push_front(&obj);
-    else
-	rlist.push_back(&obj);
-    if (!lifo.empty())
-	lifo.set();
-    else if (!threads)
-	wake(1);
-}
-
-void Dispatcher::ready(DispatchObj &obj, bool hipri) {
-    obj.flags = (obj.flags | DSP_Ready) & ~DSP_Scheduled;
-    if (obj.flags & DSP_Active)
-	return;
-    if (obj.group && obj.group->active && THREAD_ISSELF(obj.group->active)) {
-	obj.group->glist.push_front(&obj);
-	return;
-    }
-    if (hipri)
-	rlist.push_front(&obj);
-    else
-	rlist.push_back(&obj);
-    if (!lifo.empty())
-	lifo.set();
-}
-
 void Dispatcher::deleteObj(DispatchObj &obj) {
     cancelReady(obj);
     if (obj.flags & DSP_Active)
@@ -875,6 +834,12 @@ void Dispatcher::deleteObj(DispatchObj &obj) {
 	delete obj.group;
 }
 
+void Dispatcher::addReady(DispatchObj &obj, bool hipri, Msg reason) {
+    Locker lkr(lock);
+
+    obj.msg = reason;
+    ready(obj, hipri);
+}
 
 void Dispatcher::cancelReady(DispatchObj &obj) {
     if (obj.flags & DSP_ReadyAll) {
@@ -894,14 +859,30 @@ void Dispatcher::removeReady(DispatchObj &obj) {
     }
 }
 
+void Dispatcher::ready(DispatchObj &obj, bool hipri) {
+    obj.flags = (obj.flags | DSP_Ready) & ~DSP_Scheduled;
+    if (obj.flags & DSP_Active)
+	return;
+    if (obj.group && obj.group->active && THREAD_ISSELF(obj.group->active)) {
+	obj.group->glist.push_front(&obj);
+	return;
+    }
+    if (hipri)
+	rlist.push_front(&obj);
+    else
+	rlist.push_back(&obj);
+    if (!lifo.empty())
+	lifo.set();
+    else if (!threads)
+	wake(1);
+}
+
 void DispatchObj::detach(void) { flags |= DSP_Detached; }
 
 void DispatchObj::erase(void) {
     if (flags & (DSP_Active | DSP_SelectAll)) {
 	cancel();
 	flags |= DSP_Freed;
-	if (!(flags & DSP_Active))
-	    dspr.eraseSocket((DispatchSocket &)*this);
     } else {
 	delete this;
     }
@@ -932,19 +913,22 @@ DispatchSocket::DispatchSocket(DispatchObj &parent, const Socket &s, ulong msec)
     flags |= DSP_Socket;
 }
 
-void DispatchClientSocket::connect(const Sockaddr &addr, ulong msec) {
+void DispatchClientSocket::connect(const Sockaddr &addr, ulong msec,
+    DispatchObjCB cb) {
+    if (!cb)
+	cb = connected;
     bind(Sockaddr(addr.family()));
 #ifndef DSP_WIN32_ASYNC
     blocking(false);
 #endif
     if (Socket::connect(addr)) {
 	msg = Dispatcher::Write;
-	ready(connected);
+	ready(cb);
     } else if (!blocked()) {
 	msg = Dispatcher::Close;
-	ready(connected);
+	ready(cb);
     } else {
-	select(connected, msec, Dispatcher::Connect);
+	select(cb, msec, Dispatcher::Connect);
     }
 }
 
@@ -953,17 +937,21 @@ void DispatchClientSocket::connected() {
 }
 
 DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
-    int type, bool reuse, int queue): DispatchSocket(d, type) {
-    listen(addr, reuse, queue);
+    int type, bool reuse, int queue, DispatchObjCB cb): DispatchSocket(d,
+    type) {
+    listen(addr, reuse, queue, cb);
 }
 
-bool DispatchListenSocket::listen(const Sockaddr &addr, bool reuse, int queue) {
+bool DispatchListenSocket::listen(const Sockaddr &addr, bool reuse, int queue,
+    DispatchObjCB cb) {
+    if (!cb)
+	cb = connection;
     sa = addr;
     if (!Socket::listen(addr, reuse, queue))
 	return false;
     blocking(false);
     msleep(1);
-    select(connection, DSP_NEVER, Dispatcher::Accept);
+    select(cb, DSP_NEVER, Dispatcher::Accept);
     return true;
 }
 

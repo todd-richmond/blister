@@ -37,12 +37,11 @@ typedef void (*DispatchObjCB)(DispatchObj *);
 /*
  * select() is faster on Windows for normal fd set sizes
 #define DSP_WIN32_ASYNC
-const int DSP_TimerID = 1;
  */
 #endif
 
-#ifdef __APPLE__	// some OSX revs won't wake on a 0 byte UDP write
 #define DSP_WAKE_READ
+#ifdef __APPLE__	// some OSX revs won't wake on a 0 byte UDP write
 #define DSP_WAKE_SIZE 1
 #else
 #define DSP_WAKE_SIZE 0
@@ -108,36 +107,36 @@ private:
 
     friend class DispatchSocket;
     void cancelSocket(DispatchSocket &ds);
-    void eraseSocket(DispatchSocket &ds);
     void selectSocket(DispatchSocket &ds, ulong timeout, Msg msg);
 
+    void cleanup(void);
     bool exec(volatile DispatchObj *&aobj, thread_t tid);
     int run(void);
     void wake(uint tasks);
     static int worker(void *parm);
 
-    msec_t due;
-    volatile int shutdown;
-    volatile ulong threads;
-    uint maxthreads;
-    long stacksz;
     Lock lock;
-    socketmap smap;
-
-    timermap timers;
-    Lifo lifo;
-    DispatchObjList flist, rlist;
     TLS<volatile DispatchObj *> activeobj;
+    msec_t due;
+    DispatchObjList flist, rlist;
+    Lifo lifo;
+    uint maxthreads;
+    volatile int shutdown;
+    long stacksz;
+    volatile ulong threads;
+    socketmap smap;
+    timermap timers;
 #ifdef DSP_WIN32_ASYNC
     volatile ulong interval;
     HWND wnd;
     static uint socketmsg;
+    static const int DSP_TimerID = 1;
 
     void wakeup(msec_t now, msec_t when) {
-	interval = when - now;
+	interval = (ulong)(when - now);
 	do {
 	    when = interval;
-	    SetTimer(hWnd, DSP_TimerID, interval, NULL);
+	    SetTimer(wnd, DSP_TimerID, interval, NULL);
 	} while (interval != when);
     }
 #else
@@ -162,16 +161,15 @@ private:
 
 class DispatchObj: public nocopy {
 private:
-    class Group: nocopy {
-	friend class DispatchObj;
-	friend class Dispatcher;
+    class Group {
+    public:
 	Group(): active(0), refcount(1) {}
 
 	Group &addref() { refcount.addref(); return *this; }
 
 	thread_t active;
-	Refcount refcount;
 	DispatchObjList glist;
+	Refcount refcount;
     };
 
 public:
@@ -308,7 +306,8 @@ public:
     DispatchClientSocket(DispatchObj &parent, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(parent, sock, msec) {}
 
-    void connect(const Sockaddr &addr, ulong msec = 40000);
+    void connect(const Sockaddr &addr, ulong msec = 40000, DispatchObjCB cb =
+	NULL);
 
 protected:
     virtual void onConnect(void) = 0;
@@ -328,19 +327,20 @@ public:
 class DispatchListenSocket: public DispatchSocket {
 public:
     DispatchListenSocket(Dispatcher &d, int type = SOCK_STREAM):
-	DispatchSocket(d, type) { dcb = connection; }
+	DispatchSocket(d, type) {}
     DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
-	int type = SOCK_STREAM, bool reuse = true, int queue = LISTEN_BACKLOG);
+	int type = SOCK_STREAM, bool reuse = true, int queue = LISTEN_BACKLOG,
+	DispatchObjCB cb = connection);
 
     const Sockaddr address(void) { return sa; }
     bool listen(const Sockaddr &addr, bool reuse = true, int queue =
-	LISTEN_BACKLOG);
-    void relisten() { select(connection, DSP_PREVIOUS, Dispatcher::Accept); }
+	LISTEN_BACKLOG, DispatchObjCB cb = NULL);
+    void relisten() { select(NULL, DSP_PREVIOUS, Dispatcher::Accept); }
 
 protected:
-    Sockaddr sa;
-
     virtual bool onAccept(Socket &sock) = 0;
+
+    Sockaddr sa;
 
  private:
     DSP_DECLARE(DispatchListenSocket, connection);
