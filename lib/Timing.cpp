@@ -34,9 +34,8 @@ void Timing::add(const tchar *key, timing_t diff) {
     timingmap::const_iterator it = tmap.find(key);
     uint slot;
     Stats *stats;
-    static timing_t limits[TIMINGSLOTS] = {
-	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000,
-	60000000
+    static timing_t limits[TIMINGSLOTS - 1] = {
+	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
     };
 
     if (it == tmap.end()) {
@@ -46,7 +45,7 @@ void Timing::add(const tchar *key, timing_t diff) {
 	stats = it->second;
     }
     stats->cnt++;
-    for (slot = 0; slot < TIMINGSLOTS; slot++) {
+    for (slot = 0; slot < TIMINGSLOTS - 1; slot++) {
 	if (diff <= limits[slot])
 	    break;
     }
@@ -78,7 +77,7 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
     uint u;
     static const tchar *hdrs[TIMINGSLOTS] = {
 	T("10u"), T(".1m"), T(" 1m"), T("10m"), T(".1s"), T(" 1s"), T(" 5s"),
-	T("10s"), T("30s"), T(" 1M")
+	T("10s"), T("30s"), T("...")
     };
 
     for (it = tmap.begin(); it != tmap.end(); it++)
