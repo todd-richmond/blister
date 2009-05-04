@@ -23,6 +23,39 @@
 #include STL_HASH_MAP
 #include "Thread.h"
 
+/*
+ * The Timing class is used to track call durations to enable simple profiling.
+ * It maintains buckets of usec intervals to aid in determining calls with
+ * randomly dispersed run times and includes a simple pretty-print function to
+ * make prioritizing code optimization easier.
+ *
+ * A global "dtiming" object allows for the simplest functionality but other
+ * objects can be instantiated as well
+ * 
+ * Timing can be used in either "direct" or "stack" mode
+ *
+ * direct: lowest overhead for most profile tasks
+ *   timing_t starta = dtiming.start();
+ *   function_a();
+ *   timing_t startb = dtiming.record(T("function_a"), starta);
+ *   function_b();
+ *   dtiming.record(T("function_b"), startb);
+ *   dtiming.record(T("function_ab"), starta);
+ *   tcout << dtiming.data() << endl;
+ *
+ * stack: slower but tracks timing across a virtual callstack
+ *   void call_b() {
+ *     dtiming.start(T("function_b"));
+ *     function_b();
+ *     dtiming.record();
+ *   }
+ * 
+ *   dtiming.start(T("function_a"));
+ *   function_a();
+ *   call_b();
+ *   dtiming.record();
+ */
+
 #define TIMINGSLOTS	10
 #define TIMINGCOLUMNS	8
 

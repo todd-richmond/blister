@@ -203,7 +203,7 @@ timing_t Timing::record(const tchar *key) {
 	add(s.c_str(), diff);
     }
     add(key, diff);
-    return now();
+    return n;
 }
 
 timing_t Timing::start(const tchar *key) {

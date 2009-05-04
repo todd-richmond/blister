@@ -28,6 +28,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Cfg", "..\test\Cfg.vcproj",
 		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DTiming", "..\test\DTiming.vcproj", "{3C1E9C53-05EC-4D42-B531-731157DE3521}"
+	ProjectSection(ProjectDependencies) = postProject
+		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug Unicode|Win32 = Debug Unicode|Win32
@@ -136,6 +141,22 @@ Global
 		{F85C5F47-02F6-41E6-BD56-6B67FD30B4EA}.Release|Win32.Build.0 = Release|Win32
 		{F85C5F47-02F6-41E6-BD56-6B67FD30B4EA}.Release|x64.ActiveCfg = Release|x64
 		{F85C5F47-02F6-41E6-BD56-6B67FD30B4EA}.Release|x64.Build.0 = Release|x64
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Debug Unicode|Win32.ActiveCfg = Debug Unicode|Win32
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Debug Unicode|Win32.Build.0 = Debug Unicode|Win32
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Debug Unicode|x64.ActiveCfg = Debug Unicode|x64
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Debug Unicode|x64.Build.0 = Debug Unicode|x64
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Debug|Win32.ActiveCfg = Debug|Win32
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Debug|Win32.Build.0 = Debug|Win32
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Debug|x64.ActiveCfg = Debug|x64
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Debug|x64.Build.0 = Debug|x64
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release Unicode|Win32.ActiveCfg = Release Unicode|Win32
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release Unicode|Win32.Build.0 = Release Unicode|Win32
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release Unicode|x64.ActiveCfg = Release Unicode|x64
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release Unicode|x64.Build.0 = Release Unicode|x64
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release|Win32.ActiveCfg = Release|Win32
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release|Win32.Build.0 = Release|Win32
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release|x64.ActiveCfg = Release|x64
+		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
