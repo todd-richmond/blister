@@ -118,7 +118,7 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 	erase();
     } else {
 	nagle(false);
-	begin = uticks();
+	begin = microticks();
 	output();
     }
 }
@@ -184,8 +184,8 @@ void EchoTest::EchoClientSocket::input() {
     in += len;
     if (in == dsz) {
 	ops++;
-	usecs += uticks() - begin;
-	dtiming.add(T("echo"), uticks() - begin);
+	usecs += microticks() - begin;
+	dtiming.add(T("echo"), microticks() - begin);
 	dlogt(T("client read"), len);
 	timeout(repeat, wait + (wait < 2000 ? 0 : rand() % 50));
     } else {
@@ -197,7 +197,7 @@ void EchoTest::EchoClientSocket::input() {
 void EchoTest::EchoClientSocket::repeat() {
     msg = Dispatcher::Nomsg;
     out = 0;
-    begin = uticks();
+    begin = microticks();
     output();
 }
 
@@ -361,12 +361,12 @@ int tmain(int argc, tchar *argv[]) {
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	ec.connect(addr, sockets, delay, tmt, wait);
 	Thread::priority(THREAD_HDL(), 10);
-	last = uticks();
+	last = microticks();
 	do {
 	    ops = errs = 0;
 	    usecs = 0;
 	    msleep(1000);
-	    now = uticks();
+	    now = microticks();
 	    tcout << ((uint64)(ops + errs) * 1000000 / (now - last)) <<
 		T("\t\t") << (ulong)(usecs / (ops ? (uint)ops : (uint)errs +
 		1)) << '\t' << errs << endl;

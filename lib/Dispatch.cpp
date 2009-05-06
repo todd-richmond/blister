@@ -263,7 +263,7 @@ int Dispatcher::onStart() {
 		removeTimer(*ds);
 	    }
 	} else if (msg.message == WM_TIMER) {
-	    now = mticks();
+	    now = milliticks();
 	    lock.lock();
 	    while ((tit = timers.begin()) != timers.end()) {
 		dt = tit->second;
@@ -357,7 +357,7 @@ int Dispatcher::onStart() {
     }
     lock.lock();
     shutdown = 0;
-    now = mticks();
+    now = milliticks();
     while (!shutdown) {
 	if (epollfd == -1) {
 	    irset = rset;
@@ -391,7 +391,7 @@ int Dispatcher::onStart() {
 	}
 	polling = false;
 	count = 0;
-	now = mticks();
+	now = milliticks();
 	lock.lock();
 	if (shutdown)
 	    break;
@@ -581,7 +581,7 @@ bool Dispatcher::start(uint mthreads, uint stack, bool autoterm) {
 }
 
 void Dispatcher::stop() {
-    msec_t now = mticks();
+    msec_t now = milliticks();
 
     if (shutdown)
     	return;
@@ -643,7 +643,7 @@ bool Dispatcher::timer(DispatchTimer &dt, msec_t tmt) {
 }
 
 void Dispatcher::addTimer(DispatchTimer &dt, ulong tm) {
-    msec_t now = tm ? mticks() : 0;
+    msec_t now = tm ? milliticks() : 0;
     bool notify;
 
     lock.lock();
@@ -727,7 +727,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds) {
 
 void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
     uint ioflags;
-    msec_t now = mticks();
+    msec_t now = milliticks();
     static uint ioarray[] = {
 	DSP_Readable | DSP_Closeable, DSP_Writeable | DSP_Closeable,
 	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable,

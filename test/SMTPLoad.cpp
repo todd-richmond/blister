@@ -313,7 +313,7 @@ char *SMTPLoad::read(uint idx, usec_t &iousec) {
 	iousec = 0;
 	return bodycache[idx];
     }
-    iousec = uticks();
+    iousec = microticks();
     if ((fd = open(tchartoachar(file), O_RDONLY|O_BINARY|O_SEQUENTIAL)) != -1) {
 	ret = new char [filelen + 1];
 	if (::read(fd, ret, filelen) == (int)filelen) {
@@ -330,7 +330,7 @@ char *SMTPLoad::read(uint idx, usec_t &iousec) {
     }
     if (!ret)
 	tcerr << T("unable to read body file: ") << file << endl;
-    iousec = uticks() - iousec;
+    iousec = microticks() - iousec;
     return ret;
 }
 
@@ -376,7 +376,7 @@ int SMTPLoad::onStart(void) {
     vector<LoadCmd *>::const_iterator it;
     attrmap::const_iterator ait;
 
-    srand(id ^ ((uint)(uticks() >> 32 ^ time(NULL))));
+    srand(id ^ ((uint)(microticks() >> 32 ^ time(NULL))));
     if (mthread > 1)
 	msleep(rand() % 1000 * ((mthread / 20) + 1));
     while (!qflag) {
@@ -406,7 +406,7 @@ int SMTPLoad::onStart(void) {
 	else
 	    tsprintf(data, ait->second.c_str(), id);
 	lvars[T("pass")] = data;
-	start = last = uticks();
+	start = last = microticks();
 	io = 0;
 	for (it = cmds.begin(); it != cmds.end() && !qflag; it++) {
 	    LoadCmd *cmd = *it;
@@ -421,7 +421,7 @@ int SMTPLoad::onStart(void) {
 		    len = tstrtoul(p, NULL, 10);
 		smsec += len;
 		msleep(len);
-		last = uticks();
+		last = microticks();
 		io = 0;
 		continue;
 	    }
@@ -485,7 +485,7 @@ int SMTPLoad::onStart(void) {
 	    } else {
 		ret = sc.cmd(cmd->cmd.c_str(), *buf ? buf : NULL);
 	    }
-	    now = uticks();
+	    now = microticks();
 	    diff = (ulong)(now - last - io);
 	    usec += diff;
 	    last = now;
@@ -504,7 +504,7 @@ int SMTPLoad::onStart(void) {
 		    endlog;
 	}
 	sc.close();
-	end = uticks();
+	end = microticks();
 	diff = (ulong)(end - start);
 	lock.lock();
 	tusec += diff - smsec * 1000;
@@ -555,7 +555,7 @@ void SMTPLoad::print(tostream &out, usec_t last) {
     tchar buf[32];
     LoadCmd *cmd;
     vector<LoadCmd *>::const_iterator it;
-    ulong lusec = (ulong)(uticks() - last);
+    ulong lusec = (ulong)(microticks() - last);
     ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0, calls = 0;
     bufferstream<tchar> os;
@@ -740,7 +740,7 @@ int tmain(int argc, tchar *argv[]) {
 	thread->start(32 * 1024);
     }
     do {
-	last = uticks();
+	last = microticks();
 	SMTPLoad::wait(stattime);
 #ifdef _WIN32
 	while (kbhit()) {

@@ -603,7 +603,7 @@ typedef uint64 msec_t;
 typedef uint64 usec_t;
 
 // common includes, defines and code for C/C++ software
-static inline usec_t microtime(void) {
+inline usec_t microtime(void) {
     struct timeval tv;
 
     gettimeofday(&tv, NULL);
@@ -611,20 +611,20 @@ static inline usec_t microtime(void) {
 }
 
 EXTERNC
-extern msec_t mticks(void);
-extern usec_t uticks(void);
+extern usec_t microticks(void);
 extern int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test);
 EXTERNC_
 
-#define millitime() ((msec_t)(microtime() / 1000))
+#define millitime()	((msec_t)(microtime() / 1000))
+#define milliticks()	((msec_t)(microticks() / 1000))
 
 #ifdef __cplusplus
 
+#include <functional>
 #include <iostream>
 #include <string>
 #include <vector>
-#include <functional>
 
 #ifndef _WIN32_WCE
 using namespace std;

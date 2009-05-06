@@ -18,11 +18,16 @@
 
 #include "stdapi.h"
 #include <fcntl.h>
+#include <time.h>
 #include <sys/times.h>
 
-msec_t mticks(void) { return (msec_t)((uticks() + 500) / 1000); }
+usec_t microticks(void) {
+#ifdef linux
+    struct timespec ts;
 
-usec_t uticks(void) {
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (usec_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+#else
     usec_t diff, now, save;
     struct timeval tv;
     static volatile usec_t lastusec, lastutick;
@@ -54,6 +59,7 @@ usec_t uticks(void) {
 	lastusec = now;
     }
     return lastutick;
+#endif
 }
 
 int lockfile(int fd, short type, short whence, ulong start, ulong len,

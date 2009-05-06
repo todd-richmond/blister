@@ -145,7 +145,7 @@ void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
 }
 
 Thread *ThreadGroup::wait(ulong to, bool all, bool main) {
-    msec_t start = mticks();
+    msec_t start = milliticks();
     bool signaled = false;
     set<Thread *>::iterator it;
 
@@ -191,7 +191,7 @@ Thread *ThreadGroup::wait(ulong to, bool all, bool main) {
 	}
 	signaled = true;
 	if (to != INFINITE)
-	    to -= (ulong)(mticks() - start);
+	    to -= (ulong)(milliticks() - start);
     } while (true);
 }
 

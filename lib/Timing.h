@@ -70,7 +70,7 @@ public:
     void clear(void);
     const tstring data(bool byname = false, uint columns = TIMINGCOLUMNS) const;
     void erase(const tchar *key);
-    timing_t now(void) const { return uticks(); }
+    timing_t now(void) const { return microticks(); }
     timing_t record(const tchar *key = NULL);
     timing_t record(const tchar *key, timing_t start) {
 	timing_t n = now();

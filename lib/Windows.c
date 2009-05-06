@@ -97,7 +97,7 @@ int gettimeofday(struct timeval *tv, struct timezone *tz) {
     return 0;
 }
 
-static msec_t _mticks(void) {
+static msec_t _milliticks(void) {
     ulong now;
     msec_t ret;
     static ulong cnt = (ulong)-1, last = (ulong)-1;
@@ -121,7 +121,7 @@ static msec_t _mticks(void) {
     return ret;
 }
 
-usec_t uticks(void) {
+usec_t microticks(void) {
     static uint64 tps = (uint64)-1;
 
     if (tps == (uint64)-1 &&
@@ -133,10 +133,8 @@ usec_t uticks(void) {
 	if (QueryPerformanceCounter((LARGE_INTEGER *)&now))
 	    return now * 1000000 / tps;
     }
-    return _mticks() * 1000;
+    return _milliticks() * 1000;
 }
-
-msec_t mticks(void) { return uticks() / 1000; }
 
 static uint rename_lock(const char *path) {
     uint hash = 0;
