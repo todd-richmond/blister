@@ -51,6 +51,12 @@ typedef void (*DispatchObjCB)(DispatchObj *);
 #define DSP_EPOLL
 #endif
 
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
+#include <sys/event.h>
+
+#define DSP_KQUEUE
+#endif
+
 class DispatchObjList: nocopy {
 public:
     DispatchObjList(): front(NULL), back(NULL) {}
@@ -140,7 +146,7 @@ private:
 	} while (interval != when);
     }
 #else
-    int epollfd;
+    int evtfd;
     SocketSet rset, wset;
     volatile bool polling;
     Sockaddr waddr;

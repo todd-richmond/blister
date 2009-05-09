@@ -25,6 +25,7 @@ static const ulong MAX_SELECT_TIMER = 5 * 1000;
 static const uint MAX_WAKE_THREAD = 8;
 static const int MAX_WAIT_TIME = 4 * 60 * 1000;
 static const int MIN_IDLE_TIMER = 2 * 1000;
+static const int MAX_EVENTS = 64;
 
 static const uint DSP_Socket = 0x0001;
 static const uint DSP_Detached = 0x0002;
@@ -67,14 +68,17 @@ uint Dispatcher::socketmsg;
 #define EPOLLONESHOT (1 << 30)
 #endif
 
+#elif defined(DSP_KQUEUE)
+
+#include <sys/queue.h>
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
     lifo(lock), shutdown(-1), threads(0),
 #ifdef DSP_WIN32_ASYNC
-    wnd(0), interval(DSP_NEVER)
+     interval(DSP_NEVER), wnd(0)
 #else
-    epollfd(-1), wsock(SOCK_DGRAM)
+    evtfd(-1), polling(false), wsock(SOCK_DGRAM)
 #endif
     {
 #ifdef DSP_WIN32_ASYNC
@@ -89,13 +93,6 @@ Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
 	wc.lpszClassName = DispatchClass; 
 	RegisterClass(&wc);
     }
-#else
-    polling = false;
-#ifdef DSP_EPOLL
-    do {
-	epollfd = epoll_create(10000);
-    } while (epollfd == -1 && interrupted(sockerrno()));
-#endif
 #endif
     if (Processor::count() > 1)
 	lock.spin(40);
@@ -323,8 +320,22 @@ int Dispatcher::onStart() {
     uint u;
 
 #ifdef DSP_EPOLL
-    epoll_event event[64];
-    int nevents = 0;
+    epoll_event evts[MAX_EVENTS];
+
+    do {
+	evtfd = epoll_create(10000);
+    } while (evtfd == -1 && interrupted(errno));
+#elif defined(DSP_KQUEUE)
+    struct kevent evts[MAX_EVENTS];
+    timespec ts;
+
+    evtfd = kqueue();
+    EV_SET(&evts[0], -1, EVFILT_READ, EV_ADD, 0, 0, NULL);
+    if (kevent(evtfd, &evts[0], 1, &evts[0], 1, NULL) != 1 || evts[0].ident !=
+	(uintptr_t)-1 || evts[0].flags != EV_ERROR) {
+	close(evtfd);
+	evtfd = -1;
+    }
 #endif
 #ifndef _WIN32
     sigset_t sigs;
@@ -334,6 +345,7 @@ int Dispatcher::onStart() {
     pthread_sigmask(SIG_BLOCK, &sigs, NULL);
 #endif
     Socket isock(SOCK_DGRAM);
+    int nevts = 0;
 
     (void)buf;
     waddr.host(T("localhost"));
@@ -344,14 +356,20 @@ int Dispatcher::onStart() {
     isock.blocking(false);
     wsock.open(waddr.family());
     wsock.blocking(false);
-    if (epollfd == -1) {
+    if (evtfd == -1) {
 	rset.set(isock);
 #ifdef DSP_EPOLL
     } else {
-	ZERO(event);
-	event[0].events = EPOLLIN;
-	while (epoll_ctl(epollfd, EPOLL_CTL_ADD, isock.fd(), event) == -1 &&
+	ZERO(evts);
+	evts[0].events = EPOLLIN;
+	while (epoll_ctl(evtfd, EPOLL_CTL_ADD, isock.fd(), evts) == -1 &&
 	    interrupted(sockerrno()))
+	    ;
+#elif defined(DSP_KQUEUE)
+	ZERO(evts);
+	EV_SET(&evts[0], isock.fd(), EVFILT_READ, EV_ADD, 0, 0, NULL);
+	while (kevent(evtfd, evts, 1, evts, 1, NULL) == -1 &&
+	    interrupted(errno))
 	    ;
 #endif
     }
@@ -359,7 +377,7 @@ int Dispatcher::onStart() {
     shutdown = 0;
     now = milliticks();
     while (!shutdown) {
-	if (epollfd == -1) {
+	if (evtfd == -1) {
 	    irset = rset;
 	    iwset = wset;
 	}
@@ -373,7 +391,7 @@ int Dispatcher::onStart() {
 	}
 	polling = true;
 	lock.unlock();
-	if (epollfd == -1) {
+	if (evtfd == -1) {
 	    if (!SocketSet::ioselect(irset, orset, iwset, owset, oeset, msec)) {
 		orset.clear();
 		owset.clear();
@@ -382,11 +400,15 @@ int Dispatcher::onStart() {
 	    if (!orset.empty() && orset[0] == isock)
 		recvfrom(isock, buf, sizeof (buf), 0, NULL, NULL);
 #endif
-#ifdef DSP_EPOLL
 	} else {
-	    if ((nevents = epoll_wait(epollfd, event,
-		sizeof (event) / sizeof (*event), msec)) == -1)
-		nevents = 0;
+#ifdef DSP_EPOLL
+	    if ((nevts = epoll_wait(evtfd, evts, MAX_EVENTS, msec)) == -1)
+		nevts = 0;
+#elif defined(DSP_KQUEUE)
+	    ts.tv_sec = msec / 1000;
+	    ts.tv_nsec = (msec % 1000) * 1000;
+	    if ((nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, &ts)) == -1)
+		nevts = 0;
 #endif
 	}
 	polling = false;
@@ -396,23 +418,23 @@ int Dispatcher::onStart() {
 	if (shutdown)
 	    break;
 	rlist.push_front(flist);
+	for (u = 0; u < (uint)nevts; u++) {
 #ifdef DSP_EPOLL
-	for (u = 0; u < (uint)nevents; u++) {
-	    ds = (DispatchSocket *)event[u].data.ptr;
+	    ds = (DispatchSocket *)evts[u].data.ptr;
 	    if (!ds) {
 		recvfrom(isock, buf, sizeof (buf), 0, NULL, NULL);
 		continue;
 	    }
 	    if (ds->flags & DSP_Scheduled) {
-		if (event[u].events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP))
+		if (evts[u].events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP))
 		    ds->msg = ds->flags & DSP_SelectAccept ? Accept : Read;
-		if (event[u].events & EPOLLOUT) {
+		if (evts[u].events & EPOLLOUT) {
 		    if (ds->msg == Nomsg)
 			ds->msg = Write;
 		    else
 			ds->flags |= DSP_Writeable;
 		}
-		if (event[u].events & (EPOLLERR | EPOLLHUP)) {
+		if (evts[u].events & (EPOLLERR | EPOLLHUP)) {
 		    if (ds->msg == Nomsg)
 			ds->msg = Close;
 		    else
@@ -428,16 +450,63 @@ int Dispatcher::onStart() {
 		    count++;
 		}
 	    } else {
-		if (event[u].events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP))
+		if (evts[u].events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP))
 		    ds->flags |= DSP_Readable;
-		if (event[u].events & EPOLLOUT)
+		if (evts[u].events & EPOLLOUT)
 		    ds->flags |= DSP_Writeable;
-		if (event[u].events & (EPOLLERR | EPOLLHUP))
+		if (evts[u].events & (EPOLLERR | EPOLLHUP))
 		    ds->flags |= DSP_Closeable;
 	    }
+#elif defined(DSP_KQUEUE)
+	    ds = (DispatchSocket *)evts[u].udata;
+	    if (!ds) {
+		recvfrom(isock, buf, sizeof (buf), 0, NULL, NULL);
+		continue;
+	    }
+	    if (ds->flags & DSP_Scheduled) {
+    if (evts[u].flags & EV_ERROR && evts[u].data == ENOENT)
+		if (evts[u].flags & EV_ERROR && evts[u].data == ENOENT)
+		    continue;
+		if (evts[u].filter == EVFILT_READ) {
+		    if (ds->msg == Nomsg)
+			ds->msg = ds->flags & DSP_SelectAccept ? Accept : Read;
+		    else
+			ds->flags |= DSP_Readable;
+		} else if (evts[u].filter == EVFILT_WRITE) {
+		    if (ds->msg == Nomsg)
+			ds->msg = Write;
+		    else
+			ds->flags |= DSP_Writeable;
+		}
+		if (evts[u].flags & EV_ERROR) {
+		    if (ds->msg == Nomsg)
+			ds->msg = Close;
+		    else
+			ds->flags |= DSP_Closeable;
+		}
+		ds->flags = (ds->flags & ~(DSP_Scheduled | DSP_SelectAll)) |
+		    DSP_Ready;
+		if (!(ds->flags & DSP_Active)) {
+		    if (ds->msg == Accept)
+			rlist.push_front(ds);
+		    else
+			rlist.push_back(ds);
+		    count++;
+		}
+	    } else {
+		if (evts[u].flags & EV_ERROR) {
+		    if (evts[u].data == ENOENT)
+			continue;
+		    ds->flags |= DSP_Closeable;
+		}
+		if (evts[u].filter == EVFILT_READ)
+		    ds->flags |= DSP_Readable;
+		else if (evts[u].filter == EVFILT_WRITE)
+		    ds->flags |= DSP_Writeable;
+	    }
+#endif
 	    removeTimer(*ds);
 	}
-#endif
 	for (u = 0; u < orset.size(); u++) {
 	    if (orset[u] == isock)
 		continue;
@@ -526,6 +595,8 @@ int Dispatcher::onStart() {
     }
     cleanup();
     lock.unlock();
+    if (evtfd != -1)
+	close(evtfd);
     return 0;
 }
 
@@ -705,19 +776,29 @@ void Dispatcher::cancelSocket(DispatchSocket &ds) {
 	    WSAAsyncSelect(fd, wnd, socketmsg, 0);
 	}
 #else
-	if (epollfd == -1) {
+	if (evtfd == -1) {
 	    smap.erase(fd);
 	    if (ds.flags & (DSP_SelectRead | DSP_SelectAccept))
 		rset.unset(fd);
 	    if (ds.flags & DSP_SelectWrite)
 		wset.unset(fd);
 	    ds.flags &= ~DSP_SelectAll;
-#ifdef DSP_EPOLL
 	} else {
+#ifdef DSP_EPOLL
 	    ds.flags &= ~DSP_SelectAll;
 	    lkr.unlock();
-	    while (epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, 0) == -1 &&
-		interrupted(sockerrno()))
+	    while (epoll_ctl(evtfd, EPOLL_CTL_DEL, fd, 0) == -1 &&
+		interrupted(errno))
+		;
+#elif defined(DSP_KQUEUE)
+	    struct kevent evt;
+
+	    EV_SET(&evt, fd, ds.flags & DSP_SelectWrite ? EVFILT_WRITE :
+		EVFILT_READ, EV_DELETE | EV_RECEIPT, 0, 0, &ds);
+	    ds.flags &= ~DSP_SelectAll;
+	    lkr.unlock();
+	    while (kevent(evtfd, &evt, 1, NULL, 0, NULL) == -1 &&
+		interrupted(errno))
 		;
 #endif
 	}
@@ -739,15 +820,20 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
     };
 #ifdef DSP_EPOLL
     int op = EPOLL_CTL_MOD;
-    epoll_event event;
-    static const long sockevents[] = {
+    epoll_event evt;
+    static const long sockevts[] = {
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP, EPOLLOUT,
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT, EPOLLIN, EPOLLOUT, 0, 0, 0
     };
 
-    ZERO(event);
-    event.data.ptr = &ds;
-    event.events = sockevents[m] | EPOLLERR | EPOLLHUP | EPOLLONESHOT;
+    ZERO(evt);
+    evt.data.ptr = &ds;
+    evt.events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLONESHOT;
+#elif defined(DSP_KQUEUE)
+    struct kevent evt;
+
+    EV_SET(&evt, ds.fd(), EVFILT_READ, EV_ADD | EV_EOF | EV_ERROR | EV_ONESHOT |
+	EV_RECEIPT, 0, 0, &ds);
 #endif
 
     Locker lkr(lock);
@@ -783,26 +869,26 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
     	if (!ds.mapped) {
 #ifdef DSP_EPOLL
 	    op = EPOLL_CTL_ADD;
-	    if (epollfd == -1)
+	    if (evtfd == -1)
 #endif
 		smap[ds.fd()] = &ds;
 	    ds.mapped = true;
 	}
 #ifdef DSP_WIN32_ASYNC
-	static const long sockevents[] = {
+	static const long sockevts[] = {
 	    FD_READ | FD_CLOSE, FD_WRITE | FD_CLOSE,
 	    FD_READ | FD_WRITE | FD_CLOSE, FD_ACCEPT, FD_CONNECT | FD_CLOSE,
 	    FD_CLOSE
 	};
 
 	lkr.unlock();
-	if (WSAAsyncSelect(ds.fd(), wnd, socketmsg, sockevents[(int)m])) {
+	if (WSAAsyncSelect(ds.fd(), wnd, socketmsg, sockevts[(int)m])) {
 	    lkr.lock();
 	    removeTimer(ds);
 	    ready(ds);
 	}
 #else
-	if (epollfd == -1) {
+	if (evtfd == -1) {
 	    if (m == Read || m == ReadWrite || m == Accept || m == Close)
 		rset.set(ds.fd());
 	    if (m == Write || m == ReadWrite || m == Connect)
@@ -811,14 +897,26 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 		tmt = now;
 		wake = true;
 	    }
-#ifdef DSP_EPOLL
 	} else {
+#ifdef DSP_EPOLL
 	    lkr.unlock();
-	    while (epoll_ctl(epollfd, op, ds.fd(), &event) == -1 &&
-		interrupted(sockerrno()))
+	    while (epoll_ctl(evtfd, op, ds.fd(), &evt) == -1 &&
+		interrupted(errno))
 		;
-#endif
+#elif defined(DSP_KQUEUE)
+	    if (m == Read || m == ReadWrite || m == Accept || m == Close) {
+		while (kevent(evtfd, &evt, 1, NULL, 0, NULL) == -1 &&
+		    interrupted(errno))
+		    ;
+	    }
+	    if (m == Write || m == ReadWrite || m == Connect) {
+		evt.filter = EVFILT_WRITE;
+		while (kevent(evtfd, &evt, 1, NULL, 0, NULL) == -1 &&
+		    interrupted(errno))
+		    ;
+	    }
 	}
+#endif
 #endif
     }
     lkr.unlock();
