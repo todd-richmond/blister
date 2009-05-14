@@ -223,7 +223,6 @@ int Dispatcher::onStart() {
 		ds = (DispatchSocket *)it->second;
 		if (ds->flags & DSP_Scheduled) {
 		    // uint err = WSAGETSELECTERROR(msg.lParam);
-		    ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_Ready;
 		    if (evt & FD_READ)
 			ds->msg = Read;
 		    else if (evt & FD_ACCEPT)
@@ -240,6 +239,7 @@ int Dispatcher::onStart() {
 		    	else
 			    ds->flags |= DSP_Closeable;
 		    }
+		    ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_Ready;
 		    if (!(ds->flags & DSP_Active)) {
 			if (ds->msg == Accept)
 			    rlist.push_front(ds);
@@ -440,8 +440,7 @@ int Dispatcher::onStart() {
 		    else
 			ds->flags |= DSP_Closeable;
 		}
-		ds->flags = (ds->flags & ~(DSP_Scheduled | DSP_SelectAll)) |
-		    DSP_Ready;
+		ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_Ready;
 		if (!(ds->flags & DSP_Active)) {
 		    if (ds->msg == Accept)
 			rlist.push_front(ds);
@@ -484,8 +483,7 @@ int Dispatcher::onStart() {
 		    else
 			ds->flags |= DSP_Closeable;
 		}
-		ds->flags = (ds->flags & ~(DSP_Scheduled | DSP_SelectAll)) |
-		    DSP_Ready;
+		ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_Ready;
 		if (!(ds->flags & DSP_Active)) {
 		    if (ds->msg == Accept)
 			rlist.push_front(ds);
@@ -828,11 +826,11 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 
     ZERO(evt);
     evt.data.ptr = &ds;
-    evt.events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLONESHOT;
+    evt.events = sockevts[m] | EPOLLERR | EPOLLHUP;
 #elif defined(DSP_KQUEUE)
     struct kevent evt;
 
-    EV_SET(&evt, ds.fd(), EVFILT_READ, EV_ADD | EV_EOF | EV_ERROR | EV_ONESHOT |
+    EV_SET(&evt, ds.fd(), EVFILT_READ, EV_ADD | EV_CLEAR | EV_EOF | EV_ERROR |
 	EV_RECEIPT, 0, 0, &ds);
 #endif
 
@@ -915,8 +913,8 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 		    interrupted(errno))
 		    ;
 	    }
-	}
 #endif
+	}
 #endif
     }
     lkr.unlock();
