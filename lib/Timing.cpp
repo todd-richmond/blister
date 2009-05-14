@@ -114,9 +114,9 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	    for (u = 0; u <= start; u++)
 		sum += stats->cnts[u];
 	    if (stats->cnt >= 100000000)
-		tsprintf(cbuf, T("%5lum"), (stats->cnt + 499999) / 1000000);
+		tsprintf(cbuf, T("%5lum"), stats->cnt / 1000000);
 	    else if (stats->cnt >= 100000)
-		tsprintf(cbuf, T("%5luk"), (stats->cnt + 499) / 1000);
+		tsprintf(cbuf, T("%5luk"), stats->cnt / 1000);
 	    else
 		tsprintf(cbuf, T("%5lu"), stats->cnt);
 	    if (tot)
@@ -239,3 +239,4 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
         tsprintf(buf, T("%.0fm"), f / 1000000);
     return buf;
 }
+
