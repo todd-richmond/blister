@@ -622,7 +622,7 @@ void Log::format(const tchar *s) {
 
 void Log::logv(Level l, ...) {
     bool first;
-    const char *p;
+    const tchar *p;
     Tlsdata *tlsd;
     va_list vl;
 
@@ -631,7 +631,7 @@ void Log::logv(Level l, ...) {
     first = true;
     tlsd = tls.get();
     va_start(vl, l);
-    while ((p = va_arg(vl, const char *)) != NULL) {
+    while ((p = va_arg(vl, const tchar *)) != NULL) {
 	if (first)
 	    first = false;
 	else
