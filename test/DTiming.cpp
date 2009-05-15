@@ -87,8 +87,8 @@ int tmain(int argc, tchar *argv[]) {
     while (!out) {
 	while (getline(ifs.is_open() ? ifs : tcin, s)) {
 	    if (!s.empty()) {
-		const char *p = s.c_str(), *pp;
-		string key;
+		const tchar *p = s.c_str(), *pp;
+		tstring key;
 
 		while (istspace(*p))
 		    p++;
