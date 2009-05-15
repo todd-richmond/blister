@@ -17,24 +17,26 @@
  */
 
 #include "stdapi.h"
+#include <stdarg.h>
 #include <algorithm>
 #include <fstream>
 #include "Config.h"
 
-Config::Value::Value(const tstring val): expand(false), quote(0) {
-    tstring::size_type sz = val.size();
-
-    if (sz > 1 && (val[0] == '"' || val[0] == '\'') && val[sz] == val[0]) {
+Config::Value::Value(const tchar *val, size_t len): expand(false), quote(0) {
+    if (len > 1 && (val[0] == '"' || val[0] == '\'') && val[len - 1] == val[0]) {
 	quote = val[0];
-	value.assign(val, 1, sz - 2);
+	value.assign(val, 1, len - 2);
     } else {
-	tstring::size_type pos = val.find('$');
+	const tchar *p = val;
 
-	if (((pos = val.find(T("$("))) != val.npos ||
-	    (pos = val.find(T("${"))) != val.npos) &&
-	    val.find(val[pos + 1] == '(' ? ')' : '}', pos + 2) != val.npos)
-	    expand = true;
-	value = val;
+	value.assign(val, 0, len);
+	while ((p = tstrchr(p, '$')) != NULL && *++p) {
+	    if ((*p == '{' || *p == '(') && tstrchr(p, *p == '(' ? ')' : '}')
+		!= NULL) {
+		expand = true;
+		return;
+	    }
+	}
     }
 }
 
@@ -45,13 +47,13 @@ Config::Config(const tchar *file, const tchar *pre): ini(false), locker(0) {
 }
 
 const tstring &Config::expand(const Value *value) const {
-    tstring::size_type spos, epos;
+    tstring::size_type epos, spos;
 
     if (!value->expand)
 	return value->value;
     buf = value->value;
-    while ((spos = buf.find(T("$("))) != buf.npos ||
-	(spos = buf.find(T("${"))) != buf.npos) {
+    while ((spos = buf.rfind(T("$("))) != buf.npos ||
+	(spos = buf.rfind(T("${"))) != buf.npos) {
 	if ((epos = buf.find(buf[spos + 1] == '(' ? ')' : '}', spos + 2)) ==
 	    buf.npos)
 	    break;
@@ -139,18 +141,58 @@ double Config::get(const tchar *attr, double def, const tchar *sect) const {
     return val ? tstrtod(expand(val).c_str(), NULL) : def;
 }
 
-void Config::set(const tchar *attr, const tchar *val, const tchar *sect) {
+void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
+    append) {
     attrmap::iterator it;
-    Locker lkr(lck, !THREAD_ISSELF(locker));
     const tchar *key = keystr(attr, sect);
 
     it = amap.find(key);
     if (it == amap.end()) {
-	amap[stringdup(key)] = new Value(val);
+	amap[tstrdup(key)] = new Value(val, tstrlen(val));
     } else {
-	delete it->second;
-	it->second = new Value(val);
+	Value *value = it->second;
+
+	if (append) {
+	    if (value->quote && !tstrstr(val, T("${")) && !tstrstr(val,
+		T("$("))) {
+		buf = value->quote;
+		buf += value->value;
+		buf += val;
+		buf += value->quote;
+	    } else {
+		buf = value->value;
+		buf += val;
+	    }
+	    val = buf.c_str();
+	}
+	delete value;
+	it->second = new Value(val, tstrlen(val));
     }
+}
+
+void Config::set(const tchar *attr1, const tchar *val1, const tchar *attr2,
+    const tchar *val2, ...) {
+    const tchar *arg, *attr = NULL, *sect = NULL;
+    attrmap::iterator it;
+    Locker lkr(lck, !THREAD_ISSELF(locker));
+    va_list vl;
+
+    va_start(vl, val2);
+    while ((arg = va_arg(vl, const tchar *)) != NULL)
+	sect = sect == NULL ? arg : NULL;
+    va_end(vl);
+    set(attr1, val1, sect, false);
+    set(attr2, val2, sect, false);
+    va_start(vl, val2);
+    while ((arg = va_arg(vl, const tchar *)) != NULL) {
+	if (attr) {
+	    set(attr, arg, sect, false);
+	    attr = NULL;
+	} else {
+	    attr = keystr(arg, sect);
+	}
+    }
+    va_end(vl);
 }
 
 void Config::trim(tstring &s) {
@@ -171,11 +213,11 @@ void Config::trim(tstring &s) {
 }
 
 bool Config::parse(tistream &is) {
-    tstring s, attr, val, sect;
-    attrmap::iterator it;
-    const tchar *p;
-    uint line = 0;
+    tstring attr, s, sect, val;
     bool head = true;
+    attrmap::iterator it;
+    uint line = 0;
+    const tchar *p;
 
     if (!is)
 	return false;
@@ -195,7 +237,7 @@ bool Config::parse(tistream &is) {
 	if (attr.empty() || attr[0] == ';' || attr[0] == '#' || attr[0] == '=')
 	    continue;
 
-	bool plus = false;
+	bool append = false;
 	tstring::size_type pos;
 	tstring::size_type sz = attr.size();
 
@@ -220,10 +262,10 @@ bool Config::parse(tistream &is) {
 	    val.erase();
 	} else {
 	    if (attr[pos - 1] == '+')
-		plus = true;
+		append = true;
 	    val = attr.substr(pos + 1, sz - pos);
 	    trim(val);
-	    attr.erase(pos - (plus ? 1 : 0), attr.size());
+	    attr.erase(pos - (append ? 1 : 0), attr.size());
 	    trim(attr);
 	}
 	if (attr.size() > 2 && attr[0] == '*' && attr[1] == '.') {
@@ -245,19 +287,7 @@ bool Config::parse(tistream &is) {
 	    ini = true;
 	    continue;
 	}
-
-	const tchar *key = keystr(attr.c_str(), sect.empty() ? NULL :
-	    sect.c_str());
-
-	it = amap.find(key);
-	if (it == amap.end()) {
-	    amap[tstrdup(key)] = new Value(val);
-	} else {
-	    if (plus)
-		it->second->value += val;
-	    else
-	    	it->second->value = val;
-	}
+	set(attr.c_str(), val.c_str(), sect.c_str(), append);
     }
     return true;
 }
@@ -289,8 +319,7 @@ bool Config::write(tostream &os, bool ini) const {
     attrmap::const_iterator it;
     vector<tstring> lines;
     vector<tstring>::const_iterator lit;
-    tstring s;
-    tstring sect;
+    tstring s, sect;
 
     for (it = amap.begin(); it != amap.end(); it++) {
 	Value *val = it->second;

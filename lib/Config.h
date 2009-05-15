@@ -22,6 +22,39 @@
 #include STL_HASH_MAP
 #include "Thread.h"
 
+/*
+ * The Config class is used to read either property (attr = value) or
+ * ini ([ section ]) style configuration files. Property files may have any
+ * number of subsections delimited by '.'. Ini files are stored as property
+ * strings by using the section as the attr prefix. get() functions allow
+ * fetches with default values and set() functions can modify existing values
+ * 
+ * When reading configuration, a "prefix" value may be specified so multiple
+ * programs can share a common config file. This works by pruning off the
+ * prefix string so that shared libraries can use a common attribute substring
+ * "*" may be used as an attribute prefix to enable all prefixes to share a
+ * single value
+ *
+ * attr/value lines have a few extra features not found in many config readers
+ *   1) value enclosed in "" or '' will keep leading and trailing spaces and
+ *      not be expanded.
+ *   2) lines ending in \ will have their values continued on the next line
+ *   3) ${attr} or $(attr) substrings will be recursively expanded during get()
+ *   4) lines beginning with # are comments
+ *   5) lines beginning with #include will recursively include the filename arg
+ *   6) attr += val appends the value
+ *   7) repeated attributes are stored as "last read attr wins"
+ *
+ *   host = hostname
+ *   prog1.attr1 = value1
+ *   prog2.attr1 = " value2 "
+ *   *.attr2 = ${host}
+ * 
+ *   config.read("prog.cfg", "prog1");
+ *   config.get("attr1", "default"); // return app specific version of "attr1"
+ *   config.get("attr2", "default"); // return app shared value of "attr2"
+ */
+
 class Config: nocopy {
 public:
     Config(const tchar *file = NULL, const tchar *pre = NULL);
@@ -56,7 +89,13 @@ public:
 	return (uint)get(attr, (ulong)def, sect);
     }
     ulong get(const tchar *attr, ulong def, const tchar *sect = NULL) const;
-    void set(const tchar *attr, const tchar *val, const tchar *sect = NULL);
+    void set(const tchar *attr, const tchar *val, const tchar *sect = NULL) {
+	Locker lkr(lck, !THREAD_ISSELF(locker));
+
+	set(attr, val, sect, false);
+    }
+    void set(const tchar *attr, const tchar *val, const tchar *attr2,
+	const tchar *val2, ... /* , const tchar *sect = NULL, NULL */);
     void set(const tchar *attr, const bool val, const tchar *sect = NULL)
 	{ set(attr, val ? T("true") : T("false"), sect); }
     void set(const tchar *attr, int val, const tchar *sect = NULL)
@@ -76,8 +115,8 @@ public:
     bool iniformat(void) const { return ini; }
     const tstring &prefix(void) const { return pre; }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
-    bool read(const tchar *file, bool app = false);
-    bool read(tistream &is, bool app = false);
+    bool read(const tchar *file, bool apppend = false);
+    bool read(tistream &is, bool apppend = false);
     bool write(tostream &os) const { return write(os, ini); }
     bool write(tostream &os, bool ini) const;
     bool write(const tchar *file = NULL) const { return write(file, ini); }
@@ -88,7 +127,7 @@ public:
 private:
     class Value {
     public:
-	Value(const tstring val);
+	Value(const tchar *val, size_t len);
 
 	bool expand;
 	tchar quote;
@@ -112,7 +151,7 @@ private:
 
     const tstring &expand(const Value *val) const;
     const tchar *keystr(const tchar *attr, const tchar *sect) const {
-	if (!sect)
+	if (!sect || !*sect)
 	    return attr;
 	key = sect;
 	key += '.';
@@ -125,15 +164,19 @@ private:
 	return it == amap.end() ? NULL : it->second;
     }
     bool parse(tistream &is);
-    tchar *stringdup(const tstring &s) const {
-	tstring::size_type sz = (s.size() + 1) * sizeof (tchar);
-
-	return (tchar *)memcpy(malloc(sz), s.c_str(), sz);
-    }
+    void set(const tchar *attr, const tchar *val, const tchar *sect, bool
+	append);
     void trim(tstring &str);
 };
 
-inline tistream &operator >>(tistream &is, Config &cfg) { cfg.read(is, true); return is; }
-inline tostream &operator <<(tostream &os, const Config &cfg) { cfg.write(os); return os; }
+inline tistream &operator >>(tistream &is, Config &cfg) {
+    cfg.read(is, true);
+    return is;
+}
+
+inline tostream &operator <<(tostream &os, const Config &cfg) {
+    cfg.write(os);
+    return os;
+}
 
 #endif // Config_h
