@@ -69,8 +69,8 @@
  *   dtiming.record();
  */
 
-#define TIMINGSLOTS	10
 #define TIMINGCOLUMNS	8
+#define TIMINGSLOTS	10
 
 typedef usec_t timing_t;
 
@@ -87,7 +87,6 @@ public:
     void clear(void);
     const tstring data(bool byname = false, uint columns = TIMINGCOLUMNS) const;
     void erase(const tchar *key);
-    timing_t now(void) const { return microticks(); }
     void record(const tchar *key = NULL);
     timing_t record(const tchar *key, timing_t start) {
 	timing_t n = now();
@@ -99,6 +98,7 @@ public:
     timing_t start(void) const { return now(); }
     void start(const tchar *key);
     void stop(uint lvl = (uint)-1);
+    static timing_t now(void) { return microticks(); }
 
 private:
     struct Stats {
@@ -149,7 +149,7 @@ public:
     }
     ~TimingEntry() {
 	if (start != (timing_t)-1)
-	    timing.record(key, start);
+	    timing.add(key, timing.now() - start);
     }
 
     void record(void) { start = timing.record(key, start); }
