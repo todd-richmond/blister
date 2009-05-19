@@ -32,22 +32,35 @@
  * A global "dtiming" object allows for the simplest functionality but other
  * objects can be instantiated as well
  * 
- * Timing can be used in either "direct" or "stack" mode
+ * Timing can be used in either "direct" or "stack" mode. There are TimingEntry
+ * and TimingFrame classes to simplify code even further
  *
  * direct: lowest overhead for most profile tasks
+ *   function_c() {
+ *     TimingEntry te(T("function_c"));
+ *     code_c();
+ *   }
+ *
  *   timing_t starta = dtiming.start();
  *   function_a();
  *   timing_t startb = dtiming.record(T("function_a"), starta);
  *   function_b();
  *   dtiming.record(T("function_b"), startb);
- *   dtiming.record(T("function_ab"), starta);
+ *   function_c();
+ *   dtiming.record(T("a+b+c"), starta);
  *   tcout << dtiming.data() << endl;
  *
  * stack: slower but tracks timing across a virtual callstack
  *   void call_b() {
  *     dtiming.start(T("function_b"));
  *     function_b();
+ *     call_c();
  *     dtiming.record();
+ *   }
+ * 
+ *   void call_c() {
+ *     TimingFrame tf(T("call_c"));
+ *     function_c();
  *   }
  * 
  *   dtiming.start(T("function_a"));
@@ -66,20 +79,25 @@ public:
     Timing() {}
     ~Timing() { clear(); }
 
+    vector<tstring>::size_type depth(void) const {
+	return tls.get()->callers.size();
+    }
+
     void add(const tchar *key, timing_t diff);
     void clear(void);
     const tstring data(bool byname = false, uint columns = TIMINGCOLUMNS) const;
     void erase(const tchar *key);
     timing_t now(void) const { return microticks(); }
-    timing_t record(const tchar *key = NULL);
+    void record(const tchar *key = NULL);
     timing_t record(const tchar *key, timing_t start) {
 	timing_t n = now();
 
 	add(key, n - start);
 	return n;
     }
+    void restart(void);
     timing_t start(void) const { return now(); }
-    timing_t start(const tchar *key);
+    void start(const tchar *key);
     void stop(uint lvl = (uint)-1);
 
 private:
@@ -119,4 +137,58 @@ private:
 
 extern Timing &dtiming;
 
+/*
+ * Simple wrapper to add timing data upon object destruction which reduces
+ * timing a function call down to a single line of code and allows it to
+ * included destructor overhead
+ */
+class TimingEntry: nocopy {
+public:
+    TimingEntry(const tchar *k, Timing &t = dtiming): key(k), timing(t) {
+	start = timing.start();
+    }
+    ~TimingEntry() {
+	if (start != (timing_t)-1)
+	    timing.record(key, start);
+    }
+
+    void record(void) { start = timing.record(key, start); }
+    void restart(void) { start = timing.start(); }
+    void stop(void) { start = (timing_t)-1; }
+
+private:
+    const tchar *key;
+    timing_t start;
+    Timing &timing;
+};
+
+class TimingFrame: nocopy {
+public:
+    TimingFrame(const tchar *k, Timing &t = dtiming): key(k), started(true),
+	timing(t) {
+	timing.start(key);
+    }
+    ~TimingFrame() {
+	if (started)
+	    timing.record();
+    }
+
+    void record(void) { timing.record(); started = false; }
+    void restart(void) {
+	if (started) {
+	    timing.restart();
+	} else {
+	    started = true;
+	    timing.start(key);
+	}
+    }
+    void stop(void) { timing.stop(1); started = false; }
+
+private:
+    const tchar *key;
+    bool started;
+    Timing &timing;
+};
+
 #endif // _Timing_h
+

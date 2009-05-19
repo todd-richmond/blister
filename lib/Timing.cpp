@@ -44,11 +44,11 @@ void Timing::add(const tchar *key, timing_t diff) {
     } else {
 	stats = it->second;
     }
-    stats->cnt++;
     for (slot = 0; slot < TIMINGSLOTS - 1; slot++) {
 	if (diff <= limits[slot])
 	    break;
     }
+    stats->cnt++;
     stats->cnts[slot]++;
     stats->tot += diff;
 }
@@ -168,10 +168,26 @@ void Timing::erase(const tchar *key) {
     }
 }
 
-timing_t Timing::record(const tchar *key) {
+const tchar *Timing::format(timing_t t, tchar *buf) {
+    float f(t / 1000.0f);
+
+    if (f < 10)
+	tsprintf(buf, T("%.3f"), f);
+    else if (f < 100)
+        tsprintf(buf, T("%.2f"), f);
+    else if (f < 10000)
+        tsprintf(buf, T("%.0f"), f);
+    else if (f < 1000000)
+        tsprintf(buf, T("%.0fk"), f / 1000);
+    else
+        tsprintf(buf, T("%.0fm"), f / 1000000);
+    return buf;
+}
+
+void Timing::record(const tchar *key) {
+    timing_t n = now();
     tstring caller;
     timing_t diff;
-    timing_t n = now();
     Tlsdata *tlsd = tls.get();
 
     do {
@@ -180,7 +196,7 @@ timing_t Timing::record(const tchar *key) {
 	if (it == tlsd->callers.rend()) {
 	    tcerr << T("timing mismatch for ") << (key ? key : T("stack")) <<
 		endl;
-	    return 0;
+	    return;
 	}
 	caller = *it;
 	tlsd->callers.pop_back();
@@ -203,16 +219,22 @@ timing_t Timing::record(const tchar *key) {
 	add(s.c_str(), diff);
     }
     add(key, diff);
-    return n;
 }
 
-timing_t Timing::start(const tchar *key) {
-    timing_t n;
+void Timing::restart() {
+    Tlsdata *tlsd = tls.get();
+
+    if (!tlsd->callers.empty()) {
+	tlsd->starts.pop_back();
+	tlsd->starts.push_back(now());
+    }
+}
+
+void Timing::start(const tchar *key) {
     Tlsdata *tlsd = tls.get();
 
     tlsd->callers.push_back(key ? key : T(""));
-    tlsd->starts.push_back(n = now());
-    return n;
+    tlsd->starts.push_back(now());
 }
 
 void Timing::stop(uint lvl) {
@@ -222,21 +244,5 @@ void Timing::stop(uint lvl) {
 	tlsd->callers.pop_back();
 	tlsd->starts.pop_back();
     }
-}
-
-const tchar *Timing::format(timing_t t, tchar *buf) {
-    float f(t / 1000.0f);
-
-    if (f < 10)
-	tsprintf(buf, T("%.3f"), f);
-    else if (f < 100)
-        tsprintf(buf, T("%.2f"), f);
-    else if (f < 10000)
-        tsprintf(buf, T("%.0f"), f);
-    else if (f < 1000000)
-        tsprintf(buf, T("%.0fk"), f / 1000);
-    else
-        tsprintf(buf, T("%.0fm"), f / 1000000);
-    return buf;
 }
 
