@@ -19,7 +19,11 @@
 #ifndef Streams_h
 #define Streams_h
 
-// fast, optimized stream buffer using direct reads and writv
+/*
+ * faststreambuf is an optimized stream buffer that reads directly into user
+ * buffers and coalesces writes from user buffers with writev to reduce
+ * buffer copies when possible
+ */
 template<class C>
 class faststreambuf: public streambuf {
 public:
@@ -164,7 +168,6 @@ public:
     }
 
     virtual streamsize xsgetn(char *p, streamsize sz) {
-	streamsize in;
 	streamsize left = (streamsize)(egptr() - gptr());
     
 	if (left && left >= sz) {
@@ -172,10 +175,10 @@ public:
 	    gbump((int)sz);
 	} else {
 	    char *pb = pbase();
-	    
-	    in = (streamsize)(pptr() - pb);
-	    if (in) {			    // flush output
-		if (fd.write(pb, in) != in)
+	    streamsize len = (streamsize)(pptr() - pb);
+
+	    if (len) {				// flush output
+		if (fd.write(pb, len) != len)
 		    return -1;
 		setp(pb, pb + bufsz);
 	    }
@@ -183,26 +186,27 @@ public:
 	    p += left;
 	    left = sz - left;
 	    setg(buf, buf, buf);
-	    if (left >= bufsz) {	    // reading directly into user buf
+	    if (left >= bufsz) {		// read directly into user buf
 		while (left) {
-		    if ((in = fd.read(p, left)) <= 0)
+		    if ((len = fd.read(p, left)) <= 0)
 			return sz - left;
-		    left -= in;
-		    p += in;
-		}
-	    } else if (left || !sz) {	    // read into stream buf
-		streamsize len;
-		
-		do {
-		    if ((in = fd.read(buf, bufsz)) <= 0)
-			return sz ? sz - left : -1;
-		    len = min(in, left);
 		    left -= len;
-		    memcpy(p, buf, len);
 		    p += len;
-		} while (left);
-		if (len != in)
-		    setg(buf, buf + len, buf + in);
+		}
+	    } else {				// read into stream buf
+		while (left) {
+		    if ((len = fd.read(buf, bufsz)) <= 0)
+			return sz - left;
+		    if (len < left) {
+			memcpy(p, buf, len);
+			left -= len;
+			p += len;
+		    } else {
+			memcpy(p, buf, left);
+			setg(buf, buf + left, buf + len);
+			break;
+		    }
+		}
 	    }
 	}
 	return sz;
@@ -215,18 +219,11 @@ private:
     C fd;
 };
 
-class nullstream {
-public:
-    nullstream() {}
-
-    template<class C> nullstream &operator <<(const C &) { return *this; }
-    streamsize pcount(void) const { return 0; }
-    streamsize size(void) const { return 0; }
-    const tchar *str(void) const { return NULL; }
-    void reset(void) {}
-};
-
-// string buffer to work around broken MSVC stream::seekp()
+/*
+ * bufferstream is a string stream providing cross platform compatibility and
+ * works around broken MSVC sstream::seekp() that leaks memory. Use this as a
+ * replacement for strstream / sstream
+ */
 #if !defined(_STLP_NO_OWN_IOSTREAMS) || defined(_WIN32)
 #include <sstream>
 
@@ -240,7 +237,7 @@ public:
     streamsize size(void) const { return sb.pcount(); }
     const C *str(void) const { return sb.str(); }
 
-    void reset(void) { if (pcount()) basic_ostream<C>::seekp(0, ios::beg); }
+    void reset(void) { if (sb.pcount()) basic_ostream<C>::seekp(0, ios::beg); }
 
 private:
     class bufferbuf: public basic_stringbuf<C> {
@@ -271,4 +268,23 @@ public:
 };
 #endif
 
+/*
+ * nullstream is a byte sink stream that ignores all writes
+ */
+class nullstream: public bufferstream<tchar> {
+public:
+    nullstream() {}
+
+    nullstream &flush(void) { return *this; }
+    nullstream &put(char_type) { return *this; }
+    nullstream &seekp(pos_type) { return *this; }
+    pos_type tellp(void) { return 0; }
+    nullstream &write(const char_type *, streamsize) { return *this; }
+};
+
+template<class C> nullstream &operator <<(nullstream &os, const C &) {
+    return os;
+}
+
 #endif // Streams_h
+
