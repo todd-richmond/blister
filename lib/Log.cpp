@@ -39,11 +39,11 @@ static const tchar *SSubst = T("\001\001");
 static const tchar *ZSubst = T("\002\002");
 
 const tchar * const Log::LevelStr[] = { T("none"), T("emrg"), T("alrt"),
-    T("crit"), T("err"), T("warn"), T("rprt"), T("note"), T("info"),
-    T("debg"), T("trce"), T("sprs") };
+    T("crit"), T("err"), T("warn"), T("note"), T("info"), T("debg"), T("trce"),
+    T("sprs") };
 const tchar * const Log::LevelStr2[] = { T("nothing"), T("emergency"),
-    T("alert"), T("critical"), T("error"), T("warning"), T("report"),
-    T("notice"), T("information"), T("debug"), T("trace"), T("suppress") };
+    T("alert"), T("critical"), T("error"), T("warning"), T("notice"),
+    T("information"), T("debug"), T("trace"), T("suppress") };
 
 
 // UNIX loaders may try to construct static objects > 1 time

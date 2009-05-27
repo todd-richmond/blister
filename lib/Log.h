@@ -25,10 +25,46 @@
 
 class Config;
 
-class Log {
+/*
+ * The Log class logs program information at escalating levels patterned after
+ * UNIX syslog. It has additional facilities to copy high priority log lines to
+ * a separate alert file, mail recipient or syslog daemon. Also, there are
+ * performance enhancements including buffered writes (managed by background
+ * thread) and code macros to reduce function calls for data that will be
+ * ignored
+ * 
+ * Log levels include the 8 levels from syslog as well as "trace" that allows
+ * better segregation of verbose, low level msgs from normal debug output. A
+ * thread-local prefix string can also be set so that logs made during a
+ * progressively deeper stack will all start with the same string
+ *
+ * Each line in the log starts with a configurable string which defaults to
+ * a date/time string with millisecond resolution. The following data can be
+ * set to one of 4 styles
+ *   Simple(default): standard log string prefixed with the log level
+ *   Syslog: syslog file format with level and prefix strings followed by ':'
+ *   KeyVal: all log components are written as attr=val pairs
+ *   NoLevel: same as "Simple", but the log level is omitted
+ *
+ * Log files can be configured for age, count and size limits. The class will
+ * automatically rollover files based on extension number or timestamp. File
+ * locking is managed both inter and intra process so that a single file can
+ * be shared across multiple processes or child forks
+ *
+ * A global "dlog" object allows for the simplest functionality but other
+ * objects can be instantiated as well. A "kv" inner class eases logging
+ * multiple attr=val pairs
+ *
+ * dlog << Log::Warn << T("errno ") << errno << endlog;
+ * dlogw(T("errno"), errno);
+ * dlogw(Log::kv(T("errno"), errno));
+ * DLOGW(T("errno ") << errno);
+ */
+
+class Log: nocopy {
 public:
     enum Level {
-	None, Emerg, Alert, Crit, Err, Warn, Report, Note, Info, Debug, Trace
+	None, Emerg, Alert, Crit, Err, Warn, Note, Info, Debug, Trace
     };
     enum Type { Simple, Syslog, KeyVal, NoLevel };
 
@@ -184,10 +220,10 @@ public:
 	}
     }
 
-    static const kv cmd(const tchar *cmd) { return kv(T("cmd"), cmd); }
-    static const kv cmd(const tstring &cmd) { return kv(T("cmd"), cmd.c_str()); }
-    static const kv mod(const tchar *mod) { return kv(T("mod"), mod); }
-    static const kv mod(const tstring &mod) { return kv(T("mod"), mod.c_str()); }
+    static const kv cmd(const tchar *c) { return kv(T("cmd"), c); }
+    static const kv cmd(const tstring &c) { return cmd(c.c_str()); }
+    static const kv mod(const tchar *m) { return kv(T("mod"), m); }
+    static const kv mod(const tstring &m) { return mod(m.c_str()); }
     static const tchar *section(void) { return T("log"); }
     static Level str2enum(const tchar *lvl);
 
@@ -306,7 +342,6 @@ extern Log &dlog;
 #define DLOGC(args) DLOGL(Log::Crit, args);
 #define DLOGE(args) DLOGL(Log::Err, args);
 #define DLOGW(args) DLOGL(Log::Warn, args);
-#define DLOGR(args) DLOGL(Log::Report, args);
 #define DLOGN(args) DLOGL(Log::Note, args);
 #define DLOGI(args) DLOGL(Log::Info, args);
 #define DLOGD(args) DLOGL(Log::Debug, args);
@@ -318,7 +353,6 @@ extern Log &dlog;
 #define dlogc(...) dlogl(Log::Crit, __VA_ARGS__);
 #define dloge(...) dlogl(Log::Err, __VA_ARGS__);
 #define dlogw(...) dlogl(Log::Warn, __VA_ARGS__);
-#define dlogr(...) dlogl(Log::Report, __VA_ARGS__);
 #define dlogn(...) dlogl(Log::Note, __VA_ARGS__);
 #define dlogi(...) dlogl(Log::Info, __VA_ARGS__);
 #define dlogd(...) dlogl(Log::Debug, __VA_ARGS__);
@@ -330,7 +364,6 @@ extern Log &dlog;
 #define dlogvc(...) dlogvl(Log::Crit, __VA_ARGS__);
 #define dlogve(...) dlogvl(Log::Err, __VA_ARGS__);
 #define dlogvw(...) dlogvl(Log::Warn, __VA_ARGS__);
-#define dlogvr(...) dlogvl(Log::Report, __VA_ARGS__);
 #define dlogvn(...) dlogvl(Log::Note, __VA_ARGS__);
 #define dlogvi(...) dlogvl(Log::Info, __VA_ARGS__);
 #define dlogvd(...) dlogvl(Log::Debug, __VA_ARGS__);

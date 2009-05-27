@@ -1253,8 +1253,8 @@ Daemon::Daemon(const tchar *service, const tchar *dname, bool pauseable):
 
 Daemon::~Daemon() {
     if (qflag != None)
-	dlog << Log::Note << Log::mod(name) <<
-	    Log::kv(T("sts"), T("stopped")) << endlog;
+	dlog << Log::Note << Log::mod(name) << Log::kv(T("sts"),
+	    T("stopped")) << endlog;
     if (lckfd != -1) {
 	if (!watch || child)
 	    unlink(tstringtoachar(lckfile));
@@ -1364,7 +1364,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     if (sbuf.st_size)
 	dlog << Log::Warn << Log::mod(name) <<
 	    Log::kv(T("err"), T("restarting after abort")) << endlog;
-    dlog << Log::Report << Log::mod(name) << Log::cmd(T("start")) <<
+    dlog << Log::Note << Log::mod(name) << Log::cmd(T("start")) <<
 	Log::kv(T("host"), Sockaddr::hostname()) <<
 	Log::kv(T("dir"), installdir.c_str()) <<
 	Log::kv(T("instance"), instance) <<
@@ -1514,7 +1514,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 				Log::kv(T("max"), maxmem) << info <<
 				T(" restarted") << endlog;
 			else if (!flg)
-			    dlog << Log::Report << Log::mod(name) <<
+			    dlog << Log::Note << Log::mod(name) <<
 				Log::cmd(qflag == Fast ? T("exit") :
 				T("stop")) << Log::kv(T("duration"),
 				time(NULL) - start) << endlog;
@@ -1528,7 +1528,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    } else {
 		lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 0);
 		if (!first) {
-		    dlog << Log::Report << Log::mod(name) <<
+		    dlog << Log::Note << Log::mod(name) <<
 			Log::cmd(T("start")) <<
 			Log::kv(T("host"), Sockaddr::hostname()) <<
 			Log::kv(T("dir"), installdir.c_str()) <<
@@ -1587,13 +1587,11 @@ void Daemon::onAbort() {
 }
 
 void Daemon::onPause(void) {
-    dlog << Log::Report << Log::mod(name) << Log::cmd(T("pause")) << 
-	endlog;
+    dlog << Log::Note << Log::mod(name) << Log::cmd(T("pause")) << endlog;
 }
 
 void Daemon::onResume(void) {
-    dlog << Log::Report << Log::mod(name) << Log::cmd(T("resume")) <<
-	endlog;
+    dlog << Log::Note << Log::mod(name) << Log::cmd(T("resume")) << endlog;
 }
 
 bool Daemon::onRefresh() {
@@ -1613,23 +1611,20 @@ bool Daemon::onRefresh() {
     dlog.set(cfg);
     cfg.unlock();
     if (!child && refreshed)
-	dlog << Log::Report << Log::mod(name) <<
-	    Log::cmd(T("reload")) << endlog;
+	dlog << Log::Note << Log::mod(name) << Log::cmd(T("reload")) << endlog;
     else
 	refreshed = true;
     return true;
 }
 
 void Daemon::onStop(bool fast) {
-    dlog << Log::Report << Log::mod(name) << Log::cmd(fast ?
-	T("exit") : T("stop")) << Log::kv(T("duration"), time(NULL) - start) <<
-	endlog;
+    dlog << Log::Note << Log::mod(name) << Log::cmd(fast ?  T("exit") :
+	T("stop")) << Log::kv(T("duration"), time(NULL) - start) << endlog;
     qflag = fast ? Fast : Slow;
 }
 
 void Daemon::onSigusr1() {
-    dlog << Log::Report << Log::mod(name) << Log::cmd(T("rollover")) <<
-	endlog;
+    dlog << Log::Note << Log::mod(name) << Log::cmd(T("rollover")) << endlog;
     dlog.roll();
 }
 
