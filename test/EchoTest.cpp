@@ -183,9 +183,11 @@ void EchoTest::EchoClientSocket::input() {
     }
     in += len;
     if (in == dsz) {
+	usec_t usec = microticks() - begin;
+
 	ops++;
-	usecs += microticks() - begin;
-	dtiming.add(T("echo"), microticks() - begin);
+	usecs += usec;
+	dtiming.add(T("echo"), usec);
 	dlogt(T("client read"), len);
 	timeout(repeat, wait + (wait < 2000 ? 0 : rand() % 50));
     } else {
