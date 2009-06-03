@@ -283,7 +283,7 @@ loop:
     else
 	ressz = tstrtoul(resp, NULL, 10);
     if (keep && !sz && ressz != (ulong)-1)
-	sock.nagle(false);
+	sock.nodelay(true);
     if (ressz && ressz != (ulong)-1) {
 	if (ressz > sz) {
 	    delete [] result;

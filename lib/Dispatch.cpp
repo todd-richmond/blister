@@ -463,7 +463,6 @@ int Dispatcher::onStart() {
 		continue;
 	    }
 	    if (ds->flags & DSP_Scheduled) {
-    if (evts[u].flags & EV_ERROR && evts[u].data == ENOENT)
 		if (evts[u].flags & EV_ERROR && evts[u].data == ENOENT)
 		    continue;
 		if (evts[u].filter == EVFILT_READ) {
@@ -483,7 +482,9 @@ int Dispatcher::onStart() {
 		    else
 			ds->flags |= DSP_Closeable;
 		}
-		ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_Ready;
+		// ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_Ready;
+		ds->flags = (ds->flags & ~(DSP_Scheduled | DSP_SelectAll)) |
+		    DSP_Ready;
 		if (!(ds->flags & DSP_Active)) {
 		    if (ds->msg == Accept)
 			rlist.push_front(ds);
@@ -831,7 +832,7 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
     struct kevent evt;
 
     EV_SET(&evt, ds.fd(), EVFILT_READ, EV_ADD | EV_CLEAR | EV_EOF | EV_ERROR |
-	EV_RECEIPT, 0, 0, &ds);
+	EV_ONESHOT | EV_RECEIPT, 0, 0, &ds);
 #endif
 
     Locker lkr(lock);

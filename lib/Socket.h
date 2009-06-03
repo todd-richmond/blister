@@ -253,7 +253,7 @@ public:
     int getsockopt(int lvl, int opt) const {
 	int i;
 
-	return getsockopt(lvl, opt, i) ? 0 : i;
+	return getsockopt(lvl, opt, i) ? i : -1;
     }
     template<class C> bool setsockopt(int lvl, int opt, C &val) {
 	return check(::setsockopt(sbuf->sock, lvl, opt, (char *)&val,
@@ -264,8 +264,8 @@ public:
 
 	return setsockopt(lvl, opt, i);
     }
-    bool nagle(void) const { return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0; }
-    bool nagle(bool on) { return setsockopt(IPPROTO_TCP, TCP_NODELAY, on); }
+    bool nodelay(void) const { return getsockopt(IPPROTO_TCP, TCP_NODELAY); }
+    bool nodelay(bool on) { return setsockopt(IPPROTO_TCP, TCP_NODELAY, on); }
     bool reuseaddr(void) const { return getsockopt(SOL_SOCKET, SO_REUSEADDR) != 0; }
     bool reuseaddr(bool on) { return setsockopt(SOL_SOCKET, SO_REUSEADDR, on); }
     int type(void) const { return getsockopt(SOL_SOCKET, SO_TYPE); }

@@ -419,7 +419,7 @@ void HTTPServerSocket::send(void) {
 	return;
     }
     if (ka && nagleon) {
-	nagle(false);
+	nodelay(true);
 	nagleon = false;
     }
     out = (ulong)writev(iov, 3);
