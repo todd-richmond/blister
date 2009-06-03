@@ -69,7 +69,7 @@ public:
 	static const tchar *section(void) { return NAME; }
 
 	virtual void start(void) {
-	    nagle(false);
+	    nodelay(true);
 	    readable(input, tmt);
 	}
 
@@ -117,7 +117,7 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 	    T("close"));
 	erase();
     } else {
-	nagle(false);
+	nodelay(true);
 	begin = microticks();
 	output();
     }
