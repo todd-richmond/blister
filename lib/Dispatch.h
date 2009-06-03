@@ -335,12 +335,12 @@ public:
     DispatchListenSocket(Dispatcher &d, int type = SOCK_STREAM):
 	DispatchSocket(d, type) {}
     DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
-	int type = SOCK_STREAM, bool reuse = true, int queue = LISTEN_BACKLOG,
+	int type = SOCK_STREAM, bool reuse = true, int queue = SOCK_BACKLOG,
 	DispatchObjCB cb = connection);
 
     const Sockaddr address(void) { return sa; }
     bool listen(const Sockaddr &addr, bool reuse = true, int queue =
-	LISTEN_BACKLOG, DispatchObjCB cb = NULL);
+	SOCK_BACKLOG, DispatchObjCB cb = NULL);
     void relisten() { select(NULL, DSP_PREVIOUS, Dispatcher::Accept); }
 
 protected:
@@ -362,7 +362,7 @@ public:
     }
 
     bool listen(const tchar *host = NULL, bool enable = true,
-	int backlog = LISTEN_BACKLOG) {
+	int backlog = SOCK_BACKLOG) {
 	tstring s(dspr.config().get(T("host"), host, S::section()));
 
 	if (!dspr.config().get(T("enable"), enable, S::section()))

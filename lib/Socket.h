@@ -33,8 +33,8 @@
 
 #pragma warning(disable: 4097)
 
-#define socklen_t int
-#define SSET_FD(i)  fds->fd_array[i]
+#define socklen_t	int
+#define SSET_FD(i)	fds->fd_array[i]
 
 typedef SOCKET socket_t;
 
@@ -50,9 +50,9 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
-#define INVALID_SOCKET -1
-#define SSET_FD(i)  fds[i].fd
-#define WSAEINTR    EINTR
+#define INVALID_SOCKET	-1
+#define SSET_FD(i)	fds[i].fd
+#define WSAEINTR	EINTR
 
 typedef int socket_t;
 
@@ -64,9 +64,10 @@ inline int closesocket(socket_t fd) { return ::close(fd); }
 #include <vector>
 #include "Streams.h"
 
-const int SOCKBUF_SZ = 3 * 1024;
-const int LISTEN_BACKLOG = 128;
+const int SOCK_BACKLOG = 128;
+const int SOCK_BUFSZ = 3 * 1024;
 const ulong SOCK_INFINITE = (ulong)-1;
+const socket_t SOCK_INVALID = INVALID_SOCKET;
 
 inline bool blocked(int e) {
     return e && (e == EWOULDBLOCK || e == EAGAIN || e == ENOBUFS ||
@@ -75,7 +76,10 @@ inline bool blocked(int e) {
 
 inline bool interrupted(int e) { return e == WSAEINTR; }
 
-// Socket address class
+/*
+ * Socket address class to wrap sockaddr structures and deal with Win32 startup
+ * requirements. Currently restricted to IPV4 UDP or TCP addresses
+ */
 class Sockaddr: public sockaddr {
 public:
     enum Proto { TCP, UDP };
@@ -155,7 +159,9 @@ inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
     return os << addr.str();
 }
 
-// CIDR/Network range class
+/*
+ * CIDR/Network class to simplify IP range lookups
+ */
 class CIDR {
 public:
     CIDR(const tchar *addrs = NULL) { add(addrs); }
@@ -182,11 +188,17 @@ private:
     vector<Range> ranges;
 };
 
-// Berkeley/WinSock Socket class
+/*
+ * Berkeley/WinSock Socket class manages stream or datagram server and client
+ * sockets. Deals with OS dependent behavior for non-blocking sockets and
+ * readv/writev emulation for improved performance. SIGINT retries are handled
+ * automatically. Object copies are also supported by using a reference counted
+ * subclass.
+ */
 class Socket {
 public:
-    Socket(int type = SOCK_STREAM, socket_t sock = INVALID_SOCKET):
-	sbuf(new SocketBuf(type, sock, sock == INVALID_SOCKET)) {}
+    Socket(int type = SOCK_STREAM, socket_t sock = SOCK_INVALID):
+	sbuf(new SocketBuf(type, sock, sock == SOCK_INVALID)) {}
     Socket(const Socket &r) { r.sbuf->count++; sbuf = r.sbuf; }
     ~Socket() { if (--sbuf->count == 0) delete sbuf; }
 
@@ -196,71 +208,43 @@ public:
     bool operator ==(const Socket &r) const
 	{ return sbuf == r.sbuf || sbuf->sock == r.sbuf->sock; }
     bool operator !=(const Socket &r) const { return !operator ==(r); }
-    operator void *(void) const { return sbuf->sock == INVALID_SOCKET ? NULL : sbuf; }
-    bool operator !(void) const { return sbuf->sock == INVALID_SOCKET; }
+    operator void *(void) const { return sbuf->sock == SOCK_INVALID ? NULL : sbuf; }
+    bool operator !(void) const { return sbuf->sock == SOCK_INVALID; }
     operator socket_t() const { return sbuf->sock; }
 
     bool blocked(void) const { return ::blocked(sbuf->err); }
     bool interrupted(void) const { return ::interrupted(sbuf->err); }
     int err(void) const { return sbuf->err; }
     socket_t fd(void) const { return sbuf->sock; }
-    bool open(void) const { return sbuf->sock != INVALID_SOCKET; }
+    bool open(void) const { return sbuf->sock != SOCK_INVALID; }
 
+    // socket actions
     bool accept(Socket &sock);
     bool bind(const Sockaddr &addr, bool reuse = true);
     bool close(void) { return sbuf->close(); }
     bool connect(const Sockaddr &addr, ulong timeout = SOCK_INFINITE);
-    bool listen(int queue = LISTEN_BACKLOG);
-    bool listen(const Sockaddr &addr, bool reuse = true, int queue = LISTEN_BACKLOG)
-    	{ return bind(addr, reuse) && listen(queue); }
-    bool movehigh(void) { return (sbuf->sock = movehigh(sbuf->sock)) != INVALID_SOCKET; }
+    bool listen(int queue = SOCK_BACKLOG);
+    bool listen(const Sockaddr &addr, bool reuse = true,
+	int queue = SOCK_BACKLOG) {
+	return bind(addr, reuse) && listen(queue);
+    }
+    bool movehigh(void) {
+	return (sbuf->sock = movehigh(sbuf->sock)) != SOCK_INVALID;
+    }
     bool open(int family);
     bool peername(Sockaddr &addr);
     bool proxysockname(Sockaddr &addr);
     bool sockname(Sockaddr &addr);
     bool shutdown(bool in = true, bool out = true);
 
+    // get/set socket properties
     bool blocking(void) const { return sbuf->blck; }
     bool blocking(bool on);
     bool cork(void) const;
     bool cork(bool on);
     bool linger(ushort sec = (ushort)-1);
-    bool nagle(void) const { return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0; }
-    bool nagle(bool on) { return setsockopt(IPPROTO_TCP, TCP_NODELAY, on); }
-    bool reuseaddr(void) const { return getsockopt(SOL_SOCKET, SO_REUSEADDR) != 0; }
-    bool reuseaddr(bool on) { return setsockopt(SOL_SOCKET, SO_REUSEADDR, on); }
-    int rbuffer( void) const { return getsockopt(SOL_SOCKET, SO_RCVBUF); }
-    bool rbuffer(int size) { return setsockopt(SOL_SOCKET, SO_RCVBUF, size); }
-    int wbuffer( void) const { return getsockopt(SOL_SOCKET, SO_SNDBUF); }
-    bool wbuffer(int size) { return setsockopt(SOL_SOCKET, SO_SNDBUF, size); }
-    ulong rtimeout(void) const { return sbuf->rto; }
-    bool rtimeout(ulong msec) { sbuf->rto = msec; return true; }
-    bool rtimeout(const timeval &tv) {
-	if (!setsockopt(SOL_SOCKET, SO_RCVTIMEO, tv))
-	    rtimeout(tv.tv_sec * 1000 + tv.tv_usec / 1000);
-	return true;
-    }
-    ulong wtimeout(void) const { return sbuf->wto; }
-    bool wtimeout(ulong msec) { sbuf->wto = msec; return true; }
-    bool wtimeout(const timeval &tv) {
-	if (!setsockopt(SOL_SOCKET, SO_SNDTIMEO, tv))
-	    wtimeout(tv.tv_sec * 1000 + tv.tv_usec / 1000);
-	return true;
-    }
-    int rwindow(void) const { return getsockopt(SOL_SOCKET, SO_RCVLOWAT); }
-    bool rwindow(int size) { return setsockopt(SOL_SOCKET, SO_RCVLOWAT, size); }
-    int wwindow(void) const { return getsockopt(SOL_SOCKET, SO_SNDLOWAT); }
-    bool wwindow(int size) { return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size); }
-    int read(void *buf, size_t len) const;
-    int read(void *buf, size_t len, Sockaddr &addr) const;
-    long readv(iovec *iov, int count) const;
-    long readv(iovec *iov, int count, const Sockaddr &addr) const;
-    int write(const void *buf, size_t len) const;
-    int write(const void *buf, size_t len, const Sockaddr &addr) const;
-    long writev(const iovec *iov, int count) const;
-    long writev(const iovec *iov, int count, const Sockaddr &addr) const;
-    template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
-    template<class C> int write(const C &c) const { return write(&c, sizeof (c)); }
+
+    // get/set socket options
     template<class C> bool getsockopt(int lvl, int opt, C &val) const {
 	socklen_t sz = sizeof (val);
 
@@ -280,12 +264,54 @@ public:
 
 	return setsockopt(lvl, opt, i);
     }
+    bool nagle(void) const { return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0; }
+    bool nagle(bool on) { return setsockopt(IPPROTO_TCP, TCP_NODELAY, on); }
+    bool reuseaddr(void) const { return getsockopt(SOL_SOCKET, SO_REUSEADDR) != 0; }
+    bool reuseaddr(bool on) { return setsockopt(SOL_SOCKET, SO_REUSEADDR, on); }
+    int type(void) const { return getsockopt(SOL_SOCKET, SO_TYPE); }
+    int rbuffer(void) const { return getsockopt(SOL_SOCKET, SO_RCVBUF); }
+    bool rbuffer(int size) { return setsockopt(SOL_SOCKET, SO_RCVBUF, size); }
+    int wbuffer(void) const { return getsockopt(SOL_SOCKET, SO_SNDBUF); }
+    bool wbuffer(int size) { return setsockopt(SOL_SOCKET, SO_SNDBUF, size); }
+    int rlowater(void) const { return getsockopt(SOL_SOCKET, SO_RCVLOWAT); }
+    bool rlowater(int size) { return setsockopt(SOL_SOCKET, SO_RCVLOWAT, size); }
+    int wlowater( void) const { return getsockopt(SOL_SOCKET, SO_SNDLOWAT); }
+    bool wlowater(int size) { return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size); }
+    ulong rtimeout(void) const { return sbuf->rto; }
+    bool rtimeout(ulong msec) { sbuf->rto = msec; return true; }
+    bool rtimeout(const timeval &tv) {
+	if (!setsockopt(SOL_SOCKET, SO_RCVTIMEO, tv))
+	    rtimeout(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+	return true;
+    }
+    ulong wtimeout(void) const { return sbuf->wto; }
+    bool wtimeout(ulong msec) { sbuf->wto = msec; return true; }
+    bool wtimeout(const timeval &tv) {
+	if (!setsockopt(SOL_SOCKET, SO_SNDTIMEO, tv))
+	    wtimeout(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+	return true;
+    }
+    int rwindow(void) const { return getsockopt(SOL_SOCKET, SO_RCVLOWAT); }
+    bool rwindow(int size) { return setsockopt(SOL_SOCKET, SO_RCVLOWAT, size); }
+    int wwindow(void) const { return getsockopt(SOL_SOCKET, SO_SNDLOWAT); }
+    bool wwindow(int size) { return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size); }
+
+    int read(void *buf, size_t len) const;
+    int read(void *buf, size_t len, Sockaddr &addr) const;
+    template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
+    long readv(iovec *iov, int count) const;
+    long readv(iovec *iov, int count, const Sockaddr &addr) const;
+    int write(const void *buf, size_t len) const;
+    int write(const void *buf, size_t len, const Sockaddr &addr) const;
+    template<class C> int write(const C &c) const { return write(&c, sizeof (c)); }
+    long writev(const iovec *iov, int count) const;
+    long writev(const iovec *iov, int count, const Sockaddr &addr) const;
 
 protected:
     class SocketBuf {
     public:
 	SocketBuf(int t, socket_t s, bool o): blck(true), count(1), err(0),
-	    own(o), sock(s), type(t), rto(SOCK_INFINITE), wto(SOCK_INFINITE) {}
+	    own(o), sock(s), rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE) {}
 	~SocketBuf() { if (own) close(); }
 
 	bool blocked(void) const { return ::blocked(err); }
@@ -299,12 +325,12 @@ protected:
 	    }
 	}
 	bool close(void) {
-	    if (sock == INVALID_SOCKET) {
+	    if (sock == SOCK_INVALID) {
 		err = EINVAL;
 		return false;
 	    } else {
 		bool b = check(::closesocket(sock));
-		sock = INVALID_SOCKET;
+		sock = SOCK_INVALID;
 		return b;
 	    }
 	}
@@ -316,8 +342,9 @@ protected:
 	mutable int err;
 	bool own;
 	socket_t sock;
+	ulong rto;
 	int type;
-	ulong rto, wto;
+	ulong wto;
 
 	friend class Socket;
     };
@@ -330,7 +357,10 @@ protected:
     SocketBuf *sbuf;
 };
 
-// fd_set/pollfd wrapper - optimized for large sets
+/*
+ * SocketSet manages system dependent fd_set/select() and pollfd/poll()
+ * differences and is optimized for very large file descriptor sets. 
+ */
 class SocketSet {
 public:
     SocketSet(uint maxfds = 0);
@@ -441,9 +471,9 @@ typedef faststreambuf<Socket> socketbuf;
 
 class isockstream : public istream {
 public:
-    isockstream(int sz = SOCKBUF_SZ, char *p = NULL):
+    isockstream(int sz = SOCK_BUFSZ, char *p = NULL):
 	istream(NULL), sb(sz, p) { ios::init(&sb); }
-    isockstream(Socket &s, int sz = SOCKBUF_SZ, char *p = NULL):
+    isockstream(Socket &s, int sz = SOCK_BUFSZ, char *p = NULL):
 	istream(NULL), sb(s, sz, p) { ios::init(&sb); }
     virtual ~isockstream() {}
 
@@ -459,9 +489,9 @@ private:
 
 class osockstream: public ostream {
 public:
-    osockstream(int sz = SOCKBUF_SZ, char *p = NULL):
+    osockstream(int sz = SOCK_BUFSZ, char *p = NULL):
 	ostream(NULL), sb(sz, p) { ios::init(&sb); }
-    osockstream(Socket & s, int sz = SOCKBUF_SZ, char *p = NULL):
+    osockstream(Socket & s, int sz = SOCK_BUFSZ, char *p = NULL):
 	ostream(NULL), sb(s, sz, p) { ios::init(&sb); }
     virtual ~osockstream() {}
 
@@ -477,9 +507,9 @@ private:
 
 class sockstream: public iostream {
 public:
-    sockstream(int sz = SOCKBUF_SZ, char *p = NULL, openmode mode = in | out):
+    sockstream(int sz = SOCK_BUFSZ, char *p = NULL, openmode mode = in | out):
 	iostream(NULL), sb(sz, p) { ios::init(&sb); }
-    sockstream(Socket &s, int sz = SOCKBUF_SZ, char *p = NULL):
+    sockstream(Socket &s, int sz = SOCK_BUFSZ, char *p = NULL):
 	iostream(NULL), sb(s, sz, p) { ios::init(&sb); }
     virtual ~sockstream() {}
 
