@@ -367,6 +367,17 @@ bool Socket::connect(const Sockaddr &addr, ulong timeout) {
     return ret;
 }
 
+const tstring Socket::errstr(void) const {
+#ifdef WIN32
+    char buf[32];
+
+    tsprintf(buf, T("socket err %d"), sbuf->err);
+    return buf;
+#else
+    return tstrerror(sbuf->err);
+#endif
+}
+
 bool Socket::listen(int queue) {
     return check(::listen(sbuf->sock, queue));
 }

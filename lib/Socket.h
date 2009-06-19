@@ -215,6 +215,8 @@ public:
     bool blocked(void) const { return ::blocked(sbuf->err); }
     bool interrupted(void) const { return ::interrupted(sbuf->err); }
     int err(void) const { return sbuf->err; }
+    void err(int err) const { sbuf->err = err; }
+    const tstring errstr(void) const;
     socket_t fd(void) const { return sbuf->sock; }
     bool open(void) const { return sbuf->sock != SOCK_INVALID; }
 
