@@ -292,7 +292,7 @@ THREAD_FUNC Thread::threadInit(void *arg) {
     
     thread->lck.lock();
     thread->id = THREAD_ID();
-    srand((uint)thread->id);
+    srand((uint)(ulong)thread->id);
     thread->state = Running;
     thread->cv.set();
     thread->lck.unlock();

@@ -818,7 +818,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds) {
 
 	    ZERO(ts);
 	    EV_SET(&evts[0], fd, ds.flags & DSP_SelectWrite ? EVFILT_WRITE :
-		EVFILT_READ, EV_DELETE | EV_RECEIPT, 0, 0, &ds);
+		EVFILT_READ, EV_DELETE, 0, 0, &ds);
 	    ds.flags &= ~DSP_SelectAll;
 	    lkr.unlock();
 	    while ((nevts = kevent(evtfd, evts, 1, evts, 32, NULL)) == -1 &&

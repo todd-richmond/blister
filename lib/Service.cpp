@@ -1574,7 +1574,7 @@ void Daemon::onAbort() {
 #else
 	string s(srvcpath + " restart");
 
-	if (execl("/bin/bash", "/bin/bash", "-c", s.c_str(), NULL) < 0)
+	if (execl("/bin/bash", "/bin/bash", "-c", s.c_str(), (char *)0) < 0)
 #endif
 	{
 	    dlog << Log::Emerg << Log::mod(name) << Log::kv(T("err"),

@@ -413,6 +413,9 @@ EXTERNC_
 
 #else // _WIN32
 
+#ifndef ENOSR
+#define ENOSR		-1
+#endif
 #ifndef _POSIX_PTHREAD_SEMANTICS
 #define _POSIX_PTHREAD_SEMANTICS
 #endif
@@ -449,7 +452,7 @@ typedef long long int64;
 typedef unsigned long long uint64;
 typedef wchar_t wchar;
 
-#ifdef __APPLE__
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
 typedef unsigned short ushort;
 typedef unsigned int uint;
 typedef unsigned long ulong;

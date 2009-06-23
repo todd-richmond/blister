@@ -40,7 +40,7 @@ Sockaddr::SockInit Sockaddr::init;
 #else
 
 #include <sys/ioctl.h>
-#ifdef sun
+#ifdef __sun__
 #include <sys/filio.h>
 #endif
 
@@ -100,7 +100,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 	    ((sockaddr_in *)this)->sin_addr.s_addr = addr;
 	    ret = true;
 	} else {
-#ifdef __linux__
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__linux__)
 	    gethostbyname_r(tchartoachar(host), &hbuf, buf, sizeof (buf), &h,
 		&err);
 #else
@@ -110,7 +110,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 	    if (h)
 		ret = set(h);
 	    else
-		((sockaddr_in *)this)->sin_addr.s_addr = (ulong)-1;
+		((sockaddr_in *)this)->sin_addr.s_addr = (uint)-1;
 	}
     } else {
 	((sockaddr_in *)this)->sin_addr.s_addr = INADDR_ANY;
@@ -145,7 +145,7 @@ const tstring &Sockaddr::host(void) const {
 	    int err;
 	    hostent *h = NULL, hbuf;
 
-#ifdef __linux__
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__linux__)
 	    gethostbyaddr_r((const char *)&((sockaddr_in *)this)->sin_addr,
 		sz, sa_family, &hbuf, buf, sizeof (buf), &h, &err);
 #else
@@ -179,7 +179,7 @@ bool Sockaddr::port(const tchar *service, Proto proto) {
     struct servent *s = NULL, sbuf;
 
     (void)buf; (void)sbuf;
-#ifdef __linux__
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__linux__)
     getservbyname_r(service, protos[proto], &sbuf, buf, sizeof (buf), &s);
 #elif !defined(_WIN32_WCE)
     s = getservbyname_r(tchartoachar(service), protos[proto], &sbuf, buf,
@@ -194,7 +194,7 @@ tstring Sockaddr::service(ushort port, Proto proto) {
     struct servent *s = NULL, sbuf;
 
     (void)buf; (void)sbuf;
-#ifdef __linux__
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__linux__)
     getservbyport_r(port, protos[proto], &sbuf, buf, sizeof (buf), &s);
 #elif !defined(_WIN32_WCE)
     s = getservbyport_r(port, protos[proto], &sbuf, buf, sizeof (buf));
