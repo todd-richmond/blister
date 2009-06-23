@@ -52,8 +52,6 @@ typedef void (*DispatchObjCB)(DispatchObj *);
 #endif
 
 #if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
-#include <sys/event.h>
-
 #define DSP_KQUEUE
 #endif
 
@@ -117,6 +115,12 @@ private:
 
     void cleanup(void);
     bool exec(volatile DispatchObj *&aobj, thread_t tid);
+    uint handleEvents(void *evts, int cnt);
+    void reset(void) {
+	char buf[16];
+
+	recvfrom(isock, buf, sizeof (buf), 0, NULL, NULL);
+    }
     int run(void);
     void wake(uint tasks);
     static int worker(void *parm);
@@ -147,6 +151,7 @@ private:
     }
 #else
     int evtfd;
+    Socket isock;
     SocketSet rset, wset;
     volatile bool polling;
     Sockaddr waddr;
