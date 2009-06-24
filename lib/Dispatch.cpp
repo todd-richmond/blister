@@ -343,9 +343,8 @@ int Dispatcher::onStart() {
 #elif defined(DSP_KQUEUE)
     timespec ts;
 
-    ZERO(ts);
     evtfd = kqueue();
-    EV_SET(&evts[0], -1, EVFILT_READ, EV_ADD, 0, 0, &ts);
+    EV_SET(&evts[0], -1, EVFILT_READ, EV_ADD, 0, 0, NULL);
     if (kevent(evtfd, &evts[0], 1, &evts[0], 1, NULL) != 1 || evts[0].ident !=
 	(uintptr_t)-1 || evts[0].flags != EV_ERROR) {
 	close(evtfd);
@@ -372,9 +371,8 @@ int Dispatcher::onStart() {
 	    interrupted(errno))
 	    ;
 #elif defined(DSP_KQUEUE)
-	EV_SET(&evts[0], isock.fd(), EVFILT_READ, EV_ADD, 0, 0,
-	    NULL);
-	while (kevent(evtfd, evts, 1, evts, 1, &ts) == -1 &&
+	EV_SET(&evts[0], isock.fd(), EVFILT_READ, EV_ADD, 0, 0, NULL);
+	while (kevent(evtfd, evts, 1, NULL, 0, NULL) == -1 &&
 	    interrupted(errno))
 	    ;
 #endif
@@ -617,6 +615,11 @@ uint Dispatcher::handleEvents(void *evts, int nevts) {
 		    ds->msg = Close;
 		else
 		    ds->flags |= DSP_Closeable;
+	    } else if (evt->flags & EV_EOF) {
+		if (ds->msg == Nomsg)
+		    ds->msg = Close;
+		else
+		    ds->flags |= DSP_Closeable;
 	    } else if (evt->filter == EVFILT_READ) {
 		if (ds->msg == Nomsg)
 		    ds->msg = ds->flags & DSP_SelectAccept ? Accept : Read;
@@ -628,7 +631,6 @@ uint Dispatcher::handleEvents(void *evts, int nevts) {
 		else
 		    ds->flags |= DSP_Writeable;
 	    }
-	    // ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_Ready;
 	    ds->flags = (ds->flags & ~(DSP_Scheduled | DSP_SelectAll)) |
 		DSP_Ready;
 	    if (!(ds->flags & DSP_Active)) {
@@ -645,8 +647,11 @@ uint Dispatcher::handleEvents(void *evts, int nevts) {
 		    continue;
 		ds->err(evt->data);
 		ds->flags |= DSP_Closeable;
+	    } else if (evt->flags & EV_ERROR) {
+		ds->flags |= DSP_Closeable;
 	    } else if (evt->filter == EVFILT_READ) {
 		ds->flags |= DSP_Readable;
+cout<<"tf yy 0 data "<<evt->data<<" "<<evt->ident<<endl;
 	    } else if (evt->filter == EVFILT_WRITE) {
 		ds->flags |= DSP_Writeable;
 	    }
@@ -804,7 +809,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds) {
 	    if (ds.flags & DSP_SelectWrite)
 		wset.unset(fd);
 	    ds.flags &= ~DSP_SelectAll;
-	} else {
+	} else if (ds.flags & DSP_SelectAll) {
 #ifdef DSP_EPOLL
 	    ds.flags &= ~DSP_SelectAll;
 	    lkr.unlock();
@@ -812,19 +817,26 @@ void Dispatcher::cancelSocket(DispatchSocket &ds) {
 		interrupted(errno))
 		;
 #elif defined(DSP_KQUEUE)
-	    event_t evts[MIN_EVENTS];
-	    int nevts;
-	    timespec ts;
-
-	    ZERO(ts);
-	    EV_SET(&evts[0], fd, ds.flags & DSP_SelectWrite ? EVFILT_WRITE :
-		EVFILT_READ, EV_DELETE, 0, 0, &ds);
-	    ds.flags &= ~DSP_SelectAll;
 	    lkr.unlock();
-	    while ((nevts = kevent(evtfd, evts, 1, evts, 32, NULL)) == -1 &&
-		interrupted(errno))
+
+	    event_t evts[MIN_EVENTS];
+	    int nevts = 0;
+	    timespec ts = { 0, 0 };
+
+	    if (ds.flags & (DSP_SelectRead | DSP_SelectAccept))
+		EV_SET(&evts[nevts++], fd, EVFILT_READ, EV_DELETE, 0, 0, &ds);
+	    if (ds.flags & DSP_SelectWrite)
+		EV_SET(&evts[nevts++], fd, EVFILT_WRITE, EV_DELETE, 0, 0, &ds);
+	    ds.flags &= ~DSP_SelectAll;
+	    while ((nevts = kevent(evtfd, evts, nevts, evts, MIN_EVENTS, &ts))
+		== -1 && interrupted(errno))
 		;
-	    wake(handleEvents(&evts[0], nevts));
+	    if (nevts > 0) {
+		lkr.lock();
+		nevts = handleEvents(&evts[0], nevts);
+		if (nevts > 1)
+		    wake(nevts - 1);
+	    }
 #endif
 	}
 #endif
@@ -858,9 +870,7 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 #elif defined(DSP_KQUEUE)
     event_t evts[MIN_EVENTS];
     int nevts = 0;
-    timespec ts;
-
-    ZERO(ts);
+    timespec ts = { 0, 0 };
 #endif
     Locker lkr(lock);
 
@@ -927,15 +937,15 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 		resched = true;
 	    }
 	} else {
-#ifdef DSP_EPOLL
 	    lkr.unlock();
+#ifdef DSP_EPOLL
 	    while (epoll_ctl(evtfd, op, ds.fd(), &evt) == -1 &&
 		interrupted(errno))
 		;
 #elif defined(DSP_KQUEUE)
 	    if (m == Read || m == ReadWrite || m == Accept || m == Close) {
-		EV_SET(&evts[nevts++], ds.fd(), EVFILT_READ, EV_ADD | EV_CLEAR |
-		    EV_EOF | EV_ERROR | EV_ONESHOT, NOTE_EOF, 0, &ds);
+		EV_SET(&evts[nevts++], ds.fd(), EVFILT_READ, EV_ADD |
+		    EV_ONESHOT, NOTE_EOF, 0, &ds);
 		if (flags & DSP_SelectWrite && m != ReadWrite) {
 		    EV_SET(&evts[nevts++], ds.fd(), EVFILT_WRITE, EV_DELETE, 0,
 			0, &ds);
@@ -943,7 +953,7 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 	    }
 	    if (m == Write || m == ReadWrite || m == Connect) {
 		EV_SET(&evts[nevts++], ds.fd(), EVFILT_WRITE, EV_ADD |
-		    EV_CLEAR | EV_EOF | EV_ERROR | EV_ONESHOT, NOTE_EOF, 0, &ds);
+		    EV_ONESHOT, NOTE_EOF, 0, &ds);
 		if (flags & DSP_SelectRead && m != ReadWrite) {
 		    EV_SET(&evts[nevts++], ds.fd(), EVFILT_READ, EV_DISABLE, 0,
 			0, &ds);
@@ -952,7 +962,12 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 	    while ((nevts = kevent(evtfd, evts, nevts, evts, MIN_EVENTS, &ts))
 		== -1 && interrupted(errno))
 		;
-	    wake(handleEvents(&evts[0], nevts));
+	    if (nevts > 0) {
+		lkr.lock();
+		nevts = handleEvents(&evts[0], nevts);
+		if (nevts > 1)
+		    wake(nevts - 1);
+	    }
 #endif
 	}
 #endif
