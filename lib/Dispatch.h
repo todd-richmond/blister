@@ -126,15 +126,15 @@ private:
     static int worker(void *parm);
 
     Lock lock;
-    TLS<volatile DispatchObj *> activeobj;
+    ThreadLocal<volatile DispatchObj **> activeobj;
     msec_t due;
     DispatchObjList flist, rlist;
     Lifo lifo;
     uint maxthreads;
     volatile int shutdown;
+    socketmap smap;
     long stacksz;
     volatile ulong threads;
-    socketmap smap;
     timermap timers;
 #ifdef DSP_WIN32_ASYNC
     volatile ulong interval;
@@ -170,29 +170,29 @@ private:
     static void func(DispatchObj *obj) { (static_cast<cls *>(obj))->func(); } \
     void func(void)
 
-class DispatchObj: public nocopy {
+class DispatchObj: nocopy {
 private:
     class Group {
     public:
-	Group(): active(0), refcount(1) {}
-
-	Group &addref() { refcount.addref(); return *this; }
+	Group(): active(0) {}
 
 	thread_t active;
 	DispatchObjList glist;
-	Refcount refcount;
+	RefCount refcount;
+
+	Group &add() { refcount.add(); return *this; }
     };
 
 public:
-    DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dspr(d), dcb(cb),
+    DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb), dspr(d),
 	flags(0), msg(Dispatcher::Nomsg), group(new Group), next(NULL) {}
     DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL):
-	dspr(parent.dspr), dcb(cb), flags(0), msg(Dispatcher::Nomsg),
-	group(&parent.group->addref()), next(NULL) {}
+	dcb(cb), dspr(parent.dspr), flags(0), msg(Dispatcher::Nomsg),
+	group(&parent.group->add()), next(NULL) {}
     virtual ~DispatchObj() { dspr.deleteObj(*this); }
 
-    Dispatcher::Msg reason(void) const { return msg; }
     Dispatcher &dispatcher(void) const { return dspr; }
+    Dispatcher::Msg reason(void) const { return msg; }
 
     void detach(void);
     void erase(void);
@@ -207,8 +207,8 @@ public:
 protected:
     void callback(DispatchObjCB cb) { if (cb) dcb = cb; }
 
-    Dispatcher &dspr;
     DispatchObjCB dcb;
+    Dispatcher &dspr;
     uint flags;
     Dispatcher::Msg msg;
 

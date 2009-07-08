@@ -399,12 +399,12 @@ bool Log::close(void) {
     return ffd.close();
 }
 
-void Log::endlog(Tlsdata *tlsd, Level clvl) {
+void Log::endlog(Tlsdata &tlsd, Level clvl) {
     size_t lvllen, tmlen;
     time_t now_sec;
     usec_t now_usec;
-    tstring &strbuf(tlsd->strbuf);
-    size_t sz = tlsd->strm.size();
+    tstring &strbuf(tlsd.strbuf);
+    size_t sz = tlsd.strm.size();
     tchar tmp[8];
     static tstring::size_type spos;
     static tstring::size_type zpos;
@@ -413,7 +413,7 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
     static usec_t last_usec;
     static tchar gmtoff[8];
 
-    if (tlsd->suppress)
+    if (tlsd.suppress)
 	return;
     lck.lock();
     if (ffd.enable && clvl <= ffd.lvl) {
@@ -487,8 +487,8 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
 	strbuf += ' ';
     }
     lvllen = strbuf.size();
-    if (!tlsd->prefix.empty()) {
-	strbuf += tlsd->prefix;
+    if (!tlsd.prefix.empty()) {
+	strbuf += tlsd.prefix;
 	if (_type == Syslog)
 	    strbuf += ':';
 	strbuf += ' ';
@@ -496,10 +496,10 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
     if (_type == KeyVal) {
 	tstring txt;
 
-	txt.assign(tlsd->strm.str(), sz);
+	txt.assign(tlsd.strm.str(), sz);
 	strbuf += kv(T("txt"), txt.c_str()).str();
     } else {
-	for (const tchar *p = tlsd->strm.str(); sz--; p++) {
+	for (const tchar *p = tlsd.strm.str(); sz--; p++) {
 	    if (*p < ' ' && *p != '\t') {
 		if (*p == '\n') {
 		    strbuf += T("\\n");
@@ -514,8 +514,8 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
 	    }
 	}
     }
-    tlsd->space = false;
-    tlsd->strm.reset();
+    tlsd.space = false;
+    tlsd.strm.reset();
     strbuf += '\n';
     if (afd.enable && clvl <= afd.lvl) {
 	if (src.empty()) {
@@ -544,8 +544,8 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
     }
     lck.unlock();
     strbuf.erase(strbuf.size() - 1);
-    tlsd->suppress = true;
-    tlsd->clvl = None;
+    tlsd.suppress = true;
+    tlsd.clvl = None;
 #ifndef _WIN32_WCE
     if (syslogenable && clvl <= sysloglvl) {
 	string ss;
@@ -591,7 +591,7 @@ void Log::endlog(Tlsdata *tlsd, Level clvl) {
 	}
     }
 #endif
-    tlsd->suppress = false;
+    tlsd.suppress = false;
 }
 
 void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
@@ -623,20 +623,21 @@ void Log::format(const tchar *s) {
 void Log::logv(Level l, ...) {
     bool first;
     const tchar *p;
-    Tlsdata *tlsd;
     va_list vl;
 
     if (l > lvl)
 	return;
+
+    Tlsdata &tlsd(*tls);
+
     first = true;
-    tlsd = tls.get();
     va_start(vl, l);
     while ((p = va_arg(vl, const tchar *)) != NULL) {
 	if (first)
 	    first = false;
 	else
-	    tlsd->strm << ' ';
-	tlsd->strm << p;
+	    tlsd.strm << ' ';
+	tlsd.strm << p;
     }
     va_end(vl);
     endlog(tlsd, l);

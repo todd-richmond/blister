@@ -30,7 +30,7 @@ ThreadGroup ThreadGroup::MainThreadGroup(false);
 Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
 
 #ifdef _WIN32
-TLS<Event> Condvar::tls;
+ThreadLocalClass<Event> Condvar::tls;
 Process Process::self(GetCurrentProcess());
 #ifndef _WIN32_WCE
 int Process::argc = __argc;
@@ -45,10 +45,6 @@ tchar **Process::envv = _environ;
 #else
 #include <sys/times.h>
 #endif
-
-DLLibrary Lock::kernel32(T("KERNEL32.DLL"));
-Lock::SpinFunc Lock::spinfunc = (SpinFunc)kernel32.get(T("SetCriticalSectionSpinCount"));
-Lock::TryFunc Lock::tryfunc = (TryFunc)kernel32.get(T("TryEnterCriticalSection"));
 
 Mutex::Mutex(const tchar *name) {
     if (name) {
@@ -66,7 +62,7 @@ Mutex::Mutex(const tchar *name) {
 
 void Condvar::set(uint count) {
     while (head && count--) {
-	head->evt->set();
+	head->evt.set();
 	head = head->next;
     }
     if (!head)
@@ -74,11 +70,11 @@ void Condvar::set(uint count) {
 }
 
 bool Condvar::wait(ulong msec, bool hipri) {
-    Event *event = tls.get();
+    Event &event(*tls);
     waiting elem(*this, event, hipri);
 
     lock.unlock();
-    bool ret = event->wait(msec);
+    bool ret = event.wait(msec);
     lock.lock();
     if (!ret) {
 	if (head == &elem) {
@@ -102,7 +98,7 @@ bool Condvar::wait(ulong msec, bool hipri) {
 }
 #endif
 
-ThreadGroup::ThreadGroup(bool aterm): autoterm(aterm), cv(lock), state(Init) {
+ThreadGroup::ThreadGroup(bool aterm): cv(lock), autoterm(aterm), state(Init) {
     grouplck.lock();
     id = (thread_t)((ulong)nextId++);
     groups.insert(this);
@@ -124,10 +120,10 @@ int ThreadGroup::init(void *data) {
 
 // start a group's main thread
 bool ThreadGroup::start(uint stacksz, bool aterm) {
-    if (mainThread.getState() != Init && mainThread.getState() != Terminated)
+    if (master.getState() != Init && master.getState() != Terminated)
 	return false;
     autoterm = aterm;
-    return mainThread.start(init, this, stacksz, false, autoterm, this);
+    return master.start(init, this, stacksz, false, autoterm, this);
 }
 
 // control all threads in group
@@ -159,7 +155,7 @@ Thread *ThreadGroup::wait(ulong to, bool all, bool main) {
 	    Thread *p = *it;
 	    ThreadState tstate = p->getState();
 	    
-	    if (main && p != &mainThread) {
+	    if (main && p != &master) {
 		continue;
 	    } else if (tstate == Terminated) {
 		if (!all) {
@@ -246,8 +242,8 @@ ThreadGroup *ThreadGroup::add(Thread *thread, ThreadGroup *tgroup) {
     return p;
 }
 
-Thread::Thread(thread_t handle, ThreadGroup *tgroup): hdl(handle), id(NOID),
-    state(Init), autoterm(true), retval(0), group(tgroup), cv(lck) {
+Thread::Thread(thread_t handle, ThreadGroup *tgroup): cv(lck), autoterm(true),
+    hdl(handle), id(NOID), group(tgroup), retval(0), state(Init) {
     if (hdl) {
 	state = Running;
 	group = ThreadGroup::add(this, tgroup);
@@ -512,13 +508,14 @@ uint Processor::count(void) {
     static int cpus;
 
     if (!cpus) {
+	cpus = 1;
 #ifdef _WIN32
 	SYSTEM_INFO si;
 
 	GetSystemInfo(&si);
 	cpus = si.dwNumberOfProcessors;
 #else
-	cpus = 1;
+	cpus = (uint)sysconf(_SC_NPROCESSORS_ONLN);
 #endif
     }
     return cpus;

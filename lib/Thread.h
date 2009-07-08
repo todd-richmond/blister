@@ -25,32 +25,82 @@
 #include <process.h>
 #include <windows.h>
 
-#define THREAD_EQUAL(x, y) (x == y)
-#define THREAD_FUNC uint __stdcall
-#define THREAD_HDL() GetCurrentThread()
-#define THREAD_ID() (thread_t)GetCurrentThreadId()
-
 typedef HANDLE thread_t;
+
+#define THREAD_EQUAL(x, y)	(x == y)
+#define THREAD_FUNC		uint __stdcall
+#define THREAD_HDL()		GetCurrentThread()
+#define THREAD_ID()		(thread_t)GetCurrentThreadId()
+#define THREAD_YIELD()		Sleep(0)
+
+typedef volatile long atomic_t;
+
+// atomic functions that return previous value
+#define atomic_add(i, j)	InterlockedExchangeAdd(&i, j)
+#define atomic_and(i, j)	InterlockedAnd(&i, j)
+#define atomic_bar()		_ReadWriteBarrier()
+#define atomic_clr(i)		InterlockedExchange(&i, 0)
+#define atomic_dec(i)		InterlockedExchangeAdd(&i, -1)
+#define atomic_exc(i, j)	InterlockedExchange(&i, j)
+#define atomic_inc(i)		InterlockedExchangeAdd(&i, 1)
+#define atomic_or(i, j)		InterlockedOr(&i, j)
+#define atomic_set(i)		InterlockedExchange(&i, 1)
+#define atomic_xor(i, j)	InterlockedXor(&i, j)
+
+// atomic functions that return updated value
+#define atomic_ref(i)		InterlockedDecrement(&i)
+#define atomic_rel(i)		InterlockedIncrement(&i)
+
+typedef uint tlskey_t;
+
+#define tls_init(k)		k = TlsAlloc()
+#define tls_free(k)		TlsFree(k)
+#define tls_get(k)		TlsGetValue(k)
+#define tls_set(k, v)		TlsSetValue(key, (void *)v)
+
 #else
-#if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ > 2) || defined(__OpenBSD__) || defined(__FreeBSD__) 
-#include <ext/atomicity.h>
-#else
-#include <bits/atomicity.h>
-#endif
+
 #include <dlfcn.h>
 #include <pthread.h>
 
-#define INFINITE (ulong)-1
-#define THREAD_EQUAL(x, y) pthread_equal(x, y)
-#define THREAD_FUNC void *
-#define THREAD_HDL() pthread_self()
-#define THREAD_ID() pthread_self()
-
 typedef pthread_t thread_t;
+
+#define INFINITE		(ulong)-1
+#define THREAD_EQUAL(x, y)	pthread_equal(x, y)
+#define THREAD_FUNC		void *
+#define THREAD_HDL()		pthread_self()
+#define THREAD_ID()		pthread_self()
+#define THREAD_YIELD()		sched_yield()
+
+typedef volatile int atomic_t;
+
+#define atomic_add(i, j)	__sync_fetch_and_add(&i, j)
+#define atomic_and(i, j)	__sync_fetch_and_and(&i, j)
+#define atomic_bar()		__sync_synchronize()
+#define atomic_clr(i)		__sync_lock_release(&i)
+#define atomic_dec(i)		__sync_fetch_and_add(&i, -1)
+#define atomic_exc(i, j)	__sync_fetch_exchange_not_implemented(&i, j)
+#define atomic_inc(i)		__sync_fetch_and_add(&i, 1)
+#define atomic_or(i, j)		__sync_fetch_and_or(&i, j)
+#define atomic_set(i)		__sync_lock_test_and_set(&i, 1)
+#define atomic_xor(i, j)	__sync_fetch_and_xor(&i, j)
+
+#define atomic_ref(i)		__sync_add_and_fetch(&i, -1)
+#define atomic_rel(i)		__sync_add_and_fetch(&i, 1)
+
+typedef pthread_key_t tlskey_t;
+
+#define tls_init(k)		pthread_key_create(&key, NULL)
+#define tls_free(k)		pthread_key_delete(key)
+#define tls_get(k)		pthread_getspecific(key)
+#define tls_set(k, v)		pthread_setspecific(key, v)
+
 #endif
 
-#define THREAD_SELF() THREAD_ID()
-#define THREAD_ISSELF(x) (x && THREAD_EQUAL(x, THREAD_SELF()))
+#define THREAD_SELF()		THREAD_ID()
+#define THREAD_ISSELF(x)	(x && THREAD_EQUAL(x, THREAD_SELF()))
+
+#define atomic_get(i)		atomic_add(i, 0)
 
 class Thread;
 class ThreadGroup;
@@ -88,11 +138,11 @@ public:
     operator void *(void) const { return hdl; }
     bool operator !(void) const { return hdl == NULL; }
 
-    const tstring &name(void) const { return file; }
-    bool open(const tchar *dll);
     const tstring &error() const { return err; }
+    const tstring &name(void) const { return file; }
     bool close(void);
     void *get(const tchar *symbol) const;
+    bool open(const tchar *dll);
 
 private:
     void *hdl;
@@ -100,97 +150,61 @@ private:
     tstring file;
 };
 
-#ifdef _WIN32
-#define msleep(msec)   Sleep(msec)
+class RefCount: nocopy {
+public:
+    RefCount(uint init = 1): count(init) {}
 
-class Refcount {
- public:
-    Refcount(int value = 1): count(value) {}
-    void addref(void) { InterlockedIncrement(&count); }
-    bool release(void) { return InterlockedDecrement(&count) == 0; }
-    bool is_zero() { return count == 0; }
+    bool referenced() const { return atomic_get(count) != 0; }
+
+    void add(void) { atomic_ref(count); }
+    uint release(void) { return (uint)atomic_rel(count); }
 
 private:
-    long count;
+    mutable atomic_t count;
 };
 
 template<class C>
-class TLS: nocopy {
+class ThreadLocal: nocopy {
 public:
-    TLS() { key = TlsAlloc(); }
-    ~TLS() { TlsFree(key); }
+    ThreadLocal() { tls_init(key); }
+    ~ThreadLocal() { tls_free(key); }
 
-    C *data(void) const { return (C *)TlsGetValue(key); }
-    C *get(void) const {
-	C *c = data();
-	if (!c) {
-	    c = new C;
-	    set(c);
-	}
+    C operator =(C c) const { set(c); return c;  }
+    bool exists(void) const { return tls_get(key) != NULL; }
+
+    C get(void) const {
+	C c = data();
+
+	if (!c)
+	    set(c = 0);
 	return c;
     }
-    void set(const C *data) const { TlsSetValue(key, (void *)data); }
+    void set(const C data) const { tls_set(key, data); }
 
-private:
-    uint key;
+protected:
+    tlskey_t key;
+
+    C data(void) const { return (C)tls_get(key); }
 };
 
-class SpinLock: nocopy {
+template<class C>
+class ThreadLocalClass: public ThreadLocal<C *> {
 public:
-    SpinLock(): lck(0), spins(50) {}
+    ThreadLocalClass() {}
 
-    uint spin(uint cnt) { return spins = cnt; }
-    void lock(void) {
-	if (!trylock()) {
-	    uint spin = 1;
+    C &operator *(void) const { return get(); }
+    C *operator ->(void) const { return &get(); }
+    C &get(void) const {
+	C *c = ThreadLocal<C *>::data();
 
-	    do {
-		if (spin++ % spins == 0)
-		    Sleep(0);
-	    } while (!trylock());
-	}
+	if (!c)
+	    ThreadLocal<C *>::set(c = new C);
+	return *c;
     }
-    bool trylock(void) { return InterlockedExchange(&lck, 1) == 0; }
-    void unlock(void) { InterlockedExchange(&lck, 0); }
-
-private:
-    long lck;
-    uint spins;
 };
 
-class Lock: nocopy {
-public:
-    typedef DWORD (WINAPI *SpinFunc)(CRITICAL_SECTION *, DWORD);
-    typedef DWORD (WINAPI *TryFunc)(CRITICAL_SECTION *);
-
-    Lock() { InitializeCriticalSection(&csec); }
-    ~Lock() { DeleteCriticalSection(&csec); }
-
-    uint spin(uint cnt) { return spinfunc ? spinfunc(&csec, cnt): 1; }
-    void lock(void) { EnterCriticalSection(&csec); }
-    bool trylock(void) { return tryfunc ? tryfunc(&csec) != 0 : false; }
-    void unlock(void) { LeaveCriticalSection(&csec); }
-
-private:
-    CRITICAL_SECTION csec;
-    static DLLibrary kernel32;
-    static SpinFunc spinfunc;
-    static TryFunc tryfunc;
-};
-
-class Mutex: nocopy {
-public:
-    Mutex(const tchar *name = NULL);
-    ~Mutex() { if (hdl) ReleaseMutex(hdl); }
-
-    virtual void lock(void) { WaitForSingleObject(hdl, INFINITE); }
-    virtual bool trylock(ulong msec = 0)
-	{ return WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0; }
-    virtual void unlock(void) { ReleaseMutex(hdl); }
-
-private:
-    HANDLE hdl;
-};
+#ifdef _WIN32
+#define msleep(msec)   Sleep(msec)
 
 class Event: nocopy {
 public:
@@ -220,6 +234,32 @@ protected:
     HANDLE hdl;
 };
 
+class Lock: nocopy {
+public:
+    Lock() { InitializeCriticalSection(&csec); }
+    ~Lock() { DeleteCriticalSection(&csec); }
+
+    void lock(void) { EnterCriticalSection(&csec); }
+    void unlock(void) { LeaveCriticalSection(&csec); }
+
+protected:
+    CRITICAL_SECTION csec;
+};
+
+class Mutex: nocopy {
+public:
+    Mutex(const tchar *name = NULL);
+    ~Mutex() { if (hdl) ReleaseMutex(hdl); }
+
+    void lock(void) { WaitForSingleObject(hdl, INFINITE); }
+    bool trylock(ulong msec = 0)
+	{ return WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0; }
+    void unlock(void) { ReleaseMutex(hdl); }
+
+protected:
+    HANDLE hdl;
+};
+
 class Condvar: nocopy {
 public:
     Condvar(Lock &lck): lock(lck), head(NULL), tail(NULL) {}
@@ -232,10 +272,10 @@ public:
 private:
     class waiting {
     public:
+	Event &evt;
 	waiting *next;
-	Event *evt;
 
-	waiting(Condvar &cv, Event *event, bool hipri): evt(event) {
+	waiting(Condvar &cv, Event &event, bool hipri): evt(event) {
 	    if (hipri) {
 		next = (waiting *)cv.head;
 		cv.head = this;
@@ -254,7 +294,7 @@ private:
     friend waiting;
     Lock &lock;
     waiting *head, *tail;
-    static TLS<Event> tls;
+    static ThreadLocalClass<Event> tls;
     friend Thread;
 };
 
@@ -270,19 +310,19 @@ public:
     virtual bool open(bool manual = false, const tchar *name = NULL,
 	uint count = 0) { cnt = count; return Event::open(manual, false, name); }
     virtual bool clear(void) {
-	LockerTemplate<SpinLock> lkr(lock);
+	LockerTemplate<Lock> lkr(lock);
 
 	cnt = 0;
 	return Event::clear();
     }
     virtual bool close(void) { cnt = 0; return Event::close(); }
     virtual bool set(void) {
-	LockerTemplate<SpinLock> lkr(lock);
+	LockerTemplate<Lock> lkr(lock);
 
 	return ++cnt == 1 ? PulseEvent(hdl) != 0 : true;
     }
     virtual bool wait(ulong msec = INFINITE) {
-	LockerTemplate<SpinLock> lkr(lock);
+	LockerTemplate<Lock> lkr(lock);
 
 	if (cnt) {
 	    cnt--;
@@ -299,8 +339,27 @@ public:
     }
 
 protected:
-    SpinLock lock;
+    Lock lock;
     uint cnt;
+};
+
+class Process {
+public:
+    Process(HANDLE hproc): hdl(hproc) {}
+    Process(const Process &proc);
+    ~Process() { if (hdl) CloseHandle(hdl); }
+
+    static int argc;
+    static tchar **argv;
+    static tchar **envv;
+    static Process self;
+
+    operator HANDLE() const { return hdl; }
+    bool mask(uint m) { return SetProcessAffinityMask(hdl, m) != 0; }
+    static Process start(tchar * const *args, const int *fds = NULL);
+
+private:
+    HANDLE hdl;
 };
 
 inline bool DLLibrary::open(const tchar *dll) {
@@ -329,66 +388,15 @@ inline void *DLLibrary::get(const tchar *symbol) const {
 #endif
 }
 
-class Process {
-public:
-    Process(HANDLE hproc): hdl(hproc) {}
-    Process(const Process &proc);
-    ~Process() { if (hdl) CloseHandle(hdl); }
-
-    static int argc;
-    static tchar **argv;
-    static tchar **envv;
-    static Process self;
-
-    operator HANDLE() const { return hdl; }
-    bool mask(uint m) { return SetProcessAffinityMask(hdl, m) != 0; }
-    static Process start(tchar * const *args, const int *fds = NULL);
-
-private:
-    HANDLE hdl;
-};
-
 #else
 
 inline void msleep(ulong msec) {
-    struct timespec ts;
+    struct timespec ts = { 
+	ts.tv_sec = msec / 1000, ts.tv_nsec = (msec % 1000) * 1000000
+    };
 
-    ts.tv_sec = msec / 1000;
-    ts.tv_nsec = (msec % 1000) * 1000000;
     nanosleep(&ts, NULL);
 }
-
-class Refcount {
- public:
-    Refcount(int value = 1): count(value) {}
-    void addref(void) { __atomic_add(&count, 1); }
-    bool release(void) { return __exchange_and_add(&count, -1) == 1; }
-    bool is_zero() { return count == 0; }
-
- private:
-    _Atomic_word count;
-};
-
-template<class C>
-class TLS: nocopy {
-public:
-    TLS() { pthread_key_create(&key, NULL); }
-    ~TLS() { pthread_key_delete(key); }
-
-    C *data(void) const { return (C *)pthread_getspecific(key); }
-    C *get(void) const {
-	C *c = data();
-	if (!c) {
-	    c = new C;
-	    set(c);
-	}
-	return c;
-    }
-    void set(const C *data) const { pthread_setspecific(key, data); }
-
-private:
-    pthread_key_t key;
-};
 
 class Lock: nocopy {
 public:
@@ -396,59 +404,14 @@ public:
     ~Lock() { pthread_mutex_destroy(&mtx); }
 
     operator pthread_mutex_t *() { return &mtx; }
-    uint spin(uint cnt) { return 1; }
+
     void lock(void) { pthread_mutex_lock(&mtx); }
     bool trylock(void) { return pthread_mutex_trylock(&mtx); }
     void unlock(void) { pthread_mutex_unlock(&mtx); }
 
-private:
+protected:
     pthread_mutex_t mtx;
 };
-
-#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
-
-class SpinLock: nocopy {
-public:
-    SpinLock(): lck(0), spins(50) {}
-
-    uint spin(uint cnt) { return spins = cnt; }
-    void lock(void) {
-	if (!trylock()) {
-	    uint spin = 1;
-
-	    do {
-		if (spin++ % spins == 0)
-		    sched_yield();
-	    } while (!trylock());
-	}
-    }
-    bool trylock(void) {
-	int r;
-	
-	__asm__ __volatile__
-	    ("xchgl %0, %1"
-	    : "=r" (r), "=m" (lck)
-	    : "0" (1), "m" (lck)
-	    : "memory");
-	return r == 0;
-    }
-    void unlock(void) {
-	int r;
-
-	__asm__ __volatile__
-	    ("xchgl %0, %1"
-	    : "=r" (r), "=m" (lck)
-	    : "0" (0), "m" (lck)
-	    : "memory");
-    }
-
-private:
-    volatile int lck;
-    uint spins;
-};
-#else
-typedef Lock SpinLock;
-#endif
 
 typedef Lock Mutex;
 
@@ -473,7 +436,7 @@ public:
 	}
     }
 
-private:
+protected:
     Lock &lock;
     pthread_cond_t cv;
 };
@@ -504,69 +467,178 @@ inline bool DLLibrary::close() {
 inline void *DLLibrary::get(const tchar *symbol) const {
     return dlsym(hdl, symbol);
 }
+
 #endif
+
+#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+
+class SpinLock: nocopy {
+public:
+    SpinLock(): lck(0), spins(100) {}
+
+    void lock(void) {
+	if (!trylock()) {
+	    uint spin = spins;
+
+	    do {
+		if (!spin--) {
+		    THREAD_YIELD();
+		    spin = spins;
+		}
+	    } while (!trylock());
+	}
+    }
+    void spin(uint cnt) { spins = cnt; }
+    bool trylock(void) {
+	int r;
+	
+	__asm__ __volatile__
+	    ("xchgl %0, %1"
+	    : "=r" (r), "=m" (lck)
+	    : "0" (1), "m" (lck)
+	    : "memory");
+	return r == 0;
+    }
+    void unlock(void) {
+	int r;
+
+	__asm__ __volatile__
+	    ("xchgl %0, %1"
+	    : "=r" (r), "=m" (lck)
+	    : "0" (0), "m" (lck)
+	    : "memory");
+    }
+
+private:
+    volatile int lck;
+    uint spins;
+};
+
+#elif defined(_WIN32) && 0  // slower than atomic ops
+
+class SpinLock: nocopy {
+public:
+    SpinLock() { InitializeCriticalSection(&csec); }
+    ~SpinLock() { DeleteCriticalSection(&csec); }
+
+    void lock(void) { EnterCriticalSection(&csec); }
+    void spin(uint cnt) { SetCriticalSectionSpinCount(&csec, cnt); }
+    bool trylock(void) { return TryEnterCriticalSection(&csec) != 0; }
+    void unlock(void) { LeaveCriticalSection(&csec); }
+
+private:
+    CRITICAL_SECTION csec;
+};
+
+#else
+
+class SpinLock: nocopy {
+public:
+    SpinLock(): lck(0), spins(100) {}
+
+    void lock(void) {
+	if (atomic_set(lck)) {
+	    uint spin = spins;
+
+	    do {
+		if (!spin--) {
+		    THREAD_YIELD();
+		    spin = spins;
+		}
+	    } while (atomic_set(lck));
+	}
+    }
+    void spin(uint cnt) { spins = cnt; }
+    bool trylock(void) { return atomic_set(lck) == 0; }
+    void unlock(void) { atomic_clr(lck); }
+
+private:
+    atomic_t lck;
+    uint spins;
+};
+
+#endif
+
+typedef LockerTemplate<Lock> Locker;
+typedef LockerTemplate<SpinLock> SpinLocker;
+typedef FastLockerTemplate<Lock> FastLocker;
+typedef FastLockerTemplate<SpinLock> FastSpinLocker;
 
 class RWLock: nocopy {
 public:
-    RWLock(): cv(lck), readers(0), writer(0), wwaiting(0) {}
-    ~RWLock() {}
-    
-    void rlock(void);
-    void runlock(void);
-    void wlock(void);
-    void wunlock(void);
+    RWLock(): cv(lck), readers(0), wwaiting(0), writing(false) {}
+
+    void rlock(void) {
+	FastLocker lckr(lck);
+
+	while (writing || wwaiting) {
+	    cv.wait();
+	    if (writing || wwaiting)
+		cv.set();
+	}
+	readers++;
+    }
+    void runlock(void) {
+	FastLocker lckr(lck);
+
+	if (!--readers && wwaiting)
+	    cv.set();
+    }
+    bool tryrlock(ulong msec = 0) {
+	FastLocker lckr(lck);
+
+	if (writing || wwaiting) {
+	    if (!msec || !cv.wait(msec))
+		return false;
+	    // can return early
+	    if (writing || wwaiting)
+		cv.set();
+	}
+	readers++;
+	return true;
+    }
+    bool trywlock(ulong msec = 0) {
+	FastLocker lckr(lck);
+
+	if (readers || writing) {
+	    wwaiting++;
+	    if (!msec || !cv.wait(msec, true)) {
+		wwaiting--;
+		return false;
+	    }
+	    wwaiting--;
+	}
+	return writing = true;
+    }
+    void wlock(void) {
+	FastLocker lckr(lck);
+
+	while (readers || writing) {
+	    wwaiting++;
+	    cv.wait(INFINITE, true);
+	    wwaiting--;
+	}
+	writing = true;
+    }
+    void wunlock(void) {
+	FastLocker lckr(lck);
+
+	writing = false;
+	if (wwaiting)
+	    cv.set();
+	else
+	    cv.broadcast();
+    }
 
 private:
     Lock lck;
     Condvar cv;
-    volatile long readers;
-    volatile long writer;
-    volatile long wwaiting;
+    volatile ulong readers, wwaiting;
+    volatile bool writing;
 };
 
-inline void RWLock::rlock(void) {
-    lck.lock();
-    while (writer || wwaiting)
-	cv.wait();
-    readers++;
-    lck.unlock();
-}
-
-inline void RWLock::runlock(void) {
-    lck.lock();
-    readers--;
-    if (!readers && wwaiting)
-	cv.set();
-    lck.unlock();
-}
-
-inline void RWLock::wlock(void) {
-    lck.lock();
-    while (readers || writer) {
-	wwaiting++;
-	cv.wait(INFINITE, true);
-	wwaiting--;
-    }
-    writer = 1;
-    lck.unlock();
-}
-
-inline void RWLock::wunlock(void) {
-    lck.lock();
-    writer = 0;
-    if (wwaiting)
-	cv.set();
-    else
-	cv.broadcast();
-    lck.unlock();
-}
-
-typedef LockerTemplate<Lock> Locker;
-typedef LockerTemplate<SpinLock> SpinLocker;
 typedef LockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> RLocker;
 typedef LockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> WLocker;
-typedef FastLockerTemplate<Lock> FastLocker;
-typedef FastLockerTemplate<SpinLock> FastSpinLocker;
 typedef FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> FastRLocker;
 typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker;
 
@@ -695,38 +767,38 @@ public:
     bool operator ==(const Thread &t) const { return THREAD_EQUAL(id, t.id); }
     bool operator !=(const Thread &t) const { return !operator ==(t); }
 
+    bool priority(int pri = 0) { return hdl && priority(hdl, pri); }
+    bool resume(void);
     bool start(uint stacksz = 0, bool suspend = false, bool autoterm = false,
 	ThreadGroup *tg = NULL);
     bool start(ThreadRoutine main, void *data = NULL, uint stacksz = 0,
 	bool suspend = false, bool autoterm = false, ThreadGroup *tg = NULL);
     bool stop(void);
-    bool resume(void);
     bool suspend(void);
     bool terminate(void);
     bool wait(ulong timeout = INFINITE);
-    bool priority(int pri = 0) { return hdl && priority(hdl, pri); }
     static bool priority(thread_t hdl, int pri);    // -20 -> 20
 
 protected:
+    void end(int ret = 0);
     // never used but not pure virtual to allow Thread instantiation
     virtual int onStart(void) { return -1; }
     virtual void onStop(void) {}
-    void end(int ret = 0);
 
 private:
-    thread_t hdl, id;
-    volatile ThreadState state;
-    bool autoterm;
-    int retval;
-    ThreadGroup *group;
-    ThreadRoutine main;
-    void *data;
     mutable Lock lck;
     Condvar cv;
+    bool autoterm;
+    void *data;
+    thread_t hdl, id;
+    ThreadGroup *group;
+    ThreadRoutine main;
+    int retval;
+    volatile ThreadState state;
     
     void clear(bool self = true);
-    static THREAD_FUNC threadInit(void *thisp);
     static int init(void *thisp);
+    static THREAD_FUNC threadInit(void *thisp);
 
     friend class ThreadGroup;
 };
@@ -738,36 +810,41 @@ class ThreadGroup: nocopy {
 public:
     ThreadGroup(bool autoterm = true);
     virtual ~ThreadGroup();
-    
+
+    static ThreadGroup MainThreadGroup;
+
     ThreadState getState(void) const { return state; }
     thread_t getId(void) const { return id; }
-    thread_t getMainId(void) const { return mainThread.getId(); }
+    thread_t getMainThread(void) const { return master; }
     size_t size(void) const { return threads.size(); }
     
     bool operator ==(const ThreadGroup &t) const { return id == t.id; }
     bool operator !=(const ThreadGroup &t) const { return id != t.id; }
     
+    void priority(int pri = 0);
+    void remove(Thread *thread);
+    void resume(void) { onResume(); control(Running, &Thread::resume); }
     bool start(uint stacksz = 0, bool autoterm = true);
     void stop(void) { onStop(); control(Terminated, &Thread::stop); }
-    void resume(void) { onResume(); control(Running, &Thread::resume); }
     void suspend(void) { onSuspend(); control(Suspended, &Thread::suspend); }
     void terminate(void) { control(Terminated, &Thread::terminate); }
     Thread *wait(ulong msec = INFINITE, bool all = false, bool main = false);
     void waitForMain(ulong msec = INFINITE) { wait(msec, false, true); }
-    void priority(int pri = 0);
-    void remove(Thread *thread);
     
-    static ThreadGroup MainThreadGroup;
     static ThreadGroup *add(Thread *thread, ThreadGroup *tg);
     
 protected:
+    thread_t id;
+    Thread master;
+
     void control(ThreadState, ThreadControlRoutine);
     void notify(const Thread *thread) {
-	Locker lck(lock);
-	if (thread == &mainThread)
+	lock.lock();
+	if (thread == &master)
 	    cv.broadcast();
 	else
 	    cv.set();
+	lock.unlock();
     }
     virtual void onResume(void) {}
     virtual int onStart(void) { return -1; }
@@ -775,19 +852,18 @@ protected:
     virtual void onSuspend(void) {}
     
 private:
-    bool autoterm;
-    thread_t id;
     Lock lock;
     Condvar cv;
+    bool autoterm;
     volatile ThreadState state;
     set<Thread *> threads;
-    Thread mainThread;
     static Lock grouplck;
-    static ulong nextId;
     static set<ThreadGroup *> groups;
+    static ulong nextId;
 
     static int init(void *data);
     friend class Thread;
 };
 
 #endif // Thread_h
+

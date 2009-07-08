@@ -104,8 +104,6 @@ Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
 	RegisterClass(&wc);
     }
 #endif
-    if (Processor::count() > 1)
-	lock.spin(40);
 }
 
 bool Dispatcher::exec(volatile DispatchObj *&aobj, thread_t tid) {
@@ -175,7 +173,7 @@ bool Dispatcher::exec(volatile DispatchObj *&aobj, thread_t tid) {
 	    break;
     } while (obj);
     group->active = 0;
-    if (group->refcount.is_zero())
+    if (!group->refcount.referenced())
 	delete group;
     return rlist;
 }
@@ -339,6 +337,7 @@ int Dispatcher::onStart() {
 #ifdef DSP_EPOLL
     do {
 	evtfd = epoll_create(10000);
+evtfd = -1;
     } while (evtfd == -1 && interrupted(errno));
 #elif defined(DSP_KQUEUE)
     timespec ts;
@@ -651,7 +650,6 @@ uint Dispatcher::handleEvents(void *evts, int nevts) {
 		ds->flags |= DSP_Closeable;
 	    } else if (evt->filter == EVFILT_READ) {
 		ds->flags |= DSP_Readable;
-cout<<"tf yy 0 data "<<evt->data<<" "<<evt->ident<<endl;
 	    } else if (evt->filter == EVFILT_WRITE) {
 		ds->flags |= DSP_Writeable;
 	    }
@@ -980,13 +978,14 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 void Dispatcher::deleteObj(DispatchObj &obj) {
     cancelReady(obj);
     if (obj.flags & DSP_Active)
-	*activeobj.data() = NULL;
-    if (obj.group->refcount.release() && !obj.group->active)
+	*activeobj.get() = NULL;
+    obj.group->refcount.release();
+    if (!obj.group->refcount.referenced() && !obj.group->active)
 	delete obj.group;
 }
 
 void Dispatcher::addReady(DispatchObj &obj, bool hipri, Msg reason) {
-    Locker lkr(lock);
+    FastLocker lkr(lock);
 
     obj.msg = reason;
     ready(obj, hipri);
@@ -994,9 +993,9 @@ void Dispatcher::addReady(DispatchObj &obj, bool hipri, Msg reason) {
 
 void Dispatcher::cancelReady(DispatchObj &obj) {
     if (obj.flags & DSP_ReadyAll) {
-	lock.lock();
+	FastLocker lkr(lock);
+
 	removeReady(obj);
-	lock.unlock();
     }
 }
 

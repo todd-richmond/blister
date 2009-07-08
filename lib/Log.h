@@ -130,18 +130,18 @@ public:
     void type(Type t) { _type = t; }
 
     bool close(void);
-    Level &curlvl(void) const { return tls.get()->clvl; }
+    Level &curlvl(void) const { return tls->clvl; }
     Log &endlog(void) {
-        Tlsdata *tlsd = tls.get();
+        Tlsdata &tlsd(*tls);
 
-	if (tlsd->clvl != None)
-	    endlog(tlsd, tlsd->clvl);
+	if (tlsd.clvl != None)
+	    endlog(tlsd, tlsd.clvl);
 	return *this;
     }
     void flush(void) { Locker lkr(lck); _flush(); }
     void logv(Level l, ...);
-    const tchar *prefix(void) const { return tls.get()->prefix.c_str(); }
-    void prefix(const tchar *p) { tls.get()->prefix = p ? p : T(""); }
+    const tchar *prefix(void) const { return tls->prefix.c_str(); }
+    void prefix(const tchar *p) { tls->prefix = p ? p : T(""); }
     void roll(void) { Locker lkr(lck); ffd.roll(); }
     void set(const Config &cfg, const tchar *sect = T("log"));
     bool setids(uid_t uid, gid_t gid) const;
@@ -150,14 +150,14 @@ public:
     void stop(void);
 
     template<class C> Log &operator <<(const C &c) {
-	Tlsdata *tlsd = tls.get();
+        Tlsdata &tlsd(*tls);
 
-	if (tlsd->clvl != None) {
-	    if (tlsd->space) {
-		tlsd->space = false;
-		tlsd->strm << ' ';
+	if (tlsd.clvl != None) {
+	    if (tlsd.space) {
+		tlsd.space = false;
+		tlsd.strm << ' ';
 	    }
-	    tlsd->strm << c;
+	    tlsd.strm << c;
 	}
 	return *this;
     }
@@ -165,19 +165,19 @@ public:
     Log &operator <<(const Log::Level &l) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && !(tlsd = tls.get())->suppress)
+	if (l <= lvl && !(tlsd = &tls.get())->suppress)
 	    tlsd->clvl = l;
 	return *this;
     }
 
     Log &operator <<(const kv &kv) {
-	Tlsdata *tlsd = tls.get();
+        Tlsdata &tlsd(*tls);
 
-	if (tlsd->clvl != None) {
-	    if (tlsd->strm.size())
-		tlsd->strm << ' ';
-	    tlsd->strm << kv.str();
-	    tlsd->space = true;
+	if (tlsd.clvl != None) {
+	    if (tlsd.strm.size())
+		tlsd.strm << ' ';
+	    tlsd.strm << kv.str();
+	    tlsd.space = true;
 	}
 	return *this;
     }
@@ -185,18 +185,18 @@ public:
     template<class C> void log(Level l, const C &c) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && !(tlsd = tls.get())->suppress) {
+	if (l <= lvl && !(tlsd = &tls.get())->suppress) {
 	    tlsd->strm << c;
-	    endlog(tlsd, l);
+	    endlog(*tlsd, l);
 	}
     }
 
     template<class C, class D> void log(Level l, const C &c, const D &d) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && !(tlsd = tls.get())->suppress) {
+	if (l <= lvl && !(tlsd = &tls.get())->suppress) {
 	    tlsd->strm << c << ' ' << d;
-	    endlog(tlsd, l);
+	    endlog(*tlsd, l);
 	}
     }
 
@@ -204,9 +204,9 @@ public:
 	const D &d, const E &e) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && !(tlsd = tls.get())->suppress) {
+	if (l <= lvl && !(tlsd = &tls.get())->suppress) {
 	    tlsd->strm << c << ' ' << d << ' ' << e;
-	    endlog(tlsd, l);
+	    endlog(*tlsd, l);
 	}
     }
 
@@ -214,9 +214,9 @@ public:
 	const D &d, const E &e, const F &f) {
 	Tlsdata *tlsd;
 
-	if (l <= lvl && !(tlsd = tls.get())->suppress) {
+	if (l <= lvl && !(tlsd = &tls.get())->suppress) {
 	    tlsd->strm << c << ' ' << d << ' ' << e << ' ' << f;
-	    endlog(tlsd, l);
+	    endlog(*tlsd, l);
 	}
     }
 
@@ -300,7 +300,7 @@ private:
 	Tlsdata(): clvl(None), space(false), suppress(false) {}
     };
 
-    TLS<Tlsdata> tls;
+    ThreadLocalClass<Tlsdata> tls;
     LogFile afd, ffd;
     bool bufenable, mailenable, syslogenable;
     uint bufsz;
@@ -322,7 +322,7 @@ private:
     static const tchar * const LevelStr[];
     static const tchar * const LevelStr2[];
 
-    void endlog(Tlsdata *tlsd, Level lvl);
+    void endlog(Tlsdata &tlsd, Level lvl);
     void _flush(void);
 };
 

@@ -79,9 +79,7 @@ public:
     Timing() {}
     ~Timing() { clear(); }
 
-    vector<tstring>::size_type depth(void) const {
-	return tls.get()->callers.size();
-    }
+    vector<tstring>::size_type depth(void) const { return tls->callers.size(); }
 
     void add(const tchar *key, timing_t diff);
     void clear(void);
@@ -123,7 +121,7 @@ private:
 #endif
 
     mutable SpinLock lck;
-    TLS<Tlsdata> tls;
+    ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
 
     static const tchar *format(timing_t tot, tchar *buf);

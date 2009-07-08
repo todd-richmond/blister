@@ -188,28 +188,28 @@ void Timing::record(const tchar *key) {
     timing_t n = now();
     tstring caller;
     timing_t diff;
-    Tlsdata *tlsd = tls.get();
+    Tlsdata &tlsd(*tls);
 
     do {
-	vector<tstring>::reverse_iterator it = tlsd->callers.rbegin();
+	vector<tstring>::reverse_iterator it = tlsd.callers.rbegin();
 
-	if (it == tlsd->callers.rend()) {
+	if (it == tlsd.callers.rend()) {
 	    tcerr << T("timing mismatch for ") << (key ? key : T("stack")) <<
 		endl;
 	    return;
 	}
 	caller = *it;
-	tlsd->callers.pop_back();
+	tlsd.callers.pop_back();
 	if (!key)
 	    key = caller.c_str();
-	diff = n - *(tlsd->starts.rbegin());
-	tlsd->starts.pop_back();
+	diff = n - *(tlsd.starts.rbegin());
+	tlsd.starts.pop_back();
     } while (!caller.empty() && caller != key);
-    if (!caller.empty() && !tlsd->callers.empty()) {
+    if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
-	for (vector<tstring>::const_iterator it = tlsd->callers.begin();
-	    it != tlsd->callers.end(); it++) {
+	for (vector<tstring>::const_iterator it = tlsd.callers.begin();
+	    it != tlsd.callers.end(); it++) {
 	    if (!s.empty())
 		s += T("->");
 	    s += *it;
@@ -222,27 +222,27 @@ void Timing::record(const tchar *key) {
 }
 
 void Timing::restart() {
-    Tlsdata *tlsd = tls.get();
+    Tlsdata &tlsd(*tls);
 
-    if (!tlsd->callers.empty()) {
-	tlsd->starts.pop_back();
-	tlsd->starts.push_back(now());
+    if (!tlsd.callers.empty()) {
+	tlsd.starts.pop_back();
+	tlsd.starts.push_back(now());
     }
 }
 
 void Timing::start(const tchar *key) {
-    Tlsdata *tlsd = tls.get();
+    Tlsdata &tlsd(*tls);
 
-    tlsd->callers.push_back(key ? key : T(""));
-    tlsd->starts.push_back(now());
+    tlsd.callers.push_back(key ? key : T(""));
+    tlsd.starts.push_back(now());
 }
 
 void Timing::stop(uint lvl) {
-    Tlsdata *tlsd = tls.get();
+    Tlsdata &tlsd(*tls);
 
-    while (lvl-- && !tlsd->callers.empty()) {
-	tlsd->callers.pop_back();
-	tlsd->starts.pop_back();
+    while (lvl-- && !tlsd.callers.empty()) {
+	tlsd.callers.pop_back();
+	tlsd.starts.pop_back();
     }
 }
 
