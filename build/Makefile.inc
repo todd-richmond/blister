@@ -14,10 +14,12 @@ DISTCLEANFILES = aclocal.m4 autom4te.cache/* config.guess config.sub configure \
 	depcomp documentation install-sh ltmain.sh missing mkinstalldirs \
 	Makefile.in
 
-COPTFLAGS_DEBUG = -ggdb -D_DEBUG
-COPTFLAGS_OPTIMIZE = -O3 -ggdb -DNDEBUG
-COPTFLAGS = $(COPTFLAGS_DEBUG)
+if Linux
+if Intel32
+EXTRACFLAGS = -march=pentium4
+endif
+endif
 
-CFLAGS = $(COPTFLAGS) -Wall -Werror -pipe
+CFLAGS = -Wall -Werror -pipe $(EXTRACFLAGS) @optimize@ 
 CXXFLAGS = $(CFLAGS) -fno-rtti -fno-exceptions
 
