@@ -1,19 +1,28 @@
-#!/bin/sh -x
+#!/bin/sh
 TOOLDIR=/usr/local
 
 #export PATH=${TOOLDIR}/bin:$PATH
 #export LD_LIBRARY_PATH=${TOOLDIR}/lib
 
+if [ "$1" = "-?" -o "$1" = "-h" ]; then
+    echo "usage: $0 [configure_args]"
+    exit 1
+fi
+
+if [ `uname` = "Darwin" ]; then
+    libtoolize=libtoolize
+else
+    libtoolize=glibtoolize
+fi
+
+set -x
+
 make distclean > /dev/null 2>&1
 aclocal || exit 1
 #aclocal -I ${TOOLDIR}/share/aclocal || exit 1
 autoconf || exit 1
-if [ `uname` = "Darwin" ]; then
-    glibtoolize --automake || exit 1
-else
-    libtoolize --automake || exit 1
-fi
+$libtoolize --automake || exit 1
 automake -a || exit 1
-./configure || exit 1
+./configure $* || exit 1
 make
 
