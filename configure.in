@@ -25,7 +25,7 @@ AC_HAVE_LIBRARY(socket)
 
 AC_ARG_ENABLE(optimize,
     [AC_HELP_STRING([--enable-optimize@<:@=CFLAGS@:>@],
-	[C++ compiler options default=[$optimize_default]])],
+	[C++ compiler options @<:@default=-O3 -ggdb -DNDEBUG@:>@])],
     [
 	if test "$enableval" = no -o "$enableval" = debug; then
 	    optimize="-ggdb -D_DEBUG"
