@@ -10,9 +10,9 @@ if [ "$1" = "-?" -o "$1" = "-h" ]; then
 fi
 
 if [ `uname` = "Darwin" ]; then
-    libtoolize=libtoolize
-else
     libtoolize=glibtoolize
+else
+    libtoolize=libtoolize
 fi
 
 set -x
