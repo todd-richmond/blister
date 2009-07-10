@@ -35,6 +35,10 @@ typedef HANDLE thread_t;
 
 typedef volatile long atomic_t;
 
+// atomic functions that return updated value
+#define atomic_ref(i)		InterlockedIncrement(&i)
+#define atomic_rel(i)		InterlockedDecrement(&i)
+
 // atomic functions that return previous value
 #define atomic_add(i, j)	InterlockedExchangeAdd(&i, j)
 #define atomic_and(i, j)	InterlockedAnd(&i, j)
@@ -46,10 +50,6 @@ typedef volatile long atomic_t;
 #define atomic_or(i, j)		InterlockedOr(&i, j)
 #define atomic_set(i)		InterlockedExchange(&i, 1)
 #define atomic_xor(i, j)	InterlockedXor(&i, j)
-
-// atomic functions that return updated value
-#define atomic_ref(i)		InterlockedDecrement(&i)
-#define atomic_rel(i)		InterlockedIncrement(&i)
 
 typedef uint tlskey_t;
 
@@ -72,7 +72,28 @@ typedef pthread_t thread_t;
 #define THREAD_ID()		pthread_self()
 #define THREAD_YIELD()		sched_yield()
 
+#if __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 1)
+#if __GNUC__ < 4
+#include <bits/atomicity.h>
+#else
+#include <ext/atomicity.h>
+#endif
+
+typedef _Atomic_word atomic_t;
+
+#define __sync_fetch_and_add(i, j)	__exchange_and_add(i, j)
+
+#define atomic_ref(i)		(__sync_fetch_and_add(&i, 1) + 1)
+#define atomic_rel(i)		(__sync_fetch_and_add(&i, -1) - 1)
+
+#else
+
 typedef volatile int atomic_t;
+
+#define atomic_ref(i)		__sync_add_and_fetch(&i, 1)
+#define atomic_rel(i)		__sync_add_and_fetch(&i, -1)
+
+#endif
 
 #define atomic_add(i, j)	__sync_fetch_and_add(&i, j)
 #define atomic_and(i, j)	__sync_fetch_and_and(&i, j)
@@ -84,9 +105,6 @@ typedef volatile int atomic_t;
 #define atomic_or(i, j)		__sync_fetch_and_or(&i, j)
 #define atomic_set(i)		__sync_lock_test_and_set(&i, 1)
 #define atomic_xor(i, j)	__sync_fetch_and_xor(&i, j)
-
-#define atomic_ref(i)		__sync_add_and_fetch(&i, -1)
-#define atomic_rel(i)		__sync_add_and_fetch(&i, 1)
 
 typedef pthread_key_t tlskey_t;
 
@@ -154,10 +172,11 @@ class RefCount: nocopy {
 public:
     RefCount(uint init = 1): count(init) {}
 
-    bool referenced() const { return atomic_get(count) != 0; }
+    operator bool(void) const { return atomic_get(count) != 0; }
+    bool referenced(void) const { return atomic_get(count) != 0; }
 
     void add(void) { atomic_ref(count); }
-    uint release(void) { return (uint)atomic_rel(count); }
+    bool release(void) { return atomic_rel(count) != 0; }
 
 private:
     mutable atomic_t count;

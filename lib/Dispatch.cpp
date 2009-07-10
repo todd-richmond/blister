@@ -979,8 +979,7 @@ void Dispatcher::deleteObj(DispatchObj &obj) {
     cancelReady(obj);
     if (obj.flags & DSP_Active)
 	*activeobj.get() = NULL;
-    obj.group->refcount.release();
-    if (!obj.group->refcount.referenced() && !obj.group->active)
+    if (!obj.group->refcount.release() && !obj.group->active)
 	delete obj.group;
 }
 
