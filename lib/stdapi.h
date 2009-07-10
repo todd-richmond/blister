@@ -456,7 +456,9 @@ typedef wchar_t wchar;
 typedef unsigned short ushort;
 typedef unsigned int uint;
 typedef unsigned long ulong;
+#endif
 
+#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__) || defined(__sun__)
 extern int wcscasecmp(const wchar *, const wchar *);
 #endif
 

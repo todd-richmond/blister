@@ -85,12 +85,12 @@ protected:
     gid_t gid;
     tstring name;
     tstring path;
-    int pid;
+    pid_t pid;
     Status stStatus;
     uid_t uid;
     static bool aborted, console, exiting, restart;
     static Service *service;
-    static volatile int sigpid;
+    static volatile pid_t sigpid;
     static tstring ver, srvcpath;
 
     void *open(uint mapsz);

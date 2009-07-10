@@ -59,7 +59,9 @@ static const tchar *DispatchClass = T("DSP_CLASS");
 
 uint Dispatcher::socketmsg;
 
-#elif defined(DSP_EPOLL)
+#elif defined(__linux__)
+
+#define DSP_EPOLL
 
 #include <sys/epoll.h>
 #ifndef EPOLLRDHUP
@@ -71,7 +73,9 @@ uint Dispatcher::socketmsg;
 
 typedef epoll_event event_t;
 
-#elif defined(DSP_KQUEUE)
+#elif defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
+
+#define DSP_KQUEUE
 
 #include <sys/event.h>
 #include <sys/queue.h>
@@ -80,6 +84,10 @@ typedef epoll_event event_t;
 #endif
 
 typedef struct kevent event_t;
+
+#else
+
+#define DSP_POLL
 
 #endif
 
@@ -326,18 +334,19 @@ int Dispatcher::onStart() {
     uint u;
 
 #ifndef _WIN32
+    sigset_t sigs;
+#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
     event_t evts[MAX_EVENTS];
     int nevts = 0;
-    sigset_t sigs;
 
     ZERO(evts);
+#endif
     sigemptyset(&sigs);
     sigaddset(&sigs, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &sigs, NULL);
 #ifdef DSP_EPOLL
     do {
 	evtfd = epoll_create(10000);
-evtfd = -1;
     } while (evtfd == -1 && interrupted(errno));
 #elif defined(DSP_KQUEUE)
     timespec ts;
@@ -417,7 +426,7 @@ evtfd = -1;
 	if (shutdown)
 	    break;
 	rlist.push_front(flist);
-#ifndef WIN32
+#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 	count += handleEvents(&evts[0], nevts);
 #endif
 	for (u = 0; u < orset.size(); u++) {
@@ -553,15 +562,15 @@ void Dispatcher::cleanup(void) {
     }
 }
 
-#ifndef WIN32
+#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 uint Dispatcher::handleEvents(void *evts, int nevts) {
     uint count = 0;
 
     for (uint u = 0; u < (uint)nevts; u++) {
+	DispatchSocket *ds;
 	event_t *evt = (event_t *)evts + u;
 #ifdef DSP_EPOLL
-	DispatchSocket *ds = (DispatchSocket *)evt->data.ptr;
-
+	ds = (DispatchSocket *)evt->data.ptr;
 	if (!ds) {
 	    reset();
 	    continue;
@@ -598,8 +607,7 @@ uint Dispatcher::handleEvents(void *evts, int nevts) {
 		ds->flags |= DSP_Closeable;
 	}
 #elif defined(DSP_KQUEUE)
-	DispatchSocket *ds = (DispatchSocket *)evt->udata;
-
+	ds = (DispatchSocket *)evt->udata;
 	if (!ds) {
 	    reset();
 	    continue;

@@ -35,7 +35,7 @@ bool Service::exiting;
 bool Service::restart;
 tstring Service::srvcpath;
 Service *Service::service;
-volatile int Service::sigpid;
+volatile pid_t Service::sigpid;
 tstring Service::ver(T(__DATE__) T(" ") T(__TIME__));
 
 #ifdef __linux__
@@ -1324,7 +1324,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	}
     } while (lckfd == -1);
     ftruncate(lckfd, 0);
-    sprintf(buf, "%d", getpid());
+    sprintf(buf, "%ld", (long)getpid());
     write(lckfd, buf, (uint)strlen(buf));
     for (int i = 1; i < argc; i++) {
 	const tchar *p = argv[i];
@@ -1435,7 +1435,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		dlog.level(Log::None);
 		first = false;
 		lseek(lckfd, 0, SEEK_SET);
-		sprintf(buf, "%d %d", getpid(), child);
+		sprintf(buf, "%ld %ld", (long)getpid(), (long)child);
 		write(lckfd, buf, strlen(buf));
 		lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 		ZERO(fl);
@@ -1487,7 +1487,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 #elif defined(sun)
 			char path[64];
 
-			sprintf(path, "/proc/%u/as", child);
+			sprintf(path, "/proc/%ld/as", (long)child);
 			if (stat(path, &sbuf) != -1)
 			    kb = sbuf.st_size / 1024;
 #endif
@@ -1549,7 +1549,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     } else {
 	ret = Service::onStart(argc, argv);
 	ftruncate(lckfd, 0);
-	sprintf(buf, "%d", sigpid);
+	sprintf(buf, "%ld", (long)sigpid);
 	lseek(lckfd, 0, SEEK_SET);
 	write(lckfd, buf, (uint)strlen(buf));
 	dlog.buffer(buffer);

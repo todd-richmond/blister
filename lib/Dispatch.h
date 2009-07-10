@@ -40,19 +40,10 @@ typedef void (*DispatchObjCB)(DispatchObj *);
  */
 #endif
 
-#define DSP_WAKE_READ
 #ifdef __APPLE__	// some OSX revs won't wake on a 0 byte UDP write
 #define DSP_WAKE_SIZE 1
 #else
 #define DSP_WAKE_SIZE 0
-#endif
-
-#ifdef __linux__
-#define DSP_EPOLL
-#endif
-
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
-#define DSP_KQUEUE
 #endif
 
 class DispatchObjList: nocopy {
