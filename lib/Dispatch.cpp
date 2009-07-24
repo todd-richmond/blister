@@ -85,6 +85,15 @@ typedef epoll_event event_t;
 
 typedef struct kevent event_t;
 
+#elif defined(__sun__)
+
+#define DSP_DEVPOLL
+
+#include <sys/devpoll.h>
+#include <sys/queue.h>
+
+typedef struct pollfd event_t;
+
 #else
 
 #define DSP_POLL
@@ -335,7 +344,7 @@ int Dispatcher::onStart() {
 
 #ifndef _WIN32
     sigset_t sigs;
-#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
+#if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
     event_t evts[MAX_EVENTS];
     int nevts = 0;
 
@@ -344,7 +353,12 @@ int Dispatcher::onStart() {
     sigemptyset(&sigs);
     sigaddset(&sigs, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &sigs, NULL);
-#ifdef DSP_EPOLL
+#ifdef DSP_DEVPOLL
+    do {
+	evtfd = open("/dev/poll", O_RDWR);
+    } while (evtfd == -1 && interrupted(errno));
+evtfd = -1;
+#elif defined(DSP_EPOLL)
     do {
 	evtfd = epoll_create(10000);
     } while (evtfd == -1 && interrupted(errno));
@@ -373,7 +387,14 @@ int Dispatcher::onStart() {
     if (evtfd == -1) {
 	rset.set(isock);
     } else {
-#ifdef DSP_EPOLL
+#ifdef DSP_DEVPOLL
+	evts[0].fd = isock.fd();
+	evts[0].events = POLLIN;
+
+	while (pwrite(evtfd, &evts[0], sizeof (evts[0]), 0) == -1 &&
+	    interrupted(errno))
+	    ;
+#elif defined(DSP_EPOLL)
 	evts[0].events = EPOLLIN;
 	while (epoll_ctl(evtfd, EPOLL_CTL_ADD, isock.fd(), evts) == -1 &&
 	    interrupted(errno))
@@ -409,7 +430,12 @@ int Dispatcher::onStart() {
 		owset.clear();
 	    }
 	} else {
-#ifdef DSP_EPOLL
+#ifdef DSP_DEVPOLL
+	    dvpoll dvp = { evts, MAX_EVENTS, msec };
+
+	    if ((nevts = ioctl(evtfd, DP_POLL, &dvp)) == -1)
+		nevts = 0;
+#elif defined(DSP_EPOLL)
 	    if ((nevts = epoll_wait(evtfd, evts, MAX_EVENTS, msec)) == -1)
 		nevts = 0;
 #elif defined(DSP_KQUEUE)
@@ -426,7 +452,7 @@ int Dispatcher::onStart() {
 	if (shutdown)
 	    break;
 	rlist.push_front(flist);
-#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
+#if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 	count += handleEvents(&evts[0], nevts);
 #endif
 	for (u = 0; u < orset.size(); u++) {
@@ -562,14 +588,55 @@ void Dispatcher::cleanup(void) {
     }
 }
 
-#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
+#if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 uint Dispatcher::handleEvents(void *evts, int nevts) {
     uint count = 0;
 
     for (uint u = 0; u < (uint)nevts; u++) {
 	DispatchSocket *ds;
 	event_t *evt = (event_t *)evts + u;
-#ifdef DSP_EPOLL
+#ifdef DSP_DEVPOLL
+	socketmap::const_iterator sit;
+
+	if (evt->fd == isock) {
+	    reset();
+	    continue;
+	} else if ((sit = smap.find(evt->fd)) == smap.end()) {
+	    continue;
+	}
+	ds = sit->second;
+	if (ds->flags & DSP_Scheduled) {
+	    if (evt->revents & POLLIN)
+		ds->msg = ds->flags & DSP_SelectAccept ? Accept : Read;
+	    if (evt->events & POLLOUT) {
+		if (ds->msg == Nomsg)
+		    ds->msg = Write;
+		else
+		    ds->flags |= DSP_Writeable;
+	    }
+	    if (evt->revents & (POLLERR | POLLHUP)) {
+		if (ds->msg == Nomsg)
+		    ds->msg = Close;
+		else
+		    ds->flags |= DSP_Closeable;
+	    }
+	    ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_Ready;
+	    if (!(ds->flags & DSP_Active)) {
+		if (ds->msg == Accept)
+		    rlist.push_front(ds);
+		else
+		    rlist.push_back(ds);
+		count++;
+	    }
+	} else {
+	    if (evt->events & POLLIN)
+		ds->flags |= DSP_Readable;
+	    if (evt->events & POLLOUT)
+		ds->flags |= DSP_Writeable;
+	    if (evt->events & (POLLERR | POLLHUP))
+		ds->flags |= DSP_Closeable;
+	}
+#elif defined(DSP_EPOLL)
 	ds = (DispatchSocket *)evt->data.ptr;
 	if (!ds) {
 	    reset();
@@ -816,7 +883,16 @@ void Dispatcher::cancelSocket(DispatchSocket &ds) {
 		wset.unset(fd);
 	    ds.flags &= ~DSP_SelectAll;
 	} else if (ds.flags & DSP_SelectAll) {
-#ifdef DSP_EPOLL
+#ifdef DSP_DEVPOLL
+	    lkr.unlock();
+
+	    event_t evt = { ds.fd(), POLLREMOVE, 0 };
+
+	    ds.flags &= ~DSP_SelectAll;
+	    while (pwrite(evtfd, &evt, sizeof (evt), 0) == -1 &&
+		interrupted(errno))
+		;
+#elif defined(DSP_EPOLL)
 	    ds.flags &= ~DSP_SelectAll;
 	    lkr.unlock();
 	    while (epoll_ctl(evtfd, EPOLL_CTL_DEL, fd, 0) == -1 &&
@@ -862,7 +938,12 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 	DSP_SelectAccept, DSP_SelectWrite, DSP_SelectClose, 0, 0, 0
     };
 
-#ifdef DSP_EPOLL
+#ifdef DSP_DEVPOLL
+    static const long sockevts[] = {
+	POLLIN, POLLOUT, POLLIN | POLLOUT, POLLIN, POLLOUT, 0, 0, 0
+    };
+    event_t evt = { ds.fd(), sockevts[m] | POLLERR | POLLHUP, 0 };
+#elif defined(DSP_EPOLL)
     event_t evt;
     int op = EPOLL_CTL_MOD;
     static const long sockevts[] = {
@@ -944,7 +1025,17 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 	    }
 	} else {
 	    lkr.unlock();
-#ifdef DSP_EPOLL
+#ifdef DSP_DEVPOLL
+	/*
+	    if (m == Read || m == ReadWrite || m == Accept || m == Close)
+		evt.events = POLLIN;
+	    if (m == Write || m == ReadWrite || m == Connect)
+		evt.events |= POLLOUT;
+	*/
+	    while (pwrite(evtfd, &evt, sizeof (evt), 0) == -1 &&
+		interrupted(errno))
+		;
+#elif defined(DSP_EPOLL)
 	    while (epoll_ctl(evtfd, op, ds.fd(), &evt) == -1 &&
 		interrupted(errno))
 		;
