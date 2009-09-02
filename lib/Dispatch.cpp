@@ -145,18 +145,6 @@ bool Dispatcher::exec(volatile DispatchObj *&aobj, thread_t tid) {
 	obj->flags = (obj->flags & ~DSP_ReadyAll) | DSP_Active;
 	for (;;) {
 	    lock.unlock();
-#ifdef DSP_WIN32_ASYNC
-	    if (obj->flags & DSP_Socket && obj->msg != Dispatcher::Timeout &&
-		obj->msg != Dispatcher::Nomsg) {
-		DispatchSocket *ds = (DispatchSocket *)obj;
-
-		if (ds->block) {
-		    ds->flags &= ~DSP_SelectAll;
-		    WSAAsyncSelect(ds->fd(), wnd, socketmsg, 0);
-		    ds->blocking(true);
-		}
-	    }
-#endif
 	    if (obj->flags & DSP_Freed) {
 		delete obj;
 		aobj = NULL;
@@ -197,17 +185,16 @@ bool Dispatcher::exec(volatile DispatchObj *&aobj, thread_t tid) {
 
 int Dispatcher::run() {
     volatile DispatchObj *aobj = NULL;
-    Lifo::Waiting waiting(lifo);
     thread_t tid = THREAD_SELF();
+    Lifo::Waiting waiting(lifo);
 
     activeobj.set(&aobj);
     priority(-1);
     lock.lock();
     while (!shutdown) {
-	if (!exec(aobj, tid)) {
-	    if (shutdown || (!lifo.wait(waiting, MAX_WAIT_TIME) && threads > 1))
-		break;
-	}
+	if (!exec(aobj, tid) && (shutdown || !lifo.wait(waiting, threads == 1 ?
+	    INFINITE : MAX_WAIT_TIME)))
+	    break;
     }
     threads--;
     lock.unlock();
@@ -224,9 +211,9 @@ int Dispatcher::onStart() {
     uint count = 0;
     DispatchSocket *ds = NULL;
     DispatchTimer *dt = NULL;
-    timermap::iterator tit;
     MSG msg;
     msec_t now;
+    timermap::iterator tit;
 
     if ((wnd = CreateWindow(DispatchClass, T("Dispatch Window"), 0, 0, 0,
 	CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, GetModuleHandle(NULL), 0)) == NULL) {
@@ -317,7 +304,7 @@ int Dispatcher::onStart() {
 	    continue;
 	}
 	rlist.push_front(flist);
-	wake(count);
+	wake(count, true);
 	lock.unlock();
     }
     lock.lock();
@@ -540,7 +527,7 @@ evtfd = -1;
 		count++;
 	    }
 	}
-	wake(count);
+	wake(count, true);
     }
     cleanup();
     lock.unlock();
@@ -760,29 +747,31 @@ void Dispatcher::stop() {
     waitForMain();
 }
 
-void Dispatcher::wake(uint tasks) {
+void Dispatcher::wake(uint tasks, bool master) {
     if (tasks == 0) {
 	return;
     } else if (maxthreads == 0) {
-	volatile DispatchObj *aobj;
+	if (master) {
+	    volatile DispatchObj *aobj;
 
-	activeobj.set(&aobj);
-	while (!shutdown && exec(aobj, THREAD_ID()))
-	    ;
+	    activeobj.set(&aobj);
+	    while (!shutdown && exec(aobj, THREAD_ID()))
+		;
+	}
     } else {
-	uint cnt = tasks < MAX_WAKE_THREAD ? tasks : MAX_WAKE_THREAD;
-	uint lsz = lifo.size();
 	bool relock = false;
 
-	while (rlist && cnt && lsz--) {
+	if (tasks > MAX_WAKE_THREAD)
+	    tasks = MAX_WAKE_THREAD;
+	while (rlist && tasks && !lifo.empty()) {
+	    tasks--;
 	    lifo.set();
 	    if ((relock = !relock) == false) {
 		lock.unlock();
 		lock.lock();
 	    }
-	    cnt--;
 	}
-	while (rlist && cnt-- && threads < maxthreads && !shutdown) {
+	while (rlist && tasks-- && threads < maxthreads && !shutdown) {
 	    Thread *t;
 
 	    threads++;
@@ -822,8 +811,6 @@ void Dispatcher::addTimer(DispatchTimer &dt, ulong tm) {
     } else {
 	removeTimer(dt);
 	ready(dt);
-	if (!threads)
-	    wake(1);
 	notify = false;
     }
     lock.unlock();
@@ -917,7 +904,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds) {
 		lkr.lock();
 		nevts = handleEvents(&evts[0], nevts);
 		if (nevts > 1)
-		    wake(nevts - 1);
+		    wake(nevts - 1, false);
 	    }
 #endif
 	}
@@ -1063,7 +1050,7 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 		lkr.lock();
 		nevts = handleEvents(&evts[0], nevts);
 		if (nevts > 1)
-		    wake(nevts - 1);
+		    wake(nevts - 1, false);
 	    }
 #endif
 	}
@@ -1122,7 +1109,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
     if (!lifo.empty())
 	lifo.set();
     else if (!threads)
-	wake(1);
+	wake(1, false);
 }
 
 void DispatchObj::detach(void) { flags |= DSP_Detached; }
@@ -1142,22 +1129,22 @@ void DispatchObj::terminate(void) {
 }
 
 DispatchSocket::DispatchSocket(Dispatcher &d, int type, ulong msec):
-    DispatchTimer(d, msec), Socket(type), block(false), mapped(false) {
+    DispatchTimer(d, msec), Socket(type), mapped(false) {
     flags |= DSP_Socket;
 }
 
 DispatchSocket::DispatchSocket(Dispatcher &d, const Socket &s, ulong msec):
-    DispatchTimer(d, msec), Socket(s), block(false), mapped(false) {
+    DispatchTimer(d, msec), Socket(s), mapped(false) {
     flags |= DSP_Socket;
 }
 
 DispatchSocket::DispatchSocket(DispatchObj &parent, int type, ulong msec):
-    DispatchTimer(parent, msec), Socket(type), block(false), mapped(false) {
+    DispatchTimer(parent, msec), Socket(type), mapped(false) {
     flags |= DSP_Socket;
 }
 
 DispatchSocket::DispatchSocket(DispatchObj &parent, const Socket &s, ulong msec):
-    DispatchTimer(parent, msec), Socket(s), block(false), mapped(false) {
+    DispatchTimer(parent, msec), Socket(s), mapped(false) {
     flags |= DSP_Socket;
 }
 
@@ -1166,9 +1153,7 @@ void DispatchClientSocket::connect(const Sockaddr &addr, ulong msec,
     if (!cb)
 	cb = connected;
     bind(Sockaddr(addr.family()));
-#ifndef DSP_WIN32_ASYNC
     blocking(false);
-#endif
     if (Socket::connect(addr)) {
 	msg = Dispatcher::Write;
 	ready(cb);
@@ -1184,12 +1169,6 @@ void DispatchClientSocket::connected() {
     onConnect();
 }
 
-DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
-    int type, bool reuse, int queue, DispatchObjCB cb): DispatchSocket(d,
-    type) {
-    listen(addr, reuse, queue, cb);
-}
-
 bool DispatchListenSocket::listen(const Sockaddr &addr, bool reuse, int queue,
     DispatchObjCB cb) {
     if (!cb)
@@ -1203,18 +1182,24 @@ bool DispatchListenSocket::listen(const Sockaddr &addr, bool reuse, int queue,
     return true;
 }
 
+DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
+    int type, bool reuse, int queue, DispatchObjCB cb): DispatchSocket(d, type)
+    {
+    listen(addr, reuse, queue, cb);
+}
+
 void DispatchListenSocket::connection() {
     Socket s;
-    bool again = true;
 
     if (msg != Dispatcher::Close && accept(s)) {
+	relisten();
 #ifdef __linux__
     	s.blocking(false);
 #endif
 	s.movehigh();
-	again = onAccept(s);
-    }
-    if (again)
+	onAccept(s);
+    } else {
 	relisten();
+    }
 }
 

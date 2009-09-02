@@ -113,7 +113,7 @@ private:
 	recvfrom(isock, buf, sizeof (buf), 0, NULL, NULL);
     }
     int run(void);
-    void wake(uint tasks);
+    void wake(uint tasks, bool master);
     static int worker(void *parm);
 
     Lock lock;
@@ -271,7 +271,7 @@ protected:
 	dspr.selectSocket(*this, to, msg);
     }
 
-    bool block, mapped;
+    bool mapped;
 
     friend class Dispatcher;
 };
@@ -340,7 +340,7 @@ public:
     void relisten() { select(NULL, DSP_PREVIOUS, Dispatcher::Accept); }
 
 protected:
-    virtual bool onAccept(Socket &sock) = 0;
+    virtual void onAccept(Socket &sock) = 0;
 
     Sockaddr sa;
 
@@ -373,7 +373,7 @@ public:
     }
 
 protected:
-    virtual bool onAccept(Socket &sock) {
+    virtual void onAccept(Socket &sock) {
 	S *s = new S(static_cast<D &>(dspr), sock);
 
 	if (s == NULL) {
@@ -382,7 +382,6 @@ protected:
 	    s->detach();
 	    start(*s);
 	}
-	return true;
     }
 
     virtual void start(S &ssock) { ssock.start(); }
