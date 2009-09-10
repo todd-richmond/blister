@@ -30,6 +30,7 @@
 #elif !defined(_WINSOCK2API_)
 #include <winsock2.h>
 #endif
+#include <ws2tcpip.h>
 
 #pragma warning(disable: 4097)
 
@@ -56,8 +57,8 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 
 typedef int socket_t;
 
-inline int sockerrno(void) { return errno; }
 inline int closesocket(socket_t fd) { return ::close(fd); }
+inline int sockerrno(void) { return errno; }
 #endif
 
 #include <errno.h>
@@ -80,58 +81,84 @@ inline bool interrupted(int e) { return e == WSAEINTR; }
  * Socket address class to wrap sockaddr structures and deal with Win32 startup
  * requirements. Currently restricted to IPV4 UDP or TCP addresses
  */
-class Sockaddr: public sockaddr {
+class Sockaddr {
 public:
-    enum Proto { TCP, UDP };
+    enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6  };
 
-    Sockaddr(const sockaddr &s);
-    Sockaddr(ushort family = AF_INET) 
-	{ set((const hostent *)NULL); sa_family = family; }
-    Sockaddr(const tchar *hostport, Proto proto = TCP) { set(hostport, proto); }
-    Sockaddr(const tchar *host, ushort port, Proto proto = TCP)
-	{ set(host, port, proto); }
-    Sockaddr(const tchar *host, const tchar *service, Proto proto = TCP)
-	{ set(host, 0, proto); port(service, proto); }
-    Sockaddr(const hostent *h) { set(h); }
-    Sockaddr(const Sockaddr &s): sockaddr(s) { name = s.name; sz = s.sz; }
-
-    bool operator ==(const Sockaddr &s) const { 
-	return !memcmp((const sockaddr *)this, (const sockaddr *)&s,
-	    sizeof (sockaddr));
+    Sockaddr(const addrinfo *ai) { set(ai); }
+    Sockaddr(const tchar *host, Proto proto = TCP) { set(host, proto); }
+    Sockaddr(const tchar *host, ushort port, Proto proto = TCP) {
+	set(host, port, proto);
     }
-    bool operator !=(const Sockaddr &s) const { return !operator ==(s); }
-    const Sockaddr &operator =(const Sockaddr &s) { name = s.name; sz = s.sz;
-	memcpy((sockaddr *)this, (sockaddr *)&s, sizeof (sockaddr)); return *this; }
-    operator const sockaddr *(void) const { return (sockaddr *)this; }
-    operator const sockaddr_in *() const { return (sockaddr_in *)(sockaddr *)this; }
+    Sockaddr(const tchar *host, const tchar *service, Proto proto = TCP) {
+	set(host, service, proto);
+    }
+    Sockaddr(const hostent *h) { set(h); }
+    Sockaddr(Proto proto = TCP) {
+	ZERO(addr);
+	addr.sa.sa_family = families[proto];
+    }
+    Sockaddr(const sockaddr &sa) { set(sa); }
+    Sockaddr(const Sockaddr &sa) { addr = sa.addr; name = sa.name; }
 
-    dword addr(void) const
-	{ return htonl(((sockaddr_in *)this)->sin_addr.s_addr); }
-    void addr(dword addr)
-	{ ((sockaddr_in *)this)->sin_addr.s_addr = htonl(addr); sz = 4;}
-    ushort family(void) const { return sa_family; }
-    void family(ushort fam) { sa_family = fam; }
+    bool operator ==(const Sockaddr &sa) const { 
+	return !memcmp(&addr, &sa.addr, sizeof (addr));
+    }
+    bool operator !=(const Sockaddr &sa) const { return !operator ==(sa); }
+    const Sockaddr &operator =(const Sockaddr &sa) {
+	addr = sa.addr;
+	name = sa.name;
+	return *this;
+    }
+    operator const sockaddr *() const { return &addr.sa; }
+    operator const sockaddr_in *() const { return &addr.sa4; }
+    operator const sockaddr_in6 *() const { return &addr.sa6; }
+
+    const void *address(void) const {
+	if (family() == AF_INET)
+	    return &addr.sa4.sin_addr;
+	else if (family() == AF_INET6)
+	    return &addr.sa6.sin6_addr;
+	else
+	    return NULL;
+    }
+    void clear() { ZERO(addr); name.clear(); }
+    sockaddr *data(void) { name.clear(); return &addr.sa; }
+    ushort family(void) const { return addr.sa.sa_family; }
+    void family(ushort fam) { addr.sa.sa_family = fam; }
     const tstring &host(void) const;
     bool host(const tchar *host) { return set(host, port()); }
-    const tstring ip(void) const {
-	return achartotstring(inet_ntoa(((const sockaddr_in *)this)->sin_addr));
-    }
-    const tstring str(void) const {
-	tchar buf[12]; tsprintf(buf, T(":%u"), port());
+    const tstring host_port(void) const {
+	tchar buf[12];
+
+	tsprintf(buf, T(":%u"), port());
 	return host() + buf;
     }
-    void *address(void) const;
-    int size(void) const { return sz; }
+    bool ipv4() const { return addr.sa.sa_family == AF_INET; }
+    bool ipv6() const { return addr.sa.sa_family == AF_INET6; }
     ushort port(void) const;
-    bool port(ushort port);
-    bool port(const tchar *service, Proto proto = TCP);
-    bool set(const hostent *h);
+    void port(ushort port);
+    bool service(const tchar *service, Proto proto = TCP);
+    bool set(const addrinfo *h);
+    bool set(const tchar *host, Proto proto = TCP);
     bool set(const tchar *host, ushort port, Proto proto = TCP);
-    bool set(const tchar *hostport, Proto proto = TCP);
-    
+    bool set(const tchar *host, const tchar *svc, Proto proto = TCP)
+	{ return service(svc, proto) && set(host, port(), proto); }
+    bool set(const hostent *h);
+    bool set(const sockaddr &sa);
+    ushort size(void) const { return sizeof (addr); }
+    const tstring str(void) const;
+
+    static ushort families[];
+    static bool dgram(Proto proto) {
+	return proto == UDP || proto == UDP4 || proto == UDP6;
+    }
     static const tstring &hostname(void);
-    static tstring service(ushort port, Proto proto = TCP);
-    
+    static const tstring service_name(ushort port, Proto proto = TCP);
+    static bool stream(Proto proto) {
+	return proto == TCP || proto == TCP4 || proto == TCP6;
+    }
+
 private:
 #ifdef _WIN32
     class SockInit {
@@ -143,17 +170,13 @@ private:
     static SockInit init;
 #endif
 
+    union {
+	sockaddr sa;
+	sockaddr_in sa4;
+	sockaddr_in6 sa6;
+    } addr;
     mutable tstring name;
-    int sz;
-    static const char *protos[];
 };
-
-inline void *Sockaddr::address() const {
-    if (sa_family == AF_INET)
-	return &((sockaddr_in *)(sockaddr *)this)->sin_addr;
-    else
-	return NULL;
-}
 
 inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
     return os << addr.str();
@@ -222,21 +245,21 @@ public:
 
     // socket actions
     bool accept(Socket &sock);
-    bool bind(const Sockaddr &addr, bool reuse = true);
+    bool bind(const Sockaddr &sa, bool reuse = true);
     bool close(void) { return sbuf->close(); }
-    bool connect(const Sockaddr &addr, ulong timeout = SOCK_INFINITE);
+    bool connect(const Sockaddr &sa, ulong timeout = SOCK_INFINITE);
     bool listen(int queue = SOCK_BACKLOG);
-    bool listen(const Sockaddr &addr, bool reuse = true,
-	int queue = SOCK_BACKLOG) {
-	return bind(addr, reuse) && listen(queue);
+    bool listen(const Sockaddr &sa, bool reuse = true, int queue =
+	SOCK_BACKLOG) {
+	return bind(sa, reuse) && listen(queue);
     }
     bool movehigh(void) {
 	return (sbuf->sock = movehigh(sbuf->sock)) != SOCK_INVALID;
     }
     bool open(int family);
-    bool peername(Sockaddr &addr);
-    bool proxysockname(Sockaddr &addr);
-    bool sockname(Sockaddr &addr);
+    bool peername(Sockaddr &sa);
+    bool proxysockname(Sockaddr &sa);
+    bool sockname(Sockaddr &sa);
     bool shutdown(bool in = true, bool out = true);
 
     // get/set socket properties
@@ -299,15 +322,15 @@ public:
     bool wwindow(int size) { return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size); }
 
     int read(void *buf, size_t len) const;
-    int read(void *buf, size_t len, Sockaddr &addr) const;
+    int read(void *buf, size_t len, Sockaddr &sa) const;
     template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
     long readv(iovec *iov, int count) const;
-    long readv(iovec *iov, int count, const Sockaddr &addr) const;
+    long readv(iovec *iov, int count, const Sockaddr &sa) const;
     int write(const void *buf, size_t len) const;
-    int write(const void *buf, size_t len, const Sockaddr &addr) const;
+    int write(const void *buf, size_t len, const Sockaddr &sa) const;
     template<class C> int write(const C &c) const { return write(&c, sizeof (c)); }
     long writev(const iovec *iov, int count) const;
-    long writev(const iovec *iov, int count, const Sockaddr &addr) const;
+    long writev(const iovec *iov, int count, const Sockaddr &sa) const;
 
 protected:
     class SocketBuf {

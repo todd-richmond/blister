@@ -50,163 +50,31 @@ Sockaddr::SockInit Sockaddr::init;
 #endif
 
 #ifndef HOST_NAME_MAX
-#define HOST_NAME_MAX 256
+#define HOST_NAME_MAX 1024
 #endif
 
-const char *Sockaddr::protos[] = { "tcp", "udp" };
-
-Sockaddr::Sockaddr(const sockaddr &s) {
-    *(sockaddr *)this = s;
-    name.erase();
-    if (sa_family == AF_INET)
-	sz = 4;
-    else
-	sz = 0;
-}
-
-bool Sockaddr::set(const hostent *h) {
-    memset((sockaddr *)this, 0, sizeof (sockaddr));
-    if (h) {
-	sa_family = h->h_addrtype;
-	sz = h->h_length;
-	memcpy(&((sockaddr_in *)this)->sin_addr, h->h_addr, sz);
-	name = achartotstring(h->h_name);
-    } else {
-	name.erase();
-	sz = 0;
-    }
-    return true;
-}
-
-bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
-    hostent *h = NULL, hbuf;
-    char buf[512];
-    int err;
-    ulong addr = (ulong)-1;
-    bool ret = false;
-
-    memset((sockaddr *)this, 0, sizeof (sockaddr));
-    if (proto == TCP || proto == UDP) {
-	sa_family = AF_INET;
-	sz = 4;
-    } else {
-	sa_family = AF_UNSPEC;
-	sz = 0;
-    }
-    name.erase();
-    if (host && *host && *host != '*' && tstricmp(host, T("INADDR_ANY"))) {
-	if (istdigit(*host) &&
-	    (addr = inet_addr(tchartoachar(host))) != (ulong)-1) {
-	    ((sockaddr_in *)this)->sin_addr.s_addr = addr;
-	    ret = true;
-	} else {
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__linux__)
-	    gethostbyname_r(tchartoachar(host), &hbuf, buf, sizeof (buf), &h,
-		&err);
-#else
-	    h = gethostbyname_r(tchartoachar(host), &hbuf, buf, sizeof (buf),
-		&err);
-#endif
-	    if (h)
-		ret = set(h);
-	    else
-		((sockaddr_in *)this)->sin_addr.s_addr = (uint)-1;
-	}
-    } else {
-	((sockaddr_in *)this)->sin_addr.s_addr = INADDR_ANY;
-	ret = true;
-    }
-    if (ret)
-	port(portno);
-    return ret;
-}
-
-bool Sockaddr::set(const tchar *hp, Proto proto) {
-    const tchar *p;
-
-    if (!hp) {
-	return set(NULL, 0, proto);
-    } else if ((p = tstrchr(hp, ':')) == NULL) {
-	return set(hp, 0, proto);
-    } else {
-	tstring s(hp);
-
-	s.erase(p - hp);
-	return set(s.c_str(), (ushort)tstrtoul(p + 1, NULL, 10), proto);
-    }
-}
+ushort Sockaddr::families[] = {
+    AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6
+};
 
 const tstring &Sockaddr::host(void) const {
     if (name.empty()) {
-	if (((sockaddr_in *)this)->sin_addr.s_addr == INADDR_ANY) {
-	    name = '*';
-	} else {
-	    char buf[512];
-	    int err;
-	    hostent *h = NULL, hbuf;
+	char buf[NI_MAXHOST];
 
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__linux__)
-	    gethostbyaddr_r((const char *)&((sockaddr_in *)this)->sin_addr,
-		sz, sa_family, &hbuf, buf, sizeof (buf), &h, &err);
-#else
-	    h = gethostbyaddr_r((const char *)&((sockaddr_in *)this)->sin_addr,
-		sz, sa_family, &hbuf, buf, sizeof (buf), &err);
-#endif
-	    if (h)
-		name = achartotstring(h->h_name);
-	    else
-		name = ip();
-	}
+	if (getnameinfo(&addr.sa, sizeof(addr), buf, sizeof (buf), NULL, 0,
+	    NI_NAMEREQD))
+	    name = str();
+	else
+	    name = achartotstring(buf);
     }
     return name;
-}
-
-ushort Sockaddr::port(void) const {
-    if (sa_family == AF_INET)
-	return htons(((const sockaddr_in *)this)->sin_port);
-    else
-	return (ushort)-1;
-}
-
-bool Sockaddr::port(ushort port) {
-    if (sa_family == AF_INET)
-	((sockaddr_in *)this)->sin_port = htons(port);
-    return true;
-}
-
-bool Sockaddr::port(const tchar *service, Proto proto) {
-    char buf[128];
-    struct servent *s = NULL, sbuf;
-
-    (void)buf; (void)sbuf;
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__linux__)
-    getservbyname_r(service, protos[proto], &sbuf, buf, sizeof (buf), &s);
-#elif !defined(_WIN32_WCE)
-    s = getservbyname_r(tchartoachar(service), protos[proto], &sbuf, buf,
-	sizeof (buf));
-#endif
-    port((ushort)(s ? s->s_port : 0));
-    return s != NULL;
-}
-
-tstring Sockaddr::service(ushort port, Proto proto) {
-    tchar buf[128];
-    struct servent *s = NULL, sbuf;
-
-    (void)buf; (void)sbuf;
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__linux__)
-    getservbyport_r(port, protos[proto], &sbuf, buf, sizeof (buf), &s);
-#elif !defined(_WIN32_WCE)
-    s = getservbyport_r(port, protos[proto], &sbuf, buf, sizeof (buf));
-#endif
-    return s ? achartotstring(s->s_name) : T("");
 }
 
 const tstring &Sockaddr::hostname() {
     static tstring name;
 
     if (name.empty()) {
-	char buf[HOST_NAME_MAX];
+	char buf[HOST_NAME_MAX + 1];
 	ulong sz = sizeof (buf);
 
 	if (gethostname(buf, sz)) {
@@ -219,18 +87,205 @@ const tstring &Sockaddr::hostname() {
 	    name = T("localhost");
 #endif
 	} else {
-	    buf[sizeof (buf) - 1] = '\0';
-
-	    hostent *hp = gethostbyname(buf);
+	    Sockaddr sa(achartotstring(buf).c_str());
 	    
-	    name = achartotstring(hp ? hp->h_name : buf);
+	    name = sa.host();
 	}
     }
     return name;
 }
 
-#define VALID_IP(ip) (ip[0] < 256 && ip[1] < 256 && ip[2] < 256 && ip[3] < 256)
+ushort Sockaddr::port(void) const {
+    if (family() == AF_INET)
+	return htons(addr.sa4.sin_port);
+    else if (family() == AF_INET6)
+	return htons(addr.sa6.sin6_port);
+    else
+	return 0;
+}
+
+void Sockaddr::port(ushort port) {
+    if (family() == AF_INET)
+	addr.sa4.sin_port = htons(port);
+    else if (family() == AF_INET6)
+	addr.sa6.sin6_port = htons(port);
+}
+
+bool Sockaddr::set(const addrinfo *ai) {
+    static in6_addr in6_any;
+
+    memcpy(&addr.sa, ai->ai_addr, ai->ai_addrlen);
+    if (ai->ai_canonname)
+	name = achartotstring(ai->ai_canonname);
+    else if ((family() == AF_INET && addr.sa4.sin_addr.s_addr == INADDR_ANY) ||
+	(family() == AF_INET6 && !memcmp(&addr.sa6.sin6_addr, &in6_any,
+	sizeof (in6_any))))
+	name = T("*");
+    else
+	name.erase();
+    return true;
+}
+
+bool Sockaddr::set(const tchar *host, Proto proto) {
+    const tchar *p, *pp;
+
+    if ((p = tstrchr(host, ':')) != NULL) {
+	if ((pp = tstrchr(p + 1, ':')) != NULL) 
+	    p = tstrrchr(pp, ';');
+    }
+    if (p) {
+	tstring s(host);
+
+	s.erase(p - host);
+	return set(s.c_str(), (ushort)tstrtoul(p + 1, NULL, 10), proto);
+    }
+    return set(host, (ushort)0, proto);
+}
+
+bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
+    struct addrinfo *ai, hints;
+    char portstr[8];
+
+    ZERO(addr);
+    ZERO(hints);
+    hints.ai_family = families[proto];
+    hints.ai_socktype = dgram(proto) ? SOCK_DGRAM : SOCK_STREAM;
+    if (!host || !*host || *host == '*') {
+	host = NULL;
+	hints.ai_flags = AI_PASSIVE;
+    } else if (istdigit(*host)) {
+	hints.ai_flags = AI_NUMERICHOST;
+    } else {
+	hints.ai_flags = AI_CANONNAME;
+    }
+    hints.ai_flags |= AI_V4MAPPED;
+    name.erase();
+    sprintf(portstr, "%u", (unsigned)portno);
+    if (getaddrinfo(host ? tchartoachar(host) : NULL, portstr, &hints, &ai))
+	return false;
+    set(ai);
+    freeaddrinfo(ai);
+    return true;
+}
+
+bool Sockaddr::set(const hostent *h) {
+    ZERO(addr);
+    memcpy((void *)address(), h->h_addr, h->h_length);
+    family(h->h_addrtype);
+    name = achartotstring(h->h_name);
+    return true;
+}
+
+bool Sockaddr::set(const sockaddr &sa) {
+    uint len;
+
+    if (sa.sa_family == AF_INET)
+	len = sizeof (sockaddr_in);
+    else if (sa.sa_family == AF_INET6)
+	len = sizeof (sockaddr_in6);
+    else
+	return false;
+    memcpy(&addr.sa, &sa, len);
+    memset((char *)&addr.sa + len, 0, sizeof (addr) - len);
+    return true;
+}
+
+bool Sockaddr::service(const tchar *service, Proto proto) {
+    struct addrinfo *ai, hints;
+
+    ZERO(hints);
+    hints.ai_family = families[proto];
+    hints.ai_socktype = dgram(proto) ? SOCK_DGRAM : SOCK_STREAM;
+    if (getaddrinfo(NULL, tchartoachar(service), &hints, &ai))
+	return false;
+    family((ushort)hints.ai_family);
+    if (family() == AF_INET)
+	port(htons(((sockaddr_in *)ai->ai_addr)->sin_port));
+    else if (family() == AF_INET6)
+	port(htons(((sockaddr_in6 *)ai->ai_addr)->sin6_port));
+    freeaddrinfo(ai);
+    return true;
+}
+
+const tstring Sockaddr::service_name(ushort port, Proto proto) {
+    char buf[NI_MAXSERV];
+    Sockaddr sa(NULL, port, proto);
+
+    if (getnameinfo(sa, sa.size(), NULL, 0, buf, sizeof (buf), dgram(proto) ?
+	NI_DGRAM : 0)) {
+	tchar buf[8];
+
+	tsprintf(buf, T("%u"), (uint)port);
+	return buf;
+    }
+    return achartotstring(buf);
+}
+
+const tstring Sockaddr::str(void) const {
+    // XP does not implement inet_ntop so implment for all cases
+    // inet_ntop(family(), address(), buf, sizeof (buf));
+    if (family() == AF_INET) {
+	return achartotstring(inet_ntoa(addr.sa4.sin_addr));
+    } else if (family() == AF_INET6) {
+	int i;
+	struct { int base, len; } best, cur;
+	char buf[INET6_ADDRSTRLEN + 1], *p = buf;
+	const uchar *u = (const uchar *)&addr.sa6.sin6_addr;
+	const int WORDS = sizeof (addr.sa6.sin6_addr) / sizeof (ushort);
+	uint words[WORDS];
+
+	ZERO(best);
+	ZERO(cur);
+	ZERO(words);
+	for (i = 0; i < (int)sizeof (addr.sa6.sin6_addr); i++)
+	    words[i / 2] |= (u[i] << ((1 - (i % 2)) << 3));
+	best.base = -1;
+	cur.base = -1;
+	for (i = 0; i < WORDS; i++) {
+	    if (words[i] == 0) {
+		if (cur.base == -1)
+		    cur.base = i, cur.len = 1;
+		else
+		    cur.len++;
+	    } else {
+		if (cur.base != -1) {
+		    if (best.base == -1 || cur.len > best.len)
+			best = cur;
+		    cur.base = -1;
+		}
+	    }
+	}
+	if (cur.base != -1 && (best.base == -1 || cur.len > best.len))
+	    best = cur;
+	if (best.base != -1 && best.len < 2)
+	    best.base = -1;
+	for (i = 0; i < WORDS; i++) {
+	    if (best.base != -1 && i >= best.base && i < best.base + best.len) {
+		if (i == best.base)
+		    *p++ = ':';
+		continue;
+	    }
+	    if (i != 0)
+		*p++ = ':';
+	    if (i == 6 && best.base == 0 &&
+		(best.len == 6 || (best.len == 5 && words[5] == 0xffff))) {
+		u = (const uchar *)&addr.sa6.sin6_addr + 12;
+		p += sprintf(p, "%u.%u.%u.%u", u[0], u[1], u[2], u[3]);
+		break;
+	    }
+	    p += sprintf(p, "%x", words[i]);
+	}
+	if (best.base != -1 && (best.base + best.len) == WORDS)
+	    *p++ = ':';
+	*p++ = '\0';
+	return achartotstring(buf);
+    }
+    return T("");
+}
+
+
 #define BUILD_IP(ip) ((ip[0] << 24) | (ip[1] << 16) | (ip[2] << 8) | ip[3])
+#define VALID_IP(ip) (ip[0] < 256 && ip[1] < 256 && ip[2] < 256 && ip[3] < 256)
 
 bool CIDR::add(const tchar *addrs) {
     uint ip1[4], ip2[4];
@@ -277,8 +332,8 @@ bool CIDR::add(const tchar *addrs) {
 bool CIDR::find(const tchar *addr) const {
     uint ip[4];
 
-    return tsscanf(addr, T("%u.%u.%u.%u"), &ip[0], &ip[1], &ip[2], &ip[3]) == 4 &&
-	VALID_IP(ip) && find(BUILD_IP(ip));
+    return tsscanf(addr, T("%u.%u.%u.%u"), &ip[0], &ip[1], &ip[2], &ip[3]) ==
+	4 && VALID_IP(ip) && find(BUILD_IP(ip));
 }
 
 bool CIDR::find(uint addr) const {
@@ -287,8 +342,8 @@ bool CIDR::find(uint addr) const {
 
     range.min = range.max = addr;
     for (it = lower_bound(ranges.begin(), ranges.end(), range, range);
-	it != ranges.end() && (*it).min <= range.min; it++) {
-	if (range.max <= (*it).max)
+	it != ranges.end() && it->min <= range.min; it++) {
+	if (range.max <= it->max)
 	    return true;
     }
     return false;
@@ -315,12 +370,12 @@ const Socket &Socket::operator =(const Socket &r) {
 }
 
 bool Socket::accept(Socket &sock) {
-    sockaddr sa;
-    socklen_t sz = sizeof (sa);
+    Sockaddr sa;
+    socklen_t sz = sa.size();
 
     sock.close();
     do {
-	if (check((sock.sbuf->sock = movehigh(::accept(sbuf->sock, &sa,
+	if (check((sock.sbuf->sock = movehigh(::accept(sbuf->sock, sa.data(),
 	    &sz))) == SOCK_INVALID ? -1 : 0)) {
 	    sock.sbuf->type = sbuf->type;
 	    return true;
@@ -329,34 +384,29 @@ bool Socket::accept(Socket &sock) {
     return false;
 }
 
-bool Socket::bind(const Sockaddr &addr, bool reuse) {
-    if (!*this && !open(addr.family()))
+bool Socket::bind(const Sockaddr &sa, bool reuse) {
+    if (!*this && !open(sa.family()))
 	return false;
     if (reuse && !reuseaddr(true))
 	return false;
-    return check(::bind(sbuf->sock, addr, sizeof (sockaddr)));
+    return check(::bind(sbuf->sock, sa, sa.size()));
 }
 
-bool Socket::connect(const Sockaddr &addr, ulong timeout) {
+bool Socket::connect(const Sockaddr &sa, ulong timeout) {
     bool ret = false;
 
-    if (!*this && !open(addr.family()))
+    if (!*this && !open(sa.family()))
 	return false;
     if (timeout != SOCK_INFINITE)
 	blocking(false);
-    if (check(::connect(sbuf->sock, (sockaddr *)(const sockaddr *)addr,
-	sizeof (sockaddr)))) {
+    if (check(::connect(sbuf->sock, (sockaddr *)(const sockaddr *)sa,
+	sa.size()))) {
 	ret = true;
-    } else {
-	if (blocked()) {
-	    if (timeout > 0 && timeout != SOCK_INFINITE) {
-		SocketSet sset(1), oset(1), eset(1);
+    } else if (blocked() && (timeout > 0 && timeout != SOCK_INFINITE)) {
+	SocketSet sset(1), oset(1), eset(1);
 
-		sset.set(sbuf->sock);
-		ret = sset.oselect(oset, eset, timeout) &&
-		    oset.get(sbuf->sock);
-	    }
-	}
+	sset.set(sbuf->sock);
+	ret = sset.oselect(oset, eset, timeout) && oset.get(sbuf->sock);
     }
     if (timeout != SOCK_INFINITE) {
 	int e = sbuf->err;
@@ -369,7 +419,7 @@ bool Socket::connect(const Sockaddr &addr, ulong timeout) {
 
 const tstring Socket::errstr(void) const {
 #ifdef WIN32
-    char buf[32];
+    tchar buf[32];
 
     tsprintf(buf, T("socket err %d"), sbuf->err);
     return buf;
@@ -453,43 +503,24 @@ bool Socket::linger(ushort sec) {
     return setsockopt(SOL_SOCKET, SO_LINGER, lg);
 }
 
-bool Socket::peername(Sockaddr &addr) {
-    sockaddr sa;
-    socklen_t sz = sizeof (sa);
+bool Socket::peername(Sockaddr &sa) {
+    socklen_t sz = sa.size();
 
-    if (check(getpeername(sbuf->sock, &sa, &sz))) {
-	addr = sa;
-	return true;
-    } else {
-	return false;
-    }
+    return check(getpeername(sbuf->sock, sa.data(), &sz));
 }
 
 #ifdef linux
 #include <linux/netfilter_ipv4.h>
 
-bool Socket::proxysockname(Sockaddr &addr) {
-    sockaddr sa;
-
-    if (check(getsockopt(SOL_IP, SO_ORIGINAL_DST, sa))) {
-	addr = sa;
-	return true;
-    } else {
-	return false;
-    }
+bool Socket::proxysockname(Sockaddr &sa) {
+    return check(getsockopt(SOL_IP, SO_ORIGINAL_DST, sa.data()));
 }
 #endif
 
-bool Socket::sockname(Sockaddr &addr) {
-    sockaddr sa;
-    socklen_t sz = sizeof (sa);
+bool Socket::sockname(Sockaddr &sa) {
+    socklen_t sz = sa.size();
 
-    if (check(getsockname(sbuf->sock, &sa, &sz))) {
-	addr = sa;
-	return true;
-    } else {
-	return false;
-    }
+    return check(getsockname(sbuf->sock, sa.data(), &sz));
 }
 
 bool Socket::rwpoll(bool rd) const {
@@ -525,14 +556,14 @@ int Socket::read(void *buf, size_t sz) const {
     }
 }
 
-int Socket::read(void *buf, size_t sz, Sockaddr &addr) const {
-    socklen_t asz = sizeof (sockaddr);
+int Socket::read(void *buf, size_t sz, Sockaddr &sa) const {
+    socklen_t asz = sa.size();
     int in;
     
     do {
 	if (!rwpoll(true))
 	    return -1;
-	check(in = recvfrom(sbuf->sock, (char *)buf, (SIZE_T)sz, 0, &addr,
+	check(in = recvfrom(sbuf->sock, (char *)buf, (SIZE_T)sz, 0, sa.data(),
 	    &asz));
     } while (interrupted());
     if (in) {
@@ -554,14 +585,14 @@ int Socket::write(const void *buf, size_t sz) const {
     return blocked() ? 0 : out;
 }
 
-int Socket::write(const void *buf, size_t sz, const Sockaddr &addr) const {
+int Socket::write(const void *buf, size_t sz, const Sockaddr &sa) const {
     int out;
     
     do {
 	if (!rwpoll(false))
 	    return -1;
-	check(out = sendto(sbuf->sock, (const char *)buf, (SIZE_T)sz, 0,
-	    &addr, sizeof (sockaddr)));
+	check(out = sendto(sbuf->sock, (const char *)buf, (SIZE_T)sz, 0, sa,
+	    sa.size()));
     } while (interrupted());
     return blocked() ? 0 : out;
 }
@@ -597,18 +628,18 @@ long Socket::writev(const iovec *iov, int count) const {
 #endif
 }
 
-long Socket::writev(const iovec *iov, int count, const Sockaddr &addr) const {
+long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
     long out;
 
 #if defined(_WIN32) && !defined(_WIN32_WCE)
-    check(WSASendTo(sbuf->sock, (WSABUF *)iov, count, (ulong *)&out, 0,
-	&addr, sizeof (sockaddr), NULL, NULL));
+    check(WSASendTo(sbuf->sock, (WSABUF *)iov, count, (ulong *)&out, 0, sa,
+	sa.size(), NULL, NULL));
     return blocked() ? 0 : out;
 #else
     out = 0;
     for (int i = 0; i < count; i++) {
 	if (iov[i].iov_len) {
-	    long len = write(iov[i].iov_base, iov[i].iov_len, addr);
+	    long len = write(iov[i].iov_base, iov[i].iov_len, sa);
 
 	    if (len != (long)iov[i].iov_len) {
 		if (len > 0)

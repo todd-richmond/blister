@@ -73,7 +73,7 @@ uint Dispatcher::socketmsg;
 
 typedef epoll_event event_t;
 
-#elif defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 
 #define DSP_KQUEUE
 
@@ -1148,13 +1148,11 @@ DispatchSocket::DispatchSocket(DispatchObj &parent, const Socket &s, ulong msec)
     flags |= DSP_Socket;
 }
 
-void DispatchClientSocket::connect(const Sockaddr &addr, ulong msec,
-    DispatchObjCB cb) {
+void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB
+    cb) {
     if (!cb)
 	cb = connected;
-    bind(Sockaddr(addr.family()));
-    blocking(false);
-    if (Socket::connect(addr)) {
+    if (open(sa.family()) && blocking(false) && Socket::connect(sa)) {
 	msg = Dispatcher::Write;
 	ready(cb);
     } else if (!blocked()) {
@@ -1169,12 +1167,12 @@ void DispatchClientSocket::connected() {
     onConnect();
 }
 
-bool DispatchListenSocket::listen(const Sockaddr &addr, bool reuse, int queue,
+bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
     DispatchObjCB cb) {
     if (!cb)
 	cb = connection;
-    sa = addr;
-    if (!Socket::listen(addr, reuse, queue))
+    this->sa = sa;
+    if (!Socket::listen(sa, reuse, queue))
 	return false;
     blocking(false);
     msleep(1);
@@ -1182,10 +1180,10 @@ bool DispatchListenSocket::listen(const Sockaddr &addr, bool reuse, int queue,
     return true;
 }
 
-DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
+DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &sa,
     int type, bool reuse, int queue, DispatchObjCB cb): DispatchSocket(d, type)
     {
-    listen(addr, reuse, queue, cb);
+    listen(sa, reuse, queue, cb);
 }
 
 void DispatchListenSocket::connection() {

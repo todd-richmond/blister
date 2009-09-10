@@ -75,13 +75,11 @@ const uchar Log::kv::mustquote[256] = {
 };
 
 void Log::kv::set(const tchar *key, const tchar *val) { 
-    const tchar *p;
-
     s = key;
     s += '=';
     if (!val)
 	return;
-    for (p = val; *p; p++) {
+    for (const tchar *p = val; *p; p++) {
 	if (mustquote[(uchar)*p]) {
 	    s += '"';
 	    for (p = val; *p; p++) {
@@ -740,8 +738,7 @@ void Log::syslog(Level l, const tchar *host, uint fac) {
 	syslogsock.close();
     }
     if (sysloghost.empty() ||
-	!syslogaddr.set(sysloghost.c_str(), 0, Sockaddr::UDP) ||
-	!syslogaddr.port(T("syslog"), Sockaddr::UDP) ||
+	!syslogaddr.set(sysloghost.c_str(), T("syslog"), Sockaddr::UDP) ||
 	!syslogsock.open(AF_INET)) {
 	syslogenable = false;
 	sysloghost.erase();

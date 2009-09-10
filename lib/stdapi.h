@@ -452,28 +452,17 @@ typedef long long int64;
 typedef unsigned long long uint64;
 typedef wchar_t wchar;
 
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__)
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 typedef unsigned short ushort;
 typedef unsigned int uint;
 typedef unsigned long ulong;
 #endif
 
-#if defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__APPLE__) || defined(__sun__)
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun__)
 extern int wcscasecmp(const wchar *, const wchar *);
 #endif
 
 #endif // _WIN32
-
-#if defined(_WIN32) || defined(__APPLE__)
-#define gethostbyname_r(host, buf, a, b, c) \
-	((void)buf, (void)a, (void)b, (void)c, gethostbyname(host))
-#define gethostbyaddr_r(addr, len, type, buf, a, b, c)	\
-	((void)(void)buf, (void)a, (void)b, (void)c, gethostbyaddr(addr, len, type))
-#define getservbyname_r(serv, proto, buf, a, b) \
-	((void)buf, (void)a, (void)b, getservbyname(serv, proto))
-#define getservbyport_r(port, proto, buf, a, b) \
-	((void)buf, (void)a, (void)b, getservbyport(port, proto))
-#endif
 
 #ifdef _UNICODE
 #ifndef UNICODE
