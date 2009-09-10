@@ -33,44 +33,44 @@ extern "C" {
 
 const wstring _achartowstring(const char *s, int len) {
     wchar sbuf[512];
-    wstring ret;
     int sz;
     
-    if (len) {
-	if ((sz = MultiByteToWideChar(CP_ACP, 0, s, len, sbuf, sizeof (sbuf) /
-	    sizeof (wchar))) > 0) {
-	    ret.assign(sbuf, sz - 1);
-	} else {
-	    sz = MultiByteToWideChar(CP_ACP, 0, s, len, NULL, 0);
+    if (len == 0) {
+	return L"";
+    } else if ((sz = MultiByteToWideChar(CP_ACP, 0, s, len, sbuf,
+	sizeof (sbuf) / sizeof (wchar))) > 0) {
+	return sbuf;
+    } else {
+	sz = MultiByteToWideChar(CP_ACP, 0, s, len, NULL, 0);
 
-	    wchar *buf = new wchar[sz];
+	wchar *buf = new wchar[sz];
+	wstring ret;
     	
-	    MultiByteToWideChar(CP_ACP, 0, s, len, buf, sz);
-	    ret.assign(buf, sz - 1);
-	    delete [] buf;
-	}
+	MultiByteToWideChar(CP_ACP, 0, s, len, buf, sz);
+	ret.assign(buf, sz - 1);
+	delete [] buf;
+	return ret;
     }
-    return ret;
 }
 
 const string _wchartoastring(const wchar *s, int len) {
     char sbuf[1024];
-    string ret;
     int sz;
 
-    if (len) {
-	if ((sz = WideCharToMultiByte(CP_ACP, 0, s, len, sbuf, sizeof (sbuf),
-	    NULL, NULL)) > 0) {
-	    ret.assign(sbuf, sz - 1);
-	} else {
-	    sz = WideCharToMultiByte(CP_ACP, 0, s, len, NULL, 0, NULL, NULL);
+    if (len == 0) {
+	return "";
+    } else if ((sz = WideCharToMultiByte(CP_ACP, 0, s, len, sbuf, sizeof (sbuf),
+	NULL, NULL)) > 0) {
+	return sbuf;
+    } else {
+	sz = WideCharToMultiByte(CP_ACP, 0, s, len, NULL, 0, NULL, NULL);
 
-	    char *buf = new char[sz];
+	char *buf = new char[sz];
+	string ret;
 
-	    WideCharToMultiByte(CP_ACP, 0, s, len, buf, len, NULL, NULL);
-	    ret.assign(buf, sz - 1);
-	    delete [] buf;
-	}
+	WideCharToMultiByte(CP_ACP, 0, s, len, buf, len, NULL, NULL);
+	ret.assign(buf, sz - 1);
+	delete [] buf;
+	return ret;
     }
-    return ret;
 }
