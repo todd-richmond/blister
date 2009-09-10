@@ -49,10 +49,6 @@ Sockaddr::SockInit Sockaddr::init;
 
 #endif
 
-#ifndef HOST_NAME_MAX
-#define HOST_NAME_MAX 1024
-#endif
-
 ushort Sockaddr::families[] = {
     AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6
 };
@@ -74,7 +70,7 @@ const tstring &Sockaddr::hostname() {
     static tstring name;
 
     if (name.empty()) {
-	char buf[HOST_NAME_MAX + 1];
+	char buf[NI_MAXHOST];
 	ulong sz = sizeof (buf);
 
 	if (gethostname(buf, sz)) {
@@ -513,7 +509,7 @@ bool Socket::peername(Sockaddr &sa) {
 #include <linux/netfilter_ipv4.h>
 
 bool Socket::proxysockname(Sockaddr &sa) {
-    return check(getsockopt(SOL_IP, SO_ORIGINAL_DST, sa.data()));
+    return check(getsockopt(SOL_IP, SO_ORIGINAL_DST, *(sockaddr *)sa.data()));
 }
 #endif
 
