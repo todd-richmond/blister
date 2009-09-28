@@ -55,56 +55,59 @@ static Log &_dlog(void) {
 
 Log &dlog = _dlog();
 
-const uchar Log::kv::mustquote[256] = {
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // DLE - US
-    1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // SPACE - /
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0 - ?
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // @ - O
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,  // P - _
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // ` - o
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // high bits
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-};
+void Log::kv::set(const tchar *key, const tchar *val) {
+    const tchar *p;
+    static const uchar quote[256] = {
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // DLE - US
+	1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // SPACE - /
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0 - ?
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // @ - O
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,  // P - _
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // ` - o
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // high bits
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    };
 
-void Log::kv::set(const tchar *key, const tchar *val) { 
     s = key;
     s += '=';
     if (!val)
 	return;
-    for (const tchar *p = val; *p; p++) {
-	if (mustquote[(uchar)*p]) {
+    for (p = val; *p; p++) {
+	if (quote[(uchar)*p]) {
 	    s += '"';
 	    for (p = val; *p; p++) {
-		if (*p == '"') {
+		uchar c = (uchar)*p;
+
+		if (c == '"') {
 		    s += T("\\\"");
-		} else if (*p == '\\') {
+		} else if (c == '\\') {
 		    s += T("\\\\");
-		} else if (*p == '\n') {
+		} else if (c == '\n') {
 		    s += T("\\n");
-		} else if (*p == '\r') {
+		} else if (c == '\r') {
 		    s += T("\\r");
-		} else if ((uchar)*p < ' ' && *p != '\t') {
+		} else if ((uchar)c < ' ' && c != '\t') {
 		    tchar tmp[5];
 
-		    tsprintf(tmp, T("\\%03o"), *p);
+		    tsprintf(tmp, T("\\%03o"), (uint)c);
 		    s += tmp;
 		} else {
-		    s += *p;
+		    s += c;
 		}
 	    }
 	    s += '"';
 	    return;
 	}
     }
-    s += val;
+    s.append(val, p - val);
 }
 
 int Log::FlushThread::onStart(void) {
@@ -492,9 +495,8 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	strbuf += ' ';
     }
     if (_type == KeyVal) {
-	tstring txt;
+	tstring txt(tlsd.strm.str(), sz);
 
-	txt.assign(tlsd.strm.str(), sz);
 	strbuf += kv(T("txt"), txt.c_str()).str();
     } else {
 	for (const tchar *p = tlsd.strm.str(); sz--; p++) {
@@ -542,8 +544,8 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     }
     lck.unlock();
     strbuf.erase(strbuf.size() - 1);
-    tlsd.suppress = true;
     tlsd.clvl = None;
+    tlsd.suppress = true;
 #ifndef _WIN32_WCE
     if (syslogenable && clvl <= sysloglvl) {
 	string ss;

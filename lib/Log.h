@@ -82,7 +82,6 @@ public:
 
     private:
 	tstring s;
-	static const uchar mustquote[];
 
 	void set(const tchar *k, const tchar *v);
     };
@@ -109,6 +108,8 @@ public:
 	ulong sz = 10 * 1024 * 1024, ulong tm = 0);
     const tchar *filename(void) const { return ffd.filename(); }
     const tchar *filepath(void) const { return ffd.pathname(); }
+    const tchar *format(void) const { return fmt.c_str(); }
+    void format(const tchar *s);
     bool gmttime(void) const { return gmt; }
     void gmttime(bool b) { gmt = b; }
     Level level(void) const { return lvl; }
@@ -124,13 +125,10 @@ public:
     void syslog(Level l, const tchar *host = NULL, uint fac = 1);
     uint syslogfacility(void) const { return syslogfac; }
     void syslogfacility(uint fac) { syslogfac = fac; }
-    const tchar *format(void) const { return fmt.c_str(); }
-    void format(const tchar *s);
     Type type(void) const { return _type; }
     void type(Type t) { _type = t; }
 
     bool close(void);
-    Level &curlvl(void) const { return tls->clvl; }
     Log &endlog(void) {
         Tlsdata &tlsd(*tls);
 
@@ -327,8 +325,7 @@ private:
 };
 
 inline tostream &operator <<(tostream &os, const Log::kv &kv) {
-    os << kv.str();
-    return os;
+    return os << kv.str();
 }
 
 inline Log &operator <<(Log &l, Log &(*manip)(Log &)) { return manip(l); }
@@ -336,37 +333,40 @@ inline Log &endlog(Log &l) { return l.endlog(); }
 
 extern Log &dlog;
 
-#define DLOGL(l, args) { if (l <= dlog.level()) dlog << l << args << endlog; }
-#define DLOGM(args) DLOGL(Log::Emerg, args);
-#define DLOGA(args) DLOGL(Log::Alert, args);
-#define DLOGC(args) DLOGL(Log::Crit, args);
-#define DLOGE(args) DLOGL(Log::Err, args);
-#define DLOGW(args) DLOGL(Log::Warn, args);
-#define DLOGN(args) DLOGL(Log::Note, args);
-#define DLOGI(args) DLOGL(Log::Info, args);
-#define DLOGD(args) DLOGL(Log::Debug, args);
-#define DLOGT(args) DLOGL(Log::Trace, args);
+#define LOGL(l, lvl, args) { if (lvl <= l.level()) l << lvl << args << endlog; }
+#define DLOGL(lvl, args) LOGL(dlog, lvl, args)
+#define DLOGM(args)	DLOGL(Log::Emerg, args);
+#define DLOGA(args)	DLOGL(Log::Alert, args);
+#define DLOGC(args)	DLOGL(Log::Crit, args);
+#define DLOGE(args)	DLOGL(Log::Err, args);
+#define DLOGW(args)	DLOGL(Log::Warn, args);
+#define DLOGN(args)	DLOGL(Log::Note, args);
+#define DLOGI(args)	DLOGL(Log::Info, args);
+#define DLOGD(args)	DLOGL(Log::Debug, args);
+#define DLOGT(args)	DLOGL(Log::Trace, args);
 
-#define dlogl(l, ...) { if (l <= dlog.level()) dlog.log(l, __VA_ARGS__); }
-#define dlogm(...) dlogl(Log::Emerg, __VA_ARGS__);
-#define dloga(...) dlogl(Log::Alert, __VA_ARGS__);
-#define dlogc(...) dlogl(Log::Crit, __VA_ARGS__);
-#define dloge(...) dlogl(Log::Err, __VA_ARGS__);
-#define dlogw(...) dlogl(Log::Warn, __VA_ARGS__);
-#define dlogn(...) dlogl(Log::Note, __VA_ARGS__);
-#define dlogi(...) dlogl(Log::Info, __VA_ARGS__);
-#define dlogd(...) dlogl(Log::Debug, __VA_ARGS__);
-#define dlogt(...) dlogl(Log::Trace, __VA_ARGS__);
+#define logl(l, lvl, ...) { if (lvl <= l.level()) l.log(lvl, __VA_ARGS__); }
+#define dlogl(lvl, ...) logl(dlog, lvl, __VA_ARGS__)
+#define dlogm(...)	dlogl(Log::Emerg, __VA_ARGS__);
+#define dloga(...)	dlogl(Log::Alert, __VA_ARGS__);
+#define dlogc(...)	dlogl(Log::Crit, __VA_ARGS__);
+#define dloge(...)	dlogl(Log::Err, __VA_ARGS__);
+#define dlogw(...)	dlogl(Log::Warn, __VA_ARGS__);
+#define dlogn(...)	dlogl(Log::Note, __VA_ARGS__);
+#define dlogi(...)	dlogl(Log::Info, __VA_ARGS__);
+#define dlogd(...)	dlogl(Log::Debug, __VA_ARGS__);
+#define dlogt(...)	dlogl(Log::Trace, __VA_ARGS__);
 
-#define dlogvl(l, ...) { if (l <= dlog.level()) dlog.logv(l, __VA_ARGS__, NULL); }
-#define dlogvm(...) dlogvl(Log::Emerg, __VA_ARGS__);
-#define dlogva(...) dlogvl(Log::Alert, __VA_ARGS__);
-#define dlogvc(...) dlogvl(Log::Crit, __VA_ARGS__);
-#define dlogve(...) dlogvl(Log::Err, __VA_ARGS__);
-#define dlogvw(...) dlogvl(Log::Warn, __VA_ARGS__);
-#define dlogvn(...) dlogvl(Log::Note, __VA_ARGS__);
-#define dlogvi(...) dlogvl(Log::Info, __VA_ARGS__);
-#define dlogvd(...) dlogvl(Log::Debug, __VA_ARGS__);
-#define dlogvt(...) dlogvl(Log::Trace, __VA_ARGS__);
+#define loglv(l, lvl, ...) { if (lvl <= l.level()) l.logv(lvl, __VA_ARGS__, NULL); }
+#define dloglv(lvl, ...) loglv(dlog, lvl, __VA_ARGS__)
+#define dlogmv(...)	dloglv(Log::Emerg, __VA_ARGS__);
+#define dlogav(...)	dloglv(Log::Alert, __VA_ARGS__);
+#define dlogcv(...)	dloglv(Log::Crit, __VA_ARGS__);
+#define dlogev(...)	dloglv(Log::Err, __VA_ARGS__);
+#define dlogwv(...)	dloglv(Log::Warn, __VA_ARGS__);
+#define dlognv(...)	dloglv(Log::Note, __VA_ARGS__);
+#define dlogiv(...)	dloglv(Log::Info, __VA_ARGS__);
+#define dlogdv(...)	dloglv(Log::Debug, __VA_ARGS__);
+#define dlogtv(...)	dlog(vLog::Trace, __VA_ARGS__);
 
 #endif // _Log_h
