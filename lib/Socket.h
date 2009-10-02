@@ -121,7 +121,8 @@ public:
     void family(ushort fam) { addr.sa.sa_family = fam; }
     const tstring &host(void) const;
     bool host(const tchar *host, Proto proto = TCP) {
-	return port() ? set(host, port(), proto) : set(host, (char *)NULL, proto);
+	return port() ? set(host, port(), proto) : set(host, (tchar *)NULL,
+	    proto);
     }
     const tstring host_port(void) const;
     bool ipv4() const { return addr.sa.sa_family == AF_INET; }
