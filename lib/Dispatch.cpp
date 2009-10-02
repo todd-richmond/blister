@@ -323,7 +323,7 @@ int Dispatcher::onStart() {
     DispatchSocket *ds = NULL;
     DispatchTimer *dt = NULL;
     SocketSet irset, iwset, orset, owset, oeset;
-    ulong msec;
+    uint msec;
     msec_t now;
     socketmap::const_iterator sit;
     timermap::iterator tit;
@@ -402,17 +402,17 @@ evtfd = -1;
 	    iwset = wset;
 	}
 	if ((tit = timers.begin()) == timers.end()) {
-	    msec = count ? MAX_SELECT_TIMER : DSP_NEVER_DUE;
+	    msec = count ? MAX_SELECT_TIMER : SOCK_INFINITE;
 	    due = count ? (now + MAX_SELECT_TIMER) : DSP_NEVER_DUE;
 	} else {
 	    dt = tit->second;
-	    msec = dt->due > now ? (ulong)(dt->due - now) : 0;
+	    msec = dt->due > now ? (uint)(dt->due - now) : 0;
 	    due = now + msec;
 	}
 	polling = true;
 	lock.unlock();
 	if (evtfd == -1) {
-	    if (!SocketSet::ioselect(irset, orset, iwset, owset, oeset, msec)) {
+	    if (!SocketSet::iopoll(irset, orset, iwset, owset, oeset, msec)) {
 		orset.clear();
 		owset.clear();
 	    }
@@ -428,7 +428,8 @@ evtfd = -1;
 #elif defined(DSP_KQUEUE)
 	    ts.tv_sec = msec / 1000;
 	    ts.tv_nsec = (msec % 1000) * 1000;
-	    if ((nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, &ts)) == -1)
+	    if ((nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, msec ==
+		SOCK_INFINITE ? NULL : &ts)) == -1)
 		nevts = 0;
 #endif
 	}
@@ -912,7 +913,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds) {
     }
 }
 
-void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
+void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, Msg m) {
     uint flags;
     msec_t now = milliticks();
     static uint ioarray[] = {
@@ -1013,12 +1014,12 @@ void Dispatcher::selectSocket(DispatchSocket &ds, ulong tm, Msg m) {
 	} else {
 	    lkr.unlock();
 #ifdef DSP_DEVPOLL
-	/*
+	    /*
 	    if (m == Read || m == ReadWrite || m == Accept || m == Close)
 		evt.events = POLLIN;
 	    if (m == Write || m == ReadWrite || m == Connect)
 		evt.events |= POLLOUT;
-	*/
+	    */
 	    while (pwrite(evtfd, &evt, sizeof (evt), 0) == -1 &&
 		interrupted(errno))
 		;
@@ -1159,7 +1160,7 @@ void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB
 	msg = Dispatcher::Close;
 	ready(cb);
     } else {
-	select(cb, msec, Dispatcher::Connect);
+	poll(cb, msec, Dispatcher::Connect);
     }
 }
 
@@ -1176,7 +1177,7 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
 	return false;
     blocking(false);
     msleep(1);
-    select(cb, DSP_NEVER, Dispatcher::Accept);
+    poll(cb, DSP_NEVER, Dispatcher::Accept);
     return true;
 }
 

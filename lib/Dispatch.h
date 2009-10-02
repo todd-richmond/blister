@@ -102,7 +102,7 @@ private:
 
     friend class DispatchSocket;
     void cancelSocket(DispatchSocket &ds);
-    void selectSocket(DispatchSocket &ds, ulong timeout, Msg msg);
+    void pollSocket(DispatchSocket &ds, ulong timeout, Msg msg);
 
     void cleanup(void);
     bool exec(volatile DispatchObj *&aobj, thread_t tid);
@@ -264,11 +264,11 @@ public:
     virtual void cancel(void) { dspr.cancelSocket(*this); }
 
 protected:
-    void select(DispatchObjCB cb, ulong msec, Dispatcher::Msg msg) {
+    void poll(DispatchObjCB cb, ulong msec, Dispatcher::Msg msg) {
 	callback(cb);
 	if (msec != DSP_PREVIOUS)
 	    to = msec;
-	dspr.selectSocket(*this, to, msg);
+	dspr.pollSocket(*this, to, msg);
     }
 
     bool mapped;
@@ -288,13 +288,13 @@ public:
 	DSP_NEVER): DispatchSocket(parent, sock) {}
 
     void closeable(DispatchObjCB cb = NULL, ulong msec = 15000)
-	{ select(cb, msec, Dispatcher::Close); }
+	{ poll(cb, msec, Dispatcher::Close); }
     void readable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
-	{ select(cb, msec, Dispatcher::Read); }
+	{ poll(cb, msec, Dispatcher::Read); }
     void writeable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
-	{ select(cb, msec, Dispatcher::Write); }
+	{ poll(cb, msec, Dispatcher::Write); }
     void rwable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
-	{ select(cb, msec, Dispatcher::ReadWrite); }
+	{ poll(cb, msec, Dispatcher::ReadWrite); }
 };
 
 class DispatchClientSocket: public DispatchIOSocket {
@@ -337,7 +337,7 @@ public:
     const Sockaddr address(void) { return sa; }
     bool listen(const Sockaddr &addr, bool reuse = true, int queue =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL);
-    void relisten() { select(NULL, DSP_PREVIOUS, Dispatcher::Accept); }
+    void relisten() { poll(NULL, DSP_PREVIOUS, Dispatcher::Accept); }
 
 protected:
     virtual void onAccept(Socket &sock) = 0;

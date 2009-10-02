@@ -67,7 +67,7 @@ inline int sockerrno(void) { return errno; }
 
 const int SOCK_BACKLOG = 128;
 const int SOCK_BUFSZ = 3 * 1024;
-const ulong SOCK_INFINITE = (ulong)-1;
+const ulong SOCK_INFINITE = (uint)-1;
 const socket_t SOCK_INVALID = INVALID_SOCKET;
 
 inline bool blocked(int e) {
@@ -114,26 +114,16 @@ public:
     operator const sockaddr_in *() const { return &addr.sa4; }
     operator const sockaddr_in6 *() const { return &addr.sa6; }
 
-    const void *address(void) const {
-	if (family() == AF_INET)
-	    return &addr.sa4.sin_addr;
-	else if (family() == AF_INET6)
-	    return &addr.sa6.sin6_addr;
-	else
-	    return NULL;
-    }
+    const void *address(void) const;
     void clear() { ZERO(addr); name.clear(); }
     sockaddr *data(void) { name.clear(); return &addr.sa; }
     ushort family(void) const { return addr.sa.sa_family; }
     void family(ushort fam) { addr.sa.sa_family = fam; }
     const tstring &host(void) const;
-    bool host(const tchar *host) { return set(host, port()); }
-    const tstring host_port(void) const {
-	tchar buf[12];
-
-	tsprintf(buf, T(":%u"), port());
-	return host() + buf;
+    bool host(const tchar *host, Proto proto = TCP) {
+	return port() ? set(host, port(), proto) : set(host, (char *)NULL, proto);
     }
+    const tstring host_port(void) const;
     bool ipv4() const { return addr.sa.sa_family == AF_INET; }
     bool ipv6() const { return addr.sa.sa_family == AF_INET6; }
     ushort port(void) const;
@@ -142,11 +132,10 @@ public:
     bool set(const addrinfo *h);
     bool set(const tchar *host, Proto proto = TCP);
     bool set(const tchar *host, ushort port, Proto proto = TCP);
-    bool set(const tchar *host, const tchar *svc, Proto proto = TCP)
-	{ return service(svc, proto) && set(host, port(), proto); }
+    bool set(const tchar *host, const tchar *service, Proto proto = TCP);
     bool set(const hostent *h);
     bool set(const sockaddr &sa);
-    ushort size(void) const { return sizeof (addr); }
+    ushort size(void) const { return size(family()); }
     const tstring str(void) const;
 
     static ushort families[];
@@ -155,6 +144,8 @@ public:
     }
     static const tstring &hostname(void);
     static const tstring service_name(ushort port, Proto proto = TCP);
+    static ushort service_port(const tchar *service, Proto proto = TCP);
+    static ushort size(ushort family);
     static bool stream(Proto proto) {
 	return proto == TCP || proto == TCP4 || proto == TCP6;
     }
@@ -247,7 +238,7 @@ public:
     bool accept(Socket &sock);
     bool bind(const Sockaddr &sa, bool reuse = true);
     bool close(void) { return sbuf->close(); }
-    bool connect(const Sockaddr &sa, ulong timeout = SOCK_INFINITE);
+    bool connect(const Sockaddr &sa, uint msec = SOCK_INFINITE);
     bool listen(int queue = SOCK_BACKLOG);
     bool listen(const Sockaddr &sa, bool reuse = true, int queue =
 	SOCK_BACKLOG) {
@@ -302,15 +293,15 @@ public:
     bool rlowater(int size) { return setsockopt(SOL_SOCKET, SO_RCVLOWAT, size); }
     int wlowater( void) const { return getsockopt(SOL_SOCKET, SO_SNDLOWAT); }
     bool wlowater(int size) { return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size); }
-    ulong rtimeout(void) const { return sbuf->rto; }
-    bool rtimeout(ulong msec) { sbuf->rto = msec; return true; }
+    uint rtimeout(void) const { return sbuf->rto; }
+    bool rtimeout(uint msec) { sbuf->rto = msec; return true; }
     bool rtimeout(const timeval &tv) {
 	if (!setsockopt(SOL_SOCKET, SO_RCVTIMEO, tv))
 	    rtimeout(tv.tv_sec * 1000 + tv.tv_usec / 1000);
 	return true;
     }
-    ulong wtimeout(void) const { return sbuf->wto; }
-    bool wtimeout(ulong msec) { sbuf->wto = msec; return true; }
+    uint wtimeout(void) const { return sbuf->wto; }
+    bool wtimeout(uint msec) { sbuf->wto = msec; return true; }
     bool wtimeout(const timeval &tv) {
 	if (!setsockopt(SOL_SOCKET, SO_SNDTIMEO, tv))
 	    wtimeout(tv.tv_sec * 1000 + tv.tv_usec / 1000);
@@ -367,9 +358,9 @@ protected:
 	mutable int err;
 	bool own;
 	socket_t sock;
-	ulong rto;
+	uint rto;
 	int type;
-	ulong wto;
+	uint wto;
 
 	friend class Socket;
     };
@@ -407,14 +398,14 @@ public:
     bool set(const Socket &sock) { return set(sock.fd()); }
     bool unset(socket_t fd);
     bool unset(const Socket &sock) { return unset(sock.fd()); }
-    bool iselect(SocketSet &iset, SocketSet &eset, ulong msec = SOCK_INFINITE);
-    bool ioselect(SocketSet &iset, SocketSet &oset, SocketSet &eset,
-	ulong msec = SOCK_INFINITE);
-    bool oselect(SocketSet &oset, SocketSet &eset, ulong msec = SOCK_INFINITE);
+    bool ipoll(SocketSet &iset, SocketSet &eset, uint msec = SOCK_INFINITE);
+    bool iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
+	uint msec = SOCK_INFINITE);
+    bool opoll(SocketSet &oset, SocketSet &eset, uint msec = SOCK_INFINITE);
     
-    static bool ioselect(const SocketSet &rset, SocketSet &iset,
+    static bool iopoll(const SocketSet &rset, SocketSet &iset,
 	const SocketSet &wset, SocketSet &oset, SocketSet &eset,
-	ulong msec = SOCK_INFINITE);
+	uint msec = SOCK_INFINITE);
     
 private:
 #ifdef _WIN32
