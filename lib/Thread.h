@@ -72,7 +72,11 @@ typedef pthread_t thread_t;
 #define THREAD_ID()		pthread_self()
 #define THREAD_YIELD()		sched_yield()
 
-#if __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 1)
+#if defined(__arm__)
+
+#define NO_ATOMIC_OPS
+
+#elif __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 1)
 #if __GNUC__ < 4
 #include <bits/atomicity.h>
 #else
@@ -123,6 +127,7 @@ typedef pthread_key_t tlskey_t;
 class Thread;
 class ThreadGroup;
 
+/* Locking templates that unlock upon destruction */
 template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
 class LockerTemplate: nocopy {
 public:
@@ -148,6 +153,10 @@ private:
     C &lck;
 };
 
+/*
+ * The DLLibrary class loads shared libraries and dynamically fetches function
+ * pointers. Do not specify file extensions in the constructor
+ */
 class DLLibrary: nocopy {
 public:
     DLLibrary(const tchar *dll = NULL): hdl(0) { open(dll); }
@@ -168,20 +177,7 @@ private:
     tstring file;
 };
 
-class RefCount: nocopy {
-public:
-    RefCount(uint init = 1): count(init) {}
-
-    operator bool(void) const { return atomic_get(count) != 0; }
-    bool referenced(void) const { return atomic_get(count) != 0; }
-
-    void add(void) { atomic_ref(count); }
-    bool release(void) { return atomic_rel(count) != 0; }
-
-private:
-    mutable atomic_t count;
-};
-
+/* Thread local storage for simple types */
 template<class C>
 class ThreadLocal: nocopy {
 public:
@@ -206,6 +202,7 @@ protected:
     C data(void) const { return (C)tls_get(key); }
 };
 
+/* Thread local storage for classes with proper destruction when theads exit */
 template<class C>
 class ThreadLocalClass: public ThreadLocal<C *> {
 public:
@@ -221,6 +218,16 @@ public:
 	return *c;
     }
 };
+
+/*
+ * Thread synchronization classes
+ *
+ * SpinLock: fastest possible lock, but cannot wait for extended periods
+ * Lock: fast lock that may spin before sleeping
+ * Mutex: lock that does not spin before sleeping
+ * RWLock: reader/writer lock
+ * CondVar: condition variable around a Lock
+ */
 
 #ifdef _WIN32
 #define msleep(msec)   Sleep(msec)
@@ -425,7 +432,7 @@ public:
     operator pthread_mutex_t *() { return &mtx; }
 
     void lock(void) { pthread_mutex_lock(&mtx); }
-    bool trylock(void) { return pthread_mutex_trylock(&mtx); }
+    bool trylock(void) { return pthread_mutex_trylock(&mtx) == 0; }
     void unlock(void) { pthread_mutex_unlock(&mtx); }
 
 protected:
@@ -439,8 +446,8 @@ public:
     Condvar(Lock &lck): lock(lck) { pthread_cond_init(&cv, NULL); }
     ~Condvar() { pthread_cond_destroy(&cv); }
     
-    void set(uint count = 1) { while (count--) pthread_cond_signal(&cv); }
     void broadcast(void) { pthread_cond_broadcast(&cv); }
+    void set(uint count = 1) { while (count--) pthread_cond_signal(&cv); }
     bool wait(ulong msec = INFINITE, bool hipri = false) {
     	if (msec == INFINITE) {
 	    return pthread_cond_wait(&cv, lock) == 0;
@@ -488,6 +495,9 @@ inline void *DLLibrary::get(const tchar *symbol) const {
 }
 
 #endif
+
+typedef LockerTemplate<Lock> Locker;
+typedef FastLockerTemplate<Lock> FastLocker;
 
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 
@@ -549,7 +559,7 @@ private:
     CRITICAL_SECTION csec;
 };
 
-#else
+#elif !defined(NO_ATOMIC_OPS)
 
 class SpinLock: nocopy {
 public:
@@ -576,11 +586,30 @@ private:
     uint spins;
 };
 
+#elif defined(__arm__)
+
+class SpinLock: nocopy {
+public:
+    SpinLock() { pthread_spin_init(&lck, NULL); }
+    ~SpinLock() { pthread_spin_destroy(&lck); }
+
+    operator pthread_spinlock_t *() { return &lck; }
+
+    void lock(void) { pthread_spin_lock(&lck); }
+    bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
+    void unlock(void) { pthread_spin_unlock(&lck); }
+
+protected:
+    pthread_spinlock_t lck;
+};
+
+#else
+
+#error no spinlock mechanism defined
+
 #endif
 
-typedef LockerTemplate<Lock> Locker;
 typedef LockerTemplate<SpinLock> SpinLocker;
-typedef FastLockerTemplate<Lock> FastLocker;
 typedef FastLockerTemplate<SpinLock> FastSpinLocker;
 
 class RWLock: nocopy {
@@ -661,6 +690,41 @@ typedef LockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> WLocker;
 typedef FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> FastRLocker;
 typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker;
 
+/* Fast reference counter class */
+#ifdef NO_ATOMIC_OPS
+class RefCount: nocopy {
+public:
+    RefCount(uint init = 1): cnt(init) {}
+
+    operator bool(void) const { return referenced(); }
+    bool referenced(void) const { FastSpinLocker lkr(lck); return cnt != 0; }
+
+    void reference(void) { FastSpinLocker lkr(lck); cnt++; }
+    bool release(void) { FastSpinLocker lkr(lck); return --cnt != 0; }
+
+private:
+    atomic_t cnt;
+    mutable SpinLock lck;
+};
+
+#else
+
+class RefCount: nocopy {
+public:
+    RefCount(uint init = 1): cnt(init) {}
+
+    operator bool(void) const { return referenced(); }
+    bool referenced(void) const { return atomic_get(cnt) != 0; }
+
+    void reference(void) { atomic_ref(cnt); }
+    bool release(void) { return atomic_rel(cnt) != 0; }
+
+private:
+    mutable atomic_t cnt;
+};
+#endif
+
+/* Thread safe # template */
 template<class C>
 class TSNumber: nocopy {
 public:
@@ -700,7 +764,7 @@ protected:
     C *operator &();			// not allowed
 };
 
-// Last-in-first-out queue useful for thread pools
+/* Last-in-first-out queue useful for thread pools */
 class Lifo {
 public:
     class Waiting {

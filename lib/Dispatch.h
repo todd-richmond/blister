@@ -171,7 +171,7 @@ private:
 	DispatchObjList glist;
 	RefCount refcount;
 
-	Group &add() { refcount.add(); return *this; }
+	Group &add() { refcount.reference(); return *this; }
     };
 
 public:
