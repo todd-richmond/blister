@@ -188,8 +188,8 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 	hints.ai_flags = AI_CANONNAME;
     }
     hints.ai_flags |= AI_ADDRCONFIG | AI_V4MAPPED;
-    if (getaddrinfo(host ? tchartoachar(host) : NULL, tchartoachar(service),
-	&hints, &ai))
+    if (getaddrinfo(host ? tchartoachar(host) : NULL, service ?
+	tchartoachar(service) : NULL, &hints, &ai))
 	return false;
     set(ai);
     freeaddrinfo(ai);
