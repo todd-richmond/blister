@@ -101,11 +101,17 @@ static msec_t _milliticks(void) {
     ulong now;
     msec_t ret;
     static ulong cnt = (ulong)-1, last = (ulong)-1;
-    static long lck;
+    static volatile long lck;
 
-    while (InterlockedExchange(&lck, 1))
-	usleep(1);
-    now = timeGetTime();	    /* GetTickCount() has 16ms accuracy only */
+    while (InterlockedExchange(&lck, 1)) {
+	static SYSTEM_INFO si;
+
+	if (si.dwNumberOfProcessors == 1)
+	    Sleep(0);
+	else if (!si.dwNumberOfProcessors)
+	    GetSystemInfo(&si);
+    }
+    now = timeGetTime();	    /* GetTickCount() only has 16ms accuracy */
     if (now < last) {
 	if (!++cnt) {
 	    last = now;
@@ -122,16 +128,21 @@ static msec_t _milliticks(void) {
 }
 
 usec_t microticks(void) {
-    static uint64 tps = (uint64)-1;
+    static int lck;
+    static uint64 tps;
 
-    if (tps == (uint64)-1 &&
-	!QueryPerformanceFrequency((LARGE_INTEGER *)&tps))
-	tps = 0;
     if (tps) {
 	uint64 now;
 
 	if (QueryPerformanceCounter((LARGE_INTEGER *)&now))
 	    return now * 1000000 / tps;
+    } else {
+	if (!lck) {
+	    QueryPerformanceFrequency((LARGE_INTEGER *)&tps);
+	    lck = 1;
+	}
+	if (tps)
+	    return microticks();
     }
     return _milliticks() * 1000;
 }
