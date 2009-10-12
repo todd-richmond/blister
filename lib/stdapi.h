@@ -35,7 +35,6 @@ typedef const char cchar;
 typedef unsigned char byte;
 typedef unsigned char uchar;
 typedef unsigned short word;
-typedef unsigned long dword;
 
 #ifdef _WIN32
 
@@ -270,16 +269,16 @@ EXTERNC_
 #define sleep(x)	Sleep(x * 1000)
 #define usleep(x)	Sleep(x / 1000)
 
+typedef __int64 llong;
 typedef unsigned short ushort;
 typedef unsigned int uint;
 typedef unsigned long ulong;
-typedef __int64 int64;
-typedef unsigned __int64 uint64;
+typedef unsigned __int64 ullong;
 typedef wchar_t wchar;
 
 typedef ushort gid_t;
 typedef int id_t;
-typedef int64 ino_t;
+typedef llong ino_t;
 typedef long pid_t;
 typedef ushort uid_t;
 
@@ -448,8 +447,8 @@ EXTERNC_
 #define strnicmp	strncasecmp
 #define wcsicmp		wcscasecmp
 
-typedef long long int64;
-typedef unsigned long long uint64;
+typedef long long llong;
+typedef unsigned long long ullong;
 typedef wchar_t wchar;
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
@@ -463,6 +462,15 @@ extern int wcscasecmp(const wchar *, const wchar *);
 #endif
 
 #endif // _WIN32
+
+typedef char int8;
+typedef uchar uint8;
+typedef short int16;
+typedef ushort uint16;
+typedef long int32;
+typedef ulong uint32;
+typedef llong int64;
+typedef ullong uint64;
 
 #ifdef _UNICODE
 #ifndef UNICODE
@@ -741,15 +749,15 @@ struct ptrhash {
     STL_HASH_PARMS
 };
 
-struct int64hash {
-    size_t operator ()(int64 a) const { return (size_t)((a >> 32) ^ a); }
-    bool operator ()(int64 a, int64 b) const { return a == b; }
+struct llonghash {
+    size_t operator ()(llong a) const { return (size_t)((a >> 32) ^ a); }
+    bool operator ()(llong a, llong b) const { return a == b; }
     STL_HASH_PARMS
 };
 
-struct uint64hash {
-    size_t operator ()(uint64 u) const { return (size_t)((u >> 32) ^ u); }
-    bool operator ()(uint64 a, uint64 b) const { return a == b; }
+struct ullonghash {
+    size_t operator ()(ullong u) const { return (size_t)((u >> 32) ^ u); }
+    bool operator ()(ullong a, ullong b) const { return a == b; }
     STL_HASH_PARMS
 };
 
