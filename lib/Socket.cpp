@@ -90,10 +90,11 @@ const tstring &Sockaddr::hostname() {
 
 	if (gethostname(buf, sizeof (buf))) {
 #if defined(_WIN32) && !defined(_WIN32_WCE)
+	    tchar cbuf[NI_MAXHOST];
 	    ulong sz = sizeof (buf);
 
-	    GetComputerName(buf, &sz);
-	    name = buf;
+	    GetComputerName(cbuf, &sz);
+	    name = cbuf;
 #else
 	    name = T("localhost");
 #endif
@@ -164,13 +165,13 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
 }
 
 bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
-    char portstr[8];
+    tchar portstr[8];
 
-    sprintf(portstr, "%u", (uint)portno);
+    tsprintf(portstr, T("%u"), (uint)portno);
     return set(host, portstr, proto);
 }
 
-bool Sockaddr::set(const tchar *host, const char *service, Proto proto) {
+bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
     struct addrinfo *ai, hints;
 
     ZERO(addr);
@@ -187,7 +188,8 @@ bool Sockaddr::set(const tchar *host, const char *service, Proto proto) {
 	hints.ai_flags = AI_CANONNAME;
     }
     hints.ai_flags |= AI_ADDRCONFIG | AI_V4MAPPED;
-    if (getaddrinfo(host ? tchartoachar(host) : NULL, service, &hints, &ai))
+    if (getaddrinfo(host ? tchartoachar(host) : NULL, tchartoachar(service),
+	&hints, &ai))
 	return false;
     set(ai);
     freeaddrinfo(ai);
@@ -230,7 +232,7 @@ const tstring Sockaddr::service_name(ushort port, Proto proto) {
     return achartotstring(buf);
 }
 
-ushort Sockaddr::service_port(const char *svc, Proto proto) {
+ushort Sockaddr::service_port(const tchar *svc, Proto proto) {
     Sockaddr sa;
 
     return sa.set(NULL, svc, proto) ? sa.port() : 0;
