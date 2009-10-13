@@ -96,7 +96,148 @@ bool Condvar::wait(ulong msec, bool hipri) {
     }
     return ret;
 }
+
+Process::Process(const Process &proc) {
+    if (!DuplicateHandle(GetCurrentProcess(), proc.hdl,
+	GetCurrentProcess(), &hdl, 0L, TRUE, DUPLICATE_SAME_ACCESS)) {
+	hdl = NULL;
+    }
+}
+
+Process Process::start(tchar *const *args, const int *fds) {
+    STARTUPINFO *st = NULL;
+    PROCESS_INFORMATION proc;
+    tstring cmd;
+
+    ZERO(proc);
+#ifndef _WIN32_WCE
+    STARTUPINFO sbuf;
+
+    ZERO(sbuf);
+    st = &sbuf;
+    st->cb = sizeof (*st);
+    if (fds) {				// only support 3 fds
+	st->dwFlags = STARTF_USESTDHANDLES;
+	st->hStdInput = (HANDLE)fds[0];
+	if (fds[1] != -1) {
+	    st->hStdOutput = (HANDLE)fds[1];
+	    if (fds[2] != -1)
+		st->hStdError = (HANDLE)fds[2];
+	}
+    }
 #endif
+    while (*args)
+	cmd += *(args++) + ' ';
+    if (!CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL, NULL,
+	st, &proc)) {
+	errno = EINVAL;
+    }
+    return Process(proc.hProcess);
+}
+#endif
+
+bool DLLibrary::open(const tchar *dll) {
+    close();
+    file = dll ? dll : T("self");
+#ifdef _WIN32
+    hdl = dll ? LoadLibrary(dll) : GetModuleHandle(NULL);
+    if (!hdl && dll && file.find(T(".dll")) == file.npos) {
+	file += T(".dll");
+	hdl = LoadLibrary(file.c_str());
+    }
+#else
+    hdl = dlopen(dll, RTLD_LAZY | RTLD_GLOBAL);
+#ifdef __APPLE__
+    if (!hdl && dll && file.find(".dylib") == file.npos) {
+	file += ".dylib";
+	hdl = dlopen(file.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+    }
+#else
+    if (!hdl && dll && file.find(".so") == file.npos) {
+	file += ".so";
+	hdl = dlopen(file.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+    }
+#endif
+    if (!hdl)
+	err = dlerror();
+#endif
+    return hdl != 0;
+}
+
+bool DLLibrary::close() {
+#ifdef _WIN32
+    if (hdl && (HMODULE)hdl != GetModuleHandle(NULL))
+	FreeLibrary((HMODULE)hdl);
+#else
+    if (hdl)
+        dlclose(hdl);
+#endif
+    hdl = 0;
+    return true;
+}
+
+void *DLLibrary::get(const tchar *symbol) const {
+#ifdef _WIN32_WCE
+    return GetProcAddress((HMODULE)hdl, symbol);
+#elif defined(_WIN32)
+    return GetProcAddress((HMODULE)hdl, tchartoachar(symbol));
+#else
+    return dlsym(hdl, symbol);
+#endif
+}
+
+uint Processor::count(void) {
+    static int cpus;
+
+    if (!cpus) {
+	cpus = 1;
+#ifdef _WIN32
+	SYSTEM_INFO si;
+
+	GetSystemInfo(&si);
+	cpus = si.dwNumberOfProcessors;
+#else
+	cpus = (uint)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+    }
+    return cpus;
+}
+
+ullong Processor::affinity(void) {
+    ullong mask = (ulong)-1;
+#if defined(_WIN32) && !defined(_WIN32_WCE)
+    ullong smask;
+
+    GetProcessAffinityMask(GetCurrentProcess(), &mask, &smask);
+#elif defined(__linux__)
+    cpu_set_t cset;
+
+    if (!sched_getaffinity(0, sizeof (cset), &cset)) {
+	for (uint u = 0; u < sizeof (mask) * 8; u++) {
+	    if (__CPU_ISSET(u, &cset))
+		mask |= 1 << u;
+	}
+    }
+#endif
+    return mask;
+}
+
+bool Processor::affinity(ullong mask) {
+#if defined(_WIN32) && !defined(_WIN32_WCE)
+    return SetProcessAffinityMask(GetCurrentProcess(), mask) != 0;
+#elif defined(__linux__)
+    cpu_set_t cset;
+
+    __CPU_ZERO(&cset);
+    for (uint u = 0; u < sizeof (mask) * 8; u++) {
+	if (mask && (1 << u))
+	    __CPU_SET(u, &cset);
+    }
+    return sched_setaffinity(0, sizeof (cset), &cset) == 0;
+#else
+    return false;
+#endif
+}
 
 ThreadGroup::ThreadGroup(bool aterm): cv(lock), autoterm(aterm), state(Init) {
     grouplck.lock();
@@ -130,22 +271,21 @@ bool ThreadGroup::start(uint stacksz, bool aterm) {
 // TFR does not work yet if caller is in same group
 void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
     set<Thread *>::iterator it;
+    Locker lck(lock);
     
-    lock.lock();
     state = ts;
     for (it = threads.begin(); it != threads.end(); it++) {
 	if (!THREAD_ISSELF((*it)->id))
 	    ((*it)->*func)();
     }
-    lock.unlock();
 }
 
 Thread *ThreadGroup::wait(ulong to, bool all, bool main) {
     msec_t start = milliticks();
     bool signaled = false;
     set<Thread *>::iterator it;
+    Locker lkr(lock);
 
-    lock.lock();
     do {
 	// wait for one thread at a time to save having to deal with
 	// threads restarting other threads
@@ -160,7 +300,6 @@ Thread *ThreadGroup::wait(ulong to, bool all, bool main) {
 	    } else if (tstate == Terminated) {
 		if (!all) {
 		    threads.erase(it);
-		    lock.unlock();
 		    return p;
 		}
 	    } else if (tstate != Terminated && p->id != NOID &&
@@ -170,21 +309,17 @@ Thread *ThreadGroup::wait(ulong to, bool all, bool main) {
 	}
 	if (signaled && main) {
 	    cv.set();			// pass on to someone else
-	    lock.unlock();
+	    lkr.unlock();
 	    msleep(1);
-	    lock.lock();
+	    lkr.lock();
 	    signaled = false;
 	    continue;
 	}
-	if (!found || !to) {
-	    lock.unlock();
+	if (!found || !to)
 	    return NULL;
-	}
 	// Check every 30 seconds in case we missed something
-	if (!cv.wait(min(30000UL, to)) && to <= 30000) {
-	    lock.unlock();
+	if (!cv.wait(min(30000UL, to)) && to <= 30000)
 	    return NULL;
-	}
 	signaled = true;
 	if (to != INFINITE)
 	    to -= (ulong)(milliticks() - start);
@@ -193,14 +328,14 @@ Thread *ThreadGroup::wait(ulong to, bool all, bool main) {
 
 void ThreadGroup::priority(int pri) {
     set<Thread *>::iterator it;
-    Locker lck(lock);
+    Locker lkr(lock);
 
     for (it = threads.begin(); it != threads.end(); it++)
 	(*it)->priority(pri);
 }
 
 void ThreadGroup::remove(Thread *thread) {
-    Locker lck(lock);
+    Locker lkr(lock);
 
     threads.erase(thread);
 }
@@ -268,7 +403,7 @@ void Thread::clear(bool self) {
 #ifdef _WIN32
 	CloseHandle(hdl);
 	if (self)
-	    delete Condvar::tls.get();
+	    delete &Condvar::tls.get();
 #else
 	pthread_detach(hdl);
 #endif
@@ -503,80 +638,3 @@ bool Thread::priority(thread_t hdl, int pri) {
     return pthread_setschedparam(hdl, policy, &sched) == 0;
 #endif
 }
-
-uint Processor::count(void) {
-    static int cpus;
-
-    if (!cpus) {
-	cpus = 1;
-#ifdef _WIN32
-	SYSTEM_INFO si;
-
-	GetSystemInfo(&si);
-	cpus = si.dwNumberOfProcessors;
-#else
-	cpus = (uint)sysconf(_SC_NPROCESSORS_ONLN);
-#endif
-    }
-    return cpus;
-}
-
-void Processor::prefer(uint cpu) {
-#if defined(_WIN32) && !defined(_WIN32_WCE)
-    typedef DWORD (WINAPI *pSetThreadIdealProcessor)(HANDLE hdl, DWORD cpu);
-
-    HANDLE hdl;
-    static pSetThreadIdealProcessor func =
-	(pSetThreadIdealProcessor)GetProcAddress(
-	GetModuleHandle(T("KERNEL32.DLL")), "SetThreadIdealProcessor");
-
-    if (func && DuplicateHandle(Process::self, Thread::MainThread,
-	Process::self, &hdl, DUPLICATE_SAME_ACCESS, FALSE,
-	DUPLICATE_SAME_ACCESS)) {
-	func(hdl, cpu);
-	CloseHandle(hdl);
-    }
-#endif
-}
-
-#ifdef _WIN32
-Process::Process(const Process &proc) {
-    if (!DuplicateHandle(GetCurrentProcess(), proc.hdl,
-	GetCurrentProcess(), &hdl, 0L, TRUE, DUPLICATE_SAME_ACCESS)) {
-	hdl = NULL;
-    }
-}
-
-Process Process::start(tchar *const *args, const int *fds) {
-    STARTUPINFO *st = NULL;
-    PROCESS_INFORMATION proc;
-    tstring cmd;
-
-    ZERO(st);
-    ZERO(proc);
-#ifndef _WIN32_WCE
-    STARTUPINFO sbuf;
-
-    st = &sbuf;
-    st->cb = sizeof (*st);
-    if (fds) {				// only support 3 fds
-	st->dwFlags = STARTF_USESTDHANDLES;
-	st->hStdInput = (HANDLE)fds[0];
-	if (fds[1] != -1) {
-	    st->hStdOutput = (HANDLE)fds[1];
-	    if (fds[2] != -1)
-		st->hStdError = (HANDLE)fds[2];
-	}
-    }
-#endif
-    while (*args)
-	cmd += *(args++) + ' ';
-    if (!CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL, NULL,
-	st, &proc)) {
-	errno = EINVAL;
-    }
-    return Process(proc.hProcess);
-}
-
-#endif
-

@@ -177,6 +177,13 @@ private:
     tstring file;
 };
 
+class Processor: nocopy {
+public:
+    static ullong affinity(void);
+    static bool affinity(ullong mask);
+    static uint count(void);
+};
+
 /* Thread local storage for simple types */
 template<class C>
 class ThreadLocal: nocopy {
@@ -266,6 +273,8 @@ public:
     ~Lock() { DeleteCriticalSection(&csec); }
 
     void lock(void) { EnterCriticalSection(&csec); }
+    void spin(uint cnt) { SetCriticalSectionSpinCount(&csec, cnt); }
+    bool trylock(void) { return TryEnterCriticalSection(&csec) != 0; }
     void unlock(void) { LeaveCriticalSection(&csec); }
 
 protected:
@@ -278,8 +287,9 @@ public:
     ~Mutex() { if (hdl) ReleaseMutex(hdl); }
 
     void lock(void) { WaitForSingleObject(hdl, INFINITE); }
-    bool trylock(ulong msec = 0)
-	{ return WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0; }
+    bool trylock(ulong msec = 0) {
+	return WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0;
+    }
     void unlock(void) { ReleaseMutex(hdl); }
 
 protected:
@@ -388,32 +398,6 @@ private:
     HANDLE hdl;
 };
 
-inline bool DLLibrary::open(const tchar *dll) {
-    close();
-    file = dll ? dll : T("self");
-    hdl = dll ? LoadLibrary(dll) : GetModuleHandle(NULL);
-    if (!hdl && dll && !tstrstr(file.c_str(), T(".dll"))) {
-	file += T(".dll");
-	hdl = LoadLibrary(file.c_str());
-    }
-    return hdl != 0;
-}
-
-inline bool DLLibrary::close() {
-    if (hdl && (HMODULE)hdl != GetModuleHandle(NULL))
-	FreeLibrary((HMODULE)hdl);
-    hdl = 0;
-    return true;
-}
-
-inline void *DLLibrary::get(const tchar *symbol) const {
-#ifdef _WIN32_WCE
-    return GetProcAddress((HMODULE)hdl, symbol);
-#else
-    return GetProcAddress((HMODULE)hdl, tchartoachar(symbol));
-#endif
-}
-
 #else
 
 inline void msleep(ulong msec) {
@@ -467,33 +451,6 @@ protected:
     pthread_cond_t cv;
 };
 
-inline bool DLLibrary::open(const tchar *dll) {
-    close();
-    file = dll ? dll : "self";
-    hdl = dlopen(dll, RTLD_LAZY | RTLD_GLOBAL);
-    if (!hdl && dll && file.find(".so") == file.npos) {
-	file += ".so";
-	hdl = dlopen(file.c_str(), RTLD_LAZY | RTLD_GLOBAL);
-    }
-    if (!hdl && dll && file.find("lib") == file.npos) {
-	file = "lib/" + file;
-	hdl = dlopen(file.c_str(), RTLD_LAZY | RTLD_GLOBAL);
-    }
-    if (!hdl) err = dlerror();
-    return hdl != 0;
-}
-
-inline bool DLLibrary::close() {
-    if (hdl)
-	dlclose(hdl);
-    hdl = 0;
-    return true;
-}
-
-inline void *DLLibrary::get(const tchar *symbol) const {
-    return dlsym(hdl, symbol);
-}
-
 #endif
 
 typedef LockerTemplate<Lock> Locker;
@@ -503,7 +460,7 @@ typedef FastLockerTemplate<Lock> FastLocker;
 
 class SpinLock: nocopy {
 public:
-    SpinLock(): lck(0), spins(100) {}
+    SpinLock(): lck(0) { spin(100); }
 
     void lock(void) {
 	if (!trylock()) {
@@ -517,7 +474,7 @@ public:
 	    } while (!trylock());
 	}
     }
-    void spin(uint cnt) { spins = cnt; }
+    void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
     bool trylock(void) {
 	int r;
 	
@@ -543,27 +500,11 @@ private:
     uint spins;
 };
 
-#elif defined(_WIN32) && 0  // slower than atomic ops
-
-class SpinLock: nocopy {
-public:
-    SpinLock() { InitializeCriticalSection(&csec); }
-    ~SpinLock() { DeleteCriticalSection(&csec); }
-
-    void lock(void) { EnterCriticalSection(&csec); }
-    void spin(uint cnt) { SetCriticalSectionSpinCount(&csec, cnt); }
-    bool trylock(void) { return TryEnterCriticalSection(&csec) != 0; }
-    void unlock(void) { LeaveCriticalSection(&csec); }
-
-private:
-    CRITICAL_SECTION csec;
-};
-
 #elif !defined(NO_ATOMIC_OPS)
 
 class SpinLock: nocopy {
 public:
-    SpinLock(): lck(0), spins(100) {}
+    SpinLock(): lck(0) { spin(100); }
 
     void lock(void) {
 	if (atomic_set(lck)) {
@@ -577,7 +518,7 @@ public:
 	    } while (atomic_set(lck));
 	}
     }
-    void spin(uint cnt) { spins = cnt; }
+    void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
     bool trylock(void) { return atomic_set(lck) == 0; }
     void unlock(void) { atomic_clr(lck); }
 
@@ -595,6 +536,7 @@ public:
 
     operator pthread_spinlock_t *() { return &lck; }
 
+    void spin(uint cnt) { (void)cnt; }
     void lock(void) { pthread_spin_lock(&lck); }
     bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
     void unlock(void) { pthread_spin_unlock(&lck); }
@@ -703,7 +645,7 @@ public:
     bool release(void) { FastSpinLocker lkr(lck); return --cnt != 0; }
 
 private:
-    atomic_t cnt;
+    uint cnt;
     mutable SpinLock lck;
 };
 
@@ -815,12 +757,6 @@ private:
     Lock &lck;
     Waiting *head;
     uint sz;
-};
-
-class Processor: nocopy {
-public:
-    static uint count(void);
-    static void prefer(uint cput);
 };
 
 // Thread routines
