@@ -1,7 +1,7 @@
 #include "winres.h"
 
-#define VERSION      0,6,0,0
-#define VERSIONSTR  "0.6.0.0"
+#define VERSION      0,7,0,0
+#define VERSIONSTR  "0.7.0.0"
 #define DATE        "6/24/09"
 
 #define PRODUCT	    "Blister"
