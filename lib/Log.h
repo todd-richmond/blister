@@ -298,6 +298,8 @@ private:
 	Tlsdata(): clvl(None), space(false), suppress(false) {}
     };
 
+    Lock lck;
+    Condvar cv;
     ThreadLocalClass<Tlsdata> tls;
     LogFile afd, ffd;
     bool bufenable, mailenable, syslogenable;
@@ -305,7 +307,10 @@ private:
     ulong buftm;
     bufferstream<tchar> bufstrm;
     tstring fmt;
+    FlushThread ft;
     bool gmt, mp;
+    tstring last_format;
+    time_t last_sec;
     Level lvl, maillvl, sysloglvl;
     tstring mailfrom, mailhost, mailto;
     tstring src;
@@ -314,9 +319,7 @@ private:
     tstring sysloghost;
     Socket syslogsock;
     Type _type;
-    Lock lck;
-    Condvar cv;
-    FlushThread ft;
+    tstring::size_type upos;
     static const tchar * const LevelStr[];
     static const tchar * const LevelStr2[];
 

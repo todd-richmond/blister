@@ -35,7 +35,7 @@
 #pragma comment(lib, "user32.lib")
 #endif
 
-static const tchar *SSubst = T("\001\001");
+static const tchar *USubst = T("\001\001");
 static const tchar *ZSubst = T("\002\002");
 
 const tchar * const Log::LevelStr[] = { T("none"), T("emrg"), T("alrt"),
@@ -329,16 +329,14 @@ void Log::LogFile::set(const Config &cfg, const tchar *sect,
 }
 
 void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
+    cnt = c;
     enable = true;
     lvl = l;
-    if (!f)
-	return;
-    cnt = c;
     sz = s;
     tm = t;
-    if (file == f)
-	return;
     close();
+    if (!f || file == f)
+	return;
     file = path = f;
     if (file == T("stdout") || file == T("cout")) {
 	fd = -2;
@@ -366,13 +364,14 @@ void Log::LogFile::unlockfd(int fd) {
 	lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
 }
 
-Log::Log(Level level): afd(false, Err, T("stderr"), true),
+Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true),
     ffd(true, Info, T("stdout"), true),
     bufenable(false), mailenable(false), syslogenable(false),
-    bufsz(32 * 1024), buftm(1000), gmt(false), mp(true),
-    lvl(level), maillvl(None), sysloglvl(None),
-    syslogfac(1), syslogsock(SOCK_DGRAM), _type(Simple), cv(lck), ft(*this)  {
-    format(T("[%Y-%m-%d %H:%M:%S.%s %z]"));
+    bufsz(32 * 1024), buftm(1000), ft(*this), gmt(false), mp(true),
+    last_sec(0), lvl(level), maillvl(None),
+    sysloglvl(None), syslogfac(1), syslogsock(SOCK_DGRAM), _type(Simple),
+    upos(0) {
+    format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
 }
 
 Log::~Log() {
@@ -407,12 +406,6 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     tstring &strbuf(tlsd.strbuf);
     size_t sz = tlsd.strm.size();
     tchar tmp[8];
-    static tstring::size_type spos;
-    static tstring::size_type zpos;
-    static tchar tbuf[96];
-    static time_t last_sec;
-    static usec_t last_usec;
-    static tchar gmtoff[8];
 
     if (tlsd.suppress)
 	return;
@@ -432,20 +425,20 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    afd.roll();
     }
     now_usec = microtime();
-    if (now_usec > last_usec - 1000000 && now_usec <= last_usec)
-	now_usec = last_usec + 1;
-    last_usec = now_usec;
     now_sec = (uint)(now_usec / 1000000);
     if (now_sec != last_sec) {
+	tchar tbuf[128];
 	struct tm tmbuf, *tm;
+	tstring::size_type zpos;
 
 	tm = gmt ? gmtime_r(&now_sec, &tmbuf) : localtime_r(&now_sec, &tmbuf);
-	tstrftime(tbuf, sizeof (tbuf), fmt.c_str(), tm);
-	strbuf = tbuf;
-	spos = strbuf.find(SSubst);
-	if ((zpos = strbuf.find(ZSubst)) != strbuf.npos) {
-	    struct tm tmbuf2, *tm2;
+	tstrftime(tbuf, sizeof (tbuf) / sizeof (tchar), fmt.c_str(), tm);
+	last_format = tbuf;
+	upos = last_format.find(USubst);
+	if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
 	    int diff;
+	    tchar gmtoff[8];
+	    struct tm tmbuf2, *tm2;
 
 	    memcpy(&tmbuf, tm, sizeof (tmbuf));
 	    tm = &tmbuf;
@@ -459,18 +452,14 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 		tsprintf(gmtoff, T("-%04d"), -1 * diff);
 	    else
 		tsprintf(gmtoff, T("+%04d"), diff);
+	    last_format.replace(zpos, 2, gmtoff);
 	}
     }
     last_sec = now_sec;
-    strbuf = tbuf;
-    if (spos != strbuf.npos) {
+    strbuf = last_format;
+    if (upos != strbuf.npos) {
 	tsprintf(tmp, T("%06u"), (uint)(now_usec % 1000000));
-	strbuf.replace(spos, 2, tmp);
-    }
-    if (zpos != strbuf.npos) {
-	if (spos != strbuf.npos && spos < zpos)
-	    zpos = strbuf.find(ZSubst);
-	strbuf.replace(zpos, 2, gmtoff);
+	strbuf.replace(upos, 2, tmp);
     }
     if (!strbuf.empty())
 	strbuf += ' ';
@@ -612,9 +601,10 @@ void Log::format(const tchar *s) {
     tstring::size_type pos;
 
     fmt = s;
-    if ((pos = fmt.find(T("%s"))) != fmt.npos)
-	fmt.replace(pos, 2, SSubst);
-#ifndef __linux__
+    last_sec = 0;
+    if ((pos = fmt.find(T("%#"))) != fmt.npos)
+	fmt.replace(pos, 2, USubst);
+#if !defined(__APPLE__) && !defined(__linux__)
     if ((pos = fmt.find(T("%z"))) != fmt.npos)
 	fmt.replace(pos, 2, ZSubst);
 #endif
@@ -678,7 +668,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
 	cfg.get(T("syslog.host"), T("localhost"), sect).c_str(),
 	cfg.get(T("syslog.facility"), 1, sect));
     syslogenable = cfg.get(T("syslog.enable"), false, sect);
-    format(cfg.get(T("format"), T("[%Y-%m-%d %H:%M:%S.%s %z]"), sect).c_str());
+    format(cfg.get(T("format"), T("[%Y-%m-%d %H:%M:%S.%# %z]"), sect).c_str());
     s = cfg.get(T("type"), T("simple"), sect);
     _type = s == T("nolevel") ? NoLevel : s == T("syslog") ? Syslog :
 	s == T("keyval") ? KeyVal : Simple;
