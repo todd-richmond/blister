@@ -40,12 +40,6 @@ typedef void (*DispatchObjCB)(DispatchObj *);
  */
 #endif
 
-#ifdef __APPLE__	// some OSX revs won't wake on a 0 byte UDP write
-#define DSP_WAKE_SIZE 1
-#else
-#define DSP_WAKE_SIZE 0
-#endif
-
 class DispatchObjList: nocopy {
 public:
     DispatchObjList(): front(NULL), back(NULL) {}
@@ -144,15 +138,14 @@ private:
 #else
     int evtfd;
     Socket isock;
-    SocketSet rset, wset;
     volatile bool polling;
-    Sockaddr waddr;
+    SocketSet rset, wset;
     Socket wsock;
 
     void wakeup(msec_t, msec_t) {
 	if (polling) {
 	    polling = false;
-	    wsock.write("", DSP_WAKE_SIZE, waddr);
+	    wsock.write("", 1);
 	}
     }
 #endif

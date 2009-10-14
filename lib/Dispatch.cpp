@@ -105,7 +105,7 @@ Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
 #ifdef DSP_WIN32_ASYNC
      interval(DSP_NEVER), wnd(0)
 #else
-    evtfd(-1), isock(SOCK_DGRAM), polling(false), wsock(SOCK_DGRAM)
+    evtfd(-1), isock(SOCK_STREAM), polling(false), wsock(SOCK_STREAM)
 #endif
     {
 #ifdef DSP_WIN32_ASYNC
@@ -319,6 +319,8 @@ int Dispatcher::onStart() {
 #else
 
 int Dispatcher::onStart() {
+    Socket asock(SOCK_STREAM);
+    Sockaddr addr(T("localhost"));
     uint count = 0;
     DispatchSocket *ds = NULL;
     DispatchTimer *dt = NULL;
@@ -344,7 +346,6 @@ int Dispatcher::onStart() {
     do {
 	evtfd = open("/dev/poll", O_RDWR);
     } while (evtfd == -1 && interrupted(errno));
-evtfd = -1;
 #elif defined(DSP_EPOLL)
     do {
 	evtfd = epoll_create(10000);
@@ -363,13 +364,16 @@ evtfd = -1;
     if (evtfd != -1)
 	fcntl(evtfd, F_SETFD, 1);
 #endif
-    waddr.host(T("localhost"));
-    if (!isock.bind(waddr) || !isock.sockname(waddr)) {
+    asock.listen(addr);
+    asock.sockname(addr);
+    asock.blocking(false);
+    wsock.connect(addr, 100);
+    if (!asock.accept(isock)) {
 	shutdown = 1;
 	return -1;
     }
+    asock.close();
     isock.blocking(false);
-    wsock.open(waddr.family());
     wsock.blocking(false);
     if (evtfd == -1) {
 	rset.set(isock);
@@ -725,16 +729,14 @@ uint Dispatcher::handleEvents(void *evts, int nevts) {
 #endif
 
 bool Dispatcher::start(uint mthreads, uint stack, bool suspend, bool autoterm) {
-    bool ret;
-
     maxthreads = mthreads;
     stacksz = stack ? stack : 256 * 1024;
     shutdown = -1;
-    ret = ThreadGroup::start(maxthreads ? 32 * 1024 : stacksz, suspend,
-	autoterm);
-    while (ret && shutdown == -1)
+    if (!ThreadGroup::start(mthreads ? 8 * 1024 : stacksz, suspend, autoterm))
+	return false;
+    while (shutdown == -1)
 	msleep(20);
-    return ret;
+    return !shutdown;
 }
 
 void Dispatcher::stop() {
