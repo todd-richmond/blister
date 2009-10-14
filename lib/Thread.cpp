@@ -239,151 +239,13 @@ bool Processor::affinity(ullong mask) {
 #endif
 }
 
-ThreadGroup::ThreadGroup(bool aterm): cv(lock), autoterm(aterm), state(Init) {
-    grouplck.lock();
-    id = (thread_t)((ulong)nextId++);
-    groups.insert(this);
-    grouplck.unlock();
+Thread::Thread(thread_t handle, ThreadGroup *tg, bool aterm): cv(lck),
+    autoterm(aterm), hdl(handle), id(NOID), retval(0), state(Running) {
+    group = ThreadGroup::add(*this, tg);
 }
 
-ThreadGroup::~ThreadGroup() {
-    if (autoterm)
-	terminate();
-    wait(INFINITE, true);
-    grouplck.lock();
-    groups.erase(this);
-    grouplck.unlock();
-}
-
-int ThreadGroup::init(void *data) {
-    return ((ThreadGroup *)data)->onStart();
-}
-
-// start a group's main thread
-bool ThreadGroup::start(uint stacksz, bool aterm) {
-    if (master.getState() != Init && master.getState() != Terminated)
-	return false;
-    autoterm = aterm;
-    return master.start(init, this, stacksz, false, autoterm, this);
-}
-
-// control all threads in group
-// TFR does not work yet if caller is in same group
-void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
-    set<Thread *>::iterator it;
-    Locker lck(lock);
-    
-    state = ts;
-    for (it = threads.begin(); it != threads.end(); it++) {
-	if (!THREAD_ISSELF((*it)->id))
-	    ((*it)->*func)();
-    }
-}
-
-Thread *ThreadGroup::wait(ulong to, bool all, bool main) {
-    msec_t start = milliticks();
-    bool signaled = false;
-    set<Thread *>::iterator it;
-    Locker lkr(lock);
-
-    do {
-	// wait for one thread at a time to save having to deal with
-	// threads restarting other threads
-	bool found = false;
-
-	for (it = threads.begin(); it != threads.end(); it++) {
-	    Thread *p = *it;
-	    ThreadState tstate = p->getState();
-	    
-	    if (main && p != &master) {
-		continue;
-	    } else if (tstate == Terminated) {
-		if (!all) {
-		    threads.erase(it);
-		    return p;
-		}
-	    } else if (tstate != Terminated && p->id != NOID &&
-		!THREAD_ISSELF(p->id)) {
-		found = true;
-	    }
-	}
-	if (signaled && main) {
-	    cv.set();			// pass on to someone else
-	    lkr.unlock();
-	    msleep(1);
-	    lkr.lock();
-	    signaled = false;
-	    continue;
-	}
-	if (!found || !to)
-	    return NULL;
-	// Check every 30 seconds in case we missed something
-	if (!cv.wait(min(30000UL, to)) && to <= 30000)
-	    return NULL;
-	signaled = true;
-	if (to != INFINITE)
-	    to -= (ulong)(milliticks() - start);
-    } while (true);
-}
-
-void ThreadGroup::priority(int pri) {
-    set<Thread *>::iterator it;
-    Locker lkr(lock);
-
-    for (it = threads.begin(); it != threads.end(); it++)
-	(*it)->priority(pri);
-}
-
-void ThreadGroup::remove(Thread *thread) {
-    Locker lkr(lock);
-
-    threads.erase(thread);
-}
-
-ThreadGroup *ThreadGroup::add(Thread *thread, ThreadGroup *tgroup) {
-    ThreadGroup *p;
-    
-    if (tgroup) {
-	p = tgroup;
-	p->lock.lock();			// add to specified thread group
-    } else {
-	set<ThreadGroup *>::iterator i;
-	set<Thread *>::iterator ii;
-	
-	grouplck.lock();
-	p = NULL;
-	for (i = groups.begin(); i != groups.end(); i++) {
-	    p = *i;
-	    p->lock.lock();
-	    for (ii = p->threads.begin(); ii != p->threads.end(); ii++) {
-		if (THREAD_ISSELF((*ii)->id))
-		    break;
-	    }
-	    if (ii == p->threads.end()) {
-		p->lock.unlock();
-		p = NULL;
-	    } else {
-		break;
-	    }
-	}
-	grouplck.unlock();
-	if (p == NULL) {		    // add to main group
-	    p = &MainThreadGroup;
-	    p->lock.lock();
-	}
-    }
-    p->threads.insert(thread);
-    p->lock.unlock();
-    return p;
-}
-
-Thread::Thread(thread_t handle, ThreadGroup *tgroup): cv(lck), autoterm(true),
-    hdl(handle), id(NOID), group(tgroup), retval(0), state(Init) {
-    if (hdl) {
-	state = Running;
-	group = ThreadGroup::add(this, tgroup);
-    }
-}
+Thread::Thread(void): cv(lck), autoterm(false), group(NULL), hdl(0), id(NOID),
+    retval(0), state(Init) {}
 
 Thread::~Thread() {
     if (hdl && id != NOID) {
@@ -392,8 +254,8 @@ Thread::~Thread() {
 	else
 	    wait();
     }
-    if (group && state != Init)
-	group->remove(this);
+    if (group)
+	group->remove(*this);
 }
 
 // set state and notify threadgroup
@@ -407,163 +269,13 @@ void Thread::clear(bool self) {
 #else
 	pthread_detach(hdl);
 #endif
+	id = NOID;
     }
     hdl = 0;
     state = Terminated;
     cv.set();
     lck.unlock();
-    group->notify(this);
-}
-
-// setup thread and call it's main routine
-THREAD_FUNC Thread::threadInit(void *arg) {
-    Thread *thread = (Thread *)arg;
-    ThreadState istate = thread->state;
-    int status;
-    
-    thread->lck.lock();
-    thread->id = THREAD_ID();
-    srand((uint)(ulong)thread->id);
-    thread->state = Running;
-    thread->cv.set();
-    thread->lck.unlock();
-    if (istate == Suspended)
-	thread->suspend();
-    status = thread->retval = (thread->main)(thread->data);
-    thread->clear();
-#ifdef _WIN32
-    return status;
-#else
-    return 0;
-#endif
-}
-
-// call into ThreadMain with correct class scope
-int Thread::init(void *args) {
-    return ((Thread *)args)->onStart();
-}
-
-// create Thread and start it running in a derived class
-bool Thread::start(ThreadRoutine func, void *arg, uint stacksz,
-    bool bSuspend, bool aterm, ThreadGroup *tgroup) {
-    Locker lkr(lck);
-
-    if (state == Terminated) {
-	state = Init;
-	group->remove(this);
-    } else if (state != Init) {
-	return false;
-    }
-    autoterm = aterm;
-    group = tgroup;
-    main = func;
-    data = arg;
-    if (bSuspend)
-	state = Suspended;
-    else
-	state = Running;
-    group = ThreadGroup::add(this, group);
-#ifdef _WIN32
-    hdl = (HANDLE)_beginthreadex(NULL, stacksz, threadInit, this, 0,
-    	(uint *)&id);
-#else
-    pthread_attr_t attr;
-
-    pthread_attr_init(&attr);
-    if (stacksz) {
-	stacksz += 16 * 1024;
-#ifdef __linux__
-	stacksz += 100 * 1024;
-#endif
-	pthread_attr_setstacksize(&attr, stacksz);
-    }
-    pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-    pthread_create(&hdl, &attr, threadInit, this);
-    pthread_attr_destroy(&attr);
-#endif
-    if (hdl) {
-	cv.wait();
-	if (bSuspend)
-	    msleep(500); // workaround for a race condition
-	return true;
-    } else {
-	group->remove(this);
-	state = Terminated;
-	return false;
-    }
-}
-
-// create Thread and have it call ThreadMain()
-bool Thread::start(uint stacksz, bool suspend, bool term, ThreadGroup *tgroup) {
-    return start(init, this, stacksz, suspend, term, tgroup);
-}
-
-bool Thread::stop(void) {
-    Locker lkr(lck);
-
-    if (state != Terminated) {
-	onStop();
-	if (state == Suspended)
-	    resume();
-    }
-    return true;
-}
-
-bool Thread::suspend() {
-    Locker lkr(lck);
-
-    if (state == Suspended) {
-	return true;
-    } else if (state == Running) {
-	state = Suspended;		    // allow self suspend
-	lkr.unlock();
-#ifdef _WIN32
-	if (SuspendThread(hdl) != -1)
-	    return true;
-	lkr.lock();
-#endif
-	state = Running;
-    }
-    return false;
-}
-
-bool Thread::resume(void) {
-    bool ret = false;
-    Locker lkr(lck);
-
-    if (state == Suspended) {
-	state = Running;
-#ifdef _WIN32
-	ret = ResumeThread(hdl) != -1;
-#else
-	ret = true;
-#endif
-	if (!ret)
-	    state = Suspended;
-    }
-    return ret;
-}
-
-// terminate thread ungracefully
-bool Thread::terminate(void) {
-    bool ret = false;
-    Locker lkr(lck);
-
-    if (state == Running || state == Suspended) {
-#ifdef _WIN32
-	ret = TerminateThread(hdl, 1) == 1;
-#else
-	ret = pthread_cancel(hdl) == 0;
-#endif
-	if (ret) {
-	    retval = -2;
-	    lkr.unlock();
-	    clear(false);
-	}
-    } else if (state == Terminated) {
-	ret = true;
-    }
-    return ret;
+    group->notify(*this);
 }
 
 // exit thread cleanly - called by itself
@@ -577,32 +289,9 @@ void Thread::end(int status) {
 #endif
 }
 
-// wait for thread to exit
-bool Thread::wait(ulong timeout) {
-    bool ret = false;
-    Locker lkr(lck);
-
-    if (state == Init || state == Terminated) {
-	ret = true;
-    } else {
-	if (id == NOID) {
-	    lkr.unlock();
-#ifdef _WIN32
-	    ret = WaitForSingleObject(hdl, timeout) == WAIT_OBJECT_0;
-#else
-	    // pthreads does not support a timeout
-	    if (timeout == INFINITE)
-		ret = pthread_join(hdl, NULL) == 0;
-#endif
-	} else {
-	    ret = cv.wait(timeout);
-	}
-    }
-    if (ret && group) {
-	group->remove(this);
-	group = NULL;
-    }
-    return ret;
+// call into ThreadMain with correct class scope
+int Thread::init(void *thisp) {
+    return ((Thread *)thisp)->onStart();
 }
 
 bool Thread::priority(thread_t hdl, int pri) {
@@ -637,4 +326,316 @@ bool Thread::priority(thread_t hdl, int pri) {
     sched.sched_priority = (int)(mn + (mx * 1.0 - mn) / 41 * (pri + 20));
     return pthread_setschedparam(hdl, policy, &sched) == 0;
 #endif
+}
+
+bool Thread::resume(void) {
+    bool ret = false;
+    Locker lkr(lck);
+
+    if (state == Suspended) {
+	state = Running;
+#ifdef _WIN32
+	ret = ResumeThread(hdl) != -1;
+#else
+	ret = true;
+#endif
+	if (!ret)
+	    state = Suspended;
+    }
+    return ret;
+}
+
+// setup thread and call it's main routine
+THREAD_FUNC Thread::threadInit(void *arg) {
+    Thread *thread = (Thread *)arg;
+    ThreadState istate = thread->state;
+    int status;
+    
+    thread->lck.lock();
+    thread->id = THREAD_ID();
+    srand((uint)(ulong)thread->id);
+    thread->state = Running;
+    thread->cv.set();
+    thread->lck.unlock();
+    if (istate == Suspended)
+	thread->suspend();
+    status = thread->retval = (thread->main)(thread->data);
+    thread->clear();
+#ifdef _WIN32
+    return status;
+#else
+    return 0;
+#endif
+}
+
+// create Thread and have it call ThreadMain()
+bool Thread::start(uint stacksz, ThreadGroup *tg, bool suspend, bool aterm) {
+    return start(init, this, stacksz, tg, suspend, aterm);
+}
+
+// create Thread and start it running at a given function
+bool Thread::start(ThreadRoutine func, void *arg, uint stacksz,
+    ThreadGroup *tg, bool suspend, bool aterm) {
+    Locker lkr(lck);
+
+    if (state == Terminated)
+	state = Init;
+    else if (state != Init)
+	return false;
+    autoterm = aterm;
+    data = arg;
+    main = func;
+    if (suspend)
+	state = Suspended;
+    else
+	state = Running;
+#ifdef _WIN32
+    uint tid;
+
+    hdl = (HANDLE)_beginthreadex(NULL, stacksz, threadInit, this, 0, &tid);
+    id = (thread_t)tid;
+#else
+    pthread_attr_t attr;
+
+    pthread_attr_init(&attr);
+    if (stacksz) {
+	stacksz += 16 * 1024;
+#ifdef __linux__
+	stacksz += 60 * 1024;
+#endif
+	pthread_attr_setstacksize(&attr, stacksz);
+    }
+    pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+    pthread_create(&hdl, &attr, threadInit, this);
+    pthread_attr_destroy(&attr);
+#endif
+    if (hdl) {
+	group = ThreadGroup::add(*this, tg);
+	cv.wait();
+	if (suspend)
+	    msleep(100);		    // wait for thread to sleep
+	return true;
+    } else {
+	state = Init;
+	return false;
+    }
+}
+
+bool Thread::stop(void) {
+    Locker lkr(lck);
+
+    if (state != Terminated) {
+	onStop();
+	if (state == Suspended)
+	    resume();
+    }
+    return true;
+}
+
+bool Thread::suspend() {
+    Locker lkr(lck);
+
+    if (state == Suspended) {
+	return true;
+    } else if (state == Running) {
+	state = Suspended;
+	lkr.unlock();
+#ifdef _WIN32
+	if (SuspendThread(hdl) != (DWORD)-1)
+	    return true;
+#endif
+	lkr.lock();
+	if (state == Suspended)
+	    state = Running;
+    }
+    return false;
+}
+
+// terminate thread ungracefully
+bool Thread::terminate(void) {
+    bool ret = false;
+    Locker lkr(lck);
+
+    if (state == Running || state == Suspended) {
+#ifdef _WIN32
+	ret = TerminateThread(hdl, 1) != 0;
+#else
+	ret = pthread_cancel(hdl) == 0;
+#endif
+	if (ret) {
+	    retval = -2;
+	    lkr.unlock();
+	    clear(false);
+	}
+    } else if (state == Terminated) {
+	ret = true;
+    }
+    return ret;
+}
+
+// wait for thread to exit
+bool Thread::wait(ulong timeout) {
+    bool ret = false;
+    Locker lkr(lck);
+
+    if (state == Init || state == Terminated) {
+	ret = true;
+    } else {
+	if (id == NOID) {
+	    lkr.unlock();
+#ifdef _WIN32
+	    ret = WaitForSingleObject(hdl, timeout) == WAIT_OBJECT_0;
+#else
+	    // pthreads do not support a timeout
+	    if (timeout == INFINITE)
+		ret = pthread_join(hdl, NULL) == 0;
+#endif
+	} else {
+	    ret = cv.wait(timeout);
+	}
+    }
+    return ret;
+}
+
+ThreadGroup::ThreadGroup(bool aterm): cv(lock), autoterm(aterm), state(Init) {
+    grouplck.lock();
+    id = (thread_t)((ulong)nextId++);
+    groups.insert(this);
+    grouplck.unlock();
+}
+
+ThreadGroup::~ThreadGroup() {
+    if (autoterm)
+	terminate();
+    wait(INFINITE, true);
+    grouplck.lock();
+    groups.erase(this);
+    grouplck.unlock();
+}
+
+ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
+    if (!tg) {
+	set<ThreadGroup *>::iterator i;
+	set<Thread *>::iterator ii;
+	
+	grouplck.lock();
+	for (i = groups.begin(); i != groups.end(); i++) {
+	    tg = *i;
+	    tg->lock.lock();
+	    for (ii = tg->threads.begin(); ii != tg->threads.end(); ii++) {
+		if (THREAD_ISSELF((*ii)->id))
+		    break;
+	    }
+	    tg->lock.unlock();
+	    if (ii == tg->threads.end())
+		tg = NULL;
+	    else
+		break;
+	}
+	grouplck.unlock();
+	if (tg == NULL)
+	    tg = &MainThreadGroup;
+    }
+    tg->lock.lock();
+    tg->threads.insert(&thread);
+    tg->lock.unlock();
+    return tg;
+}
+
+// control all threads in group - does not work yet if caller is in same group
+void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
+    set<Thread *>::iterator it;
+    Locker lck(lock);
+    
+    state = ts;
+    for (it = threads.begin(); it != threads.end(); it++) {
+	if (!THREAD_ISSELF((*it)->id))
+	    ((*it)->*func)();
+    }
+}
+
+int ThreadGroup::init(void *thisp) {
+    return ((ThreadGroup *)thisp)->onStart();
+}
+
+void ThreadGroup::notify(const Thread &thread) {
+    Locker lkr(lock);
+
+    if (thread == master)
+	cv.broadcast();
+    else
+	cv.set();
+}
+
+void ThreadGroup::priority(int pri) {
+    set<Thread *>::iterator it;
+    Locker lkr(lock);
+
+    for (it = threads.begin(); it != threads.end(); it++)
+	(*it)->priority(pri);
+}
+
+void ThreadGroup::remove(Thread &thread) {
+    Locker lkr(lock);
+
+    threads.erase(&thread);
+}
+
+// start a group's main thread
+bool ThreadGroup::start(uint stacksz, bool suspend, bool aterm) {
+    if (master.getState() != Init && master.getState() != Terminated)
+	return false;
+    autoterm = aterm;
+    return master.start(init, this, stacksz, this, suspend, autoterm);
+}
+
+Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
+    set<Thread *>::iterator it;
+    bool signaled = false;
+    msec_t start = milliticks();
+    Locker lkr(lock);
+
+    do {
+	// wait for one thread at a time to save having to deal with
+	// threads restarting other threads
+	bool found = false;
+
+	for (it = threads.begin(); it != threads.end(); it++) {
+	    Thread *thrd = *it;
+	    ThreadState tstate = thrd->getState();
+	    
+	    if (main && thrd != &master) {
+		continue;
+	    } else if (tstate == Terminated) {
+		if (!all) {
+		    threads.erase(it);
+		    thrd->group = NULL;
+		    return thrd;
+		}
+	    } else if (tstate != Terminated && thrd->id != NOID &&
+		!THREAD_ISSELF(thrd->id)) {
+		found = true;
+	    }
+	}
+	if (signaled && main) {
+	    cv.set();			// pass on to someone else
+	    lkr.unlock();
+	    msleep(1);
+	    lkr.lock();
+	    signaled = false;
+	    continue;
+	}
+	if (!found || !msec)
+	    return NULL;
+	// Check every 30 seconds in case we missed something
+	if (!cv.wait(min(30000UL, msec)) && msec <= 30000)
+	    return NULL;
+	signaled = true;
+	if (msec != INFINITE) {
+	    msec_t now = milliticks();
+
+	    msec -= now - start < msec ? (ulong)(now - start) : msec;
+	    start = now;
+	}
+    } while (true);
 }

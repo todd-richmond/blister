@@ -724,13 +724,14 @@ uint Dispatcher::handleEvents(void *evts, int nevts) {
 }
 #endif
 
-bool Dispatcher::start(uint mthreads, uint stack, bool autoterm) {
+bool Dispatcher::start(uint mthreads, uint stack, bool suspend, bool autoterm) {
     bool ret;
 
     maxthreads = mthreads;
     stacksz = stack ? stack : 256 * 1024;
     shutdown = -1;
-    ret = ThreadGroup::start(maxthreads ? 32 * 1024 : stacksz, autoterm);
+    ret = ThreadGroup::start(maxthreads ? 32 * 1024 : stacksz, suspend,
+	autoterm);
     while (ret && shutdown == -1)
 	msleep(20);
     return ret;
@@ -778,7 +779,7 @@ void Dispatcher::wake(uint tasks, bool master) {
 	    threads++;
 	    lock.unlock();
 	    t = new Thread();
-	    t->start(worker, this, stacksz, false, false, this);
+	    t->start(worker, this, stacksz, this);
 	    while ((t = wait(0)) != NULL)
 		delete t;
 	    lock.lock();

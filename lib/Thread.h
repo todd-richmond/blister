@@ -136,6 +136,13 @@ public:
     ~LockerTemplate() { if (locked) (lck.*UNLOCK)(); }
 
     void lock(void) { if (!locked) { (lck.*LOCK)(); locked = true; } }
+    void relock(void) {
+	if (locked)
+	    (lck.*UNLOCK)();
+	else
+	    locked = true;
+	(lck.*LOCK)();
+    }
     void unlock(void) { if (locked) { (lck.*UNLOCK)(); locked = false; } }
 
 private:
@@ -148,6 +155,8 @@ class FastLockerTemplate: nocopy {
 public:
     FastLockerTemplate(C &lock): lck(lock) { (lck.*LOCK)(); }
     ~FastLockerTemplate() { (lck.*UNLOCK)(); }
+
+    void relock(void) { (lck.*UNLOCK)(); (lck.*LOCK)(); }
 
 private:
     C &lck;
@@ -725,13 +734,11 @@ public:
     Lock &lock(void) { return lck; }
     void broadcast(void) { set((uint)-1); }
     void set(uint count = 1) {
-	uint u = 0;
-
 	while (head && count--) {
-	    sz--;
 	    head->cv.set();
 	    head = head->next;
-	    if (count > 1 && u++ % 2) {
+	    sz--;
+	    if (count > 1 && count % 2 == 0) {
 		lck.unlock();
 		lck.lock();
 	    }
@@ -768,7 +775,8 @@ enum ThreadState { Init, Running, Suspended, Terminated };
 // manage a thread performing some operation
 class Thread: nocopy {
 public:
-    Thread(thread_t handle = 0, ThreadGroup *tg = NULL);
+    Thread(thread_t handle, ThreadGroup *tg = NULL, bool autoterm = false);
+    Thread(void);
     virtual ~Thread();
     
     static Thread MainThread;
@@ -788,10 +796,10 @@ public:
 
     bool priority(int pri = 0) { return hdl && priority(hdl, pri); }
     bool resume(void);
-    bool start(uint stacksz = 0, bool suspend = false, bool autoterm = false,
-	ThreadGroup *tg = NULL);
+    bool start(uint stacksz = 0, ThreadGroup *tg = NULL, bool suspend = false,
+	bool autoterm = false);
     bool start(ThreadRoutine main, void *data = NULL, uint stacksz = 0,
-	bool suspend = false, bool autoterm = false, ThreadGroup *tg = NULL);
+	ThreadGroup *tg = NULL, bool suspend = false, bool autoterm = false);
     bool stop(void);
     bool suspend(void);
     bool terminate(void);
@@ -800,7 +808,6 @@ public:
 
 protected:
     void end(int ret = 0);
-    // never used but not pure virtual to allow Thread instantiation
     virtual int onStart(void) { return -1; }
     virtual void onStop(void) {}
 
@@ -809,8 +816,8 @@ private:
     Condvar cv;
     bool autoterm;
     void *data;
-    thread_t hdl, id;
     ThreadGroup *group;
+    thread_t hdl, id;
     ThreadRoutine main;
     int retval;
     volatile ThreadState state;
@@ -841,30 +848,20 @@ public:
     bool operator !=(const ThreadGroup &t) const { return id != t.id; }
     
     void priority(int pri = 0);
-    void remove(Thread *thread);
+    void remove(Thread &thread);
     void resume(void) { onResume(); control(Running, &Thread::resume); }
-    bool start(uint stacksz = 0, bool autoterm = true);
+    bool start(uint stacksz = 0, bool suspend = false, bool autoterm = false);
     void stop(void) { onStop(); control(Terminated, &Thread::stop); }
     void suspend(void) { onSuspend(); control(Suspended, &Thread::suspend); }
     void terminate(void) { control(Terminated, &Thread::terminate); }
     Thread *wait(ulong msec = INFINITE, bool all = false, bool main = false);
     void waitForMain(ulong msec = INFINITE) { wait(msec, false, true); }
     
-    static ThreadGroup *add(Thread *thread, ThreadGroup *tg);
+    static ThreadGroup *add(Thread &thread, ThreadGroup *tg = NULL);
     
 protected:
-    thread_t id;
-    Thread master;
-
     void control(ThreadState, ThreadControlRoutine);
-    void notify(const Thread *thread) {
-	lock.lock();
-	if (thread == &master)
-	    cv.broadcast();
-	else
-	    cv.set();
-	lock.unlock();
-    }
+    void notify(const Thread &thread);
     virtual void onResume(void) {}
     virtual int onStart(void) { return -1; }
     virtual void onStop(void) {}
@@ -874,15 +871,16 @@ private:
     Lock lock;
     Condvar cv;
     bool autoterm;
+    thread_t id;
     volatile ThreadState state;
     set<Thread *> threads;
+    Thread master;
     static Lock grouplck;
     static set<ThreadGroup *> groups;
     static ulong nextId;
 
-    static int init(void *data);
+    static int init(void *thisp);
     friend class Thread;
 };
 
 #endif // Thread_h
-

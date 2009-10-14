@@ -75,7 +75,8 @@ public:
     virtual ~Dispatcher() { stop(); }
 
     const Config &config(void) const { return cfg; }
-    bool start(uint maxthreads = 100, uint stacksz = 0, bool autoterm = true);
+    bool start(uint maxthreads = 100, uint stacksz = 0, bool suspend = false,
+	bool autoterm = false);
     void stop(void);
 
 protected:
