@@ -399,10 +399,7 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz,
 
     pthread_attr_init(&attr);
     if (stacksz) {
-	stacksz += 16 * 1024;
-#ifdef __linux__
-	stacksz += 60 * 1024;
-#endif
+	stacksz += 32 * 1024;
 	pthread_attr_setstacksize(&attr, stacksz);
     }
     pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
