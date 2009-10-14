@@ -434,7 +434,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	tm = gmt ? gmtime_r(&now_sec, &tmbuf) : localtime_r(&now_sec, &tmbuf);
 	tstrftime(tbuf, sizeof (tbuf) / sizeof (tchar), fmt.c_str(), tm);
 	last_format = tbuf;
-	upos = last_format.find(USubst);
+	last_sec = now_sec;
 	if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
 	    int diff;
 	    tchar gmtoff[8];
@@ -454,10 +454,10 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 		tsprintf(gmtoff, T("+%04d"), diff);
 	    last_format.replace(zpos, 2, gmtoff);
 	}
+	upos = last_format.find(USubst);
     }
-    last_sec = now_sec;
     strbuf = last_format;
-    if (upos != strbuf.npos) {
+    if (upos != last_format.npos) {
 	tsprintf(tmp, T("%06u"), (uint)(now_usec % 1000000));
 	strbuf.replace(upos, 2, tmp);
     }
