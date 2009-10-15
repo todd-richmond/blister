@@ -71,8 +71,20 @@ void Condvar::set(uint count) {
 
 bool Condvar::wait(ulong msec, bool hipri) {
     Event &event(*tls);
-    waiting elem(*this, event, hipri);
+    waiting elem(event);
 
+    if (hipri) {
+	elem.next = head;
+	head = &elem;
+	if (!tail)
+	    tail = head;
+    } else {
+	elem.next = NULL;
+	if (tail)
+	    tail = tail->next = &elem;
+	else
+	    head = tail = &elem;
+    }
     lock.unlock();
     bool ret = event.wait(msec);
     lock.lock();

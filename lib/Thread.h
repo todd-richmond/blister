@@ -242,7 +242,7 @@ public:
  * Lock: fast lock that may spin before sleeping
  * Mutex: lock that does not spin before sleeping
  * RWLock: reader/writer lock
- * CondVar: condition variable around a Lock
+ * Condvar: condition variable around a Lock
  */
 
 #ifdef _WIN32
@@ -269,8 +269,9 @@ public:
 	return h ? CloseHandle(h) != 0 : true;
     }
     virtual bool set(void) { return SetEvent(hdl) != 0; }
-    virtual bool wait(ulong msec = INFINITE)
-	{ return WaitForSingleObject(hdl, msec) != WAIT_TIMEOUT; }
+    virtual bool wait(ulong msec = INFINITE) {
+	return WaitForSingleObject(hdl, msec) != WAIT_TIMEOUT;
+    }
 
 protected:
     HANDLE hdl;
@@ -315,25 +316,11 @@ public:
     bool wait(ulong msec = INFINITE, bool hipri = false);
 
 private:
-    class waiting {
-    public:
+    struct waiting {
 	Event &evt;
 	waiting *next;
 
-	waiting(Condvar &cv, Event &event, bool hipri): evt(event) {
-	    if (hipri) {
-		next = (waiting *)cv.head;
-		cv.head = this;
-		if (!cv.tail)
-		    cv.tail = this;
-	    } else {
-		next = NULL;
-		if (cv.tail)
-		    cv.tail = cv.tail->next = this;
-		else
-		    cv.head = cv.tail = this;
-	    }
-	}
+	waiting(Event &event): evt(event) {}
     };
 
     friend waiting;
@@ -462,6 +449,8 @@ protected:
 
 #endif
 
+#define DEFAULT_SPINS 50
+
 typedef LockerTemplate<Lock> Locker;
 typedef FastLockerTemplate<Lock> FastLocker;
 
@@ -469,7 +458,7 @@ typedef FastLockerTemplate<Lock> FastLocker;
 
 class SpinLock: nocopy {
 public:
-    SpinLock(): lck(0) { spin(100); }
+    SpinLock(uint cnt = DEFAULT_SPINS): lck(0) { spin(cnt); }
 
     void lock(void) {
 	if (!trylock()) {
@@ -513,7 +502,7 @@ private:
 
 class SpinLock: nocopy {
 public:
-    SpinLock(): lck(0) { spin(100); }
+    SpinLock(uint cnt = DEFAULT_SPINS): lck(0) { spin(cnt); }
 
     void lock(void) {
 	if (atomic_set(lck)) {
@@ -540,7 +529,10 @@ private:
 
 class SpinLock: nocopy {
 public:
-    SpinLock() { pthread_spin_init(&lck, NULL); }
+    SpinLock(uint cnt = DEFAULT_SPINS) {
+	spin(cnt);
+	pthread_spin_init(&lck, NULL);
+    }
     ~SpinLock() { pthread_spin_destroy(&lck); }
 
     operator pthread_spinlock_t *() { return &lck; }
