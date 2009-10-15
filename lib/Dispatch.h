@@ -102,11 +102,6 @@ private:
     void cleanup(void);
     bool exec(volatile DispatchObj *&aobj, thread_t tid);
     uint handleEvents(void *evts, int cnt);
-    void reset(void) {
-	char buf[16];
-
-	recvfrom(isock, buf, sizeof (buf), 0, NULL, NULL);
-    }
     int run(void);
     void wake(uint tasks, bool master);
     static int worker(void *parm);
@@ -142,6 +137,11 @@ private:
     SocketSet rset, wset;
     Socket wsock;
 
+    void reset(void) {
+	char buf[16];
+
+	isock.read(buf, sizeof (buf));
+    }
     void wakeup(msec_t, msec_t) {
 	if (polling) {
 	    polling = false;

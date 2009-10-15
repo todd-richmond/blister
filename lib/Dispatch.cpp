@@ -994,8 +994,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, Msg m) {
 #ifdef DSP_WIN32_ASYNC
 	static const long sockevts[] = {
 	    FD_READ | FD_CLOSE, FD_WRITE | FD_CLOSE,
-	    FD_READ | FD_WRITE | FD_CLOSE, FD_ACCEPT, FD_CONNECT | FD_CLOSE,
-	    FD_CLOSE
+	    FD_READ | FD_WRITE | FD_CLOSE, FD_ACCEPT,
+	    FD_CONNECT | FD_WRITE | FD_CLOSE, FD_CLOSE
 	};
 
 	lkr.unlock();
