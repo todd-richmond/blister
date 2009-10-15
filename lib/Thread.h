@@ -449,12 +449,13 @@ protected:
 
 #endif
 
-#define DEFAULT_SPINS 50
+#define DEFAULT_SPINS 40
 
 typedef LockerTemplate<Lock> Locker;
 typedef FastLockerTemplate<Lock> FastLocker;
 
-#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__) && \
+    (__GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 1))
 
 class SpinLock: nocopy {
 public:
@@ -725,7 +726,7 @@ public:
 
     void broadcast(void) { set((uint)-1); }
     Lock &lock(void) { return lck; }
-    void set(uint count = 1) {
+    uint set(uint count = 1) {
 	FastLocker lkr(lck);
 
 	while (head && count--) {
@@ -735,6 +736,7 @@ public:
 	    if (count > 1 && count % 2 == 0)
 		lkr.relock();
 	}
+	return count;
     }
     bool wait(Waiting &w, ulong msec = INFINITE) {
 	FastLocker lkr(lck);
