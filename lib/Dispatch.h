@@ -106,7 +106,7 @@ private:
     void wake(uint tasks, bool master);
     static int worker(void *parm);
 
-    Lock lock;
+    SpinLock lock;
     ThreadLocal<volatile DispatchObj **> activeobj;
     msec_t due;
     DispatchObjList flist, rlist;

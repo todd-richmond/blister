@@ -101,7 +101,7 @@ typedef struct pollfd event_t;
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
-    lifo(lock), shutdown(-1), threads(0),
+    shutdown(-1), threads(0),
 #ifdef DSP_WIN32_ASYNC
      interval(DSP_NEVER), wnd(0)
 #else
@@ -185,6 +185,7 @@ bool Dispatcher::exec(volatile DispatchObj *&aobj, thread_t tid) {
 
 int Dispatcher::run() {
     volatile DispatchObj *aobj = NULL;
+    uint thrds;
     thread_t tid = THREAD_SELF();
     Lifo::Waiting waiting(lifo);
 
@@ -192,9 +193,17 @@ int Dispatcher::run() {
     priority(-1);
     lock.lock();
     while (!shutdown) {
-	if (!exec(aobj, tid) && (shutdown || !lifo.wait(waiting, threads == 1 ?
-	    INFINITE : MAX_WAIT_TIME)))
-	    break;
+	if (!exec(aobj, tid)) {
+	    if (shutdown)
+		break;
+	    thrds = threads;
+	    lock.unlock();
+	    if (!lifo.wait(waiting, thrds == 1 ? INFINITE : MAX_WAIT_TIME)) {
+		lock.lock();
+		break;
+	    }
+	    lock.lock();
+	}
     }
     threads--;
     lock.unlock();
@@ -850,7 +859,7 @@ void Dispatcher::removeTimer(DispatchTimer &dt) {
 
 void Dispatcher::cancelSocket(DispatchSocket &ds) {
     socket_t fd;
-    Locker lkr(lock);
+    SpinLocker lkr(lock);
 
     if (ds.flags & DSP_ReadyAll)
 	removeReady(ds);
@@ -950,7 +959,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, Msg m) {
     int nevts = 0;
     timespec ts = { 0, 0 };
 #endif
-    Locker lkr(lock);
+    SpinLocker lkr(lock);
 
     flags = ds.flags & DSP_IO;
     if (ioarray[m] & flags) {
@@ -1074,7 +1083,7 @@ void Dispatcher::deleteObj(DispatchObj &obj) {
 }
 
 void Dispatcher::addReady(DispatchObj &obj, bool hipri, Msg reason) {
-    FastLocker lkr(lock);
+    FastSpinLocker lkr(lock);
 
     obj.msg = reason;
     ready(obj, hipri);
@@ -1082,7 +1091,7 @@ void Dispatcher::addReady(DispatchObj &obj, bool hipri, Msg reason) {
 
 void Dispatcher::cancelReady(DispatchObj &obj) {
     if (obj.flags & DSP_ReadyAll) {
-	FastLocker lkr(lock);
+	FastSpinLocker lkr(lock);
 
 	removeReady(obj);
     }

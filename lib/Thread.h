@@ -718,25 +718,27 @@ public:
 	Waiting(Lifo &lifo): cv(lifo.lock()), next(NULL) {}
     };
 
-    Lifo(Lock &l): lck(l), head(NULL), sz(0) {}
+    Lifo(): head(NULL), sz(0) {}
 
-    bool empty(void) const { return sz == 0; }
-    uint size(void) const { return sz; }
+    bool empty(void) const { FastLocker lkr(lck); return sz == 0; }
+    uint size(void) const { FastLocker lkr(lck); return sz; }
 
-    Lock &lock(void) { return lck; }
     void broadcast(void) { set((uint)-1); }
+    Lock &lock(void) { return lck; }
     void set(uint count = 1) {
+	FastLocker lkr(lck);
+
 	while (head && count--) {
 	    head->cv.set();
 	    head = head->next;
 	    sz--;
-	    if (count > 1 && count % 2 == 0) {
-		lck.unlock();
-		lck.lock();
-	    }
+	    if (count > 1 && count % 2 == 0)
+		lkr.relock();
 	}
     }
     bool wait(Waiting &w, ulong msec = INFINITE) {
+	FastLocker lkr(lck);
+
 	w.next = head;
 	head = &w;
 	sz++;
@@ -753,8 +755,8 @@ public:
     }
 
 private:
-    Lock &lck;
     Waiting *head;
+    mutable Lock lck;
     uint sz;
 };
 
