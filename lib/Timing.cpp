@@ -30,23 +30,25 @@ static Timing &_dtiming(void) {
 Timing &dtiming(_dtiming());
 
 void Timing::add(const tchar *key, timing_t diff) {
-    SpinLocker lkr(lck);
-    timingmap::const_iterator it = tmap.find(key);
     uint slot;
     Stats *stats;
     static timing_t limits[TIMINGSLOTS - 1] = {
 	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
     };
 
+    for (slot = 0; slot < TIMINGSLOTS - 1; slot++) {
+	if (diff <= limits[slot])
+	    break;
+    }
+
+    FastSpinLocker lkr(lck);
+    timingmap::const_iterator it = tmap.find(key);
+
     if (it == tmap.end()) {
 	key = tstrdup(key);
 	stats = tmap[key] = new Stats(key);
     } else {
 	stats = it->second;
-    }
-    for (slot = 0; slot < TIMINGSLOTS - 1; slot++) {
-	if (diff <= limits[slot])
-	    break;
     }
     stats->cnt++;
     stats->cnts[slot]++;
@@ -55,7 +57,7 @@ void Timing::add(const tchar *key, timing_t diff) {
 
 void Timing::clear() {
     timingmap::iterator it;
-    SpinLocker lkr(lck);
+    FastSpinLocker lkr(lck);
 
     while ((it = tmap.begin()) != tmap.end()) {
 	const tchar *p = it->first;
@@ -156,7 +158,7 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 }
 
 void Timing::erase(const tchar *key) {
-    SpinLocker lkr(lck);
+    FastSpinLocker lkr(lck);
     timingmap::iterator it = tmap.find(key);
 
     if (it != tmap.end()) {
