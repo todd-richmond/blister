@@ -97,7 +97,7 @@ public:
     void set(const tchar *attr, const tchar *val, const tchar *attr2,
 	const tchar *val2, ... /* , const tchar *sect = NULL, NULL */);
     void set(const tchar *attr, const bool val, const tchar *sect = NULL)
-	{ set(attr, val ? T("true") : T("false"), sect); }
+	{ set(attr, val ? T("t") : T("f"), sect); }
     void set(const tchar *attr, int val, const tchar *sect = NULL)
 	{ tchar buf[24]; tsprintf(buf, T("%d"), val); set(attr, buf, sect); }
     void set(const tchar *attr, uint val, const tchar *sect = NULL)

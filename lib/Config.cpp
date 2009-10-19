@@ -115,9 +115,9 @@ bool Config::get(const tchar *attr, bool def, const tchar *sect) const {
 	return def;
 
     const tstring &s(expand(val));
+    tchar c = totlower(s[0]);
 
-    return s[0] == '1' || totlower(s[0]) == 't' || totlower(s[0]) == 'y' ||
-	!tstricmp(s.c_str(), T("on"));
+    return c == 't' || c == 'y' || c == '1';
 }
 
 long Config::get(const tchar *attr, long def, const tchar *sect) const {
