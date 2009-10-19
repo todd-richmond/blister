@@ -47,8 +47,8 @@ typedef volatile long atomic_t;
 #define atomic_dec(i)		InterlockedExchangeAdd(&i, -1)
 #define atomic_exc(i, j)	InterlockedExchange(&i, j)
 #define atomic_inc(i)		InterlockedExchangeAdd(&i, 1)
+#define atomic_lck(i)		InterlockedExchange(&i, 1)
 #define atomic_or(i, j)		InterlockedOr(&i, j)
-#define atomic_set(i)		InterlockedExchange(&i, 1)
 #define atomic_xor(i, j)	InterlockedXor(&i, j)
 
 typedef uint tlskey_t;
@@ -72,23 +72,56 @@ typedef pthread_t thread_t;
 #define THREAD_ID()		pthread_self()
 #define THREAD_YIELD()		sched_yield()
 
-#if defined(__arm__)
+#ifdef __GNUC__
 
-#define NO_ATOMIC_OPS
+#if (defined(__arm__) && (__GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 4)))
+
+#define NO_ATOMIC_ADD
+#define NO_ATOMIC_LOCK
 
 #elif __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 1)
+
 #if __GNUC__ < 4
 #include <bits/atomicity.h>
 #else
 #include <ext/atomicity.h>
 #endif
 
-typedef _Atomic_word atomic_t;
+typedef volatile _Atomic_word atomic_t;
 
 #define __sync_fetch_and_add(i, j)	__exchange_and_add(i, j)
 
 #define atomic_ref(i)		(__sync_fetch_and_add(&i, 1) + 1)
 #define atomic_rel(i)		(__sync_fetch_and_add(&i, -1) - 1)
+
+#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+
+inline void atomic_clr(atomic_t &lck) {
+    atomic_t r;
+
+    __asm__ __volatile__
+	("xchgl %0, %1"
+	: "=r" (r), "=m" (lck)
+	: "0" (0), "m" (lck)
+	: "memory");
+}
+
+inline bool atomic_lck(atomic_t &lck) {
+    atomic_t r;
+
+    __asm__ __volatile__
+	("xchgl %0, %1"
+	: "=r" (r), "=m" (lck)
+	: "0" (1), "m" (lck)
+	: "memory");
+    return r == 0;
+}
+
+#else
+
+#define NO_ATOMIC_LOCK
+
+#endif
 
 #else
 
@@ -97,18 +130,27 @@ typedef volatile int atomic_t;
 #define atomic_ref(i)		__sync_add_and_fetch(&i, 1)
 #define atomic_rel(i)		__sync_add_and_fetch(&i, -1)
 
-#endif
-
 #define atomic_add(i, j)	__sync_fetch_and_add(&i, j)
 #define atomic_and(i, j)	__sync_fetch_and_and(&i, j)
 #define atomic_bar()		__sync_synchronize()
-#define atomic_clr(i)		__sync_lock_release(&i)
+// sync_lock_release() supposedly fails on some x64 procs
+// #define atomic_clr(i)		__sync_lock_release(&i)
+#define atomic_clr(i)		__sync_lock_test_and_set(&i, 0)
 #define atomic_dec(i)		__sync_fetch_and_add(&i, -1)
 #define atomic_exc(i, j)	__sync_fetch_exchange_not_implemented(&i, j)
 #define atomic_inc(i)		__sync_fetch_and_add(&i, 1)
+#define atomic_lck(i)		__sync_lock_test_and_set(&i, 1)
 #define atomic_or(i, j)		__sync_fetch_and_or(&i, j)
-#define atomic_set(i)		__sync_lock_test_and_set(&i, 1)
 #define atomic_xor(i, j)	__sync_fetch_and_xor(&i, j)
+
+#endif
+
+#else
+
+#define NO_ATOMIC_ADD
+#define NO_ATOMIC_LOCK
+
+#endif
 
 typedef pthread_key_t tlskey_t;
 
@@ -454,15 +496,14 @@ protected:
 typedef LockerTemplate<Lock> Locker;
 typedef FastLockerTemplate<Lock> FastLocker;
 
-#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__) && \
-    (__GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 1))
+#ifndef NO_ATOMIC_LOCK
 
 class SpinLock: nocopy {
 public:
     SpinLock(uint cnt = DEFAULT_SPINS): lck(0) { spin(cnt); }
 
     void lock(void) {
-	if (!trylock()) {
+	if (atomic_lck(lck)) {
 	    uint spin = spins;
 
 	    do {
@@ -470,55 +511,11 @@ public:
 		    THREAD_YIELD();
 		    spin = spins;
 		}
-	    } while (!trylock());
+	    } while (atomic_lck(lck));
 	}
     }
     void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
-    bool trylock(void) {
-	int r;
-	
-	__asm__ __volatile__
-	    ("xchgl %0, %1"
-	    : "=r" (r), "=m" (lck)
-	    : "0" (1), "m" (lck)
-	    : "memory");
-	return r == 0;
-    }
-    void unlock(void) {
-	int r;
-
-	__asm__ __volatile__
-	    ("xchgl %0, %1"
-	    : "=r" (r), "=m" (lck)
-	    : "0" (0), "m" (lck)
-	    : "memory");
-    }
-
-private:
-    volatile int lck;
-    uint spins;
-};
-
-#elif !defined(NO_ATOMIC_OPS)
-
-class SpinLock: nocopy {
-public:
-    SpinLock(uint cnt = DEFAULT_SPINS): lck(0) { spin(cnt); }
-
-    void lock(void) {
-	if (atomic_set(lck)) {
-	    uint spin = spins;
-
-	    do {
-		if (!spin--) {
-		    THREAD_YIELD();
-		    spin = spins;
-		}
-	    } while (atomic_set(lck));
-	}
-    }
-    void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
-    bool trylock(void) { return atomic_set(lck) == 0; }
+    bool trylock(void) { return atomic_lck(lck) == 0; }
     void unlock(void) { atomic_clr(lck); }
 
 private:
@@ -526,7 +523,7 @@ private:
     uint spins;
 };
 
-#elif defined(__arm__)
+#elif !defined(NO_PTHREAD_SPINLOCK)
 
 class SpinLock: nocopy {
 public:
@@ -635,7 +632,7 @@ typedef FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> FastRLocker
 typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker;
 
 /* Fast reference counter class */
-#ifdef NO_ATOMIC_OPS
+#ifdef NO_ATOMIC_INC
 class RefCount: nocopy {
 public:
     RefCount(uint init = 1): cnt(init) {}

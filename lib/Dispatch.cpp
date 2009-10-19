@@ -557,8 +557,8 @@ void Dispatcher::cleanup(void) {
     Thread *t;
 
     do {
-	lifo.broadcast();
 	lock.unlock();
+	lifo.broadcast();
 	if ((t = wait(30000)) != NULL)
 	    delete t;
 	lock.lock();
@@ -761,9 +761,7 @@ void Dispatcher::stop() {
 }
 
 void Dispatcher::wake(uint tasks, bool master) {
-    if (tasks == 0) {
-	return;
-    } else if (maxthreads == 0) {
+    if (maxthreads == 0) {
 	if (master) {
 	    volatile DispatchObj *aobj;
 
@@ -772,27 +770,24 @@ void Dispatcher::wake(uint tasks, bool master) {
 		;
 	}
     } else {
-	bool relock = false;
-
 	if (tasks > MAX_WAKE_THREAD)
 	    tasks = MAX_WAKE_THREAD;
-	while (rlist && tasks && !lifo.empty()) {
-	    tasks--;
-	    lifo.set();
-	    if ((relock = !relock) == false) {
-		lock.unlock();
-		lock.lock();
-	    }
-	}
-	while (rlist && tasks-- && threads < maxthreads && !shutdown) {
-	    Thread *t;
-
-	    threads++;
+	while (tasks && rlist) {
 	    lock.unlock();
-	    t = new Thread();
-	    t->start(worker, this, stacksz, this);
-	    while ((t = wait(0)) != NULL)
-		delete t;
+	    if (lifo.set()) {
+		Thread *t;
+
+		lock.lock();
+		if (threads >= maxthreads)
+		    break;
+		threads++;
+		lock.unlock();
+		t = new Thread();
+		t->start(worker, this, stacksz, this);
+		while ((t = wait(0)) != NULL)
+		    delete t;
+	    }
+	    tasks--;
 	    lock.lock();
 	}
     }
@@ -1119,9 +1114,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	rlist.push_front(&obj);
     else
 	rlist.push_back(&obj);
-    if (!lifo.empty())
-	lifo.set();
-    else if (!threads)
+    if (!(obj.flags & DSP_Active))
 	wake(1, false);
 }
 
