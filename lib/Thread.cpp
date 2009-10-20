@@ -30,7 +30,6 @@ ThreadGroup ThreadGroup::MainThreadGroup(false);
 Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
 
 #ifdef _WIN32
-ThreadLocalClass<Event> Condvar::tls;
 Process Process::self(GetCurrentProcess());
 #ifndef _WIN32_WCE
 int Process::argc = __argc;
@@ -58,55 +57,6 @@ Mutex::Mutex(const tchar *name) {
     } else {
 	hdl = CreateMutex(NULL, 0, NULL);
     }
-}
-
-void Condvar::set(uint count) {
-    while (head && count--) {
-	head->evt.set();
-	head = head->next;
-    }
-    if (!head)
-	tail = NULL;
-}
-
-bool Condvar::wait(ulong msec, bool hipri) {
-    Event &event(*tls);
-    waiting elem(event);
-
-    if (hipri) {
-	elem.next = head;
-	head = &elem;
-	if (!tail)
-	    tail = head;
-    } else {
-	elem.next = NULL;
-	if (tail)
-	    tail = tail->next = &elem;
-	else
-	    head = tail = &elem;
-    }
-    lock.unlock();
-    bool ret = event.wait(msec);
-    lock.lock();
-    if (!ret) {
-	if (head == &elem) {
-	    head = head->next;
-	    if (!head)
-		tail = NULL;
-	} else {
-	    ret = true;
-	    for (waiting *w = head; w && w->next; w = w->next) {
-		if (w->next == &elem) {
-		    w->next = elem.next;
-		    if (tail == &elem)
-			tail = w;
-		    ret = false;
-		    break;
-		}
-	    }
-	}
-    }
-    return ret;
 }
 
 Process::Process(const Process &proc) {
@@ -276,8 +226,6 @@ void Thread::clear(bool self) {
     if (id != NOID) {
 #ifdef _WIN32
 	CloseHandle(hdl);
-	if (self)
-	    delete &Condvar::tls.get();
 #else
 	pthread_detach(hdl);
 #endif

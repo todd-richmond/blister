@@ -287,37 +287,63 @@ public:
  * Condvar: condition variable around a Lock
  */
 
-#ifdef _WIN32
-#define msleep(msec)   Sleep(msec)
+#define DEFAULT_SPINS 40
 
-class Event: nocopy {
+#ifndef NO_ATOMIC_LOCK
+
+class SpinLock: nocopy {
 public:
-    Event(bool manual = false, bool set = false, const tchar *name = NULL):
-	hdl(NULL) { open(manual, set, name); }
-    ~Event() { if (hdl) CloseHandle(hdl); }
+    SpinLock(uint cnt = DEFAULT_SPINS): lck(0) { spin(cnt); }
 
-    operator HANDLE(void) const { return hdl; }
+    void lock(void) {
+	if (atomic_lck(lck)) {
+	    uint spin = spins;
 
-    virtual bool open(bool manual = false, bool set = false,
-	const tchar *name = NULL) {
-	close();
-	return (hdl = CreateEvent(NULL, manual, set, name)) != NULL;
+	    do {
+		if (!spin--) {
+		    THREAD_YIELD();
+		    spin = spins;
+		}
+	    } while (atomic_lck(lck));
+	}
     }
-    virtual bool clear(void) { PulseEvent(hdl); return ResetEvent(hdl) != 0; }
-    virtual bool close(void) {
-	HANDLE h = hdl;
+    void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
+    bool trylock(void) { return atomic_lck(lck) == 0; }
+    void unlock(void) { atomic_clr(lck); }
 
-	hdl = NULL;
-	return h ? CloseHandle(h) != 0 : true;
+private:
+    atomic_t lck;
+    uint spins;
+};
+
+#else
+
+class SpinLock: nocopy {
+public:
+    SpinLock(uint cnt = DEFAULT_SPINS) {
+	spin(cnt);
+	pthread_spin_init(&lck, NULL);
     }
-    virtual bool set(void) { return SetEvent(hdl) != 0; }
-    virtual bool wait(ulong msec = INFINITE) {
-	return WaitForSingleObject(hdl, msec) != WAIT_TIMEOUT;
-    }
+    ~SpinLock() { pthread_spin_destroy(&lck); }
+
+    operator pthread_spinlock_t *() { return &lck; }
+
+    void spin(uint cnt) { (void)cnt; }
+    void lock(void) { pthread_spin_lock(&lck); }
+    bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
+    void unlock(void) { pthread_spin_unlock(&lck); }
 
 protected:
-    HANDLE hdl;
+    pthread_spinlock_t lck;
 };
+
+#endif
+
+typedef LockerTemplate<SpinLock> SpinLocker;
+typedef FastLockerTemplate<SpinLock> FastSpinLocker;
+
+#ifdef _WIN32
+#define msleep(msec)   Sleep(msec)
 
 class Lock: nocopy {
 public:
@@ -336,7 +362,7 @@ protected:
 class Mutex: nocopy {
 public:
     Mutex(const tchar *name = NULL);
-    ~Mutex() { if (hdl) ReleaseMutex(hdl); }
+    ~Mutex() { if (hdl) CloseHandle(hdl); }
 
     void lock(void) { WaitForSingleObject(hdl, INFINITE); }
     bool trylock(ulong msec = 0) {
@@ -348,73 +374,112 @@ protected:
     HANDLE hdl;
 };
 
-class Condvar: nocopy {
+class Event: nocopy {
 public:
-    Condvar(Lock &lck): lock(lck), head(NULL), tail(NULL) {}
-    ~Condvar() {}
-    
-    void broadcast(void) { set(0x7FFFFFFF); }
-    void set(uint count = 1);
-    bool wait(ulong msec = INFINITE, bool hipri = false);
+    Event(bool manual = false, bool set = false, const tchar *name = NULL):
+	hdl(NULL) { open(manual, set, name); }
+    ~Event() { close(); }
 
-private:
-    struct waiting {
-	Event &evt;
-	waiting *next;
+    operator HANDLE(void) const { return hdl; }
+    HANDLE handle(void) const { return hdl; }
 
-	waiting(Event &event): evt(event) {}
-    };
+    bool close(void) {
+	HANDLE h = hdl;
 
-    friend waiting;
-    Lock &lock;
-    waiting *head, *tail;
-    static ThreadLocalClass<Event> tls;
-    friend Thread;
-};
-
-// Event wrapper that keeps count of sets
-class CountedEvent: public Event {
-public:
-    CountedEvent(bool manual = false, const tchar *name = NULL, uint count = 0)
-	{ open(manual, name, count); }
-    ~CountedEvent() {}
-
-    uint count(void) const { return cnt; }
-
-    virtual bool open(bool manual = false, const tchar *name = NULL,
-	uint count = 0) { cnt = count; return Event::open(manual, false, name); }
-    virtual bool clear(void) {
-	LockerTemplate<Lock> lkr(lock);
-
-	cnt = 0;
-	return Event::clear();
+	hdl = NULL;
+	return h ? CloseHandle(h) != 0 : true;
     }
-    virtual bool close(void) { cnt = 0; return Event::close(); }
-    virtual bool set(void) {
-	LockerTemplate<Lock> lkr(lock);
-
-	return ++cnt == 1 ? PulseEvent(hdl) != 0 : true;
+    bool open(bool manual = false, bool set = false, const tchar *name = NULL) {
+	close();
+	return (hdl = CreateEvent(NULL, manual, set, name)) != NULL;
     }
-    virtual bool wait(ulong msec = INFINITE) {
-	LockerTemplate<Lock> lkr(lock);
-
-	if (cnt) {
-	    cnt--;
-	    return true;
-	} else {
-	    lkr.unlock();
-	    if (WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0) {
-		lkr.lock();
-		cnt--;
-		return true;
-	    }
-	}
-	return false;
+    bool pulse(void) { return PulseEvent(hdl) != 0; }
+    bool reset(void) { return ResetEvent(hdl) != 0; }
+    bool set(void) { return SetEvent(hdl) != 0; }
+    bool wait(ulong msec = INFINITE) {
+	return WaitForSingleObject(hdl, msec) != WAIT_TIMEOUT;
     }
 
 protected:
-    Lock lock;
-    uint cnt;
+    HANDLE hdl;
+};
+
+class Semaphore: nocopy {
+public:
+    Semaphore(uint init = 0, uint max = LONG_MAX, const tchar *name = NULL):
+	hdl(NULL) { open(init, max, name); }
+    ~Semaphore() { close(); }
+
+    operator HANDLE(void) const { return hdl; }
+    HANDLE handle(void) const { return hdl; }
+
+    bool close(void) {
+	HANDLE h = hdl;
+
+	hdl = NULL;
+	return h ? CloseHandle(h) != 0 : true;
+    }
+    bool open(uint init = 0, uint max = LONG_MAX, const tchar *name = NULL) {
+	close();
+	return (hdl = CreateSemaphore(NULL, init, max, name)) != NULL;
+    }
+    bool release(uint cnt = 1) { return ReleaseSemaphore(hdl, cnt, NULL) != 0; }
+    bool wait(ulong msec = INFINITE) {
+	return WaitForSingleObject(hdl, msec) != WAIT_TIMEOUT;
+    }
+
+protected:
+    HANDLE hdl;
+};
+
+class Condvar: nocopy {
+public:
+    Condvar(Lock &lock): lck(lock), pending(0), waiting(0) {}
+
+    void broadcast(void) { set((uint)-1); }
+    void set(uint count = 1) {
+	uint cnt;
+
+	olck.lock();
+	cnt = waiting - pending;
+	if (cnt) {
+	    if (!pending) {
+		ilck.lock();
+		cnt = waiting - pending;
+	    }
+	    if (count < cnt)
+		cnt = count;
+	    pending += cnt;
+	    sema4.release(cnt);
+	}
+	olck.unlock();
+    }
+
+    bool wait(ulong msec = INFINITE) {
+	bool ret;
+
+	ilck.lock();
+	atomic_inc(waiting);
+	ilck.unlock();
+	lck.unlock();
+	ret = sema4.wait(msec);
+	olck.lock();
+	if (!ret)
+	    ret = sema4.wait(0);
+	atomic_dec(waiting);
+	if (ret && !--pending)
+	    ilck.unlock();
+	olck.unlock();
+	lck.lock();
+	return ret;
+    }
+
+private:
+    SpinLock ilck, olck;
+    Lock &lck;
+    uint pending;
+    Semaphore sema4;
+    atomic_t waiting;
 };
 
 class Process {
@@ -470,7 +535,7 @@ public:
     
     void broadcast(void) { pthread_cond_broadcast(&cv); }
     void set(uint count = 1) { while (count--) pthread_cond_signal(&cv); }
-    bool wait(ulong msec = INFINITE, bool hipri = false) {
+    bool wait(ulong msec = INFINITE) {
     	if (msec == INFINITE) {
 	    return pthread_cond_wait(&cv, lock) == 0;
 	} else {
@@ -491,67 +556,8 @@ protected:
 
 #endif
 
-#define DEFAULT_SPINS 40
-
 typedef LockerTemplate<Lock> Locker;
 typedef FastLockerTemplate<Lock> FastLocker;
-
-#ifndef NO_ATOMIC_LOCK
-
-class SpinLock: nocopy {
-public:
-    SpinLock(uint cnt = DEFAULT_SPINS): lck(0) { spin(cnt); }
-
-    void lock(void) {
-	if (atomic_lck(lck)) {
-	    uint spin = spins;
-
-	    do {
-		if (!spin--) {
-		    THREAD_YIELD();
-		    spin = spins;
-		}
-	    } while (atomic_lck(lck));
-	}
-    }
-    void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
-    bool trylock(void) { return atomic_lck(lck) == 0; }
-    void unlock(void) { atomic_clr(lck); }
-
-private:
-    atomic_t lck;
-    uint spins;
-};
-
-#elif !defined(NO_PTHREAD_SPINLOCK)
-
-class SpinLock: nocopy {
-public:
-    SpinLock(uint cnt = DEFAULT_SPINS) {
-	spin(cnt);
-	pthread_spin_init(&lck, NULL);
-    }
-    ~SpinLock() { pthread_spin_destroy(&lck); }
-
-    operator pthread_spinlock_t *() { return &lck; }
-
-    void spin(uint cnt) { (void)cnt; }
-    void lock(void) { pthread_spin_lock(&lck); }
-    bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
-    void unlock(void) { pthread_spin_unlock(&lck); }
-
-protected:
-    pthread_spinlock_t lck;
-};
-
-#else
-
-#error no spinlock mechanism defined
-
-#endif
-
-typedef LockerTemplate<SpinLock> SpinLocker;
-typedef FastLockerTemplate<SpinLock> FastSpinLocker;
 
 class RWLock: nocopy {
 public:
@@ -591,7 +597,7 @@ public:
 
 	if (readers || writing) {
 	    wwaiting++;
-	    if (!msec || !cv.wait(msec, true)) {
+	    if (!msec || !cv.wait(msec)) {
 		wwaiting--;
 		return false;
 	    }
@@ -604,7 +610,7 @@ public:
 
 	while (readers || writing) {
 	    wwaiting++;
-	    cv.wait(INFINITE, true);
+	    cv.wait(INFINITE);
 	    wwaiting--;
 	}
 	writing = true;
