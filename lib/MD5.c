@@ -21,7 +21,6 @@
   ghost@aladdin.com
 
  */
-/* $Id: MD5.c,v 1.1 2009/02/21 00:42:42 richmond Exp $ */
 /*
   Independent implementation of MD5 (RFC 1321).
 
@@ -53,6 +52,12 @@
 
 #include "MD5.h"
 #include <string.h>
+
+#if defined(__i386__) || defined(__x86_64__) || defined(_WIN32)
+#define ARCH_IS_BIG_ENDIAN 0
+#elif defined(__sparc__)
+#define ARCH_IS_BIG_ENDIAN 1
+#endif
 
 #undef BYTE_ORDER	/* 1 = big-endian, -1 = little-endian, 0 = unknown */
 #ifdef ARCH_IS_BIG_ENDIAN
