@@ -43,6 +43,7 @@ public:
     virtual int doallocate(void) {
 	if (!buf) {
 	    buf = new char[bufsz];
+	    alloced = true;
 	    setp(buf, buf + bufsz);
 	    setg(buf, buf, buf);
 	}
@@ -54,25 +55,6 @@ public:
 	    setg(buf, buf, buf);
 	    setp(buf, buf + bufsz);
 	}
-    }
-
-    virtual streambuf *setbuf(char *p, streamsize sz) {
-	if (p || !sz || bufsz < sz) {
-	    if (alloced)
-		delete [] buf;
-	    alloced = p == NULL;
-	    if (!p && sz)
-		p = new char[sz];
-	    buf = p;
-	}
-	if (buf) {
-	    bufsz = sz;
-	    setp(buf, buf + sz);
-	    setg(buf, buf, buf);
-	} else {
-	    bufsz = 0;
-	}
-	return this;
     }
     /*
     virtual streampos seekoff(streamoff off, ios::seek_dir dir,
@@ -105,6 +87,24 @@ public:
 	return off;
     }
     */
+    virtual streambuf *setbuf(char *p, streamsize sz) {
+	if (p || !sz || bufsz < sz) {
+	    if (alloced) {
+		delete [] buf;
+		alloced = false;
+	    }
+	    if (!p && sz) {
+		p = new char[sz];
+		alloced = true;
+	    }
+	    buf = p;
+	}
+	bufsz = sz;
+	setg(buf, buf, buf);
+	setp(buf, buf + bufsz);
+	return this;
+    }
+
     virtual int sync(void) {
 	char *pb = pbase(), *pp = pptr();
     
@@ -117,96 +117,113 @@ public:
     }
 
     virtual int underflow(void) {
-	char c;
+	const char *p = gptr();
 
-	if (gptr() == NULL) {
+	if (p == NULL) {
+	    char c;
+
 	    return fd.read(&c, sizeof (c)) == sizeof (c) ? c : -1;
-	} else if (gptr() >= egptr()) {
-	    if (xsgetn(&c, 0) == -1)
+	} else if (p >= egptr()) {
+	    char *pb = pbase();
+	    streamsize left = (streamsize)(pptr() - pb);
+	    int sz;
+
+	    if (left) {
+		if ((sz = fd.write(pb, left)) != left && sz)
+		    return -1;
+		setp(pb, pb + bufsz);
+	    }
+	    if ((sz = fd.read(buf, bufsz)) == -1)
 		return -1;
+	    setg(buf, buf, buf + sz);
+	    return *buf;
 	}
-	return *gptr();
+	return *p;
     }
 
-    virtual int overflow(int i = -1) {
+    virtual int overflow(int i) {
 	char c = (char)i;
 
 	if (pptr() == NULL) {
 	    return i == -1 || fd.write(&c, sizeof (c)) == sizeof (c) ? c : -1;
 	} else {
-	    int len = i == -1 ? 0 : 1;
-	    
-	    return xsputn(&c, len) == len ? i : -1;
+	    int sz = i == -1 ? 0 : 1;
+
+	    return xsputn(&c, sz) == sz ? i : -1;
 	}
     }
 
-    virtual streamsize xsputn(const char *p, streamsize size) {
-	char *pb = pbase(), *pp = pptr();
-	streamsize room = bufsz - (streamsize)(pp - pb);
-	streamsize sz = size;
-    
-	if (room <= sz) {
-	    iovec iov[2];
+    virtual streamsize xsgetn(char *p, streamsize size) {
+	streamsize left = (streamsize)(egptr() - gptr());
 
-	    iov[0].iov_base = pb;
-	    iov[0].iov_len = (ulong)(pp - pb);
-	    iov[1].iov_base = (char *)p;
-	    iov[1].iov_len = size;
-	    if (fd.writev(iov, 2) != (long)(iov[0].iov_len + iov[1].iov_len))
+	if (left && left >= size) {
+	    memcpy(p, gptr(), size);
+	    gbump((int)size);
+	    return size;
+	}
+
+	int in;
+	char *pb = pbase();
+	streamsize sz = size - left;
+
+	memcpy(p, gptr(), left);
+	p += left;
+	left = (streamsize)(pptr() - pb);
+	if (left) {				// flush output
+	    if (fd.write(pb, left) != left)
 		return -1;
 	    setp(pb, pb + bufsz);
-	} else if (sz) {
-	    memcpy(pp, p, sz);
-	    pbump((int)sz);
-	} else if (pp - pb) {
-	    if (fd.write(pb, (streamsize)(pp - pb)) != pp - pb)
-		return -1;
-	    setp(pb, pb + bufsz);
+	}
+	setg(buf, buf, buf);
+	if (sz >= bufsz || !bufsz) {		// read directly into user buf
+	    while (sz) {
+		if ((in = fd.read(p, sz)) <= 0)
+		    return size - sz;
+		p += in;
+		sz -= in;
+	    }
+	} else {				// read into stream buf
+	    while (sz) {
+		if ((in = fd.read(buf, bufsz)) <= 0) {
+		    return size - sz;
+		} else if (in < sz) {
+		    memcpy(p, buf, in);
+		    p += in;
+		    sz -= in;
+		} else {
+		    memcpy(p, buf, sz);
+		    setg(buf, buf + sz, buf + in);
+		    break;
+		}
+	    };
 	}
 	return size;
     }
 
-    virtual streamsize xsgetn(char *p, streamsize sz) {
-	streamsize left = (streamsize)(egptr() - gptr());
-    
-	if (left && left >= sz) {
-	    memcpy(p, gptr(), sz);
-	    gbump((int)sz);
-	} else {
-	    char *pb = pbase();
-	    streamsize len = (streamsize)(pptr() - pb);
+    virtual streamsize xsputn(const char *p, streamsize sz) {
+	char *pb = pbase(), *pp = pptr();
+	streamsize left = bufsz - (streamsize)(pp - pb);
 
-	    if (len) {				// flush output
-		if (fd.write(pb, len) != len)
-		    return -1;
-		setp(pb, pb + bufsz);
-	    }
-	    memcpy(p, gptr(), left);
-	    p += left;
-	    left = sz - left;
-	    setg(buf, buf, buf);
-	    if (left >= bufsz) {		// read directly into user buf
-		while (left) {
-		    if ((len = fd.read(p, left)) <= 0)
-			return sz - left;
-		    left -= len;
-		    p += len;
-		}
-	    } else {				// read into stream buf
-		while (left) {
-		    if ((len = fd.read(buf, bufsz)) <= 0)
-			return sz - left;
-		    if (len < left) {
-			memcpy(p, buf, len);
-			left -= len;
-			p += len;
-		    } else {
-			memcpy(p, buf, left);
-			setg(buf, buf + left, buf + len);
-			break;
-		    }
-		}
-	    }
+	if (left < sz) {
+	    iovec iov[2];
+	    long out;
+
+	    iov[0].iov_base = pb;
+	    iov[0].iov_len = (ulong)(pp - pb);
+	    iov[1].iov_base = (char *)p;
+	    iov[1].iov_len = sz;
+	    out = fd.writev(iov, 2);
+	    setp(pb, pb + bufsz);
+	    return out == -1 || (ulong)out < iov[0].iov_len ? -1 :
+		out - iov[0].iov_len;
+	} else if (sz) {
+	    memcpy(pp, p, sz);
+	    pbump((int)sz);
+	} else {
+	    left = (streamsize)(pp - pb);
+	    if (left && fd.write(pb, left) != left)
+		return -1;
+	    setp(pb, pb + bufsz);
 	}
 	return sz;
     }
