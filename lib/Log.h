@@ -78,18 +78,18 @@ public:
 	kv(const tchar *k, const tchar *v) { set(k, v); }
 	kv(const tstring &k, const tstring &v) { set(k, v); }
 	kv(const tchar *k, bool v) { set(k, T("%c"), v ? 't' : 'f'); }
-	kv(const tchar *k, char v) { set(k, T("%d"), (int)v); }
+	kv(const tchar *k, char v) { set(k, T("%c"), v); }
 	kv(const tchar *k, double v) { set(k, T("%g"), v); }
 	kv(const tchar *k, float v) { set(k, T("%g"), v); }
 	kv(const tchar *k, int v) { set(k, T("%d"), v); }
 	kv(const tchar *k, long v) { set(k, T("%ld"), v); }
 	kv(const tchar *k, llong v) { set(k, T("%lld"), v); }
 	kv(const tchar *k, short v) { set(k, T("%d"), (int)v); }
-	kv(const tchar *k, uchar v) { set(k, T("%u"), (uint)v); }
+	kv(const tchar *k, uchar v) { set(k, T("%c"), v); }
 	kv(const tchar *k, uint v) { set(k, T("%u"), v); }
 	kv(const tchar *k, ulong v) { set(k, T("%lu"), v); }
 	kv(const tchar *k, ullong v) { set(k, T("%llu"), v); }
-	kv(const tchar *k, ushort v) { set(k, T("%u"), v); }
+	kv(const tchar *k, ushort v) { set(k, T("%u"), (uint)v); }
 	kv(const tchar *k, wchar v) { set(k, T("%C"), v); }
 
 	const tstring &str(void) const { return s; }
