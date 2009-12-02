@@ -80,7 +80,7 @@ public:
 	}
 
     private:
-	const char *key;
+	const tchar *key;
 	const C &val;
 
 	void value(tostream &os) const {

@@ -428,7 +428,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	strbuf += ' ';
     }
     if (_type == KeyVal) {
-	strbuf += "txt=\"";
+	strbuf += T("txt=\"");
 	strbuf += tlsd.strm.str();
 	strbuf += '"';
     } else {
