@@ -51,8 +51,8 @@ class Config;
  * be shared across multiple processes or child forks
  *
  * A global "dlog" object allows for the simplest functionality but other
- * objects can be instantiated as well. A "kv" inner class eases logging
- * multiple attr=val pairs
+ * objects can be instantiated as well. A kv() member function eases logging
+ * attr=val pairs with proper quoting
  *
  * dlog << Log::Warn << T("errno ") << errno << endlog;
  * dlogw(T("errno"), errno);
@@ -67,47 +67,79 @@ public:
     };
     enum Type { Simple, Syslog, KeyVal, NoLevel };
 
-    class kv {
+    template<class C>
+    class KV {
     public:
-	template<class C> kv(const tchar *k, const C &v) {
-	    bufferstream<tchar> buf;
+	KV(const tchar *k, const C &v): key(k), val(v) {}
+	KV(const tstring &k, const C &v): key(k.c_str()), val(v) {}
 
-	    buf << v << '\0';
-	    set(k, buf.str());
+	tostream &print(tostream &os) const {
+	    os << key << '=';
+	    value(os);
+	    return os;
 	}
-	kv(const tchar *k, const tchar *v) { set(k, v); }
-	kv(const tstring &k, const tstring &v) { set(k, v); }
-	kv(const tchar *k, bool v) { set(k, T("%c"), v ? 't' : 'f'); }
-	kv(const tchar *k, char v) { set(k, T("%c"), v); }
-	kv(const tchar *k, double v) { set(k, T("%g"), v); }
-	kv(const tchar *k, float v) { set(k, T("%g"), v); }
-	kv(const tchar *k, int v) { set(k, T("%d"), v); }
-	kv(const tchar *k, long v) { set(k, T("%ld"), v); }
-	kv(const tchar *k, llong v) { set(k, T("%lld"), v); }
-	kv(const tchar *k, short v) { set(k, T("%d"), (int)v); }
-	kv(const tchar *k, uchar v) { set(k, T("%c"), v); }
-	kv(const tchar *k, uint v) { set(k, T("%u"), v); }
-	kv(const tchar *k, ulong v) { set(k, T("%lu"), v); }
-	kv(const tchar *k, ullong v) { set(k, T("%llu"), v); }
-	kv(const tchar *k, ushort v) { set(k, T("%u"), (uint)v); }
-	kv(const tchar *k, wchar v) { set(k, T("%C"), v); }
-
-	const tstring &str(void) const { return s; }
 
     private:
-	tstring s;
+	const char *key;
+	const C &val;
 
-	void set(const tchar *k, const tchar *v);
-	void set(const tstring &k, const tstring &v) {
-	    set(k.c_str(), v.c_str());
+	void value(tostream &os) const {
+	    bufferstream<tchar> buf;
+
+	    buf << val << '\0';
+	    quote(os, buf.str());
 	}
-	template <class C> void set(const tchar *k, const tchar *f, C v) {
-	    tchar buf[64];
+	static void quote(tostream &os, const tchar *val) {
+	    const tchar *p;
+	    static const uchar needquote[256] = {
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // DLE - US
+		1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // SPACE - /
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0 - ?
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // @ - O
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,  // P - _
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // ` - o
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // high bits
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	    };
 
-	    s = k;
-	    s += '=';
-	    tsprintf(buf, f, v);
-	    s += buf;
+	    if (!val)
+		return;
+	    for (p = val; *p; p++) {
+		if (needquote[(uchar)*p]) {
+		    os << '"';
+		    for (p = val; *p; p++) {
+			uchar c = (uchar)*p;
+
+			if (c == '"') {
+			    os << '\\' << '"';
+			} else if (c == '\\') {
+			    os << '\\' << '\\';
+			} else if (c == '\n') {
+			    os << '\\' << 'n';
+			} else if (c == '\r') {
+			    os << '\\' << 'r';
+			} else if ((uchar)c < ' ' && c != '\t') {
+			    tchar tmp[5];
+
+			    tsprintf(tmp, T("\\%03o"), (uint)c);
+			    os << tmp;
+			} else {
+			    os << c;
+			}
+		    }
+		    os << '"';
+		    return;
+		}
+	    }
+	    os.write(val, p - val);
 	}
     };
 
@@ -193,13 +225,14 @@ public:
 	return *this;
     }
 
-    Log &operator <<(const kv &kv) {
+    template<class C>
+    Log &operator <<(const KV<C> &kv) {
         Tlsdata &tlsd(*tls);
 
 	if (tlsd.clvl != None) {
 	    if (tlsd.strm.size())
 		tlsd.strm << ' ';
-	    tlsd.strm << kv.str();
+	    kv.print(tlsd.strm);
 	    tlsd.space = true;
 	}
 	return *this;
@@ -262,10 +295,16 @@ public:
 #undef _log_
 #undef _func_
 
-    static const kv cmd(const tchar *c) { return kv(T("cmd"), c); }
-    static const kv cmd(const tstring &c) { return cmd(c.c_str()); }
-    static const kv mod(const tchar *m) { return kv(T("mod"), m); }
-    static const kv mod(const tstring &m) { return mod(m.c_str()); }
+    template<class C> static const KV<C> kv(const tchar *key, const C &val) {
+	return KV<C>(key, val);
+    }
+    template<class C> static const KV<C> kv(const tstring &key, const C &val) {
+	return KV<C>(key, val);
+    }
+    static const KV<const tchar *> cmd(const tchar *c) { return kv(T("cmd"), c); }
+    static const KV<tstring> cmd(const tstring &c) { return kv(T("cmd"), c); }
+    static const KV<const tchar *> mod(const tchar *m) { return kv(T("mod"), m); }
+    static const KV<tstring> mod(const tstring &m) { return kv(T("mod"), m); }
     static const tchar *section(void) { return T("log"); }
     static Level str2enum(const tchar *lvl);
 
@@ -371,8 +410,34 @@ private:
     void _flush(void);
 };
 
-inline tostream &operator <<(tostream &os, const Log::kv &kv) {
-    return os << kv.str();
+template<> inline void Log::KV<bool>::value(tostream &os) const {
+    os << (val ? 't' : 'f');
+}
+template<> inline void Log::KV<const tchar *>::value(tostream &os) const {
+    quote(os, val);
+}
+template<> inline void Log::KV<tchar *>::value(tostream &os) const {
+    quote(os, val);
+}
+template<> inline void Log::KV<tstring>::value(tostream &os) const {
+    quote(os, val.c_str());
+}
+template<> inline void Log::KV<char>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<double>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<float>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<int>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<long>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<llong>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<short>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<uchar>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<uint>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<ulong>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<ullong>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<ushort>::value(tostream &os) const { os << val; }
+template<> inline void Log::KV<wchar>::value(tostream &os) const { os << val; }
+
+template<class C>inline tostream &operator <<(tostream &os, const Log::KV<C> &kv) {
+    return kv.print(os);
 }
 
 inline Log &operator <<(Log &l, Log &(*manip)(Log &)) { return manip(l); }
