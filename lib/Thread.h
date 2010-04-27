@@ -88,7 +88,7 @@ typedef pthread_t thread_t;
 
 typedef volatile _Atomic_word atomic_t;
 
-#define __sync_fetch_and_add(i, j)	__exchange_and_add(i, j)
+#define __sync_fetch_and_add	__exchange_and_add
 
 #define atomic_ref(i)		(__sync_fetch_and_add(&i, 1) + 1)
 #define atomic_rel(i)		(__sync_fetch_and_add(&i, -1) - 1)
@@ -105,7 +105,7 @@ inline void atomic_clr(atomic_t &lck) {
 	: "memory");
 }
 
-inline bool atomic_lck(atomic_t &lck) {
+inline atomic_t atomic_lck(atomic_t &lck) {
     atomic_t r;
 
     __asm__ __volatile__
@@ -113,7 +113,7 @@ inline bool atomic_lck(atomic_t &lck) {
 	: "=r" (r), "=m" (lck)
 	: "0" (1), "m" (lck)
 	: "memory");
-    return r == 0;
+    return r;
 }
 
 #else
