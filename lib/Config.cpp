@@ -227,9 +227,9 @@ bool Config::parse(tistream &is) {
 	    attr = attr.substr(9, attr.size() - 9);
 	    trim(attr);
 
-	    tifstream is(attr.c_str());
+	    tifstream ifs(attr.c_str());
 
-	    if (!parse(is))
+	    if (!parse(ifs))
 		return false;
 	    continue;
 	}

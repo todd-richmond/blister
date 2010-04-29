@@ -30,7 +30,7 @@
 static const tchar *NAME = T("echo");
 
 const int TIMEOUT = 10 * 1000;
-const int MAXREAD = 16 * 1024;
+const int MAXREAD = 12 * 1024;
 
 class EchoTest: public Dispatcher {
 public:
@@ -280,6 +280,7 @@ bool EchoTest::listen(const tchar *host, ulong timeout) {
 }
 
 static void signal_handler(int) { qflag = true; }
+
 
 int tmain(int argc, tchar *argv[]) {
     Sockaddr addr;

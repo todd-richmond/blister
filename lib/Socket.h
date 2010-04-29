@@ -29,7 +29,10 @@
 #elif !defined(_WINSOCK2API_)
 #include <winsock2.h>
 #endif
+#pragma warning(disable: 6386)
 #include <ws2tcpip.h>
+#pragma warning(default: 6386)
+
 
 #pragma warning(disable: 4097)
 
@@ -154,7 +157,7 @@ private:
 #ifdef _WIN32
     class SockInit {
     public:
-	SockInit() { WSADATA w; WSAStartup(2 | (0 << 8), &w); }
+	SockInit() { WSADATA w; (void)WSAStartup(2 | (0 << 8), &w); }
 	~SockInit() { WSACleanup(); }
     };
 

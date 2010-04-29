@@ -50,7 +50,7 @@ KillFunc killfunc = (KillFunc)pthread.get(T("pthread_kill_other_threads_np"));
 static void splitpath(const tchar *path, const tchar *name, tstring &root,
     tstring &prog) {
     tchar buf[256];
-    tchar *sep;
+    const tchar *sep;
     tstring s;
     const tchar *p = NULL;
 
@@ -60,17 +60,14 @@ static void splitpath(const tchar *path, const tchar *name, tstring &root,
     if (p) {
 	s = p;
     } else {
-	tstrcpy(buf, path);
-	if ((sep = tstrrchr(buf, '/')) == NULL)
-	    sep = tstrrchr(buf, '\\');
-	if (sep && sep - buf > 4 && !tstrnicmp(sep - 3, T("bin"), 3))
+	if ((sep = tstrrchr(path, '/')) == NULL)
+	    sep = tstrrchr(path, '\\');
+	if (sep && sep - path > 4 && !tstrnicmp(sep - 3, T("bin"), 3))
 	    sep -= 4;
-	if (sep) {
-	    *sep = '\0';
-	    s = buf;
-	} else {
+	if (sep)
+	    s.assign(path, sep - path);
+	else
 	    s = '.';
-	}
     }
 #ifdef _WIN32
     if (name) {
@@ -99,10 +96,10 @@ static void splitpath(const tchar *path, const tchar *name, tstring &root,
 	p = path;
     else
 	p++;
-    tstrcpy(buf, p);
-    if ((sep = tstrrchr(buf, '.')) != NULL && !tstrnicmp(sep, T(".exe"), 4))
-	*sep = '\0';
-    prog = buf;
+    if ((sep = tstrrchr(path, '.')) != NULL && !tstrnicmp(sep, T(".exe"), 4))
+	prog.assign(p, sep - p);
+    else
+	prog = p;
 }
 
 #ifdef _WIN32
@@ -294,7 +291,7 @@ void __stdcall Service::srv_main(DWORD argc, tchar **argv) {
 	    service->ctrlfunc);
     else if (!service->hStatus)
 	return;
-    GetModuleFileName(NULL, modulename, sizeof (modulename));
+    GetModuleFileName(NULL, modulename, sizeof (modulename) / sizeof (tchar));
     argv[0] = modulename;
     service->ssStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     service->ssStatus.dwServiceSpecificExitCode = 0;
@@ -437,7 +434,7 @@ bool Service::install(const tchar *file, const tchar *desc,
     if (uninstall())
 	open();
     if (!file) {
-	GetModuleFileName(NULL, buf, sizeof (buf));
+	GetModuleFileName(NULL, buf, sizeof (buf) / sizeof (tchar));
 	file = buf;
     }
     if (!desc) {
@@ -519,7 +516,7 @@ bool Service::send(int sig) {
 	    if (++cnt == STATUS_LOOPS)
 		return false;
 	    msleep(100);
-	    QueryServiceStatus(hService, &status);
+	    (void)QueryServiceStatus(hService, &status);
 	}
     }
 #endif
@@ -1125,10 +1122,12 @@ int Service::execute(int argc, const tchar * const *argv) {
     int ret = 0;
     Service::Status sts;
 
+#ifndef _WIN32
     if (getuid() != geteuid() && getuid() != 0) {
 	tcout << name << T(": uid permission denied") << endl;
 	return 1;
     }
+#endif
     av = new const tchar *[argc + 1];
     path = argv[0];
 #ifndef _WIN32_WCE
@@ -1136,7 +1135,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	int sz = 1024 + 2 + (int)path.size();
 	tchar *buf = new tchar[sz];
 
-	tgetcwd(buf, sz);
+	(void)tgetcwd(buf, sz);
 	tstrcat(buf, T("/"));
 	path = buf + path;
 	delete [] buf;

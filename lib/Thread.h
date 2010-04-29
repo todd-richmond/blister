@@ -251,7 +251,7 @@ public:
 	    set(c = 0);
 	return c;
     }
-    void set(const C data) const { tls_set(key, data); }
+    void set(const C c) const { tls_set(key, c); }
 
 protected:
     tlskey_t key;

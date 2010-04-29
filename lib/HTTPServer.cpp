@@ -276,7 +276,7 @@ void HTTPServerSocket::parse(void) {
 	*p++ = '\0';
     }
     if (strnicmp(prot, "HTTP/1.", 7) || !prot[7] || prot[8] ||
-	!isdigit(prot[7])) {
+	!isdigit((int)prot[7])) {
 	prot = "HTTP/1.0";
 	error(400);
 	return;
@@ -351,7 +351,7 @@ void HTTPServerSocket::exec(void) {
     } else if (!stricmp(cmd, "POST")) {
 	const char *val = attr("content-type");
 
-	if (val && !stricmp(val, "application/x-www-form-urlencoded"))
+	if (val != NULL && !stricmp(val, "application/x-www-form-urlencoded"))
 	    urldecode(postdata, postargs);
 	else
 	    postargs.clear();
@@ -395,7 +395,7 @@ inline void HTTPServerSocket::keepalive(void) {
     static const char *keep = "keep-alive";
 
     ka = prot[7] == '1';		// HTTP 1.1
-    if (val && !stricmp(val, keep)) {
+    if (val != NULL && !stricmp(val, keep)) {
 	ka = true;
     } else {
 	p = "Connection";
@@ -470,9 +470,9 @@ void HTTPServerSocket::reply(const char *data, size_t len) {
     i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)ss.size() + len);
     hdrs.write(buf, i);
     iov[0].iov_base = (char *)hdrs.str();
-    iov[0].iov_len = hdrs.size();
+    iov[0].iov_len = (size_t)hdrs.size();
     iov[1].iov_base = (char *)ss.str();
-    iov[1].iov_len = ss.size();
+    iov[1].iov_len = (size_t)ss.size();
     iov[2].iov_base = (char *)data;
     iov[2].iov_len = len;
     dlog << (_status < 400 ? Log::Info : Log::Note) << cmd << ' ' << path <<
@@ -612,7 +612,7 @@ void HTTPServerSocket::get(bool head) {
 	if (parse_date(achartotchar(val)) < sbuf.st_mtime)
 	    sts = 304;
     }
-    if (val && (val = strchr(val, ';')) != NULL &&
+    if (val != NULL && (val = strchr(val, ';')) != NULL &&
 	!strnicmp(val + 1, "length=", 7) &&
 	(ulong)atol(val + 8) != (ulong)sbuf.st_size)
 	sts = 200;

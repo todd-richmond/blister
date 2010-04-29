@@ -228,7 +228,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 	remain *= (bodycnt - startfile);
     }
     vars[T("host")] = host;
-    while (is.getline(buf, sizeof (buf))) {
+    while (is.getline(buf, sizeof (buf) / sizeof (tchar))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
 	    continue;

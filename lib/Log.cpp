@@ -201,7 +201,7 @@ void Log::LogFile::roll(void) {
 		files++;
 		if (stat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
 		    (ulong)oldtime) {
-		    if ((pos = s3.rfind('.')) != s3.npos && isdigit(s3[++pos])) {
+		    if ((pos = s3.rfind('.')) != s3.npos && isdigit((int)s3[++pos])) {
 			ext = atoi(s3.c_str() + pos);
 			if (ext < oldext)
 			    continue;
@@ -348,7 +348,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     time_t now_sec;
     usec_t now_usec;
     tstring &strbuf(tlsd.strbuf);
-    size_t sz = tlsd.strm.size();
+    size_t sz = (size_t)tlsd.strm.size();
     tchar tmp[8];
 
     if (tlsd.suppress)
@@ -536,7 +536,7 @@ void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
 
 void Log::_flush(void) {
     if (bufstrm.size()) {
-	ffd.print(bufstrm.str(), bufstrm.size());
+	ffd.print(bufstrm.str(), (size_t)bufstrm.size());
 	bufstrm.reset();
     }
 }
@@ -624,8 +624,13 @@ void Log::set(const Config &cfg, const tchar *sect) {
 }
 
 bool Log::setids(uid_t uid, gid_t gid) const {
+#ifdef _WIN32
+	(void)uid; (void)gid;
+	return true;
+#else
     return (!alert() || chown(alertpath(), uid, gid) == -1) &&
 	(!file() || chown(filepath(), uid, gid) == -1);
+#endif
 }
 
 void Log::setmp(bool b) {

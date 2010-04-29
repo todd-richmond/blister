@@ -173,6 +173,7 @@ EXTERNC_
 #define MAXWORD		0xffff
 #define MAXDWORD	0xffffffff
 
+#if _MSC_VER < 1600
 #define EADDRNOTAVAIL   WSAEADDRNOTAVAIL
 #define EADDRINUSE	WSAEADDRINUSE
 #define ECONNABORTED	WSAECONNABORTED
@@ -184,6 +185,7 @@ EXTERNC_
 #define ENOSR		ENOBUFS
 #define ETIMEDOUT	WSAETIMEDOUT
 #define EWOULDBLOCK	WSAEWOULDBLOCK
+#endif
 
 #define O_SHORT_LIVED	_O_SHORT_LIVED
 #define O_COMPRESSED	0x010000
@@ -629,7 +631,7 @@ EXTERNC_
 
 #ifndef _WIN32_WCE
 using namespace std;
-#if _MSC_VER >= 1500
+#if _MSC_VER >= 1500 && _MSC_VER < 1600
 using namespace stdext;
 #endif
 #endif

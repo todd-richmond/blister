@@ -20,6 +20,10 @@
 #include "SMTPClient.h"
 #include "Thread.h"
 
+#ifdef _WIN32
+#pragma warning(disable: 6328)
+#endif
+
 string SMTPClient::crlf("\r\n");
 
 SMTPClient::SMTPClient(): sstrm(sock), lmtp(false) {}

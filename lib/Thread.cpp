@@ -89,10 +89,11 @@ Process Process::start(tchar *const *args, const int *fds) {
 #endif
     while (*args)
 	cmd += *(args++) + ' ';
-    if (!CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL, NULL,
-	st, &proc)) {
+    if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL, NULL,
+	st, &proc))
+	CloseHandle(proc.hThread);
+    else
 	errno = EINVAL;
-    }
     return Process(proc.hProcess);
 }
 #endif
@@ -167,9 +168,10 @@ uint Processor::count(void) {
 ullong Processor::affinity(void) {
     ullong mask = (ulong)-1;
 #if defined(_WIN32) && !defined(_WIN32_WCE)
-    ullong smask;
+    DWORD_PTR pmask, smask;
 
-    GetProcessAffinityMask(GetCurrentProcess(), &mask, &smask);
+    if (GetProcessAffinityMask(GetCurrentProcess(), &pmask, &smask))
+	mask = pmask;
 #elif defined(__linux__)
     cpu_set_t cset;
 
@@ -185,7 +187,7 @@ ullong Processor::affinity(void) {
 
 bool Processor::affinity(ullong mask) {
 #if defined(_WIN32) && !defined(_WIN32_WCE)
-    return SetProcessAffinityMask(GetCurrentProcess(), mask) != 0;
+    return SetProcessAffinityMask(GetCurrentProcess(), (uint32)mask) != 0;
 #elif defined(__linux__)
     cpu_set_t cset;
 
@@ -414,7 +416,7 @@ bool Thread::terminate(void) {
 
     if (state == Running || state == Suspended) {
 #ifdef _WIN32
-	ret = TerminateThread(hdl, 1) != 0;
+	ret = TerminateThread(hdl, 1) == TRUE;
 #else
 	ret = pthread_cancel(hdl) == 0;
 #endif

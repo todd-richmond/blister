@@ -113,10 +113,10 @@ public:
 	    if (!val)
 		return;
 	    for (p = val; *p; p++) {
-		if (needquote[(uchar)*p]) {
+		if (*p > 255 || needquote[(uchar)*p]) {
 		    os << '"';
 		    for (p = val; *p; p++) {
-			uchar c = (uchar)*p;
+			tchar c = *p;
 
 			if (c == '"') {
 			    os << '\\' << '"';
@@ -126,7 +126,7 @@ public:
 			    os << '\\' << 'n';
 			} else if (c == '\r') {
 			    os << '\\' << 'r';
-			} else if ((uchar)c < ' ' && c != '\t') {
+			} else if (c < ' ' && c != '\t') {
 			    tchar tmp[5];
 
 			    tsprintf(tmp, T("\\%03o"), (uint)c);
@@ -301,10 +301,12 @@ public:
     template<class C> static const KV<C> kv(const tstring &key, const C &val) {
 	return KV<C>(key, val);
     }
-    static const KV<const tchar *> cmd(const tchar *c) { return kv(T("cmd"), c); }
-    static const KV<tstring> cmd(const tstring &c) { return kv(T("cmd"), c); }
-    static const KV<const tchar *> mod(const tchar *m) { return kv(T("mod"), m); }
-    static const KV<tstring> mod(const tstring &m) { return kv(T("mod"), m); }
+    template<class C> static const KV<C> cmd(const C &c) {
+	return KV<C>(T("cmd"), c);
+    }
+    template<class C> static const KV<C> mod(const C &c) {
+	return KV<C>(T("mod"), c);
+    }
     static const tchar *section(void) { return T("log"); }
     static Level str2enum(const tchar *lvl);
 

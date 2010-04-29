@@ -229,7 +229,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	remain *= (bodycnt - startfile);
     }
     vars[T("host")] = host;
-    while (is.getline(buf, sizeof (buf))) {
+    while (is.getline(buf, sizeof (buf) / sizeof (tchar))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
 	    continue;

@@ -305,7 +305,7 @@ loop:
 		delete [] result;
 		result = newres;
 	    }
-	    if ((in = sstrm.read(result + ressz, room)) > 0) {
+	    if ((int)(in = (size_t)sstrm.read(result + ressz, (size_t)room)) > 0) {
 		ressz += in;
 		ret = true;
 	    }

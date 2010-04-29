@@ -223,10 +223,10 @@ const tstring Sockaddr::service_name(ushort port, Proto proto) {
 
     if (getnameinfo(sa, sa.size(), NULL, 0, buf, sizeof (buf), dgram(proto) ?
 	NI_DGRAM : 0)) {
-	tchar buf[8];
+	tchar pbuf[8];
 
-	tsprintf(buf, T("%u"), (uint)port);
-	return buf;
+	tsprintf(pbuf, T("%u"), (uint)port);
+	return pbuf;
     }
     return achartotstring(buf);
 }

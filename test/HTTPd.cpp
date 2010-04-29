@@ -61,10 +61,10 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
 	return -1;
     }
     hsock = new SimpleDispatchListenSocket<Dispatcher, HTTPDaemonSocket>(dspr);
-    if (!hsock->listen("*:8080")) {
+    if (!hsock->listen(T("*:8080"))) {
 	dspr.stop();
-	dlog << Log::Info << "mod=" << HTTPDaemonSocket::section() <<
-	    " cmd=listen addr=" << hsock->address().str() << ' ' <<
+	dlog << Log::Info << T("mod=") << HTTPDaemonSocket::section() <<
+	    T(" cmd=listen addr=") << hsock->address().str() << ' ' <<
 	    strerror(hsock->err()) << endlog;
     }
     setids();
@@ -75,7 +75,7 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
 
 bool HTTPDaemonSocket::paused = false;
 
-int main(int argc, char **argv) {
+int tmain(int argc, tchar *argv[]) {
     HTTPDaemon hd(T("httpd"), T("Test HTTP Server"));
 
     return hd.execute(argc, argv);

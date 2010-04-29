@@ -42,7 +42,7 @@ public:
 
     virtual int doallocate(void) {
 	if (!buf) {
-	    buf = new char[bufsz];
+	    buf = new char[(uint)bufsz];
 	    alloced = true;
 	    setp(buf, buf + bufsz);
 	    setg(buf, buf, buf);
@@ -94,7 +94,7 @@ public:
 		alloced = false;
 	    }
 	    if (!p && sz) {
-		p = new char[sz];
+		p = new char[(uint)sz];
 		alloced = true;
 	    }
 	    buf = p;
@@ -129,11 +129,11 @@ public:
 	    int sz;
 
 	    if (left) {
-		if ((sz = fd.write(pb, left)) != left && sz)
+		if ((sz = fd.write(pb, (size_t)left)) != left && sz)
 		    return -1;
 		setp(pb, pb + bufsz);
 	    }
-	    if ((sz = fd.read(buf, bufsz)) == -1)
+	    if ((sz = fd.read(buf, (size_t)bufsz)) == -1)
 		return -1;
 	    setg(buf, buf, buf + sz);
 	    return *buf;
@@ -154,10 +154,10 @@ public:
     }
 
     virtual streamsize xsgetn(char *p, streamsize size) {
-	streamsize left = (streamsize)(egptr() - gptr());
+	streamsize left = (egptr() - gptr());
 
 	if (left && left >= size) {
-	    memcpy(p, gptr(), size);
+	    memcpy(p, gptr(), (size_t)size);
 	    gbump((int)size);
 	    return size;
 	}
@@ -166,32 +166,32 @@ public:
 	char *pb = pbase();
 	streamsize sz = size - left;
 
-	memcpy(p, gptr(), left);
+	memcpy(p, gptr(), (size_t)left);
 	p += left;
-	left = (streamsize)(pptr() - pb);
+	left = (pptr() - pb);
 	if (left) {				// flush output
-	    if (fd.write(pb, left) != left)
+	    if (fd.write(pb, (size_t)left) != (int)left)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
 	setg(buf, buf, buf);
 	if (sz >= bufsz || !bufsz) {		// read directly into user buf
 	    while (sz) {
-		if ((in = fd.read(p, sz)) <= 0)
+		if ((in = fd.read(p, (size_t)sz)) <= 0)
 		    return size - sz;
 		p += in;
 		sz -= in;
 	    }
 	} else {				// read into stream buf
 	    while (sz) {
-		if ((in = fd.read(buf, bufsz)) <= 0) {
+		if ((in = fd.read(buf, (size_t)bufsz)) <= 0) {
 		    return size - sz;
 		} else if (in < sz) {
 		    memcpy(p, buf, in);
 		    p += in;
 		    sz -= in;
 		} else {
-		    memcpy(p, buf, sz);
+		    memcpy(p, buf, (size_t)sz);
 		    setg(buf, buf + sz, buf + in);
 		    break;
 		}
@@ -202,7 +202,7 @@ public:
 
     virtual streamsize xsputn(const char *p, streamsize sz) {
 	char *pb = pbase(), *pp = pptr();
-	streamsize left = bufsz - (streamsize)(pp - pb);
+	streamsize left = bufsz - (pp - pb);
 
 	if (left < sz) {
 	    iovec iov[2];
@@ -211,17 +211,17 @@ public:
 	    iov[0].iov_base = pb;
 	    iov[0].iov_len = (ulong)(pp - pb);
 	    iov[1].iov_base = (char *)p;
-	    iov[1].iov_len = sz;
+	    iov[1].iov_len = (size_t)sz;
 	    out = fd.writev(iov, 2);
 	    setp(pb, pb + bufsz);
 	    return out == -1 || (ulong)out < iov[0].iov_len ? -1 :
 		out - iov[0].iov_len;
 	} else if (sz) {
-	    memcpy(pp, p, sz);
+	    memcpy(pp, p, (size_t)sz);
 	    pbump((int)sz);
 	} else {
 	    left = (streamsize)(pp - pb);
-	    if (left && fd.write(pb, left) != left)
+	    if (left && fd.write(pb, (size_t)left) != (int)left)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
