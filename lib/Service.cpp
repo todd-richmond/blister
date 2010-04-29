@@ -49,7 +49,6 @@ KillFunc killfunc = (KillFunc)pthread.get(T("pthread_kill_other_threads_np"));
 
 static void splitpath(const tchar *path, const tchar *name, tstring &root,
     tstring &prog) {
-    tchar buf[256];
     const tchar *sep;
     tstring s;
     const tchar *p = NULL;
@@ -71,6 +70,7 @@ static void splitpath(const tchar *path, const tchar *name, tstring &root,
     }
 #ifdef _WIN32
     if (name) {
+	tchar buf[256];
 	HKEY key;
 	DWORD size;
 	DWORD type;
