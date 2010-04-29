@@ -1,37 +1,21 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 10.00
-# Visual Studio 2008
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EchoTest", "..\test\EchoTest.vcproj", "{2DBFE77C-76D2-4026-A7A6-2D6085F8B082}"
-	ProjectSection(ProjectDependencies) = postProject
-		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
-	EndProjectSection
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EchoTest", "..\test\EchoTest.vcxproj", "{2DBFE77C-76D2-4026-A7A6-2D6085F8B082}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Blister", "..\lib\Blister.vcproj", "{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Blister", "..\lib\Blister.vcxproj", "{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPLoad", "..\test\HTTPLoad.vcproj", "{2DBFE71C-71D2-9026-A726-AD6085F3B082}"
-	ProjectSection(ProjectDependencies) = postProject
-		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
-	EndProjectSection
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPLoad", "..\test\HTTPLoad.vcxproj", "{2DBFE71C-71D2-9026-A726-AD6085F3B082}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SMTPLoad", "..\test\SMTPLoad.vcproj", "{2DEFA78C-76D2-9926-B726-ADC00593B082}"
-	ProjectSection(ProjectDependencies) = postProject
-		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
-	EndProjectSection
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SMTPLoad", "..\test\SMTPLoad.vcxproj", "{2DEFA78C-76D2-9926-B726-ADC00593B082}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DLog", "..\test\DLog.vcproj", "{16F7F227-CF35-4BBB-A39D-BDDB64CD3D30}"
-	ProjectSection(ProjectDependencies) = postProject
-		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
-	EndProjectSection
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DLog", "..\test\DLog.vcxproj", "{16F7F227-CF35-4BBB-A39D-BDDB64CD3D30}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Cfg", "..\test\Cfg.vcproj", "{F85C5F47-02F6-41E6-BD56-6B67FD30B4EA}"
-	ProjectSection(ProjectDependencies) = postProject
-		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
-	EndProjectSection
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Cfg", "..\test\Cfg.vcxproj", "{F85C5F47-02F6-41E6-BD56-6B67FD30B4EA}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DTiming", "..\test\DTiming.vcproj", "{3C1E9C53-05EC-4D42-B531-731157DE3521}"
-	ProjectSection(ProjectDependencies) = postProject
-		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38} = {8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}
-	EndProjectSection
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DTiming", "..\test\DTiming.vcxproj", "{3C1E9C53-05EC-4D42-B531-731157DE3521}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPd", "..\test\HTTPd.vcxproj", "{2DBF271C-51D2-9A26-A726-ADF085F3B082}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -157,6 +141,22 @@ Global
 		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release|Win32.Build.0 = Release|Win32
 		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release|x64.ActiveCfg = Release|x64
 		{3C1E9C53-05EC-4D42-B531-731157DE3521}.Release|x64.Build.0 = Release|x64
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Debug Unicode|Win32.ActiveCfg = Debug Unicode|Win32
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Debug Unicode|Win32.Build.0 = Debug Unicode|Win32
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Debug Unicode|x64.ActiveCfg = Debug Unicode|x64
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Debug Unicode|x64.Build.0 = Debug Unicode|x64
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Debug|Win32.ActiveCfg = Debug|Win32
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Debug|Win32.Build.0 = Debug|Win32
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Debug|x64.ActiveCfg = Debug|x64
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Debug|x64.Build.0 = Debug|x64
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release Unicode|Win32.ActiveCfg = Release Unicode|Win32
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release Unicode|Win32.Build.0 = Release Unicode|Win32
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release Unicode|x64.ActiveCfg = Release Unicode|x64
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release Unicode|x64.Build.0 = Release Unicode|x64
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release|Win32.ActiveCfg = Release|Win32
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release|Win32.Build.0 = Release|Win32
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release|x64.ActiveCfg = Release|x64
+		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
