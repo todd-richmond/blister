@@ -294,7 +294,7 @@ void HTTPServerSocket::parse(void) {
 	    for (start = end + 2; *start == ' ' || *start == '\t'; start++)
 		continue;
 	    p = strchr(start, '\r');
-	    memcpy(end, start, p - start);
+	    memmove(end, start, p - start);
 	    end = p;
 	}
 	while (*buf == ' ' || *buf == '\t')
