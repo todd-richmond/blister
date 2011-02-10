@@ -148,7 +148,7 @@ void EchoTest::EchoClientSocket::output() {
     }
     if ((len = write(data + out, dsz - out)) < 0) {
 	errs++;
-	dloge(T("client write failed"), len);
+	dloge(T("client write failed:"), errstr());
 	timeout(start, wait);
 	return;
     }
@@ -176,7 +176,7 @@ void EchoTest::EchoClientSocket::input() {
     }
     if ((len = read(data + in, dsz - in)) < 0) {
 	errs++;
-	dloge(T("client read failed"), len);
+	dloge(T("client read failed:"), errstr());
 	timeout(start, wait);
 	return;
     }
@@ -210,16 +210,14 @@ void EchoTest::EchoServerSocket::input() {
 	    T("close"));
 	erase();
     } else if ((in = read(tmp, sizeof (tmp))) < 0) {
-	dloge(T("server read failed:"), err() == EOF ? T("EOF") :
-	    tstrerror(err()));
+	dloge(T("server read failed:"), errstr());
 	erase();
     } else if (in == 0) {
 	readable(input);
     } else if (in == 1 && tmp[0] == '\0') {
 	erase();
     } else if ((out = write(tmp, in)) < 0) {
-	dloge(T("server write failed:"), err() == EOF ? T("EOF") :
-	    tstrerror(err()));
+	dloge(T("server write failed:"), errstr());
 	erase();
     } else if (in == out) {
 	dlogt(T("server write"), out);
@@ -244,8 +242,7 @@ void EchoTest::EchoServerSocket::output() {
 	return;
     }
     if ((len = write((char *)buf + out, in - out)) < 0) {
-	dloge(T("server write failed:"), err() == EOF ? T("EOF") :
-	    tstrerror(err()));
+	dloge(T("server write failed:"), errstr());
 	erase();
 	return;
     }
@@ -293,11 +290,11 @@ int tmain(int argc, tchar *argv[]) {
     msec_t last, now;
     tstring s;
     struct stat sbuf;
-    ulong delay = 20, sockets = 20, tmt = TIMEOUT, wait = 0;
+    ulong delay = 20, sockets = 20, threads = 20, tmt = TIMEOUT, wait = 0;
 
     if (argc == 1 || !tstrcmp(argv[1], T("-?"))) {
 	tcerr << T("Usage: echotest [-c] [-d delay] [-h host[:port]] [-e sockets]\n")
-	    T("\t[-l loops] [-s] [-v*] [-t timeout] [-w wait] data | datafile") <<
+	    T("\t[-l loops] [-p threads] [-s] [-v*] [-t timeout] [-w wait] data | datafile") <<
 	    endl;
 	return 1;
     }
@@ -321,6 +318,8 @@ int tmain(int argc, tchar *argv[]) {
 	    host = argv[++i];
 	} else if (!tstricmp(argv[i], T("-l"))) {
 	    loops = ttol(argv[++i]);
+	} else if (!tstricmp(argv[i], T("-p"))) {
+	    threads = ttol(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-s"))) {
 	    client = false;
 	} else if (!tstricmp(argv[i], T("-t"))) {
@@ -355,7 +354,10 @@ int tmain(int argc, tchar *argv[]) {
 	tcerr << T("echo: unknown host ") << host << endl;
 	return 1;
     }
-    ec.start(20, 32 * 1024);
+    if (!ec.start(threads, 32 * 1024)) {
+	tcerr << T("echo: unable to start") << host << endl;
+	return 1;
+    }
     if (server && !ec.listen(host, tmt))
 	return 1;
     if (client) {
@@ -374,7 +376,6 @@ int tmain(int argc, tchar *argv[]) {
 		1)) << '\t' << errs << endl;
 	    last = now;
 	} while (!qflag && loops);
-	msleep(1000);
     } else {
 	while (!qflag)
 	    msleep(1000);
