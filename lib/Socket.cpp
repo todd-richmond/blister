@@ -18,19 +18,13 @@
 #include "stdapi.h"
 #include <ctype.h>
 #include <errno.h>
-#ifndef _WIN32_WCE
 #include <fcntl.h>
-#endif
 #include <algorithm>
 #include "Socket.h"
 
 #ifdef _WIN32
-#ifdef _WIN32_WCE
-#pragma comment(lib, "winsock.lib")
-#else
 #pragma comment(lib, "mswsock.lib")
 #pragma comment(lib, "ws2_32.lib")
-#endif
 #pragma warning(disable: 4389)
 
 #define SIZE_T int
@@ -88,7 +82,7 @@ const tstring &Sockaddr::hostname() {
 	char buf[NI_MAXHOST];
 
 	if (gethostname(buf, sizeof (buf))) {
-#if defined(_WIN32) && !defined(_WIN32_WCE)
+#ifdef _WIN32
 	    tchar cbuf[NI_MAXHOST];
 	    ulong sz = sizeof (buf);
 
@@ -443,6 +437,9 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
 }
 
 const tstring Socket::errstr(void) const {
+    if (sbuf->err == EOF)
+	return T("socket EOF");
+
 #ifdef WIN32
     tchar buf[32];
 
@@ -550,18 +547,18 @@ bool Socket::sockname(Sockaddr &sa) {
 
 bool Socket::rwpoll(bool rd) const {
     uint msec = rd ? sbuf->rto : sbuf->wto;
-    bool ret;
 
     if (msec == SOCK_INFINITE || !blocking())
 	return true;
 
+    bool ret;
     SocketSet sset(1), ioset(1), eset(1);
 
     sset.set(sbuf->sock);
     ret = (rd ? sset.ipoll(ioset, eset, msec) :
 	sset.opoll(ioset, eset, msec)) && !ioset.empty();
     if (!ret)
-	sbuf->err = EAGAIN;
+	sbuf->err = WSAEWOULDBLOCK;
     return ret;
 }
 
@@ -574,7 +571,7 @@ int Socket::read(void *buf, size_t sz) const {
 	check(in = recv(sbuf->sock, (char *)buf, (SIZE_T)sz, 0));
     } while (interrupted());
     if (in) {
-	return blocked() ? 0 : in;
+	return in <= 0 && blocked() ? 0 : in;
     } else {
 	sbuf->err = EOF;
 	return -1;
@@ -592,7 +589,7 @@ int Socket::read(void *buf, size_t sz, Sockaddr &sa) const {
 	    &asz));
     } while (interrupted());
     if (in) {
-	return blocked() ? 0 : in;
+	return in <= 0 && blocked() ? 0 : in;
     } else {
 	sbuf->err = EOF;
 	return -1;
@@ -607,7 +604,7 @@ int Socket::write(const void *buf, size_t sz) const {
 	    return -1;
 	check(out = send(sbuf->sock, (const char *)buf, (SIZE_T)sz, 0));
     } while (interrupted());
-    return blocked() ? 0 : out;
+    return out <= 0 && blocked() ? 0 : out;
 }
 
 int Socket::write(const void *buf, size_t sz, const Sockaddr &sa) const {
@@ -619,44 +616,27 @@ int Socket::write(const void *buf, size_t sz, const Sockaddr &sa) const {
 	check(out = sendto(sbuf->sock, (const char *)buf, (SIZE_T)sz, 0, sa,
 	    sa.size()));
     } while (interrupted());
-    return blocked() ? 0 : out;
+    return out <= 0 && blocked() ? 0 : out;
 }
 
 long Socket::writev(const iovec *iov, int count) const {
     long out;
 
-#ifdef _WIN32_WCE
-    out = 0;
-    for (int i = 0; i < count; i++) {
-	if (iov[i].iov_len) {
-	    long len = write(iov[i].iov_base, iov[i].iov_len);
-
-	    if (len != iov[i].iov_len) {
-		if (len > 0)
-		    out += len;
-		else if (!out && !blocked())
-		    return -1;
-		break;
-	    }
-	}
-    }
-    return out;
-#elif defined(_WIN32)
+#ifdef _WIN32
     check(WSASend(sbuf->sock, (WSABUF *)iov, count, (ulong *)&out, 0, NULL,
 	NULL));
-    return blocked() ? 0 : out;
 #else
     do {
 	check(out = ::writev(sbuf->sock, iov, count));
     } while (interrupted());
-    return blocked() ? 0 : out;
 #endif
+    return blocked() ? 0 : out;
 }
 
 long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
     long out;
 
-#if defined(_WIN32) && !defined(_WIN32_WCE)
+#ifdef _WIN32
     check(WSASendTo(sbuf->sock, (WSABUF *)iov, count, (ulong *)&out, 0, sa,
 	sa.size(), NULL, NULL));
     return blocked() ? 0 : out;
@@ -786,7 +766,6 @@ bool SocketSet::iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
 bool SocketSet::iopoll(const SocketSet &rset, SocketSet &iset,
     const SocketSet &wset, SocketSet &oset, SocketSet &eset, uint msec) {
     uint u;
-    int ret;
 #ifdef _WIN32
     struct timeval tv = { msec / 1000, (msec % 1000) * 1000 };
 
@@ -798,14 +777,15 @@ bool SocketSet::iopoll(const SocketSet &rset, SocketSet &iset,
 	if (!eset.set(oset[u]))
 	    eset.set(oset[u]);
     }
-    if ((ret = select(0, iset.fds, oset.fds, eset.fds,
-	msec == SOCK_INFINITE ? NULL : &tv)) == -1)
+    if (select(0, iset.fds, oset.fds, eset.fds, msec == SOCK_INFINITE ? NULL :
+	&tv) == -1)
 	return false;
     iset.sz = iset.fds->fd_count;
     oset.sz = oset.fds->fd_count;
     eset.sz = eset.fds->fd_count;
     return true;
 #else
+    int ret;
     SocketSet sset;
     uint uu;
     bool ro = true;

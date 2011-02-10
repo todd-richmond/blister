@@ -23,14 +23,12 @@
 #include <dirent.h>
 #include <sys/file.h>
 #endif
-#ifndef _WIN32_WCE
 #include <sys/stat.h>
-#endif
 #include "Config.h"
 #include "Log.h"
 #include "SMTPClient.h"
 
-#if defined(_WIN32) && !defined(_WIN32_WCE)
+#ifdef _WIN32
 #pragma comment(lib, "user32.lib")
 #endif
 
@@ -102,22 +100,20 @@ ulong Log::LogFile::lockfd(int fd) {
 
 void Log::LogFile::print(const tchar *buf, size_t sz) {
     if (fd < 0) {
-#ifdef _WIN32_WCE
-	OutputDebugString(buf);
-#else
 	if (fd == -2) {
 	    tcout.write(buf, sz);
 	    tcout.flush();
 	} else if (fd == -3) {
 	    tcerr.write(buf, sz);
 	    tcerr.flush();
-	} else if (fd == -4) {
 #ifdef _WIN32
+	} else if (fd == -4) {
 	    MessageBox(NULL, buf, NULL, MB_OK | MB_ICONWARNING |
 		MB_SETFOREGROUND);
+	} else if (fd == -5) {
+	    OutputDebugString(buf);
 #endif
 	}
-#endif
     } else {
 	write(fd, buf, (uint)sz);
 	if (file[0] != '>')
@@ -288,6 +284,8 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
 	fd = -3;
     } else if (file == T("console")) {
 	fd = -4;
+    } else if (file == T("debug")) {
+	fd = -5;
     } else if (file[0] == '>') {
 	fd = ttoi(file.c_str() + 1);
     } else {
@@ -479,7 +477,6 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     strbuf.erase(strbuf.size() - 1);
     tlsd.clvl = None;
     tlsd.suppress = true;
-#ifndef _WIN32_WCE
     if (syslogenable && clvl <= sysloglvl) {
 	string ss;
 	string::size_type pos;
@@ -523,7 +520,6 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    smtp.quit();
 	}
     }
-#endif
     tlsd.suppress = false;
 }
 

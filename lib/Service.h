@@ -18,7 +18,7 @@
 #ifndef Service_h
 #define Service_h
 
-#if defined(_WIN32) && !defined(_WIN32_WCE)
+#ifdef _WIN32
 #include <windows.h>
 #include <winperf.h>
 #include <winsvc.h>
@@ -119,7 +119,6 @@ protected:
     typedef void (__stdcall *service_ctrl_t)(ulong cmd);
 
     tstring host;
-#ifndef _WIN32_WCE
     HANDLE maphdl;
     void *map;
     uint mapsz;
@@ -128,11 +127,10 @@ protected:
     service_ctrl_t ctrlfunc;
     ulong checkpoint;
     SC_HANDLE hService, hSCManager;
-#endif
-    static void __stdcall srv_main(ulong argc, tchar **argv);
     static int __stdcall ctrl_handler(ulong sig);
-    static void __stdcall service_handler(ulong sig);
     static long __stdcall exception_handler(_EXCEPTION_POINTERS *info);
+    static void __stdcall service_handler(ulong sig);
+    static void __stdcall srv_main(ulong argc, tchar **argv);
 #else
     Thread sigthread;
 
@@ -141,7 +139,7 @@ protected:
     static void signal_handler(int sig);
 };
 
-#if defined(_WIN32) && !defined(_WIN32_WCE)
+#ifdef _WIN32
 class ServiceData: nocopy {
 public:
     ServiceData(const tchar *service, uint ctrs, uint size);

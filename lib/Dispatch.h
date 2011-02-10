@@ -32,7 +32,7 @@ class DispatchTimer;
 // base classes for event objects
 typedef void (*DispatchObjCB)(DispatchObj *);
 
-#if defined(_WIN32) && !defined(_WIN32_WCE)
+#ifdef _WIN32
 /*
  * select() is faster on Windows for normal fd set sizes
 #define DSP_WIN32_ASYNC

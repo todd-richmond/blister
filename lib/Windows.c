@@ -15,44 +15,28 @@
  * limitations under the License.
  */
 
-#ifndef _WIN32_WCE
 #undef _UNICODE
-#endif
+
 #include "stdapi.h"
 #include <ctype.h>
 #include <errno.h>
 #include <mmsystem.h>
-#ifndef _WIN32_WCE
 #include <fcntl.h>
 #include <share.h>
-#endif
 #include <signal.h>
 #include <stdarg.h>
 #include <time.h>
 #include <windows.h>
 
-#define HASH_SIZE   769
-#define rename_unlock(lck)  if (locks) InterlockedExchange(locks + lck, 0)
-
-#ifdef _WIN32_WCE
-#define MoveFileEx(a, b, c) MoveFile(a, b)
-#define tzset()
-#define TPATHVAR(s)	    tchar s[256]
-#define TPATH(a, b)	    MultiByteToWideChar(CP_ACP, 0, a, -1, b, 255);
-
-int _doserrno;
-int _dstbias;
-int _daylight;
-int _timezone;
-
-#else
-#define TPATHVAR(s)	    const char *s
-#define TPATH(a, b)	    (b = a)
-#endif
-
 #pragma comment(lib, "winmm.lib")
 #pragma warning(disable: 4305)
 #pragma warning(disable: 4306)
+
+#define HASH_SIZE	    769
+#define rename_unlock(lck)  if (locks) InterlockedExchange(locks + lck, 0)
+
+#define TPATHVAR(s)	    const char *s
+#define TPATH(a, b)	    (b = a)
 
 static HANDLE lockhdl;
 static long *locks;
@@ -333,7 +317,6 @@ int lockfile(int fd, short op, short whence, ulong start, ulong len,
     return 0;
 }
 
-#if !defined(_WIN32_WCE) || defined(_WIN32_WCE_EMULATION)
 long lseek(int fd, long pos, int from) {
     DWORD newpos;
 
@@ -365,7 +348,6 @@ int write(int fd, const void *buf, uint len) {
     }
     return out;
 }
-#endif
 
 long writev(int fd, const struct iovec *io , int num) {
     ulong len = 0;
@@ -518,9 +500,6 @@ void closedir(DIR *dirp) {
 }
 
 int link(const char *from, const char *to) {
-#ifdef _WIN32_WCE
-    return -1;
-#else
     HANDLE hdl;
     WIN32_STREAM_ID sid;
     DWORD out;
@@ -580,7 +559,6 @@ int link(const char *from, const char *to) {
     BackupWrite(hdl, NULL, 0, &out, TRUE, FALSE, &lpContext);
     CloseHandle(hdl);
     return ret;
-#endif
 }
 
 int open(const char *p, int oflag, ...) {
@@ -703,7 +681,6 @@ int open(const char *p, int oflag, ...) {
     }
     if (!(oflag & O_TEXT && oflag & O_RDWR))
 	return (int)hdl;
-#ifndef _WIN32_WCE
     /* find out what type of file (file/device/pipe) */
     if ((filetype = GetFileType(hdl)) == FILE_TYPE_UNKNOWN) {
 	CloseHandle(hdl);
@@ -734,7 +711,6 @@ int open(const char *p, int oflag, ...) {
 	    }
 	}
     }
-#endif
     return (int)hdl;
 }
 
@@ -926,12 +902,6 @@ int statvfs(const char *path, struct statvfs *buf) {
     ulong freeClusters;
     ulong totalClusters;
     
-#ifdef _WIN32_WCE
-    sectorsPerCluster = 1;
-    bytesPerSector = 512;
-    freeClusters = (ulong)-1;
-    totalClusters = (ulong)-1;
-#else
     int rc;
     char *cp;
     char rootdir[4];
@@ -957,7 +927,6 @@ int statvfs(const char *path, struct statvfs *buf) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
-#endif
     memset(buf, 0, sizeof (*buf));
     buf->f_bsize = buf->f_frsize = sectorsPerCluster * bytesPerSector;
     buf->f_blocks = totalClusters;
@@ -966,9 +935,6 @@ int statvfs(const char *path, struct statvfs *buf) {
 }
 
 int sigsend(idtype_t type, id_t id, int sig) {
-#ifdef _WIN32_WCE
-    return -1;
-#else
     int ret;
 
     if (type != P_PID && type != P_PPID && type != P_SID && type != P_ALL)
@@ -982,7 +948,6 @@ int sigsend(idtype_t type, id_t id, int sig) {
     else
     	ret = 0;
     return ret ? 0 : -1;
-#endif
 }
 
 int _strcmp(const char *a, const char *b) {
@@ -992,74 +957,6 @@ int _strcmp(const char *a, const char *b) {
     return (*a < *b ? -1 : 1);
 }
 
-#ifdef _WIN32_WCE
-int access(const char *p, int mode) {
-    DWORD attr;
-    TPATHVAR(path);
-
-    TPATH(p, path);
-    if ((attr = GetFileAttributes(path)) == (DWORD)-1)
-	return -1;
-    if (mode & 2 && attr & FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_DIRECTORY)
-	return -1;
-    else if (mode & 1 && attr & FILE_ATTRIBUTE_DIRECTORY)
-	return -1;
-    return 0;
-}
-
-int __cdecl _stricmp(const char *a, const char *b) {
-    for (; tolower(*a) == tolower(*b); a++, b++)
-	if (*a == '\0')
-	    return 0;
-    return (tolower(*a) < tolower(*b) ? -1 : 1);
-}
-
-int __cdecl _strnicmp(const char *a, const char *b, uint len) {
-    for (; len-- && tolower(*a) == tolower(*b); a++, b++)
-	if (*a == '\0')
-	    return 0;
-    return (tolower(*a) < tolower(*b) ? -1 : 1);
-}
-
-int unlink(const char *p) {
-    TPATHVAR(path);
-
-    TPATH(p, path);
-    return DeleteFile(path) == TRUE;
-}
-
-#endif
-
-#if 0
-extern __cdecl tmain(int argc, tchar **argv);
-
-int winmain(HINSTANCE instance, HINSTANCE prev, tchar *cmd, int show) {
-    int argc = 0;
-    tchar *argv[16];
-    tchar prog[128];
-    tchar *p = cmd, *pp = cmd, *end;
-
-    GetModuleFileName(NULL, prog, sizeof (prog) / sizeof (tchar));
-    argv[argc++] = prog;
-#ifdef _UNICODE
-    p = tstrtok(cmd , T("\t "), &end);
-#else
-    (void)end;
-    p = tstrtok(cmd, T("\t "));
-#endif
-    while (p) {
-	argv[argc++] = p;
-	pp = p;
-#ifdef _UNICODE
-	p = tstrtok(NULL, T("\t "), &end);
-#else
-	p = tstrtok(NULL, T("\t "));
-#endif
-    }
-    return tmain(argc, argv);
-}
-#endif // 0
-
 #define _BASE_YEAR	    70
 #define _LEAP_YEAR_ADJUST   17
 #define _MAX_YEAR	    138
@@ -1068,7 +965,7 @@ int winmain(HINSTANCE instance, HINSTANCE prev, tchar *cmd, int show) {
 #define IS_LEAP_YEAR(year)  ((year & 3) == 0)
 
 
-#if defined(_DLL) || defined(_WIN32_WCE)
+#ifdef _DLL
 int _lpdays[] = { -1, 30, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365 };
 #else
 extern int _lpdays[];
@@ -1233,7 +1130,7 @@ struct errentry {
     int errnocode;			/* System V error code */
 };
 
-#if defined(_DLL) || defined(_WIN32_WCE)
+#ifdef _DLL
 
 static struct errentry errtable[] = {
     {  ERROR_INVALID_FUNCTION,       EINVAL    },  /* 1 */

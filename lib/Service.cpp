@@ -19,10 +19,8 @@
 #include <errno.h>
 #include <signal.h>
 #include <time.h>
-#ifndef _WIN32_WCE
 #include <fcntl.h>
 #include <sys/stat.h>
-#endif
 #include "Log.h"
 #include "Service.h"
 
@@ -53,9 +51,7 @@ static void splitpath(const tchar *path, const tchar *name, tstring &root,
     tstring s;
     const tchar *p = NULL;
 
-#ifndef _WIN32_WCE
     p = tgetenv(T("installdir"));
-#endif
     if (p) {
 	s = p;
     } else {
@@ -103,46 +99,33 @@ static void splitpath(const tchar *path, const tchar *name, tstring &root,
 }
 
 #ifdef _WIN32
-#ifndef _WIN32_WCE
 #include <process.h>
 
 #pragma comment(lib, "advapi32.lib")
-#endif
 
 #define DWORD_MULTIPLE(x) (((x + sizeof (DWORD) - 1 ) / sizeof (DWORD)) * sizeof (DWORD))
 #define PREFIX T("service_")
 
 Service::Service(const tchar *servicename, const tchar *h): name(servicename),
-    bPause(false), errnum(0)
-#ifndef _WIN32_WCE
-    , ctrlfunc(NULL), hStatus(0), hSCManager(0), hService(0),
-    checkpoint(0), map(NULL), mapsz(0), maphdl(0)
-#endif
-{
+    bPause(false), errnum(0), ctrlfunc(NULL), hStatus(0), hSCManager(0),
+    hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0) {
     if (h)
 	host = h;
 }
 
 Service::Service(const tchar *servicename, bool pauseable): name(servicename),
-    bPause(pauseable), errnum(0)
-#ifndef _WIN32_WCE
-    , ctrlfunc(service_handler), hStatus(0), hSCManager(0), hService(0),
-    checkpoint(0), map(NULL), mapsz(0), maphdl(0)
-#endif
-{
+    bPause(pauseable), errnum(0), ctrlfunc(service_handler), hStatus(0),
+    hSCManager(0), hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0) {
     service = this;
 }
 
 Service::~Service() {
-#ifndef _WIN32_WCE
     if (ctrlfunc)
 	service = NULL;
-#endif
     close();
 }
 
 bool Service::open() {
-#ifndef _WIN32_WCE
     const tchar *s = host.c_str();
 
     if (!hSCManager)
@@ -154,12 +137,10 @@ bool Service::open() {
 	    return true;
     }
     errnum = GetLastError();
-#endif
     return false;
 }
 
 bool Service::close() {
-#ifndef _WIN32_WCE
     if (map) {
 	UnmapViewOfFile(map);
 	map = NULL;
@@ -177,12 +158,10 @@ bool Service::close() {
 	hSCManager = NULL;
 	return true;
     }
-#endif
     return false;
 }
 
 int __stdcall Service::ctrl_handler(ulong sig) {
-#ifndef _WIN32_WCE
     if (sig == CTRL_BREAK_EVENT) {
 	if (!service->onRefresh()) {
 	    service->onStop(false);
@@ -194,7 +173,6 @@ int __stdcall Service::ctrl_handler(ulong sig) {
 #ifndef NDEBUG
     else 
 	DebugBreak();
-#endif
 #endif
     dlog.flush();
     return 1;
@@ -221,7 +199,6 @@ long Service::exception_handler(_EXCEPTION_POINTERS *info) {
 #pragma warning(default: 4702)
 
 void Service::setsignal(bool abrt) {
-#ifndef _WIN32_WCE
     if (console)
 	SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOOPENFILEERRORBOX|SEM_NOGPFAULTERRORBOX);
     if (abrt) {
@@ -233,7 +210,6 @@ void Service::setsignal(bool abrt) {
     }
     SetProcessShutdownParameters(0x380, 0);
     SetConsoleCtrlHandler(ctrl_handler, TRUE);
-#endif
 }
 
 int Service::run(int argc, const tchar * const *argv) {
@@ -253,12 +229,6 @@ int Service::run(int argc, const tchar * const *argv) {
 	else if (!tstricmp(p, T("d")) || !tstricmp(p, T("daemon")))
 	    console = false;
     }
-#ifdef _WIN32_WCE
-    console = true;
-    ret = service->onStart(argc, argv);
-    dlog.stop();
-    exiting = true;
-#else
     sigpid = getpid();
     if (console) {
 	ret = service->onStart(argc, argv);
@@ -275,11 +245,9 @@ int Service::run(int argc, const tchar * const *argv) {
 	entry[1].lpServiceProc = NULL;
 	ret = StartServiceCtrlDispatcher(entry) != TRUE;
     }
-#endif
     return ret;
 }
 
-#ifndef _WIN32_WCE
 void __stdcall Service::srv_main(DWORD argc, tchar **argv) {
     tchar modulename[128];
     int ret = 0;
@@ -365,12 +333,8 @@ void Service::handle(ulong sig) {
     }
     dlog.flush();
 }
-#endif
 
 bool Service::update(Status status) {
-#ifdef _WIN32_WCE
-    return true;
-#else
     DWORD state;
 
     switch (status) {
@@ -418,14 +382,10 @@ bool Service::update(Status status) {
     else
 	ssStatus.dwCheckPoint = ++checkpoint;
     return SetServiceStatus(hStatus, &ssStatus) == TRUE;
-#endif
 }
 
 bool Service::install(const tchar *file, const tchar *desc,
     const tchar * const * depend, bool manual) {
-#ifdef _WIN32_WCE
-    return false;
-#else
     tchar buf[MAX_PATH];
     tchar *p = NULL, *pp;
     tstring root, prog;
@@ -463,34 +423,28 @@ bool Service::install(const tchar *file, const tchar *desc,
     errnum = GetLastError();
     delete [] p;
     return hService != NULL;
-#endif
 }
 
 bool Service::uninstall() {
     stop();
-#ifndef _WIN32_WCE
     if (DeleteService(hService)) {
 	close();
 	return true;
     }
-#endif
     return false;
 }
 
 bool Service::start(int argc, const tchar *const *argv) {
     if (!open())
 	return false;
-#ifdef _WIN32_WCE
-    errnum = EINVAL;
-#else
     errnum = StartService(hService, argc - 1, (LPCTSTR *)&argv[1]) ? 0 :
 	GetLastError();
-#endif
     return errnum == 0;
 }
 
 bool Service::send(int sig) {
     DWORD newstate = 0;
+    SERVICE_STATUS status;
 
     if (!open())
 	return false;
@@ -501,9 +455,6 @@ bool Service::send(int sig) {
 	newstate = SERVICE_PAUSED;
     else
 	newstate = SERVICE_RUNNING;
-#ifndef _WIN32_WCE
-    SERVICE_STATUS status;
-
     if (!ControlService(hService, (DWORD)sig, &status)) {
 	errnum = GetLastError();
 	return sig == SERVICE_CONTROL_STOP &&
@@ -519,14 +470,10 @@ bool Service::send(int sig) {
 	    (void)QueryServiceStatus(hService, &status);
 	}
     }
-#endif
     return true;
 }
 
 Service::Status Service::status() {
-#ifdef _WIN32_WCE
-    return Error;
-#else
     SERVICE_STATUS ss;
 
     if (!open() || !QueryServiceStatus(hService, &ss)) {
@@ -551,13 +498,10 @@ Service::Status Service::status() {
     default:
 	return Error;
     }
-#endif
 }
 
 void Service::exit(int code) {
-#ifndef _WIN32_WCE
     ssStatus.dwWin32ExitCode = code;
-#endif
     update(Stopped);
     _exit(code);
 }
@@ -574,7 +518,6 @@ tstring Service::errstr() const {
     return s;
 }
 
-#ifndef _WIN32_WCE
 void *Service::open(uint size) {
     tstring s(PREFIX + name);
 
@@ -735,7 +678,6 @@ void ServiceData::add(uint size, uint type, uint level) {
     last++;
     offset += size;
 }
-#endif // _WIN32_WCE
 
 #else	// Unix
 
@@ -1130,7 +1072,6 @@ int Service::execute(int argc, const tchar * const *argv) {
 #endif
     av = new const tchar *[argc + 1];
     path = argv[0];
-#ifndef _WIN32_WCE
     if (path[0] != '/' && path[1] != ':') {
 	int sz = 1024 + 2 + (int)path.size();
 	tchar *buf = new tchar[sz];
@@ -1140,7 +1081,6 @@ int Service::execute(int argc, const tchar * const *argv) {
 	path = buf + path;
 	delete [] buf;
     }
-#endif
     av[0] = path.c_str();
     if (argc > 1) {
 	cmd = argv[1];
@@ -1565,8 +1505,7 @@ void Daemon::onAbort() {
 #endif
     update(Stopped);
     if (restart && !exiting) {
-#ifdef _WIN32_WCE
-#elif defined(_WIN32)
+#ifdef _WIN32
 	if (spawnlp(P_NOWAIT, tstringtoachar(srvcpath),
 	    tstringtoachar(srvcpath), "restart", NULL) < 0)
 #else

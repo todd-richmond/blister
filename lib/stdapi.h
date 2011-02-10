@@ -65,14 +65,13 @@ typedef unsigned short word;
 
 #define rename _rename
 #define __STDC__ 1
-#ifndef _WIN32_WCE
 #include <direct.h>
 #include <io.h>
-#endif
 #include <stdio.h>
 #undef __STDC__
 #include <stdlib.h>
 #include <string.h>
+
 #define _INO_T_DEFINED
 #define _STAT_DEFINED
 #define _WSTAT_DEFINED
@@ -81,97 +80,21 @@ typedef unsigned short word;
 #undef _STAT_DEFINED
 #undef _WSTAT_DEFINED
 
-#ifdef _WIN32_WCE
-#include <winsock.h>
-#else
 #include <winsock2.h>
-#endif
 
 #undef rename
 
-#ifdef _WIN32_WCE
-#define EINVAL		1
-#define ENOENT		2
-#define EMFILE		3
-#define EACCES		4
-#define EBADF		5
-#define ENOTDIR		6
-#define ENOMEM		7
-#define E2BIG		8
-#define EXDEV		9
-#define EEXIST		10
-#define EAGAIN		11
-#define EPIPE		12
-#define ENOSPC		13
-#define ECHILD		14
-#define ENOTEMPTY	15
-#define ENOEXEC		16
-
-#define O_RDONLY	0x0000
-#define O_WRONLY	0x0001
-#define O_RDWR		0x0002
-#define O_APPEND	0x0008
-#define O_CREAT		0x0100
-#define O_TRUNC		0x0200
-#define O_EXCL		0x0400
-#define O_TEXT		0x4000
-#define O_BINARY	0x8000
-#define O_NOINHERIT	0
-#define O_RANDOM	0
-#define O_SEQUENTIAL	0
-#define _O_SHORT_LIVED	0
-#define O_TEMPORARY	0
-#define S_IFMT          0170000
-#define S_IFDIR         0040000
-#define S_IFCHR         0020000
-#define S_IFIFO         0010000
-#define S_IFREG         0100000
-#define S_IREAD         0000400
-#define S_IWRITE        0000200
-#define S_IEXEC         0000100
-
-#define _fmode		O_BINARY
-
-#define SetProcessAffinityMask(h, m) 1
-#define stricmp		_stricmp
-#define strnicmp	_strnicmp
-#define wcsicmp		_wcsicmp
-#define wcsnicmp	_wcsnicmp
-
-EXTERNC
-extern int __cdecl _stricmp(const char *, const char *);
-extern int __cdecl _strnicmp(const char *, const char *, size_t);
-extern int __cdecl _wcsicmp(const wchar *, const wchar *);
-extern int __cdecl _wcsnicmp(const wchar *, const wchar *, size_t);
-EXTERNC_
-
-#else
-#define ino_t		__ino_t
 #define fstat		__fstat
+#define ino_t		__ino_t
 #define stat		__sstat
 #include <sys/stat.h>
-#undef ino_t
 #undef fstat
+#undef ino_t
 #undef stat
-#endif
 
 #ifndef __cplusplus
 #define inline		__inline
 #endif
-
-#define MAXCHAR		0x7f
-#define MAXUCHAR	0xff
-#define MAXSHORT	0x7fff
-#define MAXUSHORT	0xffff
-#ifndef MAXINT
-#define MAXINT		0x7fffffff
-#define MAXUINT		0xffffffff
-#endif
-#define MAXLONG		0x7fffffff
-#define MAXULONG	0xffffffff
-#define MAXBYTE		0xff
-#define MAXWORD		0xffff
-#define MAXDWORD	0xffffffff
 
 #if _MSC_VER < 1600
 #define EADDRNOTAVAIL   WSAEADDRNOTAVAIL
@@ -288,7 +211,7 @@ typedef enum idtype {
 } idtype_t;
 
 /* local MSVC routines we need in overridden versions */
-#if defined(_DLL) || defined(_WIN32_WCE)
+#ifdef _DLL
 #define _dosmaperr  __dosmaperr
 #endif
 extern void _dosmaperr(ulong oserrno);
@@ -309,12 +232,7 @@ typedef struct dirent {
 typedef struct DIR {
     void *hdl;
     dirent  dir;
-#ifdef _WIN32_WCE
-    char pbuf[260];
-    struct _WIN32_FIND_DATAW *wfd;
-#else
     struct _WIN32_FIND_DATAA *wfd;
-#endif
     char path[1];
 } DIR;
 
@@ -413,9 +331,6 @@ EXTERNC_
 
 #else // _WIN32
 
-#ifndef ENOSR
-#define ENOSR		-1
-#endif
 #ifndef _POSIX_PTHREAD_SEMANTICS
 #define _POSIX_PTHREAD_SEMANTICS
 #endif
@@ -430,6 +345,10 @@ EXTERNC_
 #include <wchar.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+
+#ifndef ENOSR
+#define ENOSR		ENOBUFS
+#endif
 
 #define __declspec(x)
 #define __cdecl
@@ -463,6 +382,43 @@ extern int wcscasecmp(const wchar *, const wchar *);
 #endif
 
 #endif // _WIN32
+
+#define MAXUCHAR	~(uchar)0
+#ifndef MAXCHAR
+#define MAXCHAR		(char)(MAXUCHAR >> 1)
+#endif
+#ifndef MINCHAR
+#define MINCHAR		(char)~MAXCHAR
+#endif
+#define MAXUSHORT	~(ushort)0
+#ifndef MAXSHORT
+#define MAXSHORT	(short)(MAXUSHORT >> 1)
+#endif
+#ifndef MINSHORT
+#define MINSHORT	(short)~MAXSHORT
+#endif
+#ifndef MAXUINT
+#define MAXUINT		~(uint)0
+#endif
+#ifndef MAXINT
+#define MAXINT		(int)(MAXUINT >> 1)
+#endif
+#ifndef MININT
+#define MININT		(int)~MAXINT
+#endif
+#define MAXULONG	~(ulong)0
+#ifndef MAXLONG
+#define MAXLONG		(long)(MAXULONG >> 1)
+#endif
+#ifndef MINLONG
+#define MINLONG		(long)~MAXLONG
+#endif
+#define MAXULLONG	~(ullong)0
+#define MAXLLONG	(llong)(MAXULLONG >> 1)
+#define MINLLONG	(llong)~MAXLLONG
+#define MAXBYTE		0xff
+#define MAXWORD		0xffff
+#define MAXDWORD	0xffffffff
 
 typedef char int8;
 typedef uchar uint8;
@@ -629,11 +585,9 @@ EXTERNC_
 #include <string>
 #include <vector>
 
-#ifndef _WIN32_WCE
 using namespace std;
 #if _MSC_VER >= 1500 && _MSC_VER < 1600
 using namespace stdext;
-#endif
 #endif
 
 extern const wstring _achartowstring(const char *s, int len);

@@ -18,10 +18,8 @@
 #include "stdapi.h"
 #include <ctype.h>
 #include <time.h>
-#ifndef _WIN32_WCE
 #include <fcntl.h>
 #include <sys/stat.h>
-#endif
 #include "HTTPClient.h"
 #include "HTTPServer.h"
 #include "Log.h"

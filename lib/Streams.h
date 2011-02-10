@@ -284,6 +284,8 @@ public:
 };
 #endif
 
+typedef bufferstream<tchar> tbufferstream;
+
 /*
  * nullstream is a byte sink stream that ignores all writes
  */

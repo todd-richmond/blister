@@ -30,7 +30,6 @@ Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
 
 #ifdef _WIN32
 Process Process::self(GetCurrentProcess());
-#ifndef _WIN32_WCE
 int Process::argc = __argc;
 #ifdef _UNICODE
 tchar **Process::argv = __wargv;
@@ -38,10 +37,6 @@ tchar **Process::envv = _wenviron;
 #else
 tchar **Process::argv = __argv;
 tchar **Process::envv = _environ;
-#endif
-
-#else
-#include <sys/times.h>
 #endif
 
 Mutex::Mutex(const tchar *name) {
@@ -71,7 +66,6 @@ Process Process::start(tchar *const *args, const int *fds) {
     tstring cmd;
 
     ZERO(proc);
-#ifndef _WIN32_WCE
     STARTUPINFO sbuf;
 
     ZERO(sbuf);
@@ -86,7 +80,6 @@ Process Process::start(tchar *const *args, const int *fds) {
 		st->hStdError = (HANDLE)fds[2];
 	}
     }
-#endif
     while (*args)
 	cmd += *(args++) + ' ';
     if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL, NULL,
@@ -139,9 +132,7 @@ bool DLLibrary::close() {
 }
 
 void *DLLibrary::get(const tchar *symbol) const {
-#ifdef _WIN32_WCE
-    return GetProcAddress((HMODULE)hdl, symbol);
-#elif defined(_WIN32)
+#ifdef _WIN32
     return GetProcAddress((HMODULE)hdl, tchartoachar(symbol));
 #else
     return dlsym(hdl, symbol);
@@ -167,7 +158,7 @@ uint Processor::count(void) {
 
 ullong Processor::affinity(void) {
     ullong mask = (ulong)-1;
-#if defined(_WIN32) && !defined(_WIN32_WCE)
+#ifdef _WIN32
     DWORD_PTR pmask, smask;
 
     if (GetProcessAffinityMask(GetCurrentProcess(), &pmask, &smask))
@@ -186,7 +177,7 @@ ullong Processor::affinity(void) {
 }
 
 bool Processor::affinity(ullong mask) {
-#if defined(_WIN32) && !defined(_WIN32_WCE)
+#ifdef _WIN32
     return SetProcessAffinityMask(GetCurrentProcess(), (uint32)mask) != 0;
 #elif defined(__linux__)
     cpu_set_t cset;

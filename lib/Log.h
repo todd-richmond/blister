@@ -365,12 +365,12 @@ private:
     };
 
     struct Tlsdata {
-    	Level clvl;
-    	tstring prefix;
+	Level clvl;
+	tstring prefix;
 	bool space;
 	tstring strbuf;
 	bool suppress;
-	bufferstream<tchar> strm;
+	tbufferstream strm;
 
 	Tlsdata(): clvl(None), space(false), suppress(false) {}
     };
@@ -382,7 +382,7 @@ private:
     bool bufenable, mailenable, syslogenable;
     uint bufsz;
     ulong buftm;
-    bufferstream<tchar> bufstrm;
+    tbufferstream bufstrm;
     tstring fmt;
     FlushThread ft;
     bool gmt, mp;

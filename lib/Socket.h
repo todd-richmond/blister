@@ -19,20 +19,12 @@
 #define Socket_h
 
 #ifdef _WIN32
-#ifdef _WIN32_WCE
-#define E_ ENOTEMPTY
-#undef ENOTEMPTY
-#include <winsock.h>
-#undef ENOTEMPTY
-#define ENOTEMPTY
-#undef E_
-#elif !defined(_WINSOCK2API_)
+#ifndef _WINSOCK2API_
 #include <winsock2.h>
 #endif
 #pragma warning(disable: 6386)
 #include <ws2tcpip.h>
 #pragma warning(default: 6386)
-
 
 #pragma warning(disable: 4097)
 
@@ -55,7 +47,10 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 
 #define INVALID_SOCKET	-1
 #define SSET_FD(i)	fds[i].fd
+#define WSAEALREADY	EALREADY
+#define WSAEINPROGRESS	EINPROGRESS
 #define WSAEINTR	EINTR
+#define WSAEWOULDBLOCK	EWOULDBLOCK
 
 typedef int socket_t;
 
@@ -69,12 +64,16 @@ inline int sockerrno(void) { return errno; }
 
 const int SOCK_BACKLOG = 128;
 const int SOCK_BUFSZ = 3 * 1024;
-const ulong SOCK_INFINITE = (uint)-1;
+const uint SOCK_INFINITE = (uint)-1;
 const socket_t SOCK_INVALID = INVALID_SOCKET;
 
 inline bool blocked(int e) {
-    return e && (e == EWOULDBLOCK || e == EAGAIN || e == ENOBUFS ||
-	e == ENOSR || e == EINPROGRESS);
+#ifdef _WIN32
+    return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY;
+#else
+    return e == EWOULDBLOCK || e == EAGAIN || e == ENOBUFS ||
+	e == ENOSR || e == EINPROGRESS || e == EALREADY;
+#endif
 }
 
 inline bool interrupted(int e) { return e == WSAEINTR; }

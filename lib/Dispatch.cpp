@@ -311,7 +311,11 @@ int Dispatcher::onStart() {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
 	}
-	rlist.push_front(flist);
+	if (flist) {
+	    if (!count)
+		count = 1;
+	    rlist.push_front(flist);
+	}
 	wake(count, true);
 	lock.unlock();
     }
@@ -337,7 +341,7 @@ int Dispatcher::onStart() {
     msec_t now;
     socketmap::const_iterator sit;
     timermap::iterator tit;
-    uint u;
+    uint u = 0;
 
 #ifndef _WIN32
     sigset_t sigs;
@@ -375,12 +379,14 @@ int Dispatcher::onStart() {
     asock.listen(addr);
     asock.sockname(addr);
     asock.blocking(false);
-    wsock.connect(addr, 100);
-    if (!asock.accept(isock)) {
+    wsock.connect(addr, 0);
+    while (!asock.accept(isock) && ++u < 50)
+	msleep(100);
+    asock.close();
+    if (u == 50) {
 	shutdown = 1;
 	return -1;
     }
-    asock.close();
     isock.blocking(false);
     wsock.blocking(false);
     if (evtfd == -1) {
@@ -451,10 +457,14 @@ int Dispatcher::onStart() {
 	lock.lock();
 	if (shutdown)
 	    break;
-	rlist.push_front(flist);
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 	count += handleEvents(&evts[0], nevts);
 #endif
+	if (flist) {
+	    if (!count)
+		count = 1;
+	    rlist.push_front(flist);
+	}
 	for (u = 0; u < orset.size(); u++) {
 	    if (orset[u] == isock) {
 		reset();
@@ -1077,17 +1087,17 @@ void Dispatcher::deleteObj(DispatchObj &obj) {
 }
 
 void Dispatcher::addReady(DispatchObj &obj, bool hipri, Msg reason) {
-    FastSpinLocker lkr(lock);
-
+    lock.lock();
     obj.msg = reason;
     ready(obj, hipri);
+    lock.unlock();
 }
 
 void Dispatcher::cancelReady(DispatchObj &obj) {
     if (obj.flags & DSP_ReadyAll) {
-	FastSpinLocker lkr(lock);
-
+	lock.lock();
 	removeReady(obj);
+	lock.unlock();
     }
 }
 
