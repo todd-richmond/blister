@@ -113,8 +113,8 @@ private:
     uint maxthreads;
     volatile int shutdown;
     socketmap smap;
-    long stacksz;
-    volatile ulong threads;
+    uint stacksz;
+    volatile uint threads;
     timermap timers;
 #ifdef DSP_WIN32_ASYNC
     volatile ulong interval;
@@ -276,9 +276,9 @@ public:
     DispatchIOSocket(DispatchObj &parent, int type = SOCK_STREAM,
     	ulong msec = DSP_NEVER): DispatchSocket(parent, type, msec) {}
     DispatchIOSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER):
-	DispatchSocket(d, sock) {}
+	DispatchSocket(d, sock, msec) {}
     DispatchIOSocket(DispatchObj &parent, const Socket &sock, ulong msec =
-	DSP_NEVER): DispatchSocket(parent, sock) {}
+	DSP_NEVER): DispatchSocket(parent, sock, msec) {}
 
     void closeable(DispatchObjCB cb = NULL, ulong msec = 15000)
 	{ poll(cb, msec, Dispatcher::Close); }
@@ -327,7 +327,7 @@ public:
 	int type = SOCK_STREAM, bool reuse = true, int queue = SOCK_BACKLOG,
 	DispatchObjCB cb = connection);
 
-    const Sockaddr address(void) { return sa; }
+    const Sockaddr address(void) { return addr; }
     bool listen(const Sockaddr &addr, bool reuse = true, int queue =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL);
     void relisten() { poll(NULL, DSP_PREVIOUS, Dispatcher::Accept); }
@@ -335,7 +335,7 @@ public:
 protected:
     virtual void onAccept(Socket &sock) = 0;
 
-    Sockaddr sa;
+    Sockaddr addr;
 
  private:
     DSP_DECLARE(DispatchListenSocket, connection);

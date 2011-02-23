@@ -158,7 +158,7 @@ void URL::unescape(tstring &str, bool plus) {
 HTTPClient::HTTPClient(): ressz(0), result(0), rto(90 * 1000), wto(60 * 1000),
     sstrm(StreamSize), sts(0), sz(0) {}
 
-bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, ulong to) {
+bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     if (sock.open() && sa == addr)
 	return true;
     if (addr != sa)

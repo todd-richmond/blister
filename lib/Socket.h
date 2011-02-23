@@ -30,6 +30,7 @@
 
 #define socklen_t	int
 #define SSET_FD(i)	fds->fd_array[i]
+#define SSIZE_T		int
 
 typedef SOCKET socket_t;
 
@@ -45,8 +46,10 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
+#define ioctlsocket	ioctl
 #define INVALID_SOCKET	-1
 #define SSET_FD(i)	fds[i].fd
+#define SSIZE_T		size_t
 #define WSAEALREADY	EALREADY
 #define WSAEINPROGRESS	EINPROGRESS
 #define WSAEINTR	EINTR
@@ -299,14 +302,14 @@ public:
     bool rtimeout(uint msec) { sbuf->rto = msec; return true; }
     bool rtimeout(const timeval &tv) {
 	if (!setsockopt(SOL_SOCKET, SO_RCVTIMEO, tv))
-	    rtimeout(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+	    rtimeout((uint)(tv.tv_sec * 1000 + tv.tv_usec / 1000));
 	return true;
     }
     uint wtimeout(void) const { return sbuf->wto; }
     bool wtimeout(uint msec) { sbuf->wto = msec; return true; }
     bool wtimeout(const timeval &tv) {
 	if (!setsockopt(SOL_SOCKET, SO_SNDTIMEO, tv))
-	    wtimeout(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+	    wtimeout((uint)(tv.tv_sec * 1000 + tv.tv_usec / 1000));
 	return true;
     }
     int rwindow(void) const { return getsockopt(SOL_SOCKET, SO_RCVLOWAT); }
@@ -333,8 +336,8 @@ protected:
 	~SocketBuf() { if (own) close(); }
 
 	bool blocked(void) const { return ::blocked(err); }
-	bool check(int ret) {
-	    if (ret == -1) {
+	bool check(SSIZE_T ret) {
+	    if (ret == (SSIZE_T)-1) {
 		err = sockerrno();
 		return false;
 	    } else {
@@ -368,7 +371,7 @@ protected:
     };
     
 protected:
-    bool check(int ret) const { return sbuf->check(ret); }
+    bool check(SSIZE_T ret) const { return sbuf->check(ret); }
     socket_t movehigh(socket_t fd);
     bool rwpoll(bool rd) const;
 
@@ -525,7 +528,7 @@ private:
 
 class sockstream: public iostream {
 public:
-    sockstream(int sz = SOCK_BUFSZ, char *p = NULL, openmode mode = in | out):
+    sockstream(int sz = SOCK_BUFSZ, char *p = NULL):
 	iostream(NULL), sb(sz, p) { ios::init(&sb); }
     sockstream(Socket &s, int sz = SOCK_BUFSZ, char *p = NULL):
 	iostream(NULL), sb(s, sz, p) { ios::init(&sb); }

@@ -51,6 +51,7 @@ static void splitpath(const tchar *path, const tchar *name, tstring &root,
     tstring s;
     const tchar *p = NULL;
 
+    (void)name;
     p = tgetenv(T("installdir"));
     if (p) {
 	s = p;
@@ -686,8 +687,10 @@ void ServiceData::add(uint size, uint type, uint level) {
 #include <sys/resource.h>
 #include <sys/wait.h>
 
-Service::Service(const char *service, const char *h): bPause(false), errnum(0),
-    gid(0), name(service), pid(0), stStatus(Stopped), uid(0) {}
+Service::Service(const char *servicename, const char *h): bPause(false),
+    errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0) {
+    (void)h;
+}
 
 Service::Service(const char *servicename, bool pauseable): bPause(pauseable),
     errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0) {
@@ -720,9 +723,9 @@ bool Service::open(void) {
     fl.l_whence = SEEK_SET;
     if (fcntl(fd, F_GETLK, &fl) == -1 || !fl.l_pid)
 	return false;
-    pid = fl.l_pid;
+    pid = (pid_t)fl.l_pid;
     stStatus = (Status)fl.l_len;
-    if ((in = read(fd, buf, sizeof (buf))) > 0) {
+    if ((in = read(fd, buf, (uint)sizeof (buf))) > 0) {
 	buf[in] = '\0';
 	pid = atoi(buf);
 	lseek(fd, 0, SEEK_SET);
@@ -821,7 +824,7 @@ void Service::setsignal(bool abrt) {
     }
 }
 
-int Service::ctrl_handler(void *arg) {
+int Service::ctrl_handler(void *) {
     sigset_t sigs;
     int sig;
 
@@ -909,11 +912,11 @@ int Service::run(int argc, const tchar * const *argv) {
     }
     if (!console) {
 	int fd;
-    	pid_t pid = fork();
+    	pid_t fpid = fork();
 
-	if (pid > 0) {
+	if (fpid > 0) {
 	    ::exit(0);
-	} else if (pid == -1) {
+	} else if (fpid == -1) {
 	    dlog << Log::Err << Log::mod(argv[0]) << Log::kv(T("err"),
 		T("unable to fork")) << endlog;
 	    ::exit(1);
@@ -942,7 +945,8 @@ bool Service::update(Status status) {
 }
 
 bool Service::install(const char *file, const char *desc,
-    const char * const * depend, bool manual) {
+    const char * const *depend, bool manual) {
+    (void)desc; (void)depend; (void)manual;
     if (!file)
     	file = path.c_str();
     chown(file, getuid(), getgid());
@@ -955,7 +959,7 @@ bool Service::uninstall() {
 }
 
 bool Service::start(int argc, const tchar * const *argv) {
-    pid_t pid;
+    pid_t fpid;
     Status sts = status();
     uint loop = 15;
 
@@ -965,7 +969,7 @@ bool Service::start(int argc, const tchar * const *argv) {
     }
     if (sts != Error && sts != Stopped)
 	return false;
-    if ((pid = fork()) == -1) {
+    if ((fpid = fork()) == -1) {
 	errnum = errno;
 	return false;
     } else if (!pid) {
@@ -974,7 +978,7 @@ bool Service::start(int argc, const tchar * const *argv) {
     } else {
 	bool started = false;
 
-	waitpid(pid, NULL, 0);
+	waitpid(fpid, NULL, 0);
 	for (int i = 0; i < 10 * 30; i++) {
 	    if ((sts = status()) == Running || sts == Pausing ||
 		sts == Paused || sts == Refreshing || sts == Resuming) {
@@ -1053,7 +1057,7 @@ void Service::exit(int code) {
 }
 
 string Service::errstr() const {
-    return strerror(errnum);
+    return strerror((int)errnum);
 }
 #endif
 
@@ -1187,6 +1191,7 @@ const tchar *Service::status(Status s) {
 Daemon::Daemon(const tchar *service, const tchar *dname, bool pauseable):
     Service(service, pauseable), qflag(None), child(0), lckfd(-1),
     refreshed(false), watch(false) {
+    (void)dname;
 }
 
 Daemon::~Daemon() {

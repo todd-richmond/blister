@@ -189,6 +189,7 @@ bool Processor::affinity(ullong mask) {
     }
     return sched_setaffinity(0, sizeof (cset), &cset) == 0;
 #else
+    (void)mask;
     return false;
 #endif
 }
@@ -214,6 +215,7 @@ Thread::~Thread() {
 
 // set state and notify threadgroup
 void Thread::clear(bool self) {
+    (void)self;
     lck.lock();
     if (id != NOID) {
 #ifdef _WIN32
@@ -246,19 +248,21 @@ int Thread::init(void *thisp) {
     return ((Thread *)thisp)->onStart();
 }
 
-bool Thread::priority(thread_t hdl, int pri) {
+bool Thread::priority(int pri) {
+    if (!hdl)
+	return false;
 #ifdef _WIN32
-    if (pri < -5)
+    if (pri < -10)
 	return SetThreadPriority(hdl, THREAD_PRIORITY_IDLE) != 0;
-    else if (pri < -1)
+    else if (pri < -5)
 	return SetThreadPriority(hdl, THREAD_PRIORITY_LOWEST) != 0;
     else if (pri < 0)
 	return SetThreadPriority(hdl, THREAD_PRIORITY_BELOW_NORMAL) != 0;
     else if (pri < 1)
 	return SetThreadPriority(hdl, THREAD_PRIORITY_NORMAL) != 0;
-    else if (pri < 2)
-	return SetThreadPriority(hdl, THREAD_PRIORITY_ABOVE_NORMAL) != 0;
     else if (pri < 6)
+	return SetThreadPriority(hdl, THREAD_PRIORITY_ABOVE_NORMAL) != 0;
+    else if (pri < 11)
 	return SetThreadPriority(hdl, THREAD_PRIORITY_HIGHEST) != 0;
     else
 	return SetThreadPriority(hdl, THREAD_PRIORITY_TIME_CRITICAL) != 0;

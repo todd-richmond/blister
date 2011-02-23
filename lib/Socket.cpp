@@ -27,7 +27,6 @@
 #pragma comment(lib, "ws2_32.lib")
 #pragma warning(disable: 4389)
 
-#define SIZE_T int
 Sockaddr::SockInit Sockaddr::init;
 
 #else
@@ -36,9 +35,6 @@ Sockaddr::SockInit Sockaddr::init;
 #ifdef __sun__
 #include <sys/filio.h>
 #endif
-
-#define SIZE_T size_t
-#define ioctlsocket ioctl
 
 #endif
 
@@ -76,9 +72,9 @@ const tstring Sockaddr::host_port(void) const {
 }
 
 const tstring &Sockaddr::hostname() {
-    static tstring name;
+    static tstring hname;
 
-    if (name.empty()) {
+    if (hname.empty()) {
 	char buf[NI_MAXHOST];
 
 	if (gethostname(buf, sizeof (buf))) {
@@ -87,17 +83,17 @@ const tstring &Sockaddr::hostname() {
 	    ulong sz = sizeof (buf);
 
 	    GetComputerName(cbuf, &sz);
-	    name = cbuf;
+	    hname = cbuf;
 #else
-	    name = T("localhost");
+	    hname = T("localhost");
 #endif
 	} else {
 	    Sockaddr sa(achartotstring(buf).c_str());
 	    
-	    name = sa.host();
+	    hname = sa.host();
 	}
     }
-    return name;
+    return hname;
 }
 
 ushort Sockaddr::port(void) const {
@@ -563,15 +559,16 @@ bool Socket::rwpoll(bool rd) const {
 }
 
 int Socket::read(void *buf, size_t sz) const {
-    int in;
+    SSIZE_T in;
 
     do {
 	if (!rwpoll(true))
 	    return -1;
-	check(in = recv(sbuf->sock, (char *)buf, (SIZE_T)sz, 0));
+	if (check(in = (SSIZE_T)recv(sbuf->sock, (char *)buf, (SSIZE_T)sz, 0)))
+	    break;
     } while (interrupted());
     if (in) {
-	return in <= 0 && blocked() ? 0 : in;
+	return in <= 0 && blocked() ? 0 : (int)in;
     } else {
 	sbuf->err = EOF;
 	return -1;
@@ -580,16 +577,17 @@ int Socket::read(void *buf, size_t sz) const {
 
 int Socket::read(void *buf, size_t sz, Sockaddr &sa) const {
     socklen_t asz = sa.size();
-    int in;
+    SSIZE_T in;
     
     do {
 	if (!rwpoll(true))
 	    return -1;
-	check(in = recvfrom(sbuf->sock, (char *)buf, (SIZE_T)sz, 0, sa.data(),
-	    &asz));
+	if (check(in = recvfrom(sbuf->sock, (char *)buf, (SSIZE_T)sz, 0,
+	    sa.data(), &asz)))
+	    break;
     } while (interrupted());
     if (in) {
-	return in <= 0 && blocked() ? 0 : in;
+	return in <= 0 && blocked() ? 0 : (int)in;
     } else {
 	sbuf->err = EOF;
 	return -1;
@@ -597,26 +595,28 @@ int Socket::read(void *buf, size_t sz, Sockaddr &sa) const {
 }
 
 int Socket::write(const void *buf, size_t sz) const {
-    int out;
+    SSIZE_T out;
 
     do {
 	if (!rwpoll(false))
 	    return -1;
-	check(out = send(sbuf->sock, (const char *)buf, (SIZE_T)sz, 0));
+	if (check(out = send(sbuf->sock, (const char *)buf, (SSIZE_T)sz, 0)))
+	    break;
     } while (interrupted());
-    return out <= 0 && blocked() ? 0 : out;
+    return out <= 0 && blocked() ? 0 : (int)out;
 }
 
 int Socket::write(const void *buf, size_t sz, const Sockaddr &sa) const {
-    int out;
+    SSIZE_T out;
     
     do {
 	if (!rwpoll(false))
 	    return -1;
-	check(out = sendto(sbuf->sock, (const char *)buf, (SIZE_T)sz, 0, sa,
-	    sa.size()));
+	if (check(out = sendto(sbuf->sock, (const char *)buf, (SSIZE_T)sz, 0,
+	    sa, sa.size())))
+	    break;
     } while (interrupted());
-    return out <= 0 && blocked() ? 0 : out;
+    return out <= 0 && blocked() ? 0 : (int)out;
 }
 
 long Socket::writev(const iovec *iov, int count) const {
@@ -627,7 +627,8 @@ long Socket::writev(const iovec *iov, int count) const {
 	NULL));
 #else
     do {
-	check(out = ::writev(sbuf->sock, iov, count));
+	if (check(out = ::writev(sbuf->sock, iov, count)))
+	    break;
     } while (interrupted());
 #endif
     return blocked() ? 0 : out;

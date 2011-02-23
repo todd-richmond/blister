@@ -364,7 +364,7 @@ int tmain(int argc, tchar *argv[]) {
 	dlog << Log::Info << T("echo ") << host << T(" ") << path << endlog;
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	ec.connect(addr, sockets, delay, tmt, wait);
-	Thread::priority(THREAD_HDL(), 10);
+	Thread::MainThread.priority(10);
 	last = microticks();
 	do {
 	    ops = errs = 0;

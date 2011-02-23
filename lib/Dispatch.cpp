@@ -694,7 +694,7 @@ uint Dispatcher::handleEvents(void *evts, int nevts) {
 		if (evt->data == EBADF || evt->data == EINVAL ||
 		    evt->data == ENOENT)
 		    continue;
-		ds->err(evt->data);
+		ds->err((int)evt->data);
 		if (ds->msg == Nomsg)
 		    ds->msg = Close;
 		else
@@ -729,7 +729,7 @@ uint Dispatcher::handleEvents(void *evts, int nevts) {
 		if (evt->data == EBADF || evt->data == EINVAL ||
 		    evt->data == ENOENT)
 		    continue;
-		ds->err(evt->data);
+		ds->err((int)evt->data);
 		ds->flags |= DSP_Closeable;
 	    } else if (evt->flags & EV_ERROR) {
 		ds->flags |= DSP_Closeable;
@@ -1186,8 +1186,8 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
     DispatchObjCB cb) {
     if (!cb)
 	cb = connection;
-    this->sa = sa;
-    if (!Socket::listen(sa, reuse, queue))
+    addr = sa;
+    if (!Socket::listen(addr, reuse, queue))
 	return false;
     blocking(false);
     msleep(1);

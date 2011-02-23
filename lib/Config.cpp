@@ -30,8 +30,8 @@ Config::Value::Value(const tchar *val, size_t len): expand(false), quote(0) {
 
 	value.assign(val, 0, len);
 	while ((p = tstrchr(p, '$')) != NULL && *++p) {
-	    if ((*p == '{' || *p == '(') && tstrchr(p, *p == '(' ? ')' : '}')
-		!= NULL) {
+	    if ((*p == '{' || *p == '(') && tstrchr(p, *p == '(' ? ')' : '}') !=
+		NULL) {
 		expand = true;
 		return;
 	    }
@@ -39,8 +39,8 @@ Config::Value::Value(const tchar *val, size_t len): expand(false), quote(0) {
     }
 }
 
-Config::Config(const tchar *file, const tchar *pre): ini(false), locker(0) {
-    prefix(pre);
+Config::Config(const tchar *file, const tchar *str): ini(false), locker(0) {
+    prefix(str);
     if (file)
 	read(file);
 }
@@ -50,15 +50,15 @@ const tstring &Config::expand(const Value *value) const {
 
     if (!value->expand)
 	return value->value;
-    buf = value->value;
-    while ((spos = buf.rfind(T("$("))) != buf.npos ||
-	(spos = buf.rfind(T("${"))) != buf.npos) {
-	if ((epos = buf.find(buf[spos + 1] == '(' ? ')' : '}', spos + 2)) ==
-	    buf.npos)
+    _buf = value->value;
+    while ((spos = _buf.rfind(T("$("))) != _buf.npos ||
+	(spos = _buf.rfind(T("${"))) != _buf.npos) {
+	if ((epos = _buf.find(_buf[spos + 1] == '(' ? ')' : '}', spos + 2)) ==
+	    _buf.npos)
 	    break;
 
 	attrmap::const_iterator it;
-	tstring s(buf, spos + 2, epos - spos - 2);
+	tstring s(_buf, spos + 2, epos - spos - 2);
 
 	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 &&
 	    s.size() > pre.size() + 1 && s[pre.size()] == '.')
@@ -66,9 +66,9 @@ const tstring &Config::expand(const Value *value) const {
 	it = amap.find(s.c_str());
 	if (it == amap.end())
 	    break;
-	buf.replace(spos, epos - spos + 1, it->second->value);
+	_buf.replace(spos, epos - spos + 1, it->second->value);
     }
-    return buf;
+    return _buf;
 }
 
 void Config::clear(void) {
@@ -154,15 +154,15 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
 	if (append) {
 	    if (value->quote && !tstrstr(val, T("${")) && !tstrstr(val,
 		T("$("))) {
-		buf = value->quote;
-		buf += value->value;
-		buf += val;
-		buf += value->quote;
+		_buf = value->quote;
+		_buf += value->value;
+		_buf += val;
+		_buf += value->quote;
 	    } else {
-		buf = value->value;
-		buf += val;
+		_buf = value->value;
+		_buf += val;
 	    }
-	    val = buf.c_str();
+	    val = _buf.c_str();
 	}
 	delete value;
 	it->second = new Value(val, tstrlen(val));
@@ -304,16 +304,16 @@ bool Config::read(tistream &is, bool app) {
     return ret;
 }
 
-bool Config::read(const tchar *f, bool app) {
-    if (f)
-	file = f;
+bool Config::read(const tchar *file, bool app) {
+    if (file)
+	path = file;
 
-    tifstream is(file.c_str());
+    tifstream is(path.c_str());
 
     return read(is, app);
 }
 
-bool Config::write(tostream &os, bool ini) const {
+bool Config::write(tostream &os, bool inistyle) const {
     Locker lkr(lck, !THREAD_ISSELF(locker));
     attrmap::const_iterator it;
     vector<tstring> lines;
@@ -335,19 +335,19 @@ bool Config::write(tostream &os, bool ini) const {
     sort(lines.begin(), lines.end());
     for (lit = lines.begin(); lit != lines.end(); lit++) {
 	os << *lit << endl;
-	(void)ini;
+	(void)inistyle;
 	// TODO - write ini style cfg
 	//os << T("[") << it->first << T("]") << endl;
     }
     return os.good();
 }
 
-bool Config::write(const tchar *f, bool ini) const {
-    if (!f)
-	f = file.c_str();
+bool Config::write(const tchar *file, bool inistyle) const {
+    if (!file)
+	file = path.c_str();
 
-    tofstream os(tchartoachar(f), ios::binary);
+    tofstream os(tchartoachar(file), ios::binary);
 
-    return write(os, ini);
+    return write(os, inistyle);
 }
 

@@ -76,8 +76,7 @@ void Log::LogFile::lock() {
     if (fd == -1)
 	reopen();
     if (fd >= 0 && !locked) {
-	len = lockfd(fd);
-	if (len == (ulong)-1) {
+	if (!lockfd()) {
 	    close();
 	    fd = -3;
 	    tcerr << T("unable to lock log ") << path << endl;
@@ -87,24 +86,22 @@ void Log::LogFile::lock() {
     }
 }
 
-ulong Log::LogFile::lockfd(int fd) {
-    ulong len;
-
+bool Log::LogFile::lockfd(void) {
     if (fd < 0)
 	return 0;
     if (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
 	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1)
-	return (ulong)-1;
-    return len;
+	return false;
+    return true;
 }
 
-void Log::LogFile::print(const tchar *buf, size_t sz) {
+void Log::LogFile::print(const tchar *buf, uint chars) {
     if (fd < 0) {
 	if (fd == -2) {
-	    tcout.write(buf, sz);
+	    tcout.write(buf, chars);
 	    tcout.flush();
 	} else if (fd == -3) {
-	    tcerr.write(buf, sz);
+	    tcerr.write(buf, chars);
 	    tcerr.flush();
 #ifdef _WIN32
 	} else if (fd == -4) {
@@ -115,9 +112,9 @@ void Log::LogFile::print(const tchar *buf, size_t sz) {
 #endif
 	}
     } else {
-	write(fd, buf, (uint)sz);
+	write(fd, buf, chars * sizeof (tchar));
 	if (file[0] != '>')
-	    len += (ulong)sz;
+	    len += chars * sizeof (tchar);
     }
 }
 
@@ -163,7 +160,7 @@ void Log::LogFile::roll(void) {
     if (!enable)
 	return;
     lock();
-    now = cnt && !tm && fstat(fd, &sbuf) == 0 ? (time_t)sbuf.st_ctime :
+    now = cnt && !sec && fstat(fd, &sbuf) == 0 ? (time_t)sbuf.st_ctime :
 	::time(NULL);
     s1 = apath;
     if ((pos = s1.rfind('/')) == s1.npos && (pos = s1.rfind('\\')) == s1.npos) {
@@ -197,7 +194,8 @@ void Log::LogFile::roll(void) {
 		files++;
 		if (stat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
 		    (ulong)oldtime) {
-		    if ((pos = s3.rfind('.')) != s3.npos && isdigit((int)s3[++pos])) {
+		    if ((pos = s3.rfind('.')) != s3.npos &&
+			isdigit((int)s3[++pos])) {
 			ext = atoi(s3.c_str() + pos);
 			if (ext < oldext)
 			    continue;
@@ -211,8 +209,9 @@ void Log::LogFile::roll(void) {
 	    if (oldtime == (ulong)-1) {
 		break;
 	    } else if ((cnt && files >= cnt &&
-		(!tm || oldtime < (ulong)(now - tm))) ||
-		(tm && oldtime < (ulong)(now - tm)) && (!cnt || files >= cnt)) {
+		(!sec || oldtime < (ulong)(now - sec))) ||
+		(sec && oldtime < (ulong)(now - sec)) &&
+		(!cnt || files >= cnt)) {
 		unlink(oldfile.c_str());
 		files--;
 		rewinddir(dir);
@@ -250,8 +249,8 @@ void Log::LogFile::set(const Config &cfg, const tchar *sect,
     gmt = cfg.get(T("gmt"), false, sect);
     lvl = str2enum(cfg.get((s + T("level")).c_str(), dlvl, sect).c_str());
     sz = cfg.get((s + T("size")).c_str(), 10 * 1024 * 1024L, sect);
-    tm = cfg.get((s + T("time")).c_str(), 0L, sect);
-    set(lvl, f.c_str(), cnt, sz, tm);
+    sec = cfg.get((s + T("time")).c_str(), 0L, sect);
+    set(lvl, f.c_str(), cnt, sz, sec);
     if (fd == -1 && !tstrchr(file.c_str(), '/') &&
 	!tstrchr(file.c_str(), '\\')) {
 	tstring dir(cfg.get(T("installdir")));
@@ -273,7 +272,7 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
     enable = true;
     lvl = l;
     sz = s;
-    tm = t;
+    sec = t;
     close();
     if (!f || file == f)
 	return;
@@ -301,7 +300,7 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
     len = 0;
 }
 
-void Log::LogFile::unlockfd(int fd) {
+void Log::LogFile::unlockfd(void) {
     if (fd >= 0)
 	lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
 }
@@ -523,16 +522,16 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     tlsd.suppress = false;
 }
 
-void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
+void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong sec) {
     Locker lkr(lck);
 
     _flush();
-    ffd.set(l, f, cnt, sz, tm);
+    ffd.set(l, f, cnt, sz, sec);
 }
 
 void Log::_flush(void) {
     if (bufstrm.size()) {
-	ffd.print(bufstrm.str(), (size_t)bufstrm.size());
+	ffd.print(bufstrm.str(), (uint)bufstrm.size());
 	bufstrm.reset();
     }
 }

@@ -89,7 +89,7 @@ public:
 	    buf << val << '\0';
 	    quote(os, buf.str());
 	}
-	static void quote(tostream &os, const tchar *val) {
+	static void quote(tostream &os, const tchar *s) {
 	    const tchar *p;
 	    static const uchar needquote[128] = {
 		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
@@ -102,12 +102,12 @@ public:
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
 	    };
 
-	    if (!val)
+	    if (!s)
 		return;
-	    for (p = val; *p; p++) {
+	    for (p = s; *p; p++) {
 		if ((uchar)*p > 127 || needquote[(uchar)*p]) {
 		    os << '"';
-		    for (p = val; *p; p++) {
+		    for (p = s; *p; p++) {
 			tchar c = *p;
 
 			if (c == '"') {
@@ -131,7 +131,7 @@ public:
 		    return;
 		}
 	    }
-	    os.write(val, p - val);
+	    os.write(s, p - s);
 	}
     };
 
@@ -322,7 +322,7 @@ private:
 	bool enable;
 	tstring file;
 	bool gmt, mp;
-	ulong len, sz, tm;
+	ulong len, sec, sz;
 	bool locked;
 	Level lvl;
 
@@ -342,16 +342,16 @@ private:
 	bool close(void);
 	void flush(void);
 	void lock(void);
-	void print(const tchar *buf, size_t len);
-	void print(const tstring &s) { print(s.c_str(), s.size()); }
+	void print(const tchar *buf, uint sz);
+	void print(const tstring &s) { print(s.c_str(), (uint)s.size()); }
 	bool reopen(void);
 	void roll(void);
 	void set(const Config &cfg, const tchar *sect, const tchar *sub,
 	    bool enable, const tchar *level, const tchar *file);
-	void set(Level l, const tchar *f, uint cnt, ulong sz, ulong tm);
+	void set(Level lvl, const tchar *file, uint cnt, ulong sz, ulong sec);
 	void unlock(void) {
 	    if (locked) {
-		unlockfd(fd);
+		unlockfd();
 		locked = false;
 	    }
 	}
@@ -360,8 +360,8 @@ private:
 	int fd;
 	tstring path;
 
-	static ulong lockfd(int fd);
-	static void unlockfd(int fd);
+	bool lockfd(void);
+	void unlockfd(void);
     };
 
     struct Tlsdata {

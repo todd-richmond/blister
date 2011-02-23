@@ -126,7 +126,7 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
     return code() == retcode;
 }
 
-bool SMTPClient::connect(const Sockaddr &addr, ulong to) {
+bool SMTPClient::connect(const Sockaddr &addr, uint to) {
     bool ret;
 
     sock.close();
@@ -1089,7 +1089,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     p += 5;
     while (isspace(*p))
 	p++;
-    perm = strtoul(p, &out, 8);
+    perm = (uint)strtoul(p, &out, 8);
     if (!isspace(*out))
 	return false;
     while (!isspace(*p))

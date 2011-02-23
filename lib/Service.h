@@ -51,8 +51,8 @@ public:
     enum Status { Error, Starting, Refreshing, Pausing, Paused, Resuming,
 	 Stopping, Running, Stopped };
 
-    Service(const tchar *service, const tchar *host);
-    Service(const tchar *service, bool pauseable = false);
+    Service(const tchar *name, const tchar *host);
+    Service(const tchar *name, bool pauseable = false);
     virtual ~Service();
 
     long error(void) const { return errnum; }
@@ -96,17 +96,19 @@ protected:
     void exit(int code);
     void handle(ulong sig);
     bool running(void) { return update(Running); }
-    virtual int command(const tchar *cmd, int argc, const tchar * const *argv)
-	{ return -1; }
+    virtual int command(const tchar *cmd, int argc, const tchar * const *argv) {
+	(void)cmd; (void)argc; (void)argv;
+	return -1;
+    }
     virtual int onStart(int argc, const tchar * const *argv);
     virtual void onAbort(void) { tcerr << T("abnormal termination") << endl; }
-    virtual void onStop(bool fast = false) {}
+    virtual void onStop(bool fast = false) { (void)fast; }
     virtual void onPause(void) {}
     virtual bool onRefresh(void) { return true; }
     virtual void onResume(void) {}
     virtual void onSigusr1(void) {}
     virtual void onSigusr2(void) {}
-    virtual void onSignal(ulong sig) {}
+    virtual void onSignal(ulong sig) { (void)sig; }
     virtual bool update(Status status);
     static void null_handler(int sig);
     static int run(int argc = 0, const tchar * const *argv = NULL);
@@ -188,7 +190,7 @@ protected:
 
     bool setids(void);
 
-    virtual bool check(string &err) { return true; }
+    virtual bool check(string &err) { (void)err; return true; }
     virtual int onStart(int argc, const tchar * const *argv);
     virtual void onAbort(void);
     virtual void onPause(void);

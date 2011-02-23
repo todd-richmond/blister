@@ -55,17 +55,17 @@ public:
     const char *data(void) const { return result; }
     int err(void) const { return sock.err(); }
     bool keepalive(void) const { return ka; }
-    long rtimeout(void) const { return rto; }
+    uint rtimeout(void) const { return rto; }
     size_t size(void) const { return ressz; }
     uint status(void) const { return sts; }
-    long wtimeout(void) const { return wto; }
+    uint wtimeout(void) const { return wto; }
 
     tostream &operator <<(tostream &os);
     bool close(void) { return sock.close(); }
     bool connect(const Sockaddr &addr, bool keepalive = false, 
-	ulong timeout = SOCK_INFINITE);
+	uint timeout = SOCK_INFINITE);
     bool connect(const tchar *host, ushort port = 80, bool keepalive = false,
-	ulong timeout = SOCK_INFINITE) {
+	uint timeout = SOCK_INFINITE) {
 	return connect(Sockaddr(host, port), keepalive, timeout);
     }
     template<class C> void header(const tchar *hdr, const C &val) {
@@ -87,7 +87,7 @@ public:
 	return it == reshdrs.end() ? NULL : it->second.c_str();
     }
     const attrmap &responses(void) const { return reshdrs; }
-    void timeout(ulong r, ulong w = SOCK_INFINITE) { rto = r; wto = w; }
+    void timeout(uint r, uint w = SOCK_INFINITE) { rto = r; wto = w; }
 
 protected:
     Sockaddr addr;
@@ -97,7 +97,7 @@ protected:
     attrmap reshdrs;
     size_t ressz;
     char *result;
-    ulong rto, wto;
+    uint rto, wto;
     sockstream sstrm;
     uint sts;
     size_t sz;

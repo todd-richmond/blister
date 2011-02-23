@@ -108,7 +108,7 @@ HTTPServerSocket::~HTTPServerSocket(void) {
 }
 
 void HTTPServerSocket::readhdrs() {
-    int room = sz - datasz;
+    uint room = (uint)(sz - datasz);
     int in;
 
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
@@ -129,9 +129,9 @@ void HTTPServerSocket::readhdrs() {
 	return;
     }
     if (datasz + in > 3) {
-	int oldsz = datasz;
+	ulong oldsz = datasz;
 
-	room = datasz < 3 ? datasz : 3;
+	room = datasz < 3 ? (int)datasz : 3;
 	datasz += in;
 	scan(data + oldsz - room, in + room);
     } else {
@@ -142,8 +142,9 @@ void HTTPServerSocket::readhdrs() {
 
 void HTTPServerSocket::readpost() {
     uint in = 0;
-    uint room = sz - datasz;
-    uint left = room > 100 && postsz == (uint)-1 ? room : postsz - postin;
+    uint room = (uint)(sz - datasz);
+    uint left = room > 100 && postsz == (uint)-1 ? room : (uint)(postsz -
+	postin);
 
     if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
 	erase();
@@ -154,10 +155,10 @@ void HTTPServerSocket::readpost() {
 	char *old = postdata;
 
 	if (postsz == (uint)-1) {
-	    in = postin < 16 * 1024 ? 16 * 1024 : postin * 2;
-	    left = in - postin;
+	    in = postin < 16 * 1024 ? 16 * 1024 : (uint)(postin * 2);
+	    left = (uint)(in - postin);
 	} else {
-	    in = postsz;
+	    in = (uint)postsz;
 	}
 	postdata = new char[in + 1];
 	memcpy(postdata, old, postin);
@@ -450,7 +451,7 @@ void HTTPServerSocket::send(void) {
 	if (datasz) {
 	    postdata[postsz] = savechar;
 	    memmove(data, postdata + postsz, datasz);
-	    scan(data, datasz, true);
+	    scan(data, (uint)datasz, true);
 	} else {
 	    readable(readhdrs, rto);
 	}
@@ -459,19 +460,19 @@ void HTTPServerSocket::send(void) {
     }
 }
 
-void HTTPServerSocket::reply(const char *data, size_t len) {
+void HTTPServerSocket::reply(const char *p, size_t len) {
     char buf[64];
     int i;
 
-    if (!len && data)
-	len = strlen(data);
+    if (!len && p)
+	len = strlen(p);
     i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)ss.size() + len);
     hdrs.write(buf, i);
     iov[0].iov_base = (char *)hdrs.str();
     iov[0].iov_len = (size_t)hdrs.size();
     iov[1].iov_base = (char *)ss.str();
     iov[1].iov_len = (size_t)ss.size();
-    iov[2].iov_base = (char *)data;
+    iov[2].iov_base = (char *)p;
     iov[2].iov_len = len;
     dlog << (_status < 400 ? Log::Info : Log::Note) << cmd << ' ' << path <<
 	T(": ") << _status << endlog;

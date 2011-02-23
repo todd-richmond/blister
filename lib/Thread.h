@@ -792,7 +792,7 @@ public:
     bool operator ==(const Thread &t) const { return THREAD_EQUAL(id, t.id); }
     bool operator !=(const Thread &t) const { return !operator ==(t); }
 
-    bool priority(int pri = 0) { return hdl && priority(hdl, pri); }
+    bool priority(int pri = 0);			// -20 -> 20
     bool resume(void);
     bool start(uint stacksz = 0, ThreadGroup *tg = NULL, bool suspend = false,
 	bool autoterm = false);
@@ -802,7 +802,6 @@ public:
     bool suspend(void);
     bool terminate(void);
     bool wait(ulong timeout = INFINITE);
-    static bool priority(thread_t hdl, int pri);    // -20 -> 20
 
 protected:
     void end(int ret = 0);

@@ -141,21 +141,21 @@ private:
 #endif
 
     attrmap amap;
-    mutable tstring buf, key;
-    tstring file;
+    mutable tstring _buf, _key;
     bool ini;
     mutable Lock lck;
     thread_t locker;
+    tstring path;
     tstring pre;
 
     const tstring &expand(const Value *val) const;
     const tchar *keystr(const tchar *attr, const tchar *sect) const {
 	if (!sect || !*sect)
 	    return attr;
-	key = sect;
-	key += '.';
-	key += attr;
-	return key.c_str();
+	_key = sect;
+	_key += '.';
+	_key += attr;
+	return _key.c_str();
     }
     const Value *lookup(const tchar *attr, const tchar *sect) const {
 	attrmap::const_iterator it = amap.find(keystr(attr, sect));

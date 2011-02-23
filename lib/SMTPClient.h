@@ -35,8 +35,8 @@ public:
     const tstring &message_multi(void) const { return multi; }
     const tstring &result(void) const { return sts; }
 
-    bool connect(const Sockaddr &addr, ulong timeout = SOCK_INFINITE);
-    bool connect(const tchar *hostport, ulong timeout = SOCK_INFINITE) {
+    bool connect(const Sockaddr &addr, uint timeout = SOCK_INFINITE);
+    bool connect(const tchar *hostport, uint timeout = SOCK_INFINITE) {
 	return connect(Sockaddr(hostport), timeout);
     }
     bool close(void) { return sock.close(); }
@@ -70,7 +70,7 @@ public:
     bool enddata(void);
     bool quit(void);
     bool rset(void) { return cmd(T("RSET")); }
-    void timeout(ulong rto, ulong wto = SOCK_INFINITE) {
+    void timeout(uint rto, uint wto = SOCK_INFINITE) {
 	sock.rtimeout(rto);
 	sock.wtimeout(wto);
     }
@@ -97,9 +97,9 @@ private:
 
 class RFC821Addr: nocopy {
 public:
-    RFC821Addr(const tchar *addr = NULL) { if (addr) parse(addr); }
-    RFC821Addr(const tchar *&addr, tstring &reterr) {
-	parseaddr(addr);
+    RFC821Addr(const tchar *address = NULL) { if (address) parse(address); }
+    RFC821Addr(const tchar *&address, tstring &reterr) {
+	parseaddr(address);
 	reterr = err;
     }
 
@@ -108,7 +108,7 @@ public:
     const tstring &error(void) const { return err; }
     const tstring &local(void) const { return local_part; }
 
-    bool parse(const tchar *addr) { parseaddr(addr); return err.empty(); }
+    bool parse(const tchar *address) { parseaddr(address); return err.empty(); }
     void setDomain(const tchar *domain);
 
 private:
