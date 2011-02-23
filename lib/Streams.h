@@ -215,7 +215,7 @@ public:
 	    out = fd.writev(iov, 2);
 	    setp(pb, pb + bufsz);
 	    return out == -1 || (ulong)out < iov[0].iov_len ? -1 :
-		out - iov[0].iov_len;
+		(streamsize)(out - iov[0].iov_len);
 	} else if (sz) {
 	    memcpy(pp, p, (size_t)sz);
 	    pbump((int)sz);

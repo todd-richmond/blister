@@ -81,7 +81,7 @@ static mimemap mime[] = {
     { "wav", "audio", "x-wav" },
     { "xbm", "image", "x-bitmap" },
     { "zip", "application", "x-zip-compressed" },
-    { NULL, NULL }
+    { NULL, NULL, NULL }
 };
 
 static string CRLF("\r\n");

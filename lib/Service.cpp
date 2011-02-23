@@ -725,7 +725,7 @@ bool Service::open(void) {
 	return false;
     pid = (pid_t)fl.l_pid;
     stStatus = (Status)fl.l_len;
-    if ((in = read(fd, buf, (uint)sizeof (buf))) > 0) {
+    if ((in = (int)read(fd, buf, sizeof (buf))) > 0) {
 	buf[in] = '\0';
 	pid = atoi(buf);
 	lseek(fd, 0, SEEK_SET);
@@ -1336,8 +1336,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	}
     }
     dlog << Log::Debug << Log::mod(name) <<
-	Log::kv(T("uid"), uid == (uid_t)-1 ? getuid() : (int)uid) <<
-	Log::kv(T("gid"), gid <= 0 ? getgid() : (int)gid) <<
+	Log::kv(T("uid"), uid == (uid_t)-1 ? getuid() : (uid_t)uid) <<
+	Log::kv(T("gid"), gid <= 0 ? getgid() : (uid_t)gid) <<
 	Log::kv(T("maxfd"), getrlimit(RLIMIT_NOFILE, &rl) ? OPEN_MAX :
 	rl.rlim_cur) << endlog;
 #endif
@@ -1367,7 +1367,6 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    } else if (child) {
 		struct flock fl;
 		Log::Level lvl = dlog.level();
-		struct sigaction sa;
 
 		ZERO(sa);
 		sa.sa_handler = null_handler;

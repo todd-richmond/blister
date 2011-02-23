@@ -144,7 +144,7 @@ private:
 
 bool base64encode(const void *in, size_t len, char *&out, size_t &outsz);
 bool base64decode(const void *in, size_t sz, char *&out, size_t &outsz);
-bool uuencode(const tchar *file, const char *in, size_t len, void *&out,
+bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
     size_t &outsz);
 bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
     void *&out, size_t &outsz);
