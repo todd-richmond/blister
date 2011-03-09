@@ -617,7 +617,7 @@ void HTTPServerSocket::get(bool head) {
 	sts = 200;
     status(sts, type, subtype, sbuf.st_mtime);
     if (sts == 200 && !head)
-	reply(fd, sbuf.st_size);
+	reply(fd, (size_t)sbuf.st_size);
     else
 	reply((const char *)NULL);
     ::close(fd);
