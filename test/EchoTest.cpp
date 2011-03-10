@@ -43,12 +43,13 @@ public:
 	    DispatchClientSocket(es), addr(a), tmt(t), wait(w) {}
 	virtual ~EchoClientSocket() {}
 
-	virtual void start(uint tmt) { timeout(start, tmt); }
+	virtual void start(ulong msec) { timeout(start, msec); }
 
     protected:
 	const Sockaddr &addr;
 	usec_t begin;
-	uint in, out, tmt, wait;
+	uint in, out;
+	ulong tmt, wait;
 
 	virtual void onConnect(void);
 
@@ -102,7 +103,7 @@ private:
     Config cfg;
 };
 
-static int loops = -1;
+static long loops = -1;
 static char *data;
 static ulong dsz;
 static volatile bool qflag;
@@ -354,8 +355,8 @@ int tmain(int argc, tchar *argv[]) {
 	tcerr << T("echo: unknown host ") << host << endl;
 	return 1;
     }
-    if (!ec.start(threads, 32 * 1024)) {
-	tcerr << T("echo: unable to start") << host << endl;
+    if (!ec.start((uint)threads, 32 * 1024)) {
+	tcerr << T("echo: unable to start ") << host << endl;
 	return 1;
     }
     if (server && !ec.listen(host, tmt))
