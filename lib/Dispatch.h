@@ -41,21 +41,21 @@ typedef void (*DispatchObjCB)(DispatchObj *);
 
 class DispatchObjList: nocopy {
 public:
-    DispatchObjList(): front(NULL), back(NULL) {}
+    DispatchObjList(): back(NULL), front(NULL) {}
 
     bool operator !(void) const { return front == NULL; }
     operator bool(void) const { return front != NULL; }
     bool empty(void) const { return front == NULL; }
     const DispatchObj *peek(void) const { return front; }
 
-    DispatchObj *pop_front(void);
     void pop(DispatchObj *obj);
+    DispatchObj *pop_front(void);
     void push_back(DispatchObj *obj);
     void push_front(DispatchObj *obj);
     void push_front(DispatchObjList &lst);
 
 private:
-    DispatchObj *front, *back;
+    DispatchObj *back, *front;
 };
 
 class Dispatcher: public ThreadGroup {
@@ -68,6 +68,7 @@ public:
     virtual ~Dispatcher() { stop(); }
 
     const Config &config(void) const { return cfg; }
+    
     bool start(uint maxthreads = 100, uint stacksz = 0, bool suspend = false,
 	bool autoterm = false);
     void stop(void);
@@ -85,7 +86,6 @@ private:
     void addReady(DispatchObj &obj, bool hipri, Msg reason);
     void cancelReady(DispatchObj &obj);
     void removeReady(DispatchObj &obj);
-    void deleteObj(DispatchObj &obj);
     void ready(DispatchObj &obj, bool hipri = false);
 
     friend class DispatchTimer;
@@ -99,6 +99,7 @@ private:
     void pollSocket(DispatchSocket &ds, ulong timeout, Msg msg);
 
     void cleanup(void);
+    void deleteObj(DispatchObj &obj);
     bool exec(volatile DispatchObj *&aobj, thread_t tid);
     uint handleEvents(void *evts, int cnt);
     int run(void);
@@ -139,7 +140,9 @@ private:
     void reset(void) {
 	char buf[16];
 
+	lock.unlock();
 	isock.read(buf, sizeof (buf));
+	lock.lock();
     }
     void wakeup(msec_t, msec_t) {
 	if (polling) {
@@ -380,6 +383,28 @@ protected:
     virtual void start(S &ssock) { ssock.start(); }
 };
 
+inline void DispatchObjList::pop(DispatchObj *obj) {
+    if (front == obj) {
+	if ((front = obj->next) == NULL)
+	    back = NULL;
+    } else {
+	for (DispatchObj *p = front; p; p = p->next) {
+	    if (p->next == obj) {
+		if ((p->next = obj->next) == NULL)
+		    back = p;
+		break;
+	    }
+	}
+    }
+}
+
+inline DispatchObj *DispatchObjList::pop_front(void) {
+    DispatchObj *obj = front;
+    
+    if ((front = obj->next) == NULL)
+	back = NULL;
+    return obj;
+}
 
 inline void DispatchObjList::push_back(DispatchObj *obj) {
     obj->next = NULL;
@@ -404,31 +429,4 @@ inline void DispatchObjList::push_front(DispatchObjList &lst) {
     }
 }
 
-inline void DispatchObjList::pop(DispatchObj *obj) {
-    if (front == obj) {
-	front = obj->next;
-	if (!front)
-	    back = NULL;
-    } else {
-	for (DispatchObj *p = front; p; p = p->next) {
-	    if (p->next == obj) {
-		p->next = obj->next;
-		if (!p->next)
-		    back = p;
-		break;
-	    }
-	}
-    }
-}
-
-inline DispatchObj *DispatchObjList::pop_front(void) {
-    DispatchObj *obj = front;
-
-    front = obj->next;
-    if (!front)
-	back = NULL;
-    return obj;
-}
-
 #endif // Dispatch_h
-
