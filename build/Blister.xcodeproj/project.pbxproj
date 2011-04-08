@@ -1,0 +1,466 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		F7AA214313149FAF00272F6A /* Config.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA212A13149FAF00272F6A /* Config.cpp */; };
+		F7AA214413149FAF00272F6A /* Config.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA212B13149FAF00272F6A /* Config.h */; };
+		F7AA214513149FAF00272F6A /* Dispatch.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA212C13149FAF00272F6A /* Dispatch.cpp */; };
+		F7AA214613149FAF00272F6A /* Dispatch.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA212D13149FAF00272F6A /* Dispatch.h */; };
+		F7AA214713149FAF00272F6A /* HTTPClient.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA212E13149FAF00272F6A /* HTTPClient.cpp */; };
+		F7AA214813149FAF00272F6A /* HTTPClient.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA212F13149FAF00272F6A /* HTTPClient.h */; };
+		F7AA214913149FAF00272F6A /* HTTPServer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213013149FAF00272F6A /* HTTPServer.cpp */; };
+		F7AA214A13149FAF00272F6A /* HTTPServer.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213113149FAF00272F6A /* HTTPServer.h */; };
+		F7AA214B13149FAF00272F6A /* Log.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213213149FAF00272F6A /* Log.cpp */; };
+		F7AA214C13149FAF00272F6A /* Log.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213313149FAF00272F6A /* Log.h */; };
+		F7AA214D13149FAF00272F6A /* MD5.c in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213413149FAF00272F6A /* MD5.c */; };
+		F7AA214E13149FAF00272F6A /* MD5.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213513149FAF00272F6A /* MD5.h */; };
+		F7AA214F13149FAF00272F6A /* Service.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213613149FAF00272F6A /* Service.cpp */; };
+		F7AA215013149FAF00272F6A /* Service.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213713149FAF00272F6A /* Service.h */; };
+		F7AA215113149FAF00272F6A /* SMTPClient.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213813149FAF00272F6A /* SMTPClient.cpp */; };
+		F7AA215213149FAF00272F6A /* SMTPClient.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213913149FAF00272F6A /* SMTPClient.h */; };
+		F7AA215313149FAF00272F6A /* Socket.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213A13149FAF00272F6A /* Socket.cpp */; };
+		F7AA215413149FAF00272F6A /* Socket.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213B13149FAF00272F6A /* Socket.h */; };
+		F7AA215513149FAF00272F6A /* stdapi.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213C13149FAF00272F6A /* stdapi.h */; };
+		F7AA215613149FAF00272F6A /* Streams.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213D13149FAF00272F6A /* Streams.h */; };
+		F7AA215713149FAF00272F6A /* Thread.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213E13149FAF00272F6A /* Thread.cpp */; };
+		F7AA215813149FAF00272F6A /* Thread.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213F13149FAF00272F6A /* Thread.h */; };
+		F7AA215913149FAF00272F6A /* Timing.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA214013149FAF00272F6A /* Timing.cpp */; };
+		F7AA215A13149FAF00272F6A /* Timing.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA214113149FAF00272F6A /* Timing.h */; };
+		F7AA215B13149FAF00272F6A /* Unix.c in Sources */ = {isa = PBXBuildFile; fileRef = F7AA214213149FAF00272F6A /* Unix.c */; };
+		F7AA218C131C710700272F6A /* EchoTest.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA2188131C24DF00272F6A /* EchoTest.cpp */; };
+		F7AA218E131C97BD00272F6A /* Blister.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = F7AA211913149F2C00272F6A /* Blister.dylib */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		F7AA218F131CA4D300272F6A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F7AA211813149F2C00272F6A;
+			remoteInfo = Blister;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F7AA217D131C246200272F6A /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		F7AA211913149F2C00272F6A /* Blister.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = Blister.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
+		F7AA211D13149F2C00272F6A /* Blister-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Blister-Prefix.pch"; sourceTree = "<group>"; };
+		F7AA211E13149F2C00272F6A /* BlisterProj.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = BlisterProj.xcconfig; path = Blister.xcodeproj/BlisterProj.xcconfig; sourceTree = SOURCE_ROOT; };
+		F7AA211F13149F2C00272F6A /* BlisterTarget.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = BlisterTarget.xcconfig; path = Blister.xcodeproj/BlisterTarget.xcconfig; sourceTree = SOURCE_ROOT; };
+		F7AA212A13149FAF00272F6A /* Config.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Config.cpp; path = ../lib/Config.cpp; sourceTree = "<group>"; };
+		F7AA212B13149FAF00272F6A /* Config.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Config.h; path = ../lib/Config.h; sourceTree = "<group>"; };
+		F7AA212C13149FAF00272F6A /* Dispatch.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Dispatch.cpp; path = ../lib/Dispatch.cpp; sourceTree = "<group>"; };
+		F7AA212D13149FAF00272F6A /* Dispatch.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Dispatch.h; path = ../lib/Dispatch.h; sourceTree = "<group>"; };
+		F7AA212E13149FAF00272F6A /* HTTPClient.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = HTTPClient.cpp; path = ../lib/HTTPClient.cpp; sourceTree = "<group>"; };
+		F7AA212F13149FAF00272F6A /* HTTPClient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = HTTPClient.h; path = ../lib/HTTPClient.h; sourceTree = "<group>"; };
+		F7AA213013149FAF00272F6A /* HTTPServer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = HTTPServer.cpp; path = ../lib/HTTPServer.cpp; sourceTree = "<group>"; };
+		F7AA213113149FAF00272F6A /* HTTPServer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = HTTPServer.h; path = ../lib/HTTPServer.h; sourceTree = "<group>"; };
+		F7AA213213149FAF00272F6A /* Log.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Log.cpp; path = ../lib/Log.cpp; sourceTree = "<group>"; };
+		F7AA213313149FAF00272F6A /* Log.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Log.h; path = ../lib/Log.h; sourceTree = "<group>"; };
+		F7AA213413149FAF00272F6A /* MD5.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = MD5.c; path = ../lib/MD5.c; sourceTree = "<group>"; };
+		F7AA213513149FAF00272F6A /* MD5.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MD5.h; path = ../lib/MD5.h; sourceTree = "<group>"; };
+		F7AA213613149FAF00272F6A /* Service.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Service.cpp; path = ../lib/Service.cpp; sourceTree = "<group>"; };
+		F7AA213713149FAF00272F6A /* Service.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Service.h; path = ../lib/Service.h; sourceTree = "<group>"; };
+		F7AA213813149FAF00272F6A /* SMTPClient.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SMTPClient.cpp; path = ../lib/SMTPClient.cpp; sourceTree = "<group>"; };
+		F7AA213913149FAF00272F6A /* SMTPClient.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SMTPClient.h; path = ../lib/SMTPClient.h; sourceTree = "<group>"; };
+		F7AA213A13149FAF00272F6A /* Socket.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Socket.cpp; path = ../lib/Socket.cpp; sourceTree = "<group>"; };
+		F7AA213B13149FAF00272F6A /* Socket.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Socket.h; path = ../lib/Socket.h; sourceTree = "<group>"; };
+		F7AA213C13149FAF00272F6A /* stdapi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = stdapi.h; path = ../lib/stdapi.h; sourceTree = "<group>"; };
+		F7AA213D13149FAF00272F6A /* Streams.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Streams.h; path = ../lib/Streams.h; sourceTree = "<group>"; };
+		F7AA213E13149FAF00272F6A /* Thread.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Thread.cpp; path = ../lib/Thread.cpp; sourceTree = "<group>"; };
+		F7AA213F13149FAF00272F6A /* Thread.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Thread.h; path = ../lib/Thread.h; sourceTree = "<group>"; };
+		F7AA214013149FAF00272F6A /* Timing.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Timing.cpp; path = ../lib/Timing.cpp; sourceTree = "<group>"; };
+		F7AA214113149FAF00272F6A /* Timing.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Timing.h; path = ../lib/Timing.h; sourceTree = "<group>"; };
+		F7AA214213149FAF00272F6A /* Unix.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = Unix.c; path = ../lib/Unix.c; sourceTree = "<group>"; };
+		F7AA217F131C246200272F6A /* Echotest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Echotest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F7AA2188131C24DF00272F6A /* EchoTest.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = EchoTest.cpp; path = ../test/EchoTest.cpp; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F7AA211613149F2C00272F6A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F7AA217C131C246200272F6A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F7AA218E131C97BD00272F6A /* Blister.dylib in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		F7AA210E13149F2C00272F6A = {
+			isa = PBXGroup;
+			children = (
+				F7AA211B13149F2C00272F6A /* Blister */,
+				F7AA2181131C246200272F6A /* Echotest */,
+				F7AA211A13149F2C00272F6A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F7AA211A13149F2C00272F6A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F7AA211913149F2C00272F6A /* Blister.dylib */,
+				F7AA217F131C246200272F6A /* Echotest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		F7AA211B13149F2C00272F6A /* Blister */ = {
+			isa = PBXGroup;
+			children = (
+				F7AA212A13149FAF00272F6A /* Config.cpp */,
+				F7AA212B13149FAF00272F6A /* Config.h */,
+				F7AA212C13149FAF00272F6A /* Dispatch.cpp */,
+				F7AA212D13149FAF00272F6A /* Dispatch.h */,
+				F7AA212E13149FAF00272F6A /* HTTPClient.cpp */,
+				F7AA212F13149FAF00272F6A /* HTTPClient.h */,
+				F7AA213013149FAF00272F6A /* HTTPServer.cpp */,
+				F7AA213113149FAF00272F6A /* HTTPServer.h */,
+				F7AA213213149FAF00272F6A /* Log.cpp */,
+				F7AA213313149FAF00272F6A /* Log.h */,
+				F7AA213413149FAF00272F6A /* MD5.c */,
+				F7AA213513149FAF00272F6A /* MD5.h */,
+				F7AA213613149FAF00272F6A /* Service.cpp */,
+				F7AA213713149FAF00272F6A /* Service.h */,
+				F7AA213813149FAF00272F6A /* SMTPClient.cpp */,
+				F7AA213913149FAF00272F6A /* SMTPClient.h */,
+				F7AA213A13149FAF00272F6A /* Socket.cpp */,
+				F7AA213B13149FAF00272F6A /* Socket.h */,
+				F7AA213C13149FAF00272F6A /* stdapi.h */,
+				F7AA213D13149FAF00272F6A /* Streams.h */,
+				F7AA213E13149FAF00272F6A /* Thread.cpp */,
+				F7AA213F13149FAF00272F6A /* Thread.h */,
+				F7AA214013149FAF00272F6A /* Timing.cpp */,
+				F7AA214113149FAF00272F6A /* Timing.h */,
+				F7AA214213149FAF00272F6A /* Unix.c */,
+				F7AA211E13149F2C00272F6A /* BlisterProj.xcconfig */,
+				F7AA211F13149F2C00272F6A /* BlisterTarget.xcconfig */,
+				F7AA211C13149F2C00272F6A /* Supporting Files */,
+			);
+			name = Blister;
+			path = ../lib;
+			sourceTree = SOURCE_ROOT;
+		};
+		F7AA211C13149F2C00272F6A /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				F7AA211D13149F2C00272F6A /* Blister-Prefix.pch */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		F7AA2181131C246200272F6A /* Echotest */ = {
+			isa = PBXGroup;
+			children = (
+				F7AA2188131C24DF00272F6A /* EchoTest.cpp */,
+			);
+			name = Echotest;
+			path = ../test;
+			sourceTree = SOURCE_ROOT;
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		F7AA211713149F2C00272F6A /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F7AA214413149FAF00272F6A /* Config.h in Headers */,
+				F7AA214613149FAF00272F6A /* Dispatch.h in Headers */,
+				F7AA214813149FAF00272F6A /* HTTPClient.h in Headers */,
+				F7AA214A13149FAF00272F6A /* HTTPServer.h in Headers */,
+				F7AA214C13149FAF00272F6A /* Log.h in Headers */,
+				F7AA214E13149FAF00272F6A /* MD5.h in Headers */,
+				F7AA215013149FAF00272F6A /* Service.h in Headers */,
+				F7AA215213149FAF00272F6A /* SMTPClient.h in Headers */,
+				F7AA215413149FAF00272F6A /* Socket.h in Headers */,
+				F7AA215513149FAF00272F6A /* stdapi.h in Headers */,
+				F7AA215613149FAF00272F6A /* Streams.h in Headers */,
+				F7AA215813149FAF00272F6A /* Thread.h in Headers */,
+				F7AA215A13149FAF00272F6A /* Timing.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		F7AA211813149F2C00272F6A /* Blister */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F7AA212713149F2C00272F6A /* Build configuration list for PBXNativeTarget "Blister" */;
+			buildPhases = (
+				F7AA211513149F2C00272F6A /* Sources */,
+				F7AA211613149F2C00272F6A /* Frameworks */,
+				F7AA211713149F2C00272F6A /* Headers */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Blister;
+			productName = Blister;
+			productReference = F7AA211913149F2C00272F6A /* Blister.dylib */;
+			productType = "com.apple.product-type.library.dynamic";
+		};
+		F7AA217E131C246200272F6A /* Echotest */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F7AA2185131C246200272F6A /* Build configuration list for PBXNativeTarget "Echotest" */;
+			buildPhases = (
+				F7AA217B131C246200272F6A /* Sources */,
+				F7AA217C131C246200272F6A /* Frameworks */,
+				F7AA217D131C246200272F6A /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F7AA2190131CA4D300272F6A /* PBXTargetDependency */,
+			);
+			name = Echotest;
+			productName = Echotest;
+			productReference = F7AA217F131C246200272F6A /* Echotest */;
+			productType = "com.apple.product-type.tool";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F7AA211013149F2C00272F6A /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = F7AA211313149F2C00272F6A /* Build configuration list for PBXProject "Blister" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = F7AA210E13149F2C00272F6A;
+			productRefGroup = F7AA211A13149F2C00272F6A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F7AA211813149F2C00272F6A /* Blister */,
+				F7AA217E131C246200272F6A /* Echotest */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F7AA211513149F2C00272F6A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F7AA214313149FAF00272F6A /* Config.cpp in Sources */,
+				F7AA214513149FAF00272F6A /* Dispatch.cpp in Sources */,
+				F7AA214713149FAF00272F6A /* HTTPClient.cpp in Sources */,
+				F7AA214913149FAF00272F6A /* HTTPServer.cpp in Sources */,
+				F7AA214B13149FAF00272F6A /* Log.cpp in Sources */,
+				F7AA214D13149FAF00272F6A /* MD5.c in Sources */,
+				F7AA214F13149FAF00272F6A /* Service.cpp in Sources */,
+				F7AA215113149FAF00272F6A /* SMTPClient.cpp in Sources */,
+				F7AA215313149FAF00272F6A /* Socket.cpp in Sources */,
+				F7AA215713149FAF00272F6A /* Thread.cpp in Sources */,
+				F7AA215913149FAF00272F6A /* Timing.cpp in Sources */,
+				F7AA215B13149FAF00272F6A /* Unix.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F7AA217B131C246200272F6A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F7AA218C131C710700272F6A /* EchoTest.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F7AA2190131CA4D300272F6A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F7AA211813149F2C00272F6A /* Blister */;
+			targetProxy = F7AA218F131CA4D300272F6A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		F7AA212513149F2C00272F6A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_ENABLE_CPP_EXCEPTIONS = NO;
+				GCC_ENABLE_CPP_RTTI = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = DEBUG;
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_MISSING_FIELD_INITIALIZERS = YES;
+				GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
+				GCC_WARN_ABOUT_MISSING_PROTOTYPES = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_HIDDEN_VIRTUAL_FUNCTIONS = YES;
+				GCC_WARN_NON_VIRTUAL_DESTRUCTOR = YES;
+				GCC_WARN_SHADOW = YES;
+				GCC_WARN_SIGN_COMPARE = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_LABEL = YES;
+				GCC_WARN_UNUSED_PARAMETER = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.6;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
+				SKIP_INSTALL = YES;
+				SYMROOT = xcode;
+				WARNING_CFLAGS = "-Wall";
+			};
+			name = Debug;
+		};
+		F7AA212613149F2C00272F6A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_ENABLE_CPP_EXCEPTIONS = NO;
+				GCC_ENABLE_CPP_RTTI = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				GCC_PREPROCESSOR_DEFINITIONS = NDEBUG;
+				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
+				GCC_VERSION = com.apple.compilers.llvm.clang.1_0;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_MISSING_FIELD_INITIALIZERS = YES;
+				GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
+				GCC_WARN_ABOUT_MISSING_PROTOTYPES = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_HIDDEN_VIRTUAL_FUNCTIONS = YES;
+				GCC_WARN_NON_VIRTUAL_DESTRUCTOR = YES;
+				GCC_WARN_SHADOW = YES;
+				GCC_WARN_SIGN_COMPARE = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_LABEL = YES;
+				GCC_WARN_UNUSED_PARAMETER = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LLVM_LTO = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.6;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
+				SKIP_INSTALL = YES;
+				SYMROOT = xcode;
+				WARNING_CFLAGS = "-Wall";
+			};
+			name = Release;
+		};
+		F7AA212813149F2C00272F6A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				COPY_PHASE_STRIP = NO;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		F7AA212913149F2C00272F6A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				"GCC_OPTIMIZATION_LEVEL[arch=*]" = s;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		F7AA2186131C246200272F6A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = YES;
+				COPY_PHASE_STRIP = NO;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
+				GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
+				HEADER_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = .;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				USER_HEADER_SEARCH_PATHS = "";
+			};
+			name = Debug;
+		};
+		F7AA2187131C246200272F6A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = YES;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
+				GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
+				HEADER_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = .;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				USER_HEADER_SEARCH_PATHS = "";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F7AA211313149F2C00272F6A /* Build configuration list for PBXProject "Blister" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F7AA212513149F2C00272F6A /* Debug */,
+				F7AA212613149F2C00272F6A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F7AA212713149F2C00272F6A /* Build configuration list for PBXNativeTarget "Blister" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F7AA212813149F2C00272F6A /* Debug */,
+				F7AA212913149F2C00272F6A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F7AA2185131C246200272F6A /* Build configuration list for PBXNativeTarget "Echotest" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F7AA2186131C246200272F6A /* Debug */,
+				F7AA2187131C246200272F6A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = F7AA211013149F2C00272F6A /* Project object */;
+}
