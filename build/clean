@@ -1,2 +1,2 @@
 #!/bin/bash
-rm -rf aclocal.m4 autom4te.cache/ config.guess config.* configure COPYING depcomp INSTALL install-sh libtool ltmain.sh Makefile Makefile.in missing */Debug */Release *.user */*.user
+rm -rf aclocal.m4 autom4te.cache/ config.guess config.* configure COPYING depcomp INSTALL install-sh libtool ltmain.sh Makefile Makefile.in missing */Debug */Release *.user */*.user xcode
