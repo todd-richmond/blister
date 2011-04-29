@@ -970,6 +970,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, Msg m) {
     int nevts = 0;
     timespec ts = { 0, 0 };
 #endif
+    bool resched;
+    msec_t tmt = tm == DSP_NEVER ? DSP_NEVER_DUE : now + tm;
     SpinLocker lkr(lock);
 
     flags = ds.flags & DSP_IO;
@@ -991,10 +993,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, Msg m) {
 	ready(ds, m == Accept);
 	return;
     }
-
-    msec_t tmt = tm == DSP_NEVER ? DSP_NEVER_DUE : now + tm;
-    bool resched = timer(ds, tmt);
-
+    resched = timer(ds, tmt);
     ds.flags |= DSP_Scheduled;
     ds.msg = Nomsg;
     if (sarray[m] != (ds.flags & DSP_SelectAll)) {
@@ -1037,12 +1036,6 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, Msg m) {
 	} else {
 	    lkr.unlock();
 #ifdef DSP_DEVPOLL
-	    /*
-	    if (m == Read || m == ReadWrite || m == Accept || m == Close)
-		evt.events = POLLIN;
-	    if (m == Write || m == ReadWrite || m == Connect)
-		evt.events |= POLLOUT;
-	    */
 	    while (pwrite(evtfd, &evt, sizeof (evt), 0) == -1 &&
 		interrupted(errno))
 		;
