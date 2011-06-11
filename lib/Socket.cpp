@@ -89,7 +89,7 @@ const tstring &Sockaddr::hostname() {
 #endif
 	} else {
 	    Sockaddr sa(achartotstring(buf).c_str());
-	    
+
 	    hname = sa.host();
 	}
     }
@@ -113,10 +113,10 @@ void Sockaddr::port(ushort port) {
 }
 
 bool Sockaddr::service(const tchar *service, Proto proto) {
-    ushort prt = service_port(service, proto);
+    Sockaddr sa;
 
-    if (prt) {
-	port(prt);
+    if (sa.set(NULL, service, proto)) {
+	port(sa.port());
 	return true;
     } else {
 	return false;
@@ -138,9 +138,9 @@ bool Sockaddr::set(const addrinfo *ai) {
 }
 
 bool Sockaddr::set(const tchar *host, Proto proto) {
-    const tchar *p, *pp;
+    const tchar *p = NULL, *pp;
 
-    if ((p = host ? tstrchr(host, ':') : NULL) != NULL) {
+    if (host && (p = tstrchr(host, ':')) != NULL) {
 	if ((pp = tstrchr(p + 1, ':')) != NULL) 
 	    p = tstrrchr(pp, ';');
     }
@@ -150,14 +150,18 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
 	s.erase(p - host);
 	return set(s.c_str(), p + 1, proto);
     }
-    return set(host, (ushort)0, proto);
+    return set(host, (tchar *)NULL, proto);
 }
 
 bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
-    tchar portstr[8];
+    if (portno) {
+	tchar portstr[8];
 
-    tsprintf(portstr, T("%u"), (uint)portno);
-    return set(host, portstr, proto);
+	tsprintf(portstr, T("%u"), (uint)portno);
+	return set(host, portstr, proto);
+    } else {
+	return set(host, (tchar *)NULL, proto);
+    }
 }
 
 bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
@@ -417,7 +421,7 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
     if (check(::connect(sbuf->sock, (sockaddr *)(const sockaddr *)sa,
 	sa.size()))) {
 	ret = true;
-    } else if (blocked() && (msec > 0 && msec != SOCK_INFINITE)) {
+    } else if (blocked() && msec > 0 && msec != SOCK_INFINITE) {
 	SocketSet sset(1), oset(1), eset(1);
 
 	sset.set(sbuf->sock);
@@ -471,8 +475,8 @@ socket_t Socket::movehigh(socket_t fd) {
 
 bool Socket::open(int family) {
     close();
-    return check((sbuf->sock = movehigh(::socket(family, sbuf->type,
-	0))) == SOCK_INVALID ? -1 : 0);
+    return check((sbuf->sock = movehigh(::socket(family, sbuf->type, 0))) ==
+	SOCK_INVALID ? -1 : 0);
 }
 
 bool Socket::shutdown(bool in, bool out) {
@@ -578,7 +582,7 @@ int Socket::read(void *buf, size_t sz) const {
 int Socket::read(void *buf, size_t sz, Sockaddr &sa) const {
     socklen_t asz = sa.size();
     SSIZE_T in;
-    
+
     do {
 	if (!rwpoll(true))
 	    return -1;
@@ -608,7 +612,7 @@ int Socket::write(const void *buf, size_t sz) const {
 
 int Socket::write(const void *buf, size_t sz, const Sockaddr &sa) const {
     SSIZE_T out;
-    
+
     do {
 	if (!rwpoll(false))
 	    return -1;
