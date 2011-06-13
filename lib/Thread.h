@@ -178,13 +178,15 @@ public:
 
     void lock(void) { if (!locked) { (lck.*LOCK)(); locked = true; } }
     void relock(void) {
-	if (locked)
+	if (locked) {
 	    (lck.*UNLOCK)();
-	else
+	    THREAD_YIELD();
+	} else {
 	    locked = true;
+	}
 	(lck.*LOCK)();
     }
-    void unlock(void) { if (locked) { (lck.*UNLOCK)(); locked = false; } }
+    void unlock(void) { if (locked) { locked = false; (lck.*UNLOCK)(); } }
 
 private:
     C &lck;
@@ -197,7 +199,7 @@ public:
     FastLockerTemplate(C &lock): lck(lock) { (lck.*LOCK)(); }
     ~FastLockerTemplate() { (lck.*UNLOCK)(); }
 
-    void relock(void) { (lck.*UNLOCK)(); (lck.*LOCK)(); }
+    void relock(void) { (lck.*UNLOCK)(); THREAD_YIELD(); (lck.*LOCK)(); }
 
 private:
     C &lck;
@@ -721,7 +723,7 @@ public:
 	Waiting(Lifo &lifo): cv(lifo.lock()), next(NULL) {}
     };
 
-    Lifo(): head(NULL) {}
+    Lifo(): head(NULL), preset(false) {}
 
     bool empty(void) const { return head != NULL; }
 
@@ -730,6 +732,13 @@ public:
     uint set(uint count = 1) {
 	FastLocker lkr(lck);
 
+	if (!head) {
+	    if (!preset) {
+		preset = true;
+		count--;
+	    }
+	    return count;
+	}
 	while (head && count) {
 	    Waiting *waiting = head;
 	    
@@ -743,6 +752,10 @@ public:
     bool wait(Waiting &w, ulong msec = INFINITE) {
 	FastLocker lkr(lck);
 
+	if (preset) {
+	    preset = false;
+	    return true;
+	}
 	w.next = head;
 	head = &w;
 	if (!w.cv.wait(msec)) {
@@ -759,6 +772,7 @@ public:
 private:
     Waiting *head;
     Lock lck;
+    bool preset;
 };
 
 // Thread routines
@@ -835,7 +849,7 @@ public:
 
     ThreadState getState(void) const { return state; }
     thread_t getId(void) const { return id; }
-    thread_t getMainThread(void) const { return master; }
+    const Thread &getMainThread(void) const { return master; }
     size_t size(void) const { return threads.size(); }
     
     bool operator ==(const ThreadGroup &t) const { return id == t.id; }
