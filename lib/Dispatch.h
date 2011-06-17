@@ -86,7 +86,7 @@ private:
     void addReady(DispatchObj &obj, bool hipri, Msg reason);
     void cancelReady(DispatchObj &obj);
     void removeReady(DispatchObj &obj);
-    void ready(DispatchObj &obj, bool hipri = false);
+    bool ready(DispatchObj &obj, bool hipri = false);
 
     friend class DispatchTimer;
     void addTimer(DispatchTimer &dt, ulong tm);
@@ -99,20 +99,18 @@ private:
     void pollSocket(DispatchSocket &ds, ulong timeout, Msg msg);
 
     void cleanup(void);
-    void deleteObj(DispatchObj &obj);
-    bool exec(volatile DispatchObj *&aobj, thread_t tid);
+    bool exec(void);
     uint handleEvents(void *evts, int cnt);
     int run(void);
     void wake(uint tasks, bool master);
     static int worker(void *parm);
 
     SpinLock lock;
-    ThreadLocal<volatile DispatchObj **> activeobj;
     msec_t due;
-    DispatchObjList flist, rlist;
+    DispatchObjList rlist;
     Lifo lifo;
     uint maxthreads;
-    volatile int shutdown;
+    volatile bool shutdown;
     socketmap smap;
     uint stacksz;
     volatile uint threads;
@@ -161,9 +159,9 @@ class DispatchObj: nocopy {
 private:
     class Group {
     public:
-	Group(): active(0) {}
+	Group(): active(false) {}
 
-	thread_t active;
+	bool active;
 	DispatchObjList glist;
 	RefCount refcount;
 
@@ -176,7 +174,10 @@ public:
     DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL):
 	dcb(cb), dspr(parent.dspr), flags(0), msg(Dispatcher::Nomsg),
 	group(&parent.group->add()), next(NULL) {}
-    virtual ~DispatchObj() { dspr.deleteObj(*this); }
+    virtual ~DispatchObj() {
+	if (!group->refcount.release())
+	    delete group;
+    }
 
     Dispatcher &dispatcher(void) const { return dspr; }
     Dispatcher::Msg reason(void) const { return msg; }
