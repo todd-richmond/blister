@@ -169,7 +169,8 @@ class Thread;
 class ThreadGroup;
 
 /* Locking templates that unlock upon destruction */
-template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
+template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
+    &C::unlock>
 class LockerTemplate: nocopy {
 public:
     LockerTemplate(C &lock, bool lockit = true):
@@ -732,20 +733,18 @@ public:
     uint set(uint count = 1) {
 	FastLocker lkr(lck);
 
-	if (!head) {
-	    if (!preset) {
-		preset = true;
-		count--;
-	    }
-	    return count;
-	}
-	while (head && count) {
-	    Waiting *waiting = head;
-	    
-	    head = head->next;
-	    if (--count)
-		lkr.relock();
-	    waiting->cv.set();
+	if (head) {
+	    do {
+		head->cv.set();
+		head = head->next;
+		if (--count)
+		    lkr.relock();
+		else
+		    break;
+	    } while (head);
+	} else if (!preset) {
+	    preset = true;
+	    count--;
 	}
 	return count;
     }

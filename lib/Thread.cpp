@@ -22,10 +22,9 @@
 static const thread_t NOID = (thread_t)-1;
 
 ulong ThreadGroup::nextId;
-set<ThreadGroup *> ThreadGroup::groups;
 Lock ThreadGroup::grouplck;
+set<ThreadGroup *> ThreadGroup::groups;
 ThreadGroup ThreadGroup::MainThreadGroup(false);
-
 Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
 
 #ifdef _WIN32
@@ -43,10 +42,7 @@ Mutex::Mutex(const tchar *name) {
     if (name) {
 	tstring s(name);
 
-	for (int i = 0; i < s.size(); i++) {
-	    if (s[i] == '\\')
-		s[i] = '_';
-	}
+	s.replace(s.begin(), s.end(), '\\', '_');
 	hdl = CreateMutex(NULL, 0, s.c_str());
     } else {
 	hdl = CreateMutex(NULL, 0, NULL);
@@ -54,36 +50,33 @@ Mutex::Mutex(const tchar *name) {
 }
 
 Process::Process(const Process &proc) {
-    if (!DuplicateHandle(GetCurrentProcess(), proc.hdl,
-	GetCurrentProcess(), &hdl, 0L, TRUE, DUPLICATE_SAME_ACCESS)) {
+    if (!DuplicateHandle(GetCurrentProcess(), proc.hdl, GetCurrentProcess(),
+	&hdl, 0L, TRUE, DUPLICATE_SAME_ACCESS)) {
 	hdl = NULL;
     }
 }
 
 Process Process::start(tchar *const *args, const int *fds) {
-    STARTUPINFO *st = NULL;
-    PROCESS_INFORMATION proc;
     tstring cmd;
+    PROCESS_INFORMATION proc;
+    STARTUPINFO si;
 
     ZERO(proc);
-    STARTUPINFO sbuf;
-
-    ZERO(sbuf);
-    st = &sbuf;
-    st->cb = sizeof (*st);
+    ZERO(si);
+    si.cb = sizeof (si);
     if (fds) {				// only support 3 fds
-	st->dwFlags = STARTF_USESTDHANDLES;
-	st->hStdInput = (HANDLE)fds[0];
+	si.dwFlags = STARTF_USESTDHANDLES;
+	si.hStdInput = (HANDLE)fds[0];
 	if (fds[1] != -1) {
-	    st->hStdOutput = (HANDLE)fds[1];
+	    si.hStdOutput = (HANDLE)fds[1];
 	    if (fds[2] != -1)
-		st->hStdError = (HANDLE)fds[2];
+		si.hStdError = (HANDLE)fds[2];
 	}
     }
     while (*args)
 	cmd += *(args++) + ' ';
-    if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL, NULL,
-	st, &proc))
+    if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL,
+	NULL, &si, &proc))
 	CloseHandle(proc.hThread);
     else
 	errno = EINVAL;
@@ -143,7 +136,6 @@ uint Processor::count(void) {
     static int cpus;
 
     if (!cpus) {
-	cpus = 1;
 #ifdef _WIN32
 	SYSTEM_INFO si;
 
@@ -267,9 +259,9 @@ bool Thread::priority(int pri) {
     else
 	return SetThreadPriority(hdl, THREAD_PRIORITY_TIME_CRITICAL) != 0;
 #else
-    struct sched_param sched;
-    int policy;
     int mn, mx;
+    int policy;
+    struct sched_param sched;
 
     if (pthread_getschedparam(hdl, &policy, &sched))
     	return false;
@@ -330,8 +322,8 @@ bool Thread::start(uint stacksz, ThreadGroup *tg, bool suspend, bool aterm) {
 }
 
 // create Thread and start it running at a given function
-bool Thread::start(ThreadRoutine func, void *arg, uint stacksz,
-    ThreadGroup *tg, bool suspend, bool aterm) {
+bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
+    bool suspend, bool aterm) {
     Locker lkr(lck);
 
     if (state == Terminated)
@@ -592,3 +584,4 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
 	}
     } while (true);
 }
+
