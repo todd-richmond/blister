@@ -605,7 +605,8 @@ public:
 	    }
 	    wwaiting--;
 	}
-	return writing = true;
+	writing = true;
+	return true;
     }
     void wlock(void) {
 	FastLocker lckr(lck);
