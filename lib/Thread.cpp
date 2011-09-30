@@ -21,9 +21,9 @@
 
 static const thread_t NOID = (thread_t)-1;
 
-ulong ThreadGroup::nextId;
 Lock ThreadGroup::grouplck;
 set<ThreadGroup *> ThreadGroup::groups;
+ulong ThreadGroup::nextId;
 ThreadGroup ThreadGroup::MainThreadGroup(false);
 Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
 
@@ -160,7 +160,7 @@ ullong Processor::affinity(void) {
 
     if (!sched_getaffinity(0, sizeof (cset), &cset)) {
 	for (uint u = 0; u < sizeof (mask) * 8; u++) {
-	    if (__CPU_ISSET(u, &cset))
+	    if (CPU_ISSET(u, &cset))
 		mask |= 1 << u;
 	}
     }
@@ -174,10 +174,10 @@ bool Processor::affinity(ullong mask) {
 #elif defined(__linux__)
     cpu_set_t cset;
 
-    __CPU_ZERO(&cset);
+    CPU_ZERO(&cset);
     for (uint u = 0; u < sizeof (mask) * 8; u++) {
 	if (mask && (1 << u))
-	    __CPU_SET(u, &cset);
+	    CPU_SET(u, &cset);
     }
     return sched_setaffinity(0, sizeof (cset), &cset) == 0;
 #else
