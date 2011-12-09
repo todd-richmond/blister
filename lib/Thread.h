@@ -245,38 +245,36 @@ public:
     ~ThreadLocal() { tls_free(key); }
 
     C operator =(C c) const { set(c); return c;  }
-    bool exists(void) const { return tls_get(key) != NULL; }
+    operator bool() const { return tls_get(key) != NULL; }
 
-    C get(void) const {
-	C c = data();
-
-	if (!c)
-	    set(c = 0);
-	return c;
-    }
+    C get(void) const { return (C)tls_get(key); }
     void set(const C c) const { tls_set(key, c); }
 
 protected:
     tlskey_t key;
-
-    C data(void) const { return (C)tls_get(key); }
 };
 
 /* Thread local storage for classes with proper destruction when theads exit */
 template<class C>
-class ThreadLocalClass: public ThreadLocal<C *> {
+class ThreadLocalClass: nocopy {
 public:
-    ThreadLocalClass() {}
+    ThreadLocalClass() { tls_init(key); }
+    ~ThreadLocalClass() { tls_free(key); }
 
     C &operator *(void) const { return get(); }
     C *operator ->(void) const { return &get(); }
+    void erase(void) { delete (C *)tls_get(key); tls_set(key, 0); }
     C &get(void) const {
-	C *c = ThreadLocal<C *>::data();
+	C *c = (C *)tls_get(key);
 
 	if (!c)
-	    ThreadLocal<C *>::set(c = new C);
+	    tls_set(key, c = new C);
 	return *c;
     }
+    void set(C *c) const { tls_set(key, c); }
+
+protected:
+    tlskey_t key;
 };
 
 /*
