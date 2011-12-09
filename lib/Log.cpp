@@ -444,8 +444,6 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    }
 	}
     }
-    tlsd.space = false;
-    tlsd.strm.reset();
     strbuf += '\n';
     if (afd.enable && clvl <= afd.lvl) {
 	if (src.empty()) {
@@ -475,6 +473,8 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     lck.unlock();
     strbuf.erase(strbuf.size() - 1);
     tlsd.clvl = None;
+    tlsd.space = false;
+    tlsd.strm.reset();
     tlsd.suppress = true;
     if (syslogenable && clvl <= sysloglvl) {
 	string ss;
@@ -550,22 +550,22 @@ void Log::format(const tchar *s) {
 }
 
 void Log::logv(Level l, ...) {
-    bool first;
-    const tchar *p;
-    va_list vl;
-
     if (l > lvl)
 	return;
 
+    const tchar *p;
+    bool space;
     Tlsdata &tlsd(*tls);
+    va_list vl;
 
-    first = true;
     va_start(vl, l);
+    space = tlsd.space;
+    tlsd.space = false;
     while ((p = va_arg(vl, const tchar *)) != NULL) {
-	if (first)
-	    first = false;
-	else
+	if (space)
 	    tlsd.strm << ' ';
+	else
+	    space = true;
 	tlsd.strm << p;
     }
     va_end(vl);

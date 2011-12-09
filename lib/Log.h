@@ -105,7 +105,7 @@ public:
 	    if (!s)
 		return;
 	    for (p = s; *p; p++) {
-		if ((uchar)*p > 127 || needquote[(uchar)*p]) {
+		if ((ushort)*p > 127 || needquote[(uchar)*p]) {
 		    os << '"';
 		    for (p = s; *p; p++) {
 			tchar c = *p;
@@ -167,6 +167,8 @@ public:
     void mail(bool b) { mailenable = b; }
     void mail(Level l, const tchar *to, const tchar *from = T("<>"),
 	const tchar *host = T("localhost"));
+    const tchar *prefix(void) const { return tls->prefix.c_str(); }
+    void prefix(const tchar *p) { tls->prefix = p ? p : T(""); }
     const tchar *source(void) const { return src.c_str(); }
     void source(const tchar *s) { src = s; }
     bool syslog(void) const { return syslogenable; }
@@ -187,8 +189,6 @@ public:
     }
     void flush(void) { Locker lkr(lck); _flush(); }
     void logv(Level l, ...);
-    const tchar *prefix(void) const { return tls->prefix.c_str(); }
-    void prefix(const tchar *p) { tls->prefix = p ? p : T(""); }
     void roll(void) { Locker lkr(lck); ffd.roll(); }
     void set(const Config &cfg, const tchar *sect = T("log"));
     bool setids(uid_t uid, gid_t gid) const;
@@ -209,7 +209,7 @@ public:
 	return *this;
     }
 
-    Log &operator <<(const Log::Level &l) {
+    Log &operator <<(Log::Level l) {
 	Tlsdata *tlsd;
 
 	if (l <= lvl && !(tlsd = &tls.get())->suppress)
@@ -230,25 +230,36 @@ public:
 	return *this;
     }
 
-#define _func_(n, l)\
-    template<class C> void n(const C &c) { log(l, c); }\
-    template<class C, class D> void n(const C &c, const D &d) { log(l, c, d); }\
+#define _func_(n, l) \
+    template<class C> void n(const C &c) { log(l, c); } \
+    template<class C, class D> void n(const C &c, const D &d) { log(l, c, d); } \
     template<class C, class D, class E> void n(const C &c, const D &d, const E \
 	&e) { log(l, c, d, e); }\
-    template<class C, class D, class E, class F> void n(const C &c, const D &d,\
-	const E &e, const F &f) { log(l, c, d, e, f); }\
-    template<class C, class D, class E, class F, class G> void n(const C &c,\
-	const D &d, const E &e, const F &f, const G &g) { log(l, c, d, e, f,\
-	g); }\
-    template<class C, class D, class E, class F, class G, class H> void n(\
-	const C &c, const D &d, const E &e, const F &f, const G &g, const H &h)\
+    template<class C, class D, class E, class F> void n(const C &c, const D &d, \
+	const E &e, const F &f) { log(l, c, d, e, f); } \
+    template<class C, class D, class E, class F, class G> void n(const C &c, \
+	const D &d, const E &e, const F &f, const G &g) { log(l, c, d, e, f, \
+	g); } \
+    template<class C, class D, class E, class F, class G, class H> void n( \
+	const C &c, const D &d, const E &e, const F &f, const G &g, const H &h) \
 	{ log(l, c, d, e, f, g, h); }
 
-#define _log_(s)\
-    Tlsdata *tlsd;\
-    if (l <= lvl && !(tlsd = &tls.get())->suppress) {\
-	tlsd->strm << s;\
-	endlog(*tlsd, l);\
+    _func_(emerg, Emerg);	_func_(m, Emerg);
+    _func_(alert, Alert);	_func_(a, Alert);
+    _func_(crit, Crit);		_func_(c, Crit);
+    _func_(err, Err);		_func_(e, Err);
+    _func_(warn, Warn);		_func_(w, Warn);
+    _func_(note, Note);		_func_(n, Note);
+    _func_(info, Info);		_func_(i, Info);
+    _func_(debug, Debug);	_func_(d, Debug);
+    _func_(trace, Trace);	_func_(t, Trace);
+
+#undef _func_
+#define _log_(s) \
+    Tlsdata *tlsd; \
+    if (l <= lvl && !(tlsd = &tls.get())->suppress) { \
+	tlsd->strm << s; \
+	endlog(*tlsd, l); \
     }
 
     template<class C> void log(Level l, const C &c) { _log_(c); }
@@ -273,19 +284,7 @@ public:
 	_log_(c << ' ' << d << ' ' << e << ' ' << f << ' ' << g << ' ' << h);
     }
 
-    // expand to xxx(class C...) ...
-    _func_(emerg, Emerg);	_func_(m, Emerg);
-    _func_(alert, Alert);	_func_(a, Alert);
-    _func_(crit, Crit);		_func_(c, Crit);
-    _func_(err, Err);		_func_(e, Err);
-    _func_(warn, Warn);		_func_(w, Warn);
-    _func_(note, Note);		_func_(n, Note);
-    _func_(info, Info);		_func_(i, Info);
-    _func_(debug, Debug);	_func_(d, Debug);
-    _func_(trace, Trace);	_func_(t, Trace);
-
 #undef _log_
-#undef _func_
 
     template<class C> static const KV<C> kv(const tchar *key, const C &val) {
 	return KV<C>(key, val);
@@ -430,7 +429,7 @@ template<> inline void Log::KV<ullong>::value(tostream &os) const { os << val; }
 template<> inline void Log::KV<ushort>::value(tostream &os) const { os << val; }
 template<> inline void Log::KV<wchar>::value(tostream &os) const { os << val; }
 
-template<class C>inline tostream &operator <<(tostream &os, const Log::KV<C> &kv) {
+template<class C> inline tostream &operator <<(tostream &os, const Log::KV<C> &kv) {
     return kv.print(os);
 }
 
@@ -439,18 +438,7 @@ inline Log &endlog(Log &l) { return l.endlog(); }
 
 extern Log &dlog;
 
-#define LOGL(l, lvl, args) { if (lvl <= l.level()) l << lvl << args << endlog; }
-#define LOGM(l, args)	LOGL(l, Log::Emerg, args);
-#define LOGA(l, args)	LOGL(l, Log::Alert, args);
-#define LOGC(l, args)	LOGL(l, Log::Crit, args);
-#define LOGE(l, args)	LOGL(l, Log::Err, args);
-#define LOGW(l, args)	LOGL(l, Log::Warn, args);
-#define LOGN(l, args)	LOGL(l, Log::Note, args);
-#define LOGI(l, args)	LOGL(l, Log::Info, args);
-#define LOGD(l, args)	LOGL(l, Log::Debug, args);
-#define LOGT(l, args)	LOGL(l, Log::Trace, args);
-
-#define DLOGL(lvl, args) LOGL(dlog, lvl, args)
+#define DLOGL(l, args)	{ if (l <= dlog.level()) dlog << l << args << endlog; }
 #define DLOGM(args)	DLOGL(Log::Emerg, args);
 #define DLOGA(args)	DLOGL(Log::Alert, args);
 #define DLOGC(args)	DLOGL(Log::Crit, args);
@@ -461,18 +449,7 @@ extern Log &dlog;
 #define DLOGD(args)	DLOGL(Log::Debug, args);
 #define DLOGT(args)	DLOGL(Log::Trace, args);
 
-#define logl(l, lvl, ...) { if (lvl <= l.level()) l.log(lvl, __VA_ARGS__); }
-#define logm(l, ...)	logl(l, Log::Emerg, __VA_ARGS__);
-#define loga(l, ...)	logl(l, Log::Alert, __VA_ARGS__);
-#define logc(l, ...)	logl(l, Log::Crit, __VA_ARGS__);
-#define loge(l, ...)	logl(l, Log::Err, __VA_ARGS__);
-#define logw(l, ...)	logl(l, Log::Warn, __VA_ARGS__);
-#define logn(l, ...)	logl(l, Log::Note, __VA_ARGS__);
-#define logi(l, ...)	logl(l, Log::Info, __VA_ARGS__);
-#define logd(l, ...)	logl(l, Log::Debug, __VA_ARGS__);
-#define logt(l, ...)	logl(l, Log::Trace, __VA_ARGS__);
-
-#define dlogl(lvl, ...) logl(dlog, lvl, __VA_ARGS__)
+#define dlogl(l, ...)	{ if (l <= dlog.level()) dlog.log(l, __VA_ARGS__); }
 #define dlogm(...)	dlogl(Log::Emerg, __VA_ARGS__);
 #define dloga(...)	dlogl(Log::Alert, __VA_ARGS__);
 #define dlogc(...)	dlogl(Log::Crit, __VA_ARGS__);
@@ -482,5 +459,16 @@ extern Log &dlog;
 #define dlogi(...)	dlogl(Log::Info, __VA_ARGS__);
 #define dlogd(...)	dlogl(Log::Debug, __VA_ARGS__);
 #define dlogt(...)	dlogl(Log::Trace, __VA_ARGS__);
+
+#define dlogvl(l, ...)	{ if (l <= dlog.level()) dlog.logv(l, __VA_ARGS__, NULL); }
+#define dlogvm(...)	dlogvl(Log::Emerg, __VA_ARGS__);
+#define dlogva(...)	dlogvl(Log::Alert, __VA_ARGS__);
+#define dlogvc(...)	dlogvl(Log::Crit, __VA_ARGS__);
+#define dlogve(...)	dlogvl(Log::Err, __VA_ARGS__);
+#define dlogvw(...)	dlogvl(Log::Warn, __VA_ARGS__);
+#define dlogvn(...)	dlogvl(Log::Note, __VA_ARGS__);
+#define dlogvi(...)	dlogvl(Log::Info, __VA_ARGS__);
+#define dlogvd(...)	dlogvl(Log::Debug, __VA_ARGS__);
+#define dlogvt(...)	dlogvl(Log::Trace, __VA_ARGS__);
 
 #endif // _Log_h
