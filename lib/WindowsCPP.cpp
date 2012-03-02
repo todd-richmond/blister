@@ -36,16 +36,16 @@ const wstring _achartowstring(const char *s, int len) {
     
     if (len == 0) {
 	return L"";
-    } else if ((sz = MultiByteToWideChar(CP_ACP, 0, s, len, sbuf,
+    } else if ((sz = MultiByteToWideChar(CP_UTF8, 0, s, len, sbuf,
 	sizeof (sbuf) / sizeof (wchar))) > 0) {
 	return sbuf;
     } else {
-	sz = MultiByteToWideChar(CP_ACP, 0, s, len, NULL, 0);
+	sz = MultiByteToWideChar(CP_UTF8, 0, s, len, NULL, 0);
 
 	wchar *buf = new wchar[sz];
 	wstring ret;
     	
-	MultiByteToWideChar(CP_ACP, 0, s, len, buf, sz);
+	MultiByteToWideChar(CP_UTF8, 0, s, len, buf, sz);
 	ret.assign(buf, sz - 1);
 	delete [] buf;
 	return ret;
@@ -58,18 +58,19 @@ const string _wchartoastring(const wchar *s, int len) {
 
     if (len == 0) {
 	return "";
-    } else if ((sz = WideCharToMultiByte(CP_ACP, 0, s, len, sbuf, sizeof (sbuf),
+    } else if ((sz = WideCharToMultiByte(CP_UTF8, 0, s, len, sbuf, sizeof (sbuf),
 	NULL, NULL)) > 0) {
 	return sbuf;
     } else {
-	sz = WideCharToMultiByte(CP_ACP, 0, s, len, NULL, 0, NULL, NULL);
+	sz = WideCharToMultiByte(CP_UTF8, 0, s, len, NULL, 0, NULL, NULL);
 
 	char *buf = new char[sz];
 	string ret;
 
-	WideCharToMultiByte(CP_ACP, 0, s, len, buf, len, NULL, NULL);
+	WideCharToMultiByte(CP_UTF8, 0, s, len, buf, len, NULL, NULL);
 	ret.assign(buf, sz - 1);
 	delete [] buf;
 	return ret;
     }
 }
+
