@@ -256,8 +256,6 @@ const tstring Sockaddr::str(void) const {
 	ZERO(best);
 	ZERO(cur);
 	ZERO(words);
-	for (i = 0; i < (int)sizeof (addr.sa6.sin6_addr); i++)
-	    words[i / 2] |= (u[i] << ((1 - (i % 2)) << 3));
 	best.base = -1;
 	cur.base = -1;
 	for (i = 0; i < WORDS; i++) {
