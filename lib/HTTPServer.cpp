@@ -515,7 +515,7 @@ void HTTPServerSocket::reply(int fd, size_t len) {
     reply(fmap, len);
 }
 
-void HTTPServerSocket::status(int sts, const char *type,
+void HTTPServerSocket::status(uint sts, const char *type,
     const char *subtype, time_t mtime) {
     struct tm tmbuf, *tmptr;
     char buf[64];
@@ -537,8 +537,8 @@ void HTTPServerSocket::status(int sts, const char *type,
 	hdrs << "Content-Type: " << type << '/' << subtype << CRLF;
     if (mtime) {
 	tmptr = gmtime_r(&mtime, &tmbuf);
-	i = strftime(buf, sizeof (buf), "Last-Modified: %a, %d %b %Y %H:%M:%S UTC\r\n",
-	    tmptr);
+	i = strftime(buf, sizeof (buf),
+	    "Last-Modified: %a, %d %b %Y %H:%M:%S UTC\r\n", tmptr);
 	hdrs.write(buf, i);
     }
     _status = sts;
@@ -549,14 +549,19 @@ void HTTPServerSocket::header(const char *attr, const char *val) {
     hdrs << attr << ": " << val << CRLF;
 }
 
-void HTTPServerSocket::error(int sts) {
+void HTTPServerSocket::error(uint sts) {
     const char *p;
     static const char *errstr[] = {
-	"Bad Request", "Unauthorized", "Payment required", "Forbidden", "Not Found",
-	"Method Not Allowed"
+	"Bad Request", "Unauthorized", "Payment required", "Forbidden",
+	"Not Found", "Method Not Allowed", "Not Acceptable",
+	"Proxy Authentication Required", "Request Timeout", "Conflict",
+	"Gone", "Length Required", "Precondition Failed",
+	"Request Entity Too Large", "Request-URI Too Long",
+	"Unsupported Media Type", "Requested Range Not Satisfiable",
+	"Expectation Failed"
     };
 
-    if (sts < (int)(400 + sizeof (errstr) / sizeof (char *)))
+    if (sts >= 400 && sts < 400 + sizeof (errstr) / sizeof (char *))
 	p = errstr[sts % 400];
     else
 	p = "HTTP error";
@@ -573,7 +578,7 @@ void HTTPServerSocket::get(bool head) {
     const char *p;
     int fd;
     int i;
-    int sts = 200;
+    uint sts = 200;
     const char *val;
     string s;
 

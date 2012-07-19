@@ -524,7 +524,8 @@ int link(const char *from, const char *to) {
     (void)buf;
     sz = GetFullPathName(to, MAX_PATH, FileLink, &FilePart);
 #else
-    MultiByteToWideChar(CP_ACP, 0, to, (int)strlen(to) + 1, buf, sizeof (buf));
+    MultiByteToWideChar(CP_ACP, 0, to, (int)strlen(to) + 1, buf, sizeof (buf) /
+	sizeof (WCHAR));
     sz = GetFullPathNameW(buf, MAX_PATH, FileLink, &FilePart);
 #endif
     if (sz == 0) {
@@ -716,7 +717,7 @@ int open(const char *p, int oflag, ...) {
 
 /* rename that emulates atomic operations very expensively */
 int rename(const char *f, const char *t) {
-    char oldbuf[260 + 10];
+    char oldbuf[MAX_PATH + 10];
     uint lck;
     int ret = 0;
     char *p;
@@ -729,10 +730,8 @@ int rename(const char *f, const char *t) {
     if (MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING))
 	return ret;
     strcpy(oldbuf, t);
-    if ((p = strrchr(oldbuf, '/')) != NULL)
-	sprintf(p + 1, "%lu.tmp", GetTickCount() ^ rand());
-    else
-	sprintf(oldbuf, "%s%lu.tmp", to, GetTickCount() ^ rand());
+    p = strrchr(oldbuf, '/');
+    sprintf(p ? p + 1 : oldbuf, "%u", (uint)microticks() ^ rand());
     lck = rename_lock(t);
     TPATH(oldbuf, old);
     if (!MoveFileExA(to, old, MOVEFILE_REPLACE_EXISTING)) {

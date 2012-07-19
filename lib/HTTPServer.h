@@ -46,11 +46,11 @@ public:
 
 protected:
     void header(const char *attr, const char *val);
-    void error(int errnum);
+    void error(uint errnum);
     void reply(const char *data = NULL, size_t len = 0);
     void reply(int fd, size_t sz);
-    void reply(int sts) { status(sts, NULL); reply(); }
-    void status(int sts, const char *type = "text",
+    void reply(uint sts) { status(sts, NULL); reply(); }
+    void status(uint sts, const char *type = "text",
 	const char *subtype = "plain", time_t mtime = 0);
     template<class C> ostream &operator <<(const C &c) { return ss << c; }
     virtual void del(void) { error(501); }
@@ -69,7 +69,7 @@ protected:
     iovec iov[3];
     uint rto, wto;
     char savechar;
-    int _status;
+    uint _status;
     static bool date;
 
     const char *arg(const char *name) const { return find(args, name); }

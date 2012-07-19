@@ -267,8 +267,10 @@ public:
     C &get(void) const {
 	C *c = (C *)tls_get(key);
 
-	if (!c)
-	    tls_set(key, c = new C);
+	if (!c) {
+	    c = new C;
+	    tls_set(key, c);
+	}
 	return *c;
     }
     void set(C *c) const { tls_set(key, c); }

@@ -173,6 +173,7 @@ int Dispatcher::run() {
 	    break;
     }
     threads--;
+    cout << "tfr exit thread"<<endl;
     lock.unlock();
     return 0;
 }
@@ -329,6 +330,7 @@ int Dispatcher::onStart() {
 	evtfd = -1;
     }
 #endif
+evtfd = -1;//tfr
     if (evtfd != -1)
 	fcntl(evtfd, F_SETFD, 1);
 #endif
@@ -460,13 +462,13 @@ int Dispatcher::onStart() {
 	    }
 	    for (u = 0; u < oeset.size(); u++) {
 		fd = oeset[u];
+		if ((sit = smap.find(fd)) == smap.end())
+		    continue;
+		ds = sit->second;
 		if (ds->flags & DSP_SelectRead)
 		    rset.unset(fd);
 		if (ds->flags & DSP_SelectWrite)
 		    wset.unset(fd);
-		if ((sit = smap.find(fd)) == smap.end())
-		    continue;
-		ds = sit->second;
 		ds->flags &= ~DSP_SelectAll;
 		if (ds->flags & DSP_Scheduled) {
 		    ds->msg = Close;
@@ -505,13 +507,13 @@ int Dispatcher::onStart() {
 
 void Dispatcher::cleanup(void) {
     timermap::iterator tit;
-    Thread *t;
+    Thread *t = NULL;
 
     do {
 	lock.unlock();
 	lifo.broadcast();
-	if ((t = wait(30000)) != NULL)
-	    delete t;
+	t = wait(30000);
+	delete t;
 	lock.lock();
     } while (t);
     while (rlist) {
@@ -705,6 +707,7 @@ void Dispatcher::wake(uint tasks, bool master) {
 		if (threads >= maxthreads || shutdown)
 		    break;
 		threads++;
+		cout<<"tfr threads "<<threads<<" tasks "<<tasks<<endl;
 		lock.unlock();
 		t = new Thread();
 		t->start(worker, this, stacksz, this);

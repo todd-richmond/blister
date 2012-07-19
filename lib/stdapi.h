@@ -44,6 +44,7 @@ typedef unsigned short word;
 #pragma warning(disable: 4127)
 #pragma warning(disable: 4146)
 #pragma warning(disable: 4201)
+#pragma warning(disable: 4250)
 #pragma warning(disable: 4355)
 #pragma warning(disable: 4503)
 #pragma warning(disable: 4511)
@@ -54,6 +55,7 @@ typedef unsigned short word;
 #pragma warning(disable: 4711)
 #pragma warning(disable: 4786)
 #pragma warning(disable: 4996)
+#pragma warning(disable: 26135)
 
 #ifndef WIN32
 #define WIN32
