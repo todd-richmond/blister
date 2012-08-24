@@ -1,8 +1,8 @@
 #include "winres.h"
 
-#define VERSION      0,7,0,0
-#define VERSIONSTR  "0.7.0.0"
-#define DATE        "6/24/09"
+#define VERSION      0,8,0,0
+#define VERSIONSTR  "0.8.0.0"
+#define DATE        "9/1/12"
 
 #define PRODUCT	    "Blister"
 #ifndef NAME
@@ -39,7 +39,7 @@ BEGIN
             VALUE "FileDescription",	NAME
             VALUE "FileVersion",	VERSIONSTR
             VALUE "InternalName",	NAME
-            VALUE "LegalCopyright",	"Copyright Todd Richmond © 2009"
+            VALUE "LegalCopyright",	"Copyright Todd Richmond © 2009, 2010, 2011, 2012"
             VALUE "PrivateBuild",	BUILD
             VALUE "ProductName",	PRODUCT
             VALUE "ProductVersion",	VERSIONSTR

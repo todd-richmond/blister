@@ -20,6 +20,6 @@ EXTRACFLAGS = -march=pentium4
 endif
 endif
 
-CFLAGS = -Wall -Werror -Wno-deprecated -pipe $(EXTRACFLAGS) @optimize@ 
-CXXFLAGS = $(CFLAGS) -fno-rtti -fno-exceptions
+CFLAGS = -Wall -Werror -pipe $(EXTRACFLAGS) @optimize@ 
+CXXFLAGS = $(CFLAGS) -Wno-deprecated -fno-rtti -fno-exceptions
 

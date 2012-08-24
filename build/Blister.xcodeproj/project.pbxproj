@@ -83,8 +83,8 @@
 		F7AA213B13149FAF00272F6A /* Socket.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Socket.h; path = ../lib/Socket.h; sourceTree = "<group>"; };
 		F7AA213C13149FAF00272F6A /* stdapi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = stdapi.h; path = ../lib/stdapi.h; sourceTree = "<group>"; };
 		F7AA213D13149FAF00272F6A /* Streams.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Streams.h; path = ../lib/Streams.h; sourceTree = "<group>"; };
-		F7AA213E13149FAF00272F6A /* Thread.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Thread.cpp; path = ../lib/Thread.cpp; sourceTree = "<group>"; };
-		F7AA213F13149FAF00272F6A /* Thread.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Thread.h; path = ../lib/Thread.h; sourceTree = "<group>"; };
+		F7AA213E13149FAF00272F6A /* Thread.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Thread.cpp; path = ../lib/Thread.cpp; sourceTree = "<group>"; wrapsLines = 0; };
+		F7AA213F13149FAF00272F6A /* Thread.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Thread.h; path = ../lib/Thread.h; sourceTree = "<group>"; wrapsLines = 0; };
 		F7AA214013149FAF00272F6A /* Timing.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Timing.cpp; path = ../lib/Timing.cpp; sourceTree = "<group>"; };
 		F7AA214113149FAF00272F6A /* Timing.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Timing.h; path = ../lib/Timing.h; sourceTree = "<group>"; };
 		F7AA214213149FAF00272F6A /* Unix.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = Unix.c; path = ../lib/Unix.c; sourceTree = "<group>"; };
@@ -248,6 +248,9 @@
 /* Begin PBXProject section */
 		F7AA211013149F2C00272F6A /* Project object */ = {
 			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 0430;
+			};
 			buildConfigurationList = F7AA211313149F2C00272F6A /* Build configuration list for PBXProject "Blister" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = English;
