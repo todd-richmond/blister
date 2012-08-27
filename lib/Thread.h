@@ -541,19 +541,35 @@ public:
     	if (msec == INFINITE) {
 	    return pthread_cond_wait(&cv, lock) == 0;
 	} else {
-	    struct timespec ts;
-	    struct timeval tv;
+	    timespec ts;
 
-	    gettimeofday(&tv, NULL);
-	    ts.tv_sec = tv.tv_sec + msec / 1000;
-	    ts.tv_nsec = (tv.tv_usec + (msec % 1000)) * 1000;
+	    clock_gettime(CLOCK_REALTIME, &ts);
+	    ts.tv_sec += msec / 1000;
+	    ts.tv_nsec += (msec % 1000) * 1000;
 	    return pthread_cond_timedwait(&cv, lock, &ts) == 0;
 	}
     }
+    bool wait(ulong msec, const timespec &now) {
+	timespec ts(now);
+
+	ts.tv_sec += msec / 1000;
+	ts.tv_nsec += (msec % 1000) * 1000;
+	return pthread_cond_timedwait(&cv, lock, &ts) == 0;
+    }
+    bool wait(const timespec &ts) {
+	return pthread_cond_timedwait(&cv, lock, &ts) == 0;
+    }
+    bool wait(const timeval &tv) {
+	timespec ts;
+
+	ts.tv_sec = tv.tv_sec;
+	ts.tv_nsec = tv.tv_usec * 1000;
+	return pthread_cond_timedwait(&cv, lock, &ts) == 0;
+    }
 
 protected:
-    Lock &lock;
     pthread_cond_t cv;
+    Lock &lock;
 };
 
 #endif
@@ -711,7 +727,7 @@ protected:
     mutable SpinLock lck;
     typedef FastSpinLocker TSLocker;
 
-    C *operator &();			// not allowed
+    C *operator &();
 };
 
 /* Last-in-first-out queue useful for thread pools */
@@ -722,31 +738,40 @@ public:
 	Condvar cv;
 	Waiting *next;
 
-	Waiting(Lifo &lifo): cv(lifo.lock()), next(NULL) {}
+	Waiting(Lifo &lifo): cv(lifo.lck), next(NULL) {}
     };
 
     Lifo(): head(NULL), preset(false) {}
 
-    bool empty(void) const { return head != NULL; }
+    operator bool(void) const { return head != NULL; }
+    bool empty(void) const { return head == NULL; }
 
-    void broadcast(void) { set((uint)-1); }
-    Lock &lock(void) { return lck; }
+    void broadcast(void) { if (head) set((uint)-1); }
     uint set(uint count = 1) {
-	FastLocker lkr(lck);
-
+	lck.lock();
 	if (head) {
-	    do {
-		head->cv.set();
+	    for (;;) {
+		Waiting *w = head;
+
 		head = head->next;
-		if (--count)
-		    lkr.relock();
-		else
+		lck.unlock();
+		w->cv.set();
+		if (--count) {
+		    lck.lock();
+		    if (!head) {
+			lck.unlock();
+			break;
+		    }
+		} else {
 		    break;
-	    } while (head);
+		}
+	    }
+	    return count;
 	} else if (!preset) {
 	    preset = true;
 	    count--;
 	}
+	lck.unlock();
 	return count;
     }
     bool wait(Waiting &w, ulong msec = INFINITE) {
