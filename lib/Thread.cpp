@@ -312,6 +312,7 @@ THREAD_FUNC Thread::threadInit(void *arg) {
 #ifdef _WIN32
     return status;
 #else
+    (void)status;
     return 0;
 #endif
 }
@@ -493,7 +494,7 @@ void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
     Locker lck(lock);
     
     state = ts;
-    for (it = threads.begin(); it != threads.end(); it++) {
+    for (it = threads.begin(); it != threads.end(); ++it) {
 	if (!THREAD_ISSELF((*it)->id))
 	    ((*it)->*func)();
     }
@@ -516,7 +517,7 @@ void ThreadGroup::priority(int pri) {
     set<Thread *>::iterator it;
     Locker lkr(lock);
 
-    for (it = threads.begin(); it != threads.end(); it++)
+    for (it = threads.begin(); it != threads.end(); ++it)
 	(*it)->priority(pri);
 }
 
@@ -545,7 +546,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
 	// threads restarting other threads
 	bool found = false;
 
-	for (it = threads.begin(); it != threads.end(); it++) {
+	for (it = threads.begin(); it != threads.end(); ++it) {
 	    Thread *thrd = *it;
 	    ThreadState tstate = thrd->getState();
 	    

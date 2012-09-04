@@ -81,10 +81,10 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	T("10s"), T("30s"), T("...")
     };
 
-    for (it = tmap.begin(); it != tmap.end(); it++)
+    for (it = tmap.begin(); it != tmap.end(); ++it)
 	sorted.push_back(it->second);
     sort(sorted.begin(), sorted.end(), sortbyname ? less_name : less_time);
-    for (sit = sorted.begin(); sit != sorted.end(); sit++) {
+    for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
 	stats = *sit;
 	for (u = TIMINGSLOTS - 1; u > last; u--) {
 	    if (stats->cnts[u]) {
@@ -104,7 +104,7 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	}
 	s += (tchar)'\n';
     }
-    for (sit = sorted.begin(); sit != sorted.end(); sit++) {
+    for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
 	tchar abuf[16], buf[128], cbuf[16], sbuf[16];
 	ulong sum = 0;
 	timing_t tot;
@@ -210,7 +210,7 @@ void Timing::record(const tchar *key) {
 	tstring s;
 
 	for (vector<tstring>::const_iterator it = tlsd.callers.begin();
-	    it != tlsd.callers.end(); it++) {
+	    it != tlsd.callers.end(); ++it) {
 	    if (!s.empty())
 		s += T("->");
 	    s += *it;

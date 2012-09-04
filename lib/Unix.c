@@ -20,8 +20,32 @@
 #include <time.h>
 #include <sys/times.h>
 
+#ifdef __APPLE__
+#include <mach/mach_time.h>
+
+int clock_gettime(int id, struct timespec *ts) {
+    if (id == CLOCK_MONOTONIC) {
+	uint64_t t = mach_absolute_time();
+
+	ts->tv_sec  = t / (1000 * 1000 * 1000);
+	ts->tv_nsec = t % 1000;
+	return 0;
+    } else if (id == CLOCK_REALTIME) {
+	struct timeval now;
+
+	gettimeofday(&now, NULL);
+	ts->tv_sec  = now.tv_sec;
+	ts->tv_nsec = now.tv_usec * 1000;
+	return 0;
+    }
+    return -1;
+}
+#endif
+
 usec_t microticks(void) {
-#ifdef linux
+#ifdef __APPLE__
+    return mach_absolute_time() / 1000;
+#elif defined(CLOCK_MONOTONIC)
     struct timespec ts;
 
     clock_gettime(CLOCK_MONOTONIC, &ts);

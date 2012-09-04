@@ -68,7 +68,6 @@ typedef unsigned short word;
 #define rename _rename
 #define __STDC__ 1
 #include <direct.h>
-#include <fcntl.h>
 #include <io.h>
 #include <stdio.h>
 #undef __STDC__

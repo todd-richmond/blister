@@ -329,7 +329,7 @@ tostream &HTTPClient::operator <<(tostream &os) {
     attrmap::const_iterator it;
 
     os << sts << endl;
-    for (it = reshdrs.begin(); it != reshdrs.end(); it++)
+    for (it = reshdrs.begin(); it != reshdrs.end(); ++it)
 	os << it->first << ": " << it->second << endl;
     os.write(achartotchar(result), ressz);
     os << endl;

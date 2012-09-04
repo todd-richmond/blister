@@ -249,7 +249,6 @@ const tstring Sockaddr::str(void) const {
 	int i;
 	struct { int base, len; } best, cur;
 	char buf[INET6_ADDRSTRLEN + 1], *p = buf;
-	const uchar *u = (const uchar *)&addr.sa6.sin6_addr;
 	const int WORDS = sizeof (addr.sa6.sin6_addr) / sizeof (ushort);
 	uint words[WORDS];
 
@@ -286,7 +285,7 @@ const tstring Sockaddr::str(void) const {
 		*p++ = ':';
 	    if (i == 6 && best.base == 0 &&
 		(best.len == 6 || (best.len == 5 && words[5] == 0xffff))) {
-		u = (const uchar *)&addr.sa6.sin6_addr + 12;
+		const uchar *u = (const uchar *)&addr.sa6.sin6_addr + 12;
 		p += sprintf(p, "%u.%u.%u.%u", u[0], u[1], u[2], u[3]);
 		break;
 	    }
@@ -359,7 +358,7 @@ bool CIDR::find(uint addr) const {
 
     range.min = range.max = addr;
     for (it = lower_bound(ranges.begin(), ranges.end(), range, range);
-	it != ranges.end() && it->min <= range.min; it++) {
+	it != ranges.end() && it->min <= range.min; ++it) {
 	if (range.max <= it->max)
 	    return true;
     }

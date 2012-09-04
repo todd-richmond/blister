@@ -76,10 +76,11 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	    uubuf[--uusz] = '\0';
 	ret = cmd(T("AUTH LOGIN"), achartotchar(uubuf), 334);
 	delete [] uubuf;
-	base64encode(pass, passlen, uubuf, uusz);
-	while (isspace(uubuf[uusz - 1]))
-	    uubuf[--uusz] = '\0';
-	ret = ret && cmd(achartotchar(uubuf), NULL, 235);
+	if (ret && (ret = base64encode(pass, passlen, uubuf, uusz)) == true) {
+	    while (isspace(uubuf[uusz - 1]))
+		uubuf[--uusz] = '\0';
+	    ret = ret && cmd(achartotchar(uubuf), NULL, 235);
+	}
 	delete [] uubuf;
     }
     return ret;
@@ -204,7 +205,7 @@ void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
     if (v.empty())
 	return;
     sstrm << tchartoachar(hdr);
-    for (it = v.begin(); it != v.end(); it++) {
+    for (it = v.begin(); it != v.end(); ++it) {
 	if (it != v.begin())
 	    sstrm << ",\r\n\t";
 	sstrm << tstringtoachar(*it);
@@ -258,7 +259,8 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	return false;
     memcpy(buf, &pid, 4);
     memcpy(buf + 4, &mid, 8);
-    base64encode(buf, 12, encbuf, encbufsz);
+    if (!base64encode(buf, 12, encbuf, encbufsz))
+	return false;
     encbuf[encbufsz - 2] = '\0';
     sstrm << "Message-ID: <" << encbuf << '@' <<
 	tstringtoastring(Sockaddr::hostname()) << '>' << crlf;
@@ -280,7 +282,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     recip(T("To: "), tov);
     recip(T("Cc: "), ccv);
     sstrm << "Subject: " << tstringtoastring(sub) << crlf;
-    for (it = hdrv.begin(); it != hdrv.end(); it++)
+    for (it = hdrv.begin(); it != hdrv.end(); ++it)
 	sstrm << tstringtoastring(*it) << crlf;
     if (mime) {
 	sprintf(buf, "--%x%x%x%x", rand(), rand(), rand(), rand());
@@ -1045,7 +1047,6 @@ bool base64encode(const void *input, size_t len, char *&output, size_t &outsz) {
 
 bool uuencode(const tchar *file, const void *input, size_t len, char *&output,
     size_t &outsz) {
-    char *out = (char *)output;
 
     static const char begin[] = "begin 644 ";
     static const char end[] = "\r\nend\r\n";
@@ -1061,16 +1062,16 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&output,
     };
 
     outsz = (uint)tstrlen(file);
-    if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) == NULL)
+    if ((output = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) == NULL)
 	return false;
-    memcpy(out, begin, sizeof (begin) - 1);
-    memcpy(out + sizeof (begin) - 1, tchartoachar(file), outsz);
+    memcpy(output, begin, sizeof (begin) - 1);
+    memcpy(output + sizeof (begin) - 1, tchartoachar(file), outsz);
     outsz += sizeof (begin) - 1;
-    out[outsz++] = '\r';
-    out[outsz++] = '\n';
-    encode(input, len, out + outsz, outsz, table, false);
-    out[outsz++] = ENC('\0');
-    memcpy(out + outsz, end, sizeof (end));
+    output[outsz++] = '\r';
+    output[outsz++] = '\n';
+    encode(input, len, output + outsz, outsz, table, false);
+    output[outsz++] = ENC('\0');
+    memcpy(output + outsz, end, sizeof (end));
     outsz += sizeof (end) - 1;
     return true;
 }

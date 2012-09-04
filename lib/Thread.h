@@ -406,12 +406,12 @@ protected:
     HANDLE hdl;
 };
 
-class _Semaphore: nocopy {
+class _Semaphore {
 public:
-    Semaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
-	open(init, name);
+    _Semaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
+	_open(name, init);
     }
-    ~Semaphore() { close(); }
+    ~_Semaphore() { close(); }
 
     operator HANDLE(void) const { return hdl; }
     HANDLE handle(void) const { return hdl; }
@@ -431,7 +431,7 @@ public:
 protected:
     HANDLE hdl;
 
-    bool _open(const tchar *name, uint init, bool exclusive) {
+    bool _open(const tchar *name, uint init, bool exclusive = false) {
 	close();
 	hdl = CreateSemaphore(NULL, init, LONG_MAX, name);
 	if (hdl == NULL && !exclusive)
@@ -440,18 +440,21 @@ protected:
     }
 };
 
-class Semaphore: public _Semaphore {
+class Semaphore: public _Semaphore, private nocopy {
+public:
     Semaphore(uint init = 0): _Semaphore(NULL, init) {}
 
     bool open(uint init = 0) { return _open(NULL, init); }
-}
+};
 
-class SharedSemaphore: public _Semaphore {
-    Semaphore(const tchar *name, uint init = 0): _Semaphore(name, init) {}
+class SharedSemaphore: public _Semaphore, private nocopy {
+public:
+    SharedSemaphore(const tchar *name, uint init = 0): _Semaphore(name, init) {}
 
     bool open(const tchar *name = NULL, uint init = 0, bool exclusive = false) {
 	return _open(name, init, exclusive);
-}
+    }
+};
 
 class Condvar: nocopy {
 public:
@@ -872,7 +875,7 @@ public:
     operator bool(void) const { return referenced(); }
     bool referenced(void) const { FastSpinLocker lkr(lck); return cnt != 0; }
 
-    void reference(void) { FastSpinLocker lkr(lck); cnt++; }
+    void reference(void) { FastSpinLocker lkr(lck); ++cnt; }
     bool release(void) { FastSpinLocker lkr(lck); return --cnt != 0; }
 
 private:
@@ -962,7 +965,7 @@ public:
 	    Waiting *w = head;
 
 	    head = w->next;
-	    sz--;
+	    --sz;
 	    lck.unlock();
 	    w->sema4.set();
 	    if (!--count)
@@ -976,14 +979,14 @@ public:
 	lck.lock();
 	w.next = head;
 	head = &w;
-	sz++;
+	++sz;
 	lck.unlock();
 	if (!w.sema4.wait(msec)) {
 	    lck.lock();
 	    for (Waiting **ww = (Waiting **)&head; *ww; ww = &(*ww)->next) {
 		if (*ww == &w) {
 		    *ww = w.next;
-		    sz--;
+		    --sz;
 		    lck.unlock();
 		    return false;
 		}

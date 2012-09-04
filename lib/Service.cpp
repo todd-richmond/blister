@@ -888,7 +888,6 @@ int Service::ctrl_handler(void *) {
 }
 
 int Service::run(int argc, const tchar * const *argv) {
-    bool debug = false;
     int ret;
     struct rlimit rl;
 
@@ -903,9 +902,7 @@ int Service::run(int argc, const tchar * const *argv) {
 
 	while (*p == '-')
 	    p++;
-	if (!tstricmp(p, T("debug")))
-	    debug = true;
-	else if (!tstricmp(p, T("0")) || !tstricmp(p, T("console")))
+	if (!tstricmp(p, T("0")) || !tstricmp(p, T("console")))
 	    console = true;
 	else if (!tstricmp(p, T("d")) || !tstricmp(p, T("daemon")))
 	    console = false;

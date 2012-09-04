@@ -213,7 +213,6 @@ void Config::trim(tstring &s) {
 
 bool Config::parse(tistream &is) {
     tstring attr, s, sect, val;
-    bool head = true;
     attrmap::iterator it;
     uint line = 0;
     const tchar *p;
@@ -282,7 +281,6 @@ bool Config::parse(tistream &is) {
 	    p = sect.c_str();
 	    if (!tstricmp(p, T("common")) || !tstricmp(p, T("global")))
 		sect.erase();
-	    head = sect.empty();
 	    ini = true;
 	    continue;
 	}
@@ -320,7 +318,7 @@ bool Config::write(tostream &os, bool inistyle) const {
     vector<tstring>::const_iterator lit;
     tstring s, sect;
 
-    for (it = amap.begin(); it != amap.end(); it++) {
+    for (it = amap.begin(); it != amap.end(); ++it) {
 	Value *val = it->second;
 
 	s = it->first;
@@ -333,7 +331,7 @@ bool Config::write(tostream &os, bool inistyle) const {
 	lines.push_back(s);
     }
     sort(lines.begin(), lines.end());
-    for (lit = lines.begin(); lit != lines.end(); lit++) {
+    for (lit = lines.begin(); lit != lines.end(); ++lit) {
 	os << *lit << endl;
 	(void)inistyle;
 	// TODO - write ini style cfg
