@@ -9,19 +9,13 @@ if [ "$1" = "-?" -o "$1" = "-h" ]; then
     exit 1
 fi
 
-if [ `uname` = "Darwin" ]; then
-    libtoolize=glibtoolize
-else
-    libtoolize=libtoolize
-fi
-
 set -x
 
 make distclean > /dev/null 2>&1
 aclocal || exit 1
 #aclocal -I ${TOOLDIR}/share/aclocal || exit 1
 autoconf || exit 1
-$libtoolize --automake || exit 1
+libtoolize --automake || exit 1
 automake -a || exit 1
 ./configure $* || exit 1
 make
