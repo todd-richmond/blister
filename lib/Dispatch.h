@@ -18,7 +18,7 @@
 #ifndef Dispatch_h
 #define Dispatch_h
 
-#include <map>
+#include <set>
 #include STL_HASH_MAP
 #include "Config.h"
 #include "Log.h"
@@ -80,7 +80,8 @@ protected:
 
 private:
     typedef hash_map<socket_t, DispatchSocket *> socketmap;
-    typedef multimap<msec_t, DispatchTimer *> timermap;
+    typedef set<DispatchTimer *, bool(*)(const DispatchTimer *a,
+	const DispatchTimer *b)> timerset;
 
     friend class DispatchObj;
     void addReady(DispatchObj &obj, bool hipri, Msg reason);
@@ -114,7 +115,7 @@ private:
     socketmap smap;
     uint stacksz;
     volatile uint threads;
-    timermap timers;
+    timerset timers;
 #ifdef DSP_WIN32_ASYNC
     volatile ulong interval;
     HWND wnd;
@@ -235,6 +236,9 @@ public:
 	dspr.addTimer(*this, to);
     }
     virtual void cancel(void) { dspr.cancelTimer(*this); }
+    static bool less(const DispatchTimer *a, const DispatchTimer *b) {
+	return a->due < b->due;
+    }
 
 protected:
     ulong to;

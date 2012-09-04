@@ -100,7 +100,7 @@ typedef struct pollfd event_t;
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
-    shutdown(true), threads(0),
+    shutdown(true), threads(0), timers(DispatchTimer::less),
 #ifdef DSP_WIN32_ASYNC
      interval(DSP_NEVER), wnd(0)
 #else
@@ -123,7 +123,7 @@ Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
 }
 
 bool Dispatcher::exec() {
-    while (!shutdown && rlist) {
+    while (rlist && !shutdown) {
 	DispatchObj *obj = rlist.pop_front();
 	DispatchObj::Group *group = obj->group;
 
@@ -132,13 +132,13 @@ bool Dispatcher::exec() {
 	    group->glist.push_back(obj);
 	    continue;
 	}
-	obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
 	group->active = true;
+	obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
 	lock.unlock();
 	obj->dcb(obj);
 	lock.lock();
-	group->active = false;
 	obj->flags &= ~DSP_Active;
+	group->active = false;
 	if (group->glist) {
 	    if (obj->flags & DSP_Ready) {
 		obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
@@ -159,21 +159,20 @@ bool Dispatcher::exec() {
 }
 
 int Dispatcher::run() {
-    Lifo::Waiting waiting(lifo);
+    Lifo::Waiting waiting;
 
     priority(-1);
     lock.lock();
     while (exec()) {
-	bool b = threads == 1;
+	bool b = threads == lifo.size() + 1;
 
 	lock.unlock();
 	b = lifo.wait(waiting, b ? INFINITE : MAX_WAIT_TIME);
 	lock.lock();
-	if (!b && threads > 1)
+	if (!b)
 	    break;
     }
     threads--;
-    cout << "tfr exit thread"<<endl;
     lock.unlock();
     return 0;
 }
@@ -190,7 +189,7 @@ int Dispatcher::onStart() {
     DispatchTimer *dt = NULL;
     MSG msg;
     msec_t now;
-    timermap::iterator tit;
+    timerset::iterator tit;
 
     if ((wnd = CreateWindow(DispatchClass, T("Dispatch Window"), 0, 0, 0,
 	CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, GetModuleHandle(NULL), 0)) == NULL) {
@@ -246,7 +245,7 @@ int Dispatcher::onStart() {
 	    now = milliticks();
 	    lock.lock();
 	    while ((tit = timers.begin()) != timers.end()) {
-		dt = tit->second;
+		dt = *tit;
 		if (now < dt->due)
 		    break;
 		timers.erase(tit);
@@ -297,7 +296,7 @@ int Dispatcher::onStart() {
     uint msec;
     msec_t now;
     socketmap::const_iterator sit;
-    timermap::iterator tit;
+    timerset::iterator tit;
     uint u = 0;
 
 #ifndef _WIN32
@@ -330,7 +329,6 @@ int Dispatcher::onStart() {
 	evtfd = -1;
     }
 #endif
-evtfd = -1;//tfr
     if (evtfd != -1)
 	fcntl(evtfd, F_SETFD, 1);
 #endif
@@ -385,7 +383,7 @@ evtfd = -1;//tfr
 		due = DSP_NEVER_DUE;
 	    }
 	} else {
-	    dt = tit->second;
+	    dt = *tit;
 	    msec = dt->due > now ? (uint)(dt->due - now) : 0;
 	    due = now + msec;
 	}
@@ -485,7 +483,7 @@ evtfd = -1;//tfr
 #endif
 	}
 	while ((tit = timers.begin()) != timers.end()) {
-	    dt = tit->second;
+	    dt = *tit;
 	    if (now < dt->due)
 		break;
 	    timers.erase(tit);
@@ -506,7 +504,7 @@ evtfd = -1;//tfr
 #endif
 
 void Dispatcher::cleanup(void) {
-    timermap::iterator tit;
+    timerset::iterator tit;
     Thread *t = NULL;
 
     do {
@@ -528,7 +526,7 @@ void Dispatcher::cleanup(void) {
 	lock.lock();
     }
     while ((tit = timers.begin()) != timers.end()) {
-	DispatchTimer *dt = tit->second;
+	DispatchTimer *dt = *tit;
 
 	lock.unlock();
 	dt->terminate();
@@ -707,7 +705,6 @@ void Dispatcher::wake(uint tasks, bool master) {
 		if (threads >= maxthreads || shutdown)
 		    break;
 		threads++;
-		cout<<"tfr threads "<<threads<<" tasks "<<tasks<<endl;
 		lock.unlock();
 		t = new Thread();
 		t->start(worker, this, stacksz, this);
@@ -725,9 +722,7 @@ bool Dispatcher::timer(DispatchTimer &dt, msec_t tmt) {
 	removeTimer(dt);
     dt.due = tmt;
     if (tmt != DSP_NEVER_DUE) {
-	pair<msec_t, DispatchTimer *> p(tmt, &dt);
-
-	timers.insert(p);
+	timers.insert(&dt);
 	if (tmt + 1 < due) {
 	    due = tmt;
 	    return true;
@@ -764,19 +759,10 @@ void Dispatcher::cancelTimer(DispatchTimer &dt) {
 
 void Dispatcher::removeTimer(DispatchTimer &dt) {
     dt.flags &= ~DSP_Scheduled;
-    if (dt.due == DSP_NEVER_DUE)
-    	return;
-    for (timermap::iterator it = timers.find(dt.due); it != timers.end(); ++it) {
-	DispatchTimer *p = it->second;
-
-	if (p == &dt) {
-	    timers.erase(it);
-	    break;
-	} else if (p->due != dt.due) {
-	    break;
-	}
+    if (dt.due != DSP_NEVER_DUE) {
+	timers.erase(&dt);
+	dt.due = DSP_NEVER_DUE;
     }
-    dt.due = DSP_NEVER_DUE;
 }
 
 void Dispatcher::cancelSocket(DispatchSocket &ds) {
@@ -971,8 +957,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, Msg m) {
 			0, &ds);
 		}
 	    }
-	    while ((nevts = kevent(evtfd, evts, nevts, evts, MIN_EVENTS, &ts))
-		== -1 && interrupted(errno))
+	    while ((nevts = kevent(evtfd, evts, nevts, evts, MIN_EVENTS, &ts)) ==
+		-1 && interrupted(errno))
 		;
 	    if (nevts > 0) {
 		lkr.lock();
