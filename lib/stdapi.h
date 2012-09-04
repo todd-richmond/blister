@@ -68,6 +68,7 @@ typedef unsigned short word;
 #define rename _rename
 #define __STDC__ 1
 #include <direct.h>
+#include <fcntl.h>
 #include <io.h>
 #include <stdio.h>
 #undef __STDC__
@@ -341,6 +342,7 @@ EXTERNC_
 #endif
 
 #include <unistd.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -349,14 +351,14 @@ EXTERNC_
 #include <sys/time.h>
 #include <sys/uio.h>
 
-#ifndef ENOSR
-#define ENOSR		ENOBUFS
-#endif
-
 #define __declspec(x)
 #define __cdecl
 #define __fastcall
 #define __stdcall
+
+#ifndef ENOSR
+#define ENOSR		ENOBUFS
+#endif
 
 #ifndef O_BINARY
 #define O_BINARY	0
@@ -380,8 +382,23 @@ typedef unsigned int uint;
 typedef unsigned long ulong;
 #endif
 
+#ifdef __APPLE__
+#define CLOCK_REALTIME	0
+#define CLOCK_MONOTONIC	1
+
+EXTERNC
+int clock_gettime(int, struct timespec *ts);
+EXTERNC_
+#endif
+#ifndef CLOCK_REALTIME_FAST
+#define CLOCK_REALTIME_FAST CLOCK_REALTIME
+#define CLOCK_MONOTONIC_FAST CLOCK_MONOTONIC
+#endif
+
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun__)
-extern int wcscasecmp(const wchar *, const wchar *);
+EXTERNC
+int wcscasecmp(const wchar *, const wchar *);
+EXTERNC_
 #endif
 
 #endif // _WIN32
@@ -726,7 +743,7 @@ protected:
 
 private:
     nocopy(const nocopy &);
-    const nocopy& operator =(const nocopy &);
+    const nocopy & operator =(const nocopy &);
 };
 
 inline int to_lower(int c) { return _tolower((uchar)(c)); }
@@ -746,6 +763,20 @@ inline int stringicmp(const char *a, const char *b) {
 
 inline int stringicmp(const wchar *a, const wchar *b) {
     return wcsicmp(a, b);
+}
+
+template<class C>
+inline bool stringeq(const C *a, const C *b) {
+    do {
+	if (*a != *b)
+	    return false;
+    } while (a++, *b++);
+    return true;
+}
+
+template<class C>
+inline bool stringeq(const C &a, const C &b) {
+    return stringeq(a.c_str(), b.c_str());
 }
 
 template<class C>
@@ -773,17 +804,31 @@ inline size_t stringihash(const wchar *s) {
     return ret;
 }
 
+template<class C>
+inline bool stringless(const C *a, const C *b) {
+    do {
+	if (*a < *b)
+	    return true;
+	else if (*a != *b)
+	    return false;
+    } while (a++, *b++);
+    return false;
+}
+
+template<class C>
+inline bool stringless(const C &a, const C &b) {
+    return stringless(a.c_str(), b.c_str());
+}
+
 template <class C>
 struct strhash {
     size_t operator ()(const C *s) const { return stringhash(s); }
     size_t operator ()(const basic_string<C> &s) const {
 	return stringhash(s.c_str());
     }
-    bool operator ()(const C *a, const C *b) const {
-	return stringcmp(a, b) < 0;
-    }
+    bool operator ()(const C *a, const C *b) const { return stringless(a, b); }
     bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return stringcmp(a.c_str(), b.c_str()) < 0;
+	return stringless(a, b);
     }
     STL_HASH_PARMS
 };
@@ -805,11 +850,13 @@ struct strihash {
 
 template<class C>
 struct strhasheq {
-    bool operator()(const C *a, const C *b) const {
-	return stringcmp(a, b) == 0;
-    }
+    bool operator()(const C *a, const C *b) const { return stringeq(a, b); }
     bool operator()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return stringcmp(a.c_str(), b.c_str()) == 0;
+	return stringeq(a, b);
+    }
+    static bool equal(const C *a, const C *b) { return stringeq(a, b); }
+    static bool equal(const basic_string<C> &a, const basic_string<C> &b) {
+	return stringeq(a, b);
     }
 };
 
@@ -821,17 +868,22 @@ struct strihasheq {
     bool operator()(const basic_string<C> &a, const basic_string<C> &b) const {
 	return stringicmp(a.c_str(), b.c_str()) == 0;
     }
+    static bool equal(const C *a, const C *b) { return stringicmp(a, b) == 0; }
+    static bool equal(const basic_string<C> &a, const basic_string<C> &b) {
+	return stringicmp(a, b) == 0;
+    }
 };
 
 template <class C>
 struct strless {
-    bool operator ()(const C *a, const C *b) const {
-	return stringcmp(a, b) < 0;
-    }
+    bool operator ()(const C *a, const C *b) const { return stringless(a, b); }
     bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return stringcmp(a.c_str(), b.c_str()) < 0;
+	return stringless(a, b);
     }
-    static bool less(const C *a, const C *b) { return stringcmp(a, b) < 0; }
+    static bool less(const C *a, const C *b) { return stringless(a, b); }
+    static bool less(const basic_string<C> &a, const basic_string<C> &b) {
+	return stringless(a, b);
+    }
 };
 
 template <class C>
@@ -843,6 +895,9 @@ struct striless {
 	return stringicmp(a.c_str(), b.c_str()) < 0;
     }
     static bool less(const C *a, const C *b) { return stringicmp(a, b) < 0; }
+    static bool less(const basic_string<C> &a, const basic_string<C> &b) {
+	return stringicmp(a, b) < 0;
+    }
 };
 
 #endif
