@@ -504,7 +504,7 @@ int link(const char *from, const char *to) {
     WIN32_STREAM_ID sid;
     DWORD out;
     LPVOID lpContext = NULL;
-    WCHAR FileLink[MAX_PATH];
+    WCHAR FileLink[MAX_PATH + 1];
     WCHAR buf[MAX_PATH];
     LPWSTR FilePart;
     int sz;

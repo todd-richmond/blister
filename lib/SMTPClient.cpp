@@ -80,8 +80,8 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	    while (isspace(uubuf[uusz - 1]))
 		uubuf[--uusz] = '\0';
 	    ret = ret && cmd(achartotchar(uubuf), NULL, 235);
+	    delete [] uubuf;
 	}
-	delete [] uubuf;
     }
     return ret;
 }
