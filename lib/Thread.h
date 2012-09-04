@@ -291,34 +291,7 @@ protected:
 
 #define DEFAULT_SPINS 40
 
-#ifndef NO_ATOMIC_LOCK
-
-class SpinLock: nocopy {
-public:
-    SpinLock(uint cnt = DEFAULT_SPINS): lck(0) { spin(cnt); }
-
-    void lock(void) {
-	if (atomic_lck(lck)) {
-	    uint spin = spins;
-
-	    do {
-		if (!spin--) {
-		    THREAD_YIELD();
-		    spin = spins;
-		}
-	    } while (atomic_lck(lck));
-	}
-    }
-    void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
-    bool trylock(void) { return atomic_lck(lck) == 0; }
-    void unlock(void) { atomic_clr(lck); }
-
-private:
-    atomic_t lck;
-    uint spins;
-};
-
-#else
+#ifdef NO_ATOMIC_LOCK
 
 class SpinLock: nocopy {
 public:
@@ -337,6 +310,33 @@ public:
 
 protected:
     pthread_spinlock_t lck;
+};
+
+#else
+
+class SpinLock: nocopy {
+public:
+    SpinLock(uint cnt = DEFAULT_SPINS): lck(0) { spin(cnt); }
+
+    void lock(void) {
+	while (atomic_lck(lck)) {
+	    uint spin = spins;
+
+	    while (lck) {
+		if (!spin--) {
+		    THREAD_YIELD();
+		    spin = spins;
+		}
+	    }
+	}
+    }
+    void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
+    bool trylock(void) { return atomic_lck(lck) == 0; }
+    void unlock(void) { atomic_clr(lck); }
+
+private:
+    atomic_t lck;
+    uint spins;
 };
 
 #endif
@@ -406,10 +406,11 @@ protected:
     HANDLE hdl;
 };
 
-class Semaphore: nocopy {
+class _Semaphore: nocopy {
 public:
-    Semaphore(uint init = 0, uint max = LONG_MAX, const tchar *name = NULL):
-	hdl(NULL) { open(init, max, name); }
+    Semaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
+	open(init, name);
+    }
     ~Semaphore() { close(); }
 
     operator HANDLE(void) const { return hdl; }
@@ -419,20 +420,38 @@ public:
 	HANDLE h = hdl;
 
 	hdl = NULL;
-	return h ? CloseHandle(h) != 0 : true;
+	return h == NULL || CloseHandle(h) != 0;
     }
-    bool open(uint init = 0, uint max = LONG_MAX, const tchar *name = NULL) {
-	close();
-	return (hdl = CreateSemaphore(NULL, init, max, name)) != NULL;
-    }
-    bool release(uint cnt = 1) { return ReleaseSemaphore(hdl, cnt, NULL) != 0; }
+    bool set(uint cnt = 1) { return ReleaseSemaphore(hdl, cnt, NULL) != 0; }
+    bool trywait(void) { return WaitForSingleObject(hdl, 0) != WAIT_TIMEOUT; }
     bool wait(ulong msec = INFINITE) {
 	return WaitForSingleObject(hdl, msec) != WAIT_TIMEOUT;
     }
 
 protected:
     HANDLE hdl;
+
+    bool _open(const tchar *name, uint init, bool exclusive) {
+	close();
+	hdl = CreateSemaphore(NULL, init, LONG_MAX, name);
+	if (hdl == NULL && !exclusive)
+	    hdl = OpenSemaphore(SEMAPHORE_ALL_ACCESS, 0, name);
+	return hdl != NULL;
+    }
 };
+
+class Semaphore: public _Semaphore {
+    Semaphore(uint init = 0): _Semaphore(NULL, init) {}
+
+    bool open(uint init = 0) { return _open(NULL, init); }
+}
+
+class SharedSemaphore: public _Semaphore {
+    Semaphore(const tchar *name, uint init = 0): _Semaphore(name, init) {}
+
+    bool open(const tchar *name = NULL, uint init = 0, bool exclusive = false) {
+	return _open(name, init, exclusive);
+}
 
 class Condvar: nocopy {
 public:
@@ -452,7 +471,7 @@ public:
 	    if (count < cnt)
 		cnt = count;
 	    pending += cnt;
-	    sema4.release(cnt);
+	    sema4.set(cnt);
 	}
 	olck.unlock();
     }
@@ -530,6 +549,194 @@ protected:
 
 typedef Lock Mutex;
 
+#ifdef __APPLE__
+#define thread_t mach_thread_t
+#include <mach/mach_init.h>
+#include <mach/semaphore.h>
+#include <mach/task.h>
+#undef thread_t
+
+class Semaphore: nocopy {
+public:
+    Semaphore(uint init = 0): hdl(0) { open(init); }
+    ~Semaphore() { close(); }
+
+    operator semaphore_t(void) const { return hdl; }
+    semaphore_t handle(void) const { return hdl; }
+
+    bool close(void) {
+	semaphore_t h = hdl;
+
+	hdl = 0;
+	return h == 0 || semaphore_destroy(mach_task_self(), h) == KERN_SUCCESS;
+    }
+    bool open(uint init = 0) {
+	close();
+	semaphore_create(mach_task_self(), &hdl, SYNC_POLICY_FIFO, init);
+	return hdl != 0;
+    }
+    bool set(uint cnt = 1) {
+	while (cnt--) {
+	    if (semaphore_signal(hdl))
+		return false;
+	}
+	return true;
+    }
+    bool trywait(void) {
+	mach_timespec ts = { 0, 0 };
+
+	return semaphore_timedwait(hdl, ts) == 0;
+    }
+    bool wait(ulong msec = INFINITE) {
+	if (msec == INFINITE) {
+	    return semaphore_wait(hdl) == 0;
+	} else {
+	    mach_timespec ts;
+
+	    ts.tv_sec = msec / 1000;
+	    ts.tv_nsec = (msec % 1000) * 1000000;
+	    return semaphore_timedwait(hdl, ts) == 0;
+	}
+    }
+
+protected:
+    semaphore_t hdl;
+};
+
+#else
+
+#include <semaphore.h>
+
+class Semaphore: nocopy {
+public:
+    Semaphore(uint init = 0): hdl(-1) { open(init); }
+    ~Semaphore() { close(); }
+
+    operator sem_t(void) const { return hdl; }
+    sem_t handle(void) const { return hdl; }
+    int get(void) const {
+	int ret;
+
+	return sem_getvalue((sem_t *)&hdl, &ret) ? -1 : ret;
+    }
+
+    bool close(void) {
+	sem_t h = hdl;
+
+	hdl = -1;
+	return h == -1 ? true : sem_destroy(&h);
+    }
+    bool open(uint init = 0) {
+	close();
+	sem_init(&hdl, 0, init);
+	return hdl != -1;
+    }
+    bool set(uint cnt = 1) {
+	while (cnt--) {
+	    if (sem_post(&hdl))
+		return false;
+	}
+	return true;
+    }
+    bool trywait(void) { return sem_trywait(&hdl) == 0; }
+    bool wait(ulong msec = INFINITE) {
+	if (msec == INFINITE) {
+	    return sem_wait(&hdl) == 0;
+	} else {
+	    timespec ts;
+
+	    clock_gettime(CLOCK_REALTIME, &ts);
+	    ts.tv_sec += msec / 1000;
+	    ts.tv_nsec += (msec % 1000) * 1000000;
+	    return sem_timedwait(&hdl, &ts) == 0;
+	}
+    }
+
+protected:
+    sem_t hdl;
+};
+
+#endif
+
+#include <sys/ipc.h>
+#include <sys/sem.h>
+
+class SharedSemaphore: nocopy {
+public:
+    SharedSemaphore(const tchar *name = NULL, uint init = 0): hdl(-1) {
+	open(name, init);
+    }
+    ~SharedSemaphore() { close(); }
+
+    operator int(void) const { return hdl; }
+    int handle(void) const { return hdl; }
+    int get(void) const { return semctl(hdl, 0, GETVAL); }
+
+    bool close(void) { return true; }
+    bool erase(void) {
+	int h = hdl;
+
+	hdl = -1;
+	return h == -1 || semctl(h, 0, IPC_RMID) == 0;
+    }
+    bool open(const tchar *name = NULL, uint init = 0, bool exclusive = false) {
+	int key = (int)(name ? stringhash(name) : IPC_PRIVATE);
+
+	close();
+	if ((hdl = semget(key, 1, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR)) ==
+	    -1) {
+	    if (exclusive)
+		return false;
+	} else {
+	    semctl(hdl, 0, SETVAL, init);
+	    return true;
+	}
+	hdl = semget(key, 1, IPC_CREAT | S_IRUSR | S_IWUSR);
+	return hdl != -1;
+    }
+    bool set(uint cnt = 1) {
+	sembuf op;
+
+	op.sem_num = 0;
+	op.sem_op = cnt;
+	op.sem_flg = 0;
+	return semop(hdl, &op, 1) == 0;
+    }
+    bool trywait(void) {
+	sembuf op;
+
+	op.sem_num = 0;
+	op.sem_op = -1;
+	op.sem_flg = IPC_NOWAIT;
+	return semop(hdl, &op, 1) == 0;
+    }
+    bool wait(ulong msec = INFINITE) {
+	sembuf op;
+
+	op.sem_num = 0;
+	op.sem_op = -1;
+	op.sem_flg = 0;
+#ifdef __APPLE__
+	(void)msec;
+	return semop(hdl, &op, 1) == 0;
+#else
+	if (msec == INFINITE) {
+	    return semop(hdl, &op, 1) == 0;
+	} else {
+	    timespec ts;
+
+	    clock_gettime(CLOCK_REALTIME, &ts);
+	    ts.tv_sec += msec / 1000;
+	    ts.tv_nsec += (msec % 1000) * 1000000;
+	    return semtimedop(hdl, &op, 1, &ts) == 0;
+	}
+#endif
+    }
+
+protected:
+    int hdl;
+};
+
 class Condvar: nocopy {
 public:
     Condvar(Lock &lck): lock(lck) { pthread_cond_init(&cv, NULL); }
@@ -545,7 +752,7 @@ public:
 
 	    clock_gettime(CLOCK_REALTIME, &ts);
 	    ts.tv_sec += msec / 1000;
-	    ts.tv_nsec += (msec % 1000) * 1000;
+	    ts.tv_nsec += (msec % 1000) * 1000000;
 	    return pthread_cond_timedwait(&cv, lock, &ts) == 0;
 	}
     }
@@ -553,7 +760,7 @@ public:
 	timespec ts(now);
 
 	ts.tv_sec += msec / 1000;
-	ts.tv_nsec += (msec % 1000) * 1000;
+	ts.tv_nsec += (msec % 1000) * 1000000;
 	return pthread_cond_timedwait(&cv, lock, &ts) == 0;
     }
     bool wait(const timespec &ts) {
@@ -735,69 +942,61 @@ class Lifo {
 public:
     class Waiting {
     public:
-	Condvar cv;
 	Waiting *next;
+	Semaphore sema4;
 
-	Waiting(Lifo &lifo): cv(lifo.lck), next(NULL) {}
+	Waiting(): next(NULL) {}
     };
 
-    Lifo(): head(NULL), preset(false) {}
+    Lifo(): head(NULL), sz(0) {}
+    ~Lifo() { broadcast(); }
 
     operator bool(void) const { return head != NULL; }
     bool empty(void) const { return head == NULL; }
+    uint size(void) const { return sz; }
 
-    void broadcast(void) { if (head) set((uint)-1); }
+    void broadcast(void) { set((uint)-1); }
     uint set(uint count = 1) {
 	lck.lock();
-	if (head) {
-	    for (;;) {
-		Waiting *w = head;
+	while (head && count) {
+	    Waiting *w = head;
 
-		head = head->next;
-		lck.unlock();
-		w->cv.set();
-		if (--count) {
-		    lck.lock();
-		    if (!head) {
-			lck.unlock();
-			break;
-		    }
-		} else {
-		    break;
-		}
-	    }
-	    return count;
-	} else if (!preset) {
-	    preset = true;
-	    count--;
+	    head = w->next;
+	    sz--;
+	    lck.unlock();
+	    w->sema4.set();
+	    if (!--count)
+		return 0;
+	    lck.lock();
 	}
 	lck.unlock();
 	return count;
     }
     bool wait(Waiting &w, ulong msec = INFINITE) {
-	FastLocker lkr(lck);
-
-	if (preset) {
-	    preset = false;
-	    return true;
-	}
+	lck.lock();
 	w.next = head;
 	head = &w;
-	if (!w.cv.wait(msec)) {
-	    for (Waiting **ww = &head; *ww; ww = &(*ww)->next) {
+	sz++;
+	lck.unlock();
+	if (!w.sema4.wait(msec)) {
+	    lck.lock();
+	    for (Waiting **ww = (Waiting **)&head; *ww; ww = &(*ww)->next) {
 		if (*ww == &w) {
 		    *ww = w.next;
+		    sz--;
+		    lck.unlock();
 		    return false;
 		}
 	    }
+	    lck.unlock();
 	}
 	return true;
     }
 
 private:
-    Waiting *head;
-    Lock lck;
-    bool preset;
+    Waiting * volatile head;
+    SpinLock lck;
+    volatile uint sz;
 };
 
 // Thread routines
