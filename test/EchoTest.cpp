@@ -96,7 +96,7 @@ public:
     };
 
     bool listen(const tchar *host, ulong timeout);
-    void connect(const Sockaddr &a, ulong count, ulong delay, ulong timeout,
+    void connect(const Sockaddr &a, uint count, ulong delay, ulong timeout,
 	ulong wait);
 
 private:
@@ -105,7 +105,7 @@ private:
 
 static long loops = -1;
 static char *data;
-static ulong dsz;
+static uint dsz;
 static volatile bool qflag;
 static TSNumber<uint> ops, errs;
 static TSNumber<usec_t> usecs;
@@ -257,7 +257,7 @@ void EchoTest::EchoServerSocket::output() {
     }
 }
 
-void EchoTest::connect(const Sockaddr &addr, ulong count, ulong delay,
+void EchoTest::connect(const Sockaddr &addr, uint count, ulong delay,
     ulong tmt, ulong wait) {
     for (uint u = 0; u < count; u++) {
 	EchoClientSocket *ec = new EchoClientSocket(*this, addr, tmt, wait);
@@ -279,7 +279,6 @@ bool EchoTest::listen(const tchar *host, ulong timeout) {
 
 static void signal_handler(int) { qflag = true; }
 
-
 int tmain(int argc, tchar *argv[]) {
     Sockaddr addr;
     bool client = true, server = true;
@@ -291,7 +290,8 @@ int tmain(int argc, tchar *argv[]) {
     msec_t last, now;
     tstring s;
     struct stat sbuf;
-    ulong delay = 20, sockets = 20, threads = 20, tmt = TIMEOUT, wait = 0;
+    ulong delay = 20, tmt = TIMEOUT, wait = 0;
+    uint sockets = 20, threads = 20;
 
     if (argc == 1 || !tstrcmp(argv[1], T("-?"))) {
 	tcerr << T("Usage: echotest [-c] [-d delay] [-h host[:port]] [-e sockets]\n")
@@ -320,7 +320,7 @@ int tmain(int argc, tchar *argv[]) {
 	} else if (!tstricmp(argv[i], T("-l"))) {
 	    loops = ttol(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-p"))) {
-	    threads = ttol(argv[++i]);
+	    threads = (uint)ttol(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-s"))) {
 	    client = false;
 	} else if (!tstricmp(argv[i], T("-t"))) {
@@ -340,7 +340,7 @@ int tmain(int argc, tchar *argv[]) {
 	    tcerr << T("echotest: unable to open ") << path << endl;
 	    return 1;
 	}
-	dsz = (ulong)sbuf.st_size;
+	dsz = (uint)sbuf.st_size;
 	data = new char[dsz];
 	read(fd, data, dsz);
 	close(fd);
@@ -355,7 +355,7 @@ int tmain(int argc, tchar *argv[]) {
 	tcerr << T("echo: unknown host ") << host << endl;
 	return 1;
     }
-    if (!ec.start((uint)threads, 32 * 1024)) {
+    if (!ec.start(threads, 32 * 1024)) {
 	tcerr << T("echo: unable to start ") << host << endl;
 	return 1;
     }
