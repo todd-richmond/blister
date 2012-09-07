@@ -129,11 +129,11 @@ public:
 	    int sz;
 
 	    if (left) {
-		if ((sz = fd.write(pb, (size_t)left)) != left && sz)
+		if ((sz = fd.write(pb, (uint)left)) != left && sz)
 		    return -1;
 		setp(pb, pb + bufsz);
 	    }
-	    if ((sz = fd.read(buf, (size_t)bufsz)) == -1)
+	    if ((sz = fd.read(buf, (uint)bufsz)) == -1)
 		return -1;
 	    setg(buf, buf, buf + sz);
 	    return *buf;
@@ -170,21 +170,21 @@ public:
 	p += left;
 	left = (pptr() - pb);
 	if (left) {				// flush output
-	    if (fd.write(pb, (size_t)left) != (int)left)
+	    if (fd.write(pb, (uint)left) != (int)left)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
 	setg(buf, buf, buf);
 	if (sz >= bufsz || !bufsz) {		// read directly into user buf
 	    while (sz) {
-		if ((in = fd.read(p, (size_t)sz)) <= 0)
+		if ((in = fd.read(p, (uint)sz)) <= 0)
 		    return size - sz;
 		p += in;
 		sz -= in;
 	    }
 	} else {				// read into stream buf
 	    while (sz) {
-		if ((in = fd.read(buf, (size_t)bufsz)) <= 0) {
+		if ((in = fd.read(buf, (uint)bufsz)) <= 0) {
 		    return size - sz;
 		} else if (in < sz) {
 		    memcpy(p, buf, in);
@@ -221,7 +221,7 @@ public:
 	    pbump((int)sz);
 	} else {
 	    left = (streamsize)(pp - pb);
-	    if (left && fd.write(pb, (size_t)left) != (int)left)
+	    if (left && fd.write(pb, (uint)left) != (int)left)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}

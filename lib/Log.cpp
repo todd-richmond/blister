@@ -498,7 +498,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    ss += ':';
 	ss += ' ';
 	ss += tstringtoastring(strbuf.substr(tmlen));
-	syslogsock.write(ss.c_str(), ss.size(), syslogaddr);
+	syslogsock.write(ss.c_str(), (uint)ss.size(), syslogaddr);
     }
     if (mailenable && clvl <= maillvl && !mailto.empty()) {
 	SMTPClient smtp;
