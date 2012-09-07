@@ -30,7 +30,7 @@
 
 #define socklen_t	int
 #define SSET_FD(i)	fds->fd_array[i]
-#define SSIZE_T		int
+#define SOCK_SIZE_T	int
 
 typedef SOCKET socket_t;
 
@@ -49,7 +49,7 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #define ioctlsocket	ioctl
 #define INVALID_SOCKET	-1
 #define SSET_FD(i)	fds[i].fd
-#define SSIZE_T		size_t
+#define SOCK_SIZE_T	size_t
 #define WSAEALREADY	EALREADY
 #define WSAEINPROGRESS	EINPROGRESS
 #define WSAEINTR	EINTR
@@ -316,13 +316,13 @@ public:
     int wwindow(void) const { return getsockopt(SOL_SOCKET, SO_SNDLOWAT); }
     bool wwindow(int size) { return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size); }
 
-    int read(void *buf, size_t len) const;
-    int read(void *buf, size_t len, Sockaddr &sa) const;
+    int read(void *buf, uint len) const;
+    int read(void *buf, uint len, Sockaddr &sa) const;
     template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
     long readv(iovec *iov, int count) const;
     long readv(iovec *iov, int count, const Sockaddr &sa) const;
-    int write(const void *buf, size_t len) const;
-    int write(const void *buf, size_t len, const Sockaddr &sa) const;
+    int write(const void *buf, uint len) const;
+    int write(const void *buf, uint len, const Sockaddr &sa) const;
     template<class C> int write(const C &c) const { return write(&c, sizeof (c)); }
     long writev(const iovec *iov, int count) const;
     long writev(const iovec *iov, int count, const Sockaddr &sa) const;
@@ -335,8 +335,8 @@ protected:
 	~SocketBuf() { if (own) close(); }
 
 	bool blocked(void) const { return ::blocked(err); }
-	bool check(SSIZE_T ret) {
-	    if (ret == (SSIZE_T)-1) {
+	bool check(int ret) {
+	    if (ret == -1) {
 		err = sockerrno();
 		return false;
 	    } else {
@@ -370,7 +370,7 @@ protected:
     };
     
 protected:
-    bool check(SSIZE_T ret) const { return sbuf->check(ret); }
+    bool check(int ret) const { return sbuf->check(ret); }
     socket_t movehigh(socket_t fd);
     bool rwpoll(bool rd) const;
 
@@ -500,7 +500,7 @@ public:
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
-    streamsize read(void *p, streamsize sz) { return sb.read(p, sz); }
+    streamsize read(void *p, streamsize sz) { return sb.read(p, (uint)sz); }
     template<class C> streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
 
 private:
@@ -518,8 +518,12 @@ public:
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
-    streamsize write(const void *p, streamsize sz) { return sb.write(p, sz); }
-    template<class C> streamsize write(const C &c) { return sb.write(&c, sizeof (c)); }
+    streamsize write(const void *p, streamsize sz) {
+	return sb.write(p, (uint)sz);
+    }
+    template<class C> streamsize write(const C &c) {
+	return sb.write(&c, sizeof (c));
+    }
 
 private:
     socketbuf sb;
@@ -536,10 +540,14 @@ public:
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
-    streamsize read(void *p, streamsize sz) { return sb.read(p, sz); }
-    streamsize write(const void *p, streamsize sz) { return sb.write(p, sz); }
+    streamsize read(void *p, streamsize sz) { return sb.read(p, (uint)sz); }
+    streamsize write(const void *p, streamsize sz) {
+	return sb.write(p, (uint)sz);
+    }
     template<class C> streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
-    template<class C> streamsize write(const C &c) { return sb.write(&c, sizeof (c)); }
+    template<class C> streamsize write(const C &c) {
+	return sb.write(&c, sizeof (c));
+    }
 
 private:
     socketbuf sb;

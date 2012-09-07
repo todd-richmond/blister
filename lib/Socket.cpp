@@ -559,65 +559,66 @@ bool Socket::rwpoll(bool rd) const {
     return ret;
 }
 
-int Socket::read(void *buf, size_t sz) const {
-    SSIZE_T in;
+int Socket::read(void *buf, uint sz) const {
+    int in;
 
     do {
 	if (!rwpoll(true))
 	    return -1;
-	if (check(in = (SSIZE_T)recv(sbuf->sock, (char *)buf, (SSIZE_T)sz, 0)))
+	if (check(in = (int)recv(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz, 0)))
 	    break;
     } while (interrupted());
     if (in) {
-	return in <= 0 && blocked() ? 0 : (int)in;
+	return in <= 0 && blocked() ? 0 : in;
     } else {
 	sbuf->err = EOF;
 	return -1;
     }
 }
 
-int Socket::read(void *buf, size_t sz, Sockaddr &sa) const {
+int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
     socklen_t asz = sa.size();
-    SSIZE_T in;
+    int in;
 
     do {
 	if (!rwpoll(true))
 	    return -1;
-	if (check(in = recvfrom(sbuf->sock, (char *)buf, (SSIZE_T)sz, 0,
-	    sa.data(), &asz)))
+	if (check(in = (int)recvfrom(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz,
+	    0, sa.data(), &asz)))
 	    break;
     } while (interrupted());
     if (in) {
-	return in <= 0 && blocked() ? 0 : (int)in;
+	return in <= 0 && blocked() ? 0 : in;
     } else {
 	sbuf->err = EOF;
 	return -1;
     }
 }
 
-int Socket::write(const void *buf, size_t sz) const {
-    SSIZE_T out;
+int Socket::write(const void *buf, uint sz) const {
+    int out;
 
     do {
 	if (!rwpoll(false))
 	    return -1;
-	if (check(out = send(sbuf->sock, (const char *)buf, (SSIZE_T)sz, 0)))
+	if (check(out = send(sbuf->sock, (const char *)buf, (SOCK_SIZE_T)sz,
+	    0)))
 	    break;
     } while (interrupted());
-    return out <= 0 && blocked() ? 0 : (int)out;
+    return out <= 0 && blocked() ? 0 : out;
 }
 
-int Socket::write(const void *buf, size_t sz, const Sockaddr &sa) const {
-    SSIZE_T out;
+int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
+    int out;
 
     do {
 	if (!rwpoll(false))
 	    return -1;
-	if (check(out = sendto(sbuf->sock, (const char *)buf, (SSIZE_T)sz, 0,
-	    sa, sa.size())))
+	if (check(out = sendto(sbuf->sock, (const char *)buf, (SOCK_SIZE_T)sz,
+	    0, sa, sa.size())))
 	    break;
     } while (interrupted());
-    return out <= 0 && blocked() ? 0 : (int)out;
+    return out <= 0 && blocked() ? 0 : out;
 }
 
 long Socket::writev(const iovec *iov, int count) const {
@@ -646,11 +647,11 @@ long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
     out = 0;
     for (int i = 0; i < count; i++) {
 	if (iov[i].iov_len) {
-	    long len = write(iov[i].iov_base, iov[i].iov_len, sa);
+	    int len = write(iov[i].iov_base, (uint)iov[i].iov_len, sa);
 
-	    if (len != (long)iov[i].iov_len) {
+	    if (len != (int)iov[i].iov_len) {
 		if (len > 0)
-		    out += len;
+		    out += (uint)len;
 		else if (!out && !blocked())
 		    return -1;
 		break;
