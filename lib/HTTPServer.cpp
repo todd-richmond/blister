@@ -119,11 +119,12 @@ void HTTPServerSocket::readhdrs() {
 	char *old = data;
 
 	sz += 1000;
+	room = (uint)(sz - datasz);
 	data = new char[sz];
 	memcpy(data, old, datasz);
 	delete [] old;
     }
-    in = read(data + datasz, sz - datasz);
+    in = read(data + datasz, room);
     if (in == -1) {
 	erase();
 	return;

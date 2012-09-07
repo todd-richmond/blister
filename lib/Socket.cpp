@@ -601,8 +601,8 @@ int Socket::write(const void *buf, uint sz) const {
     do {
 	if (!rwpoll(false))
 	    return -1;
-	if (check(out = send(sbuf->sock, (const char *)buf, (SOCK_SIZE_T)sz,
-	    0)))
+	if (check(out = (int)send(sbuf->sock, (const char *)buf,
+	    (SOCK_SIZE_T)sz, 0)))
 	    break;
     } while (interrupted());
     return out <= 0 && blocked() ? 0 : out;
@@ -614,8 +614,8 @@ int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
     do {
 	if (!rwpoll(false))
 	    return -1;
-	if (check(out = sendto(sbuf->sock, (const char *)buf, (SOCK_SIZE_T)sz,
-	    0, sa, sa.size())))
+	if (check(out = (int)sendto(sbuf->sock, (const char *)buf,
+	    (SOCK_SIZE_T)sz, 0, sa, sa.size())))
 	    break;
     } while (interrupted());
     return out <= 0 && blocked() ? 0 : out;
@@ -629,7 +629,7 @@ long Socket::writev(const iovec *iov, int count) const {
 	NULL));
 #else
     do {
-	if (check(out = ::writev(sbuf->sock, iov, count)))
+	if (check((int)(out = ::writev(sbuf->sock, iov, count))))
 	    break;
     } while (interrupted());
 #endif

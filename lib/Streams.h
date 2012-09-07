@@ -109,7 +109,7 @@ public:
 	char *pb = pbase(), *pp = pptr();
     
 	if (pp > pb) {
-	    if (fd.write(pb, (streamsize)(pp - pb)) != pp - pb)
+	    if (fd.write(pb, (uint)(pp - pb)) != pp - pb)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
