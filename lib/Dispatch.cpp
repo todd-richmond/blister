@@ -372,7 +372,10 @@ int Dispatcher::onStart() {
 #endif
     }
     lock.lock();
+    due = DSP_NEVER_DUE;
     shutdown = false;
+    threads = 0;
+    waking = 0;
     now = milliticks();
     while (!shutdown) {
 	if (evtfd == -1) {
