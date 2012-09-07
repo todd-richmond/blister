@@ -612,7 +612,7 @@ protected:
 
 class Semaphore: nocopy {
 public:
-    Semaphore(uint init = 0): hdl(-1) { open(init); }
+    Semaphore(uint init = 0): valid(false) { open(init); }
     ~Semaphore() { close(); }
 
     operator sem_t(void) const { return hdl; }
@@ -620,19 +620,20 @@ public:
     int get(void) const {
 	int ret;
 
-	return sem_getvalue((sem_t *)&hdl, &ret) ? -1 : ret;
+	return !valid || sem_getvalue((sem_t *)&hdl, &ret) ? -1 : ret;
     }
 
     bool close(void) {
-	sem_t h = hdl;
-
-	hdl = -1;
-	return h == -1 ? true : sem_destroy(&h);
+	if (valid) {
+	    valid = false;
+	    return sem_destroy(&hdl) == 0;
+	}
+	return true;
     }
     bool open(uint init = 0) {
 	close();
-	sem_init(&hdl, 0, init);
-	return hdl != -1;
+	valid = sem_init(&hdl, 0, init) == 0;
+	return valid;
     }
     bool set(uint cnt = 1) {
 	while (cnt--) {
@@ -657,6 +658,7 @@ public:
 
 protected:
     sem_t hdl;
+    bool valid;
 };
 
 #endif
