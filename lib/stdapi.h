@@ -783,7 +783,7 @@ inline size_t stringhash(const C *s) {
     size_t ret = 0;
 
     while (*s)
-	ret += (ret << 3) + *s++;
+	ret = ret * 101 + *s++;
     return ret;
 }
 
@@ -791,7 +791,7 @@ inline size_t stringihash(const char *s) {
     size_t ret = 0;
 
     while (*s)
-	ret += (ret << 3) + to_upper(*s++);
+	ret = ret * 101 + to_upper(*s++);
     return ret;
 }
 
@@ -799,7 +799,7 @@ inline size_t stringihash(const wchar *s) {
     size_t ret = 0;
 
     while (*s)
-	ret += (ret << 3) + towupper(*s++);
+	ret = ret * 101 + towupper(*s++);
     return ret;
 }
 
