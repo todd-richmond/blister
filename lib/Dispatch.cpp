@@ -21,8 +21,7 @@
 #include "Dispatch.h"
 
 static const ulong MAX_SELECT_TIMER = 5 * 1000;
-static const uint MAX_WAKE_THREAD = 8;
-static const int MAX_WAIT_TIME = 4 * 60 * 1000;
+static const int MAX_WAIT_TIME = 2 * 60 * 1000;
 static const int MIN_IDLE_TIMER = 2 * 1000;
 static const int MIN_EVENTS = 32;
 static const int MAX_EVENTS = 128;
@@ -163,13 +162,16 @@ int Dispatcher::run() {
 
     priority(-1);
     lock.lock();
+    waking--;
     while (exec()) {
 	bool b = threads == lifo.size() + 1;
 
 	lock.unlock();
 	b = lifo.wait(waiting, b ? INFINITE : MAX_WAIT_TIME);
 	lock.lock();
-	if (!b)
+	if (b)
+	    waking--;
+	else
 	    break;
     }
     threads--;
@@ -196,7 +198,10 @@ int Dispatcher::onStart() {
 	shutdown = true;
 	return -1;
     }
+    due = DSP_NEVER_DUE;
     shutdown = false;
+    threads = 0;
+    waking = 0;
     while (!shutdown) {
 	GetMessage(&msg, wnd, 0, 0);
 	if (shutdown)
@@ -694,13 +699,15 @@ void Dispatcher::wake(uint tasks, bool master) {
 	if (master)
 	    exec();
     } else {
-	if (tasks > MAX_WAKE_THREAD)
-	    tasks = MAX_WAKE_THREAD;
+	static uint max_wake = Processor::count() * 2;
+
 	while (tasks && rlist) {
+	    if (waking >= max_wake - (master ? 0 : 1))
+		break;
 	    lock.unlock();
 	    if (!threads || lifo.set()) {
 		Thread *t;
-
+		
 		lock.lock();
 		if (threads >= maxthreads || shutdown)
 		    break;
@@ -713,6 +720,7 @@ void Dispatcher::wake(uint tasks, bool master) {
 	    }
 	    tasks--;
 	    lock.lock();
+	    waking++;
 	}
     }
 }
@@ -722,6 +730,7 @@ bool Dispatcher::timer(DispatchTimer &dt, msec_t tmt) {
 	removeTimer(dt);
     dt.due = tmt;
     if (tmt != DSP_NEVER_DUE) {
+	dt.flags |= DSP_Scheduled;
 	timers.insert(&dt);
 	if (tmt + 1 < due) {
 	    due = tmt;

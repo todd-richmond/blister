@@ -114,7 +114,7 @@ private:
     volatile bool shutdown;
     socketmap smap;
     uint stacksz;
-    volatile uint threads;
+    volatile uint threads, waking;
     timerset timers;
 #ifdef DSP_WIN32_ASYNC
     volatile ulong interval;
@@ -237,7 +237,7 @@ public:
     }
     virtual void cancel(void) { dspr.cancelTimer(*this); }
     static bool less(const DispatchTimer *a, const DispatchTimer *b) {
-	return a->due < b->due;
+	return a->due < b->due || (a->due == b->due && a < b);
     }
 
 protected:
