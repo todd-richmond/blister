@@ -18,7 +18,7 @@
 #ifndef Config_h
 #define Config_h
 
-#include STL_HASH_MAP
+#include STL_UNORDERED_MAP_H
 #include "Thread.h"
 
 /*
@@ -133,12 +133,8 @@ private:
 	tstring value;
     };
 
-#ifdef STL_HASH_MAP_4ARGS
-    typedef hash_map<const tchar *, Value *, strhash<tchar>,
-	strhasheq<tchar> > attrmap;
-#else
-    typedef hash_map<const tchar *, Value *, strhash<tchar> > attrmap;
-#endif
+    typedef unordered_map<const tchar *, Value *, strhash<tchar>, streq<tchar> >
+	attrmap;
 
     attrmap amap;
     mutable tstring _buf, _key;

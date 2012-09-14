@@ -26,12 +26,9 @@ const uint WTimeout = 150 * 1000;
 
 class HTTPServerSocket: public DispatchServerSocket {
 public:
-#ifdef STL_HASH_MAP_4ARGS
-    typedef hash_map<const char *, const char *, strihash<char>,
-	strihasheq<char> > attrmap;
-#else
-    typedef hash_map<const char *, const char *, strihash<char> > attrmap;
-#endif
+    typedef unordered_map<const char *, const char *, strihash<char>,
+	strieq<char> > attrmap;
+
     HTTPServerSocket(Dispatcher &dspr, Socket &sock);
     virtual ~HTTPServerSocket();
 

@@ -355,6 +355,11 @@ EXTERNC_
 #define __fastcall
 #define __stdcall
 
+#if defined(__GNUC__)
+#define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
+    __GNUC_PATCHLEVEL__)
+#endif
+
 #ifndef ENOSR
 #define ENOSR		ENOBUFS
 #endif
@@ -701,40 +706,6 @@ inline const string wstringtoastring(const wstring &s) {
 #define tstringbuf	    stringbuf
 #endif
 
-#if defined(__GNUC__)
-#if __GNUC__ >= 3
-using namespace __gnu_cxx;
-#endif
-#define STL_HASH_MAP	<ext/hash_map>
-#define STL_HASH_SET    <ext/hash_set>	
-#define STL_HASH_MAP_4ARGS
-#define STL_HASH_PARMS
-#else
-#define STL_HASH_MAP	    <hash_map>
-#define STL_HASH_SET	    <hash_set>	
-#define STL_HASH_PARMS	    enum { bucket_size = 4, min_buckets = 8 };
-#endif
-
-// structs useful for hash maps
-template<class C>
-struct ptrhash {
-    size_t operator ()(const C *a) const { return (size_t)a; }
-    bool operator ()(const C *a, const C *b) const { return a == b; }
-    STL_HASH_PARMS
-};
-
-struct llonghash {
-    size_t operator ()(llong a) const { return (size_t)((a >> 32) ^ a); }
-    bool operator ()(llong a, llong b) const { return a == b; }
-    STL_HASH_PARMS
-};
-
-struct ullonghash {
-    size_t operator ()(ullong u) const { return (size_t)((u >> 32) ^ u); }
-    bool operator ()(ullong a, ullong b) const { return a == b; }
-    STL_HASH_PARMS
-};
-
 // Derive from this to prohibit copying
 class nocopy {
 protected:
@@ -745,24 +716,13 @@ private:
     const nocopy & operator =(const nocopy &);
 };
 
+// useful string utils
 inline int to_lower(int c) { return _tolower((uchar)(c)); }
 inline int to_upper(int c) { return _toupper((uchar)(c)); }
-
-inline int stringcmp(const char *a, const char *b) {
-    return strcmp(a, b);
-}
-
-inline int stringcmp(const wchar *a, const wchar *b) {
-    return wcscmp(a, b);
-}
-
-inline int stringicmp(const char *a, const char *b) {
-    return stricmp(a, b);
-}
-
-inline int stringicmp(const wchar *a, const wchar *b) {
-    return wcsicmp(a, b);
-}
+inline int stringcmp(const char *a, const char *b) { return strcmp(a, b); }
+inline int stringcmp(const wchar *a, const wchar *b) { return wcscmp(a, b); }
+inline int stringicmp(const char *a, const char *b) { return stricmp(a, b); }
+inline int stringicmp(const wchar *a, const wchar *b) { return wcsicmp(a, b); }
 
 template<class C>
 inline bool stringeq(const C *a, const C *b) {
@@ -777,6 +737,44 @@ template<class C>
 inline bool stringeq(const C &a, const C &b) {
     return stringeq(a.c_str(), b.c_str());
 }
+
+template<class C>
+inline bool stringless(const C *a, const C *b) {
+    do {
+	if (*a < *b)
+	    return true;
+	else if (*a != *b)
+	    return false;
+    } while (a++, *b++);
+    return false;
+}
+
+template<class C>
+inline bool stringless(const C &a, const C &b) {
+    return stringless(a.c_str(), b.c_str());
+}
+
+// cross-compiler support for unordered maps and sets
+#if defined(__GNUC__)
+#if GNUC_VERSION < 40300
+#define STL_UNORDERED_MAP_H	<ext/hash_map>
+#define STL_UNORDERED_SET_H	<ext/hash_set>	
+#define unordered_map		hash_map
+#define unordered_multimap	hash_multimap
+#define unordered_set		hash_set
+#define unordered_multiset	hash_multiset
+using namespace __gnu_cxx;
+#else
+#define STL_UNORDERED_MAP_H	<tr1/unordered_map>
+#define STL_UNORDERED_SET_H	<tr1/unordered_set>	
+using namespace std::tr1;
+#endif
+
+#else
+
+#define STL_UNORDERED_MAP_H	<unordered_map>
+#define STL_UNORDERED_SET_H	<unordered_set>	
+#endif
 
 template<class C>
 inline size_t stringhash(const C *s) {
@@ -804,20 +802,17 @@ inline size_t stringihash(const wchar *s) {
 }
 
 template<class C>
-inline bool stringless(const C *a, const C *b) {
-    do {
-	if (*a < *b)
-	    return true;
-	else if (*a != *b)
-	    return false;
-    } while (a++, *b++);
-    return false;
-}
+struct ptrhash {
+    size_t operator ()(const C *a) const { return (size_t)a; }
+};
 
-template<class C>
-inline bool stringless(const C &a, const C &b) {
-    return stringless(a.c_str(), b.c_str());
-}
+struct llonghash {
+    size_t operator ()(llong a) const { return (size_t)((a >> 32) ^ a); }
+};
+
+struct ullonghash {
+    size_t operator ()(ullong u) const { return (size_t)((u >> 32) ^ u); }
+};
 
 template <class C>
 struct strhash {
@@ -825,11 +820,6 @@ struct strhash {
     size_t operator ()(const basic_string<C> &s) const {
 	return stringhash(s.c_str());
     }
-    bool operator ()(const C *a, const C *b) const { return stringless(a, b); }
-    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return stringless(a, b);
-    }
-    STL_HASH_PARMS
 };
 
 template <class C>
@@ -838,17 +828,10 @@ struct strihash {
     size_t operator ()(const basic_string<C> &s) const {
 	return stringihash(s.c_str());
     }
-    bool operator ()(const C *a, const C *b) const {
-	return stringicmp(a, b) < 0;
-    }
-    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return stringicmp(a.c_str(), b.c_str()) < 0;
-    }
-    STL_HASH_PARMS
 };
 
 template<class C>
-struct strhasheq {
+struct streq {
     bool operator()(const C *a, const C *b) const { return stringeq(a, b); }
     bool operator()(const basic_string<C> &a, const basic_string<C> &b) const {
 	return stringeq(a, b);
@@ -860,7 +843,7 @@ struct strhasheq {
 };
 
 template<class C>
-struct strihasheq {
+struct strieq {
     bool operator()(const C *a, const C *b) const {
 	return stringicmp(a, b) == 0;
     }
@@ -897,6 +880,87 @@ struct striless {
     static bool less(const basic_string<C> &a, const basic_string<C> &b) {
 	return stringicmp(a, b) < 0;
     }
+};
+
+template <class C>
+class ObjectList: nocopy {
+public:
+    ObjectList(): back(NULL), front(NULL) {}
+
+    bool operator !(void) const { return front == NULL; }
+    operator bool(void) const { return front != NULL; }
+    bool empty(void) const { return front == NULL; }
+    const C *peek(void) const { return front; }
+
+    void pop(C &obj) {
+	if (front == &obj) {
+	    if ((front = obj.next) == NULL)
+		back = NULL;
+	} else {
+	    for (C *p = front; p; p = p->next) {
+		if (p->next == &obj) {
+		    if ((p->next = obj.next) == NULL)
+			back = p;
+		    break;
+		}
+	    }
+	}
+    }
+    C *pop_back(void) {
+	if (front == back) {
+	    C *obj = back;
+
+	    front = back = NULL;
+	    return obj;
+	} else {
+	    for (C *p = front; p; p = p->next) {
+		if (p->next == back) {
+		    back = p;
+		    return p;
+		}
+	    }
+	}
+    }
+    C *pop_front(void) {
+	C *obj = front;
+	
+	if ((front = obj->next) == NULL)
+	    back = NULL;
+	return obj;
+    }
+    void push_back(C &obj) {
+	obj.next = NULL;
+	if (back)
+	    back = back->next = &obj;
+	else
+	    back = front = &obj;
+    }
+    void push_front(C &obj) {
+	obj.next = front;
+	front = &obj;
+	if (!back)
+	    back = &obj;
+    }
+    void push_back(ObjectList &lst) {
+	if (lst.front) {
+	    if (back)
+		back->next = lst.front;
+	    else
+		front = lst.front;
+	    back = lst.back;
+	    lst.front = lst.back = NULL;
+	}
+    }
+    void push_front(ObjectList &lst) {
+	if (lst.back) {
+	    lst.back->next = front;
+	    front = lst.front;
+	    lst.front = lst.back = NULL;
+	}
+    }
+
+private:
+    C *back, *front;
 };
 
 #endif

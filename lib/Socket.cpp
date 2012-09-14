@@ -565,8 +565,13 @@ int Socket::read(void *buf, uint sz) const {
     do {
 	if (!rwpoll(true))
 	    return -1;
+#ifdef __APPLE__
+	if (check(in = (int)::read(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz)))
+	    break;
+#else
 	if (check(in = (int)recv(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz, 0)))
 	    break;
+#endif
     } while (interrupted());
     if (in) {
 	return in <= 0 && blocked() ? 0 : in;
@@ -601,9 +606,15 @@ int Socket::write(const void *buf, uint sz) const {
     do {
 	if (!rwpoll(false))
 	    return -1;
+#ifdef __APPLE__
+	if (check(out = (int)::write(sbuf->sock, (const char *)buf,
+	    (SOCK_SIZE_T)sz)))
+	    break;
+#else
 	if (check(out = (int)send(sbuf->sock, (const char *)buf,
 	    (SOCK_SIZE_T)sz, 0)))
 	    break;
+#endif
     } while (interrupted());
     return out <= 0 && blocked() ? 0 : out;
 }

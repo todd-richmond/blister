@@ -18,7 +18,7 @@
 #ifndef HTTPClient_h
 #define HTTPClient_h
 
-#include STL_HASH_MAP
+#include STL_UNORDERED_MAP_H
 #include "Socket.h"
 
 class URL {
@@ -32,8 +32,9 @@ public:
 
     const URL &operator =(const URL &url);
     const tstring fullpath(void) const;
-    const tstring relpath(void) const
-	{ return query.empty() ? path : path + T("?") + query; }
+    const tstring relpath(void) const {
+	return query.empty() ? path : path + T("?") + query;
+    }
     bool set(const tchar *url);
     static void unescape(tchar *str, bool plus = true);
     static void unescape(tstring &str, bool plus = true);
@@ -41,12 +42,8 @@ public:
 
 class HTTPClient: nocopy {
 public:
-#ifdef STL_HASH_MAP_4ARGS
-    typedef hash_multimap<tstring, tstring, strihash<tchar>, strihasheq<tchar> >
-	attrmap;
-#else
-    typedef hash_multimap<tstring, tstring, strihash<tchar> > attrmap;
-#endif
+    typedef unordered_multimap<tstring, tstring, strihash<tchar>,
+	strieq<tchar> > attrmap;
 
     HTTPClient();
     ~HTTPClient() { delete [] result; }

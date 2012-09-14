@@ -111,7 +111,7 @@ void HTTPServerSocket::readhdrs() {
     uint room = (uint)(sz - datasz);
     int in;
 
-    if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
+    if (msg == DispatchTimeout || msg == DispatchClose) {
 	erase();
 	return;
     }
@@ -147,12 +147,12 @@ void HTTPServerSocket::readpost() {
     uint left = room > 100 && postsz == (uint)-1 ? room : (uint)(postsz -
 	postin);
 
-    if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
+    if (msg == DispatchTimeout || msg == DispatchClose) {
 	erase();
 	return;
     }
-    if (msg != Dispatcher::Close && room < left &&
-	(!delpost || postsz == (uint)-1)) {
+    if (msg != DispatchClose && room < left && (!delpost || postsz ==
+	(uint)-1)) {
 	char *old = postdata;
 
 	if (postsz == (uint)-1) {
@@ -168,8 +168,8 @@ void HTTPServerSocket::readpost() {
 	else
 	    delpost = true;
     }
-    if (msg == Dispatcher::Close ||
-	(in = (uint)read(postdata + postin, left)) == (uint)-1) {
+    if (msg == DispatchClose || (in = (uint)read(postdata + postin, left)) ==
+	(uint)-1) {
 	if (postsz == (uint)-1) {
 	    left = in = 0;
 	    postsz = postin;
@@ -413,7 +413,7 @@ inline void HTTPServerSocket::keepalive(void) {
 void HTTPServerSocket::send(void) {
     ulong out;
 
-    if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
+    if (msg == DispatchTimeout || msg == DispatchClose) {
 	erase();
 	return;
     }

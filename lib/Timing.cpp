@@ -83,7 +83,7 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 
     for (it = tmap.begin(); it != tmap.end(); ++it)
 	sorted.push_back(it->second);
-    sort(sorted.begin(), sorted.end(), sortbyname ? less_name : less_time);
+    sort(sorted.begin(), sorted.end(), sortbyname ? less_name : greater_time);
     for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
 	stats = *sit;
 	for (u = TIMINGSLOTS - 1; u > last; u--) {

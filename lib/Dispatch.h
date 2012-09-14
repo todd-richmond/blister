@@ -19,18 +19,12 @@
 #define Dispatch_h
 
 #include <set>
-#include STL_HASH_MAP
+#include STL_UNORDERED_MAP_H
+#include STL_UNORDERED_SET_H
 #include "Config.h"
 #include "Log.h"
 #include "Socket.h"
 #include "Thread.h"
-
-class DispatchObj;
-class DispatchSocket;
-class DispatchTimer;
-
-// base classes for event objects
-typedef void (*DispatchObjCB)(DispatchObj *);
 
 #ifdef _WIN32
 /*
@@ -39,123 +33,22 @@ typedef void (*DispatchObjCB)(DispatchObj *);
  */
 #endif
 
-class DispatchObjList: nocopy {
-public:
-    DispatchObjList(): back(NULL), front(NULL) {}
+class Dispatcher;
+class DispatchObj;
 
-    bool operator !(void) const { return front == NULL; }
-    operator bool(void) const { return front != NULL; }
-    bool empty(void) const { return front == NULL; }
-    const DispatchObj *peek(void) const { return front; }
-
-    void pop(DispatchObj *obj);
-    DispatchObj *pop_front(void);
-    void push_back(DispatchObj *obj);
-    void push_front(DispatchObj *obj);
-    void push_front(DispatchObjList &lst);
-
-private:
-    DispatchObj *back, *front;
-};
-
-class Dispatcher: public ThreadGroup {
-public:
-    enum Msg {
-	Read, Write, ReadWrite, Accept, Connect, Close, Timeout, Resume, Nomsg
-    };
-
-    Dispatcher(const Config &config);
-    virtual ~Dispatcher() { stop(); }
-
-    const Config &config(void) const { return cfg; }
-    
-    bool start(uint maxthreads = 100, uint stacksz = 0, bool suspend = false,
-	bool autoterm = false);
-    void stop(void);
-
-protected:
-    virtual int onStart(void);
-
-    const Config &cfg;
-
-private:
-    typedef hash_map<socket_t, DispatchSocket *> socketmap;
-    typedef set<DispatchTimer *, bool(*)(const DispatchTimer *a,
-	const DispatchTimer *b)> timerset;
-
-    friend class DispatchObj;
-    void addReady(DispatchObj &obj, bool hipri, Msg reason);
-    void cancelReady(DispatchObj &obj);
-    void removeReady(DispatchObj &obj);
-    bool ready(DispatchObj &obj, bool hipri = false);
-
-    friend class DispatchTimer;
-    void addTimer(DispatchTimer &dt, ulong tm);
-    void cancelTimer(DispatchTimer &dt);
-    void removeTimer(DispatchTimer &dt);
-    bool timer(DispatchTimer &dt, msec_t to);
-
-    friend class DispatchSocket;
-    void cancelSocket(DispatchSocket &ds);
-    void pollSocket(DispatchSocket &ds, ulong timeout, Msg msg);
-
-    void cleanup(void);
-    bool exec(void);
-    uint handleEvents(void *evts, int cnt);
-    int run(void);
-    void wake(uint tasks, bool master);
-    static int worker(void *parm);
-
-    SpinLock lock;
-    msec_t due;
-    DispatchObjList rlist;
-    Lifo lifo;
-    uint maxthreads;
-    volatile bool shutdown;
-    socketmap smap;
-    uint stacksz;
-    volatile uint threads, waking;
-    timerset timers;
-#ifdef DSP_WIN32_ASYNC
-    volatile ulong interval;
-    HWND wnd;
-    static uint socketmsg;
-    static const int DSP_TimerID = 1;
-
-    void wakeup(msec_t now, msec_t when) {
-	interval = (ulong)(when - now);
-	do {
-	    when = interval;
-	    SetTimer(wnd, DSP_TimerID, interval, NULL);
-	} while (interval != when);
-    }
-#else
-    int evtfd;
-    Socket isock;
-    volatile bool polling;
-    SocketSet rset, wset;
-    Socket wsock;
-
-    void reset(void) {
-	char buf[16];
-
-	lock.unlock();
-	isock.read(buf, sizeof (buf));
-	lock.lock();
-    }
-    void wakeup(msec_t, msec_t) {
-	if (polling) {
-	    polling = false;
-	    wsock.write("", 1);
-	}
-    }
-#endif
-};
+typedef void (*DispatchObjCB)(DispatchObj *);
 
 #define DSP_DECLARE(cls, func) \
     static void func(DispatchObj *obj) { (static_cast<cls *>(obj))->func(); } \
     void func(void)
 
+// Dispatch messages
+enum DispatchMsg {
+    DispatchRead, DispatchWrite, DispatchReadWrite, DispatchAccept,
+    DispatchConnect, DispatchClose, DispatchTimeout, DispatchNone
+};
+
+// base classes for event objects
 class DispatchObj: nocopy {
 private:
     class Group {
@@ -163,7 +56,7 @@ private:
 	Group(): active(false) {}
 
 	bool active;
-	DispatchObjList glist;
+	ObjectList<DispatchObj> glist;
 	RefCount refcount;
 
 	Group &add() { refcount.reference(); return *this; }
@@ -171,9 +64,9 @@ private:
 
 public:
     DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb), dspr(d),
-	flags(0), msg(Dispatcher::Nomsg), group(new Group), next(NULL) {}
+	flags(0), msg(DispatchNone), group(new Group), next(NULL) {}
     DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL):
-	dcb(cb), dspr(parent.dspr), flags(0), msg(Dispatcher::Nomsg),
+	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()), next(NULL) {}
     virtual ~DispatchObj() {
 	if (!group->refcount.release())
@@ -181,16 +74,13 @@ public:
     }
 
     Dispatcher &dispatcher(void) const { return dspr; }
-    Dispatcher::Msg reason(void) const { return msg; }
+    DispatchMsg reason(void) const { return msg; }
 
     void detach(void);
     void erase(void);
-    void ready(DispatchObjCB cb = NULL, bool hipri = false,
-	Dispatcher::Msg reason = Dispatcher::Nomsg) {
-	callback(cb);
-	dspr.addReady(*this, hipri, reason);
-    }
-    virtual void cancel(void) { dspr.cancelReady(*this); }
+    void ready(DispatchObjCB cb = NULL, bool hipri = false, DispatchMsg reason =
+	DispatchNone);
+    virtual void cancel(void);
     virtual void terminate(void);
 
 protected:
@@ -199,14 +89,14 @@ protected:
     DispatchObjCB dcb;
     Dispatcher &dspr;
     uint flags;
-    Dispatcher::Msg msg;
+    DispatchMsg msg;
 
 private:
     Group *group;
     DispatchObj *next;
 
     friend class Dispatcher;
-    friend class DispatchObjList;
+    friend class ObjectList<DispatchObj>;
 };
 
 // handle objects with timeouts
@@ -216,29 +106,27 @@ private:
 
 class DispatchTimer: public DispatchObj {
 public:
+    struct compare {
+	bool operator()(const DispatchTimer *a, const DispatchTimer *b) const {
+	    return a->due == b->due ? a < b : a->due < b->due;
+	}
+    };
+
     DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
-	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) {}
+	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
-	DispatchObj(d), due(DSP_NEVER_DUE) { timeout(cb, msec); }
+	DispatchObj(d), due(DSP_NEVER_DUE) {  init(); timeout(cb, msec); }
     DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
-	DispatchObj(parent), to(msec), due(DSP_NEVER_DUE) {}
+	DispatchObj(parent), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(DispatchObj &parent, ulong msec, DispatchObjCB cb):
-	DispatchObj(parent), due(DSP_NEVER_DUE) { timeout(cb, msec); }
-    virtual ~DispatchTimer() { DispatchTimer::cancel(); }
+	DispatchObj(parent), due(DSP_NEVER_DUE) { init(); timeout(cb, msec); }
+    virtual ~DispatchTimer();
 
     msec_t expires(void) const { return due; }
     ulong timeout(void) const { return to; }
 
-    void timeout(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS) {
-	callback(cb);
-	if (msec != DSP_PREVIOUS)
-	    to = msec;
-	dspr.addTimer(*this, to);
-    }
-    virtual void cancel(void) { dspr.cancelTimer(*this); }
-    static bool less(const DispatchTimer *a, const DispatchTimer *b) {
-	return a->due < b->due || (a->due == b->due && a < b);
-    }
+    void timeout(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS);
+    virtual void cancel(void);
 
 protected:
     ulong to;
@@ -246,6 +134,7 @@ protected:
 private:
     msec_t due;
 
+    void init(void);
     friend class Dispatcher;
 };
 
@@ -262,15 +151,10 @@ public:
     virtual ~DispatchSocket() { DispatchSocket::cancel(); }
 
     bool close(void) { cancel(); return Socket::close(); }
-    virtual void cancel(void) { dspr.cancelSocket(*this); }
+    virtual void cancel(void);
 
 protected:
-    void poll(DispatchObjCB cb, ulong msec, Dispatcher::Msg msg) {
-	callback(cb);
-	if (msec != DSP_PREVIOUS)
-	    to = msec;
-	dspr.pollSocket(*this, to, msg);
-    }
+    void poll(DispatchObjCB cb, ulong msec, DispatchMsg msg);
 
     bool mapped;
 
@@ -289,13 +173,13 @@ public:
 	DSP_NEVER): DispatchSocket(parent, sock, msec) {}
 
     void closeable(DispatchObjCB cb = NULL, ulong msec = 15000)
-	{ poll(cb, msec, Dispatcher::Close); }
+	{ poll(cb, msec, DispatchClose); }
     void readable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
-	{ poll(cb, msec, Dispatcher::Read); }
+	{ poll(cb, msec, DispatchRead); }
     void writeable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
-	{ poll(cb, msec, Dispatcher::Write); }
+	{ poll(cb, msec, DispatchWrite); }
     void rwable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
-	{ poll(cb, msec, Dispatcher::ReadWrite); }
+	{ poll(cb, msec, DispatchReadWrite); }
 };
 
 class DispatchClientSocket: public DispatchIOSocket {
@@ -338,7 +222,7 @@ public:
     const Sockaddr address(void) { return addr; }
     bool listen(const Sockaddr &addr, bool reuse = true, int queue =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL);
-    void relisten() { poll(NULL, DSP_PREVIOUS, Dispatcher::Accept); }
+    void relisten() { poll(NULL, DSP_PREVIOUS, DispatchAccept); }
 
 protected:
     virtual void onAccept(Socket &sock) = 0;
@@ -347,6 +231,176 @@ protected:
 
  private:
     DSP_DECLARE(DispatchListenSocket, connection);
+};
+
+class Dispatcher: public ThreadGroup {
+public:
+    Dispatcher(const Config &config);
+    virtual ~Dispatcher() { stop(); }
+
+    const Config &config(void) const { return cfg; }
+    
+    bool start(uint maxthreads = 100, uint stacksz = 0, bool suspend = false,
+	bool autoterm = false);
+    void stop(void);
+
+protected:
+    virtual int onStart(void);
+
+    const Config &cfg;
+
+private:
+    typedef unordered_map<socket_t, DispatchSocket *> socketmap;
+
+    class TimerSet {
+    public:
+	typedef set<DispatchTimer *, DispatchTimer::compare> sorted_timerset;
+	typedef unordered_set<DispatchTimer *, ptrhash<DispatchTimer> >
+	    unsorted_timerset;
+
+	TimerSet(): split(0) {}
+
+	msec_t half(void) const { return split; }
+
+	void erase(DispatchTimer &dt) {
+	    if (dt.due < split)
+		sorted.erase(&dt);
+	    unsorted.erase(&dt);
+	}
+	DispatchTimer *get(void) {
+	    unsorted_timerset::iterator it = unsorted.begin();
+	    
+	    if (it != unsorted.end()) {
+		DispatchTimer *dt = *it;
+		
+		if (dt->due < split)
+		    sorted.erase(dt);
+		unsorted.erase(it);
+		dt->due = DSP_NEVER_DUE;
+		return dt;
+	    }
+	    return NULL;
+	}
+	DispatchTimer *get(msec_t when) {
+	    sorted_timerset::iterator it = sorted.begin();
+
+	    if (it != sorted.end()) {
+		DispatchTimer *dt = *it;
+
+		if (dt->due < when) {
+		    sorted.erase(it);
+		    dt->due = DSP_NEVER_DUE;
+		    return dt;
+		}
+	    }
+	    return NULL;
+	}
+	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
+	DispatchTimer *peek(void) {
+	    sorted_timerset::const_iterator it = sorted.begin();
+
+	    return it == sorted.end() ? NULL : *it;
+	}
+	bool reorder(msec_t when) {
+	    bool ret = false;
+	    
+	    split = when;
+	    for (unsorted_timerset::iterator it = unsorted.begin(); it !=
+		unsorted.end(); ++it) {
+		DispatchTimer *dt = *it;
+
+		if (dt->due < split)
+		    sorted.insert(dt);
+		if (dt->due != DSP_NEVER_DUE)
+		    ret = true;
+	    }
+	    return ret;
+	}
+	void set(DispatchTimer &dt, msec_t when) {
+	    if (dt.due == when)
+		return;
+	    if (dt.due < split)
+		sorted.erase(&dt);
+	    dt.due = when;
+	    if (when < split)
+		sorted.insert(&dt);
+	}
+
+    private:
+	sorted_timerset sorted;
+	unsorted_timerset unsorted;
+	msec_t split;
+    };
+
+    friend class DispatchObj;
+    void addReady(DispatchObj &obj, bool hipri, DispatchMsg reason);
+    void cancelReady(DispatchObj &obj);
+    void removeReady(DispatchObj &obj);
+    bool ready(DispatchObj &obj, bool hipri = false);
+
+    friend class DispatchTimer;
+    void addTimer(DispatchTimer &dt) { timers.insert(dt); }
+    void cancelTimer(DispatchTimer &dt);
+    void delTimer(DispatchTimer &dt) { timers.erase(dt); }
+    void removeTimer(DispatchTimer &dt);
+    void setTimer(DispatchTimer &dt, ulong tm);
+    bool timer(DispatchTimer &dt, msec_t to);
+
+    friend class DispatchSocket;
+    void cancelSocket(DispatchSocket &ds);
+    void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg);
+
+    void cleanup(void);
+    bool exec(void);
+    uint handleEvents(void *evts, uint cnt);
+    int run(void);
+    void wake(uint tasks, bool master);
+    static int worker(void *parm);
+
+    SpinLock lock;
+    msec_t due;
+    ObjectList<DispatchObj> rlist;
+    Lifo lifo;
+    uint maxthreads;
+    volatile bool shutdown;
+    socketmap smap;
+    uint stacksz;
+    volatile uint threads, waking;
+    TimerSet timers;
+#ifdef DSP_WIN32_ASYNC
+    volatile ulong interval;
+    HWND wnd;
+    static uint socketmsg;
+    static const int DSP_TimerID = 1;
+
+    void wakeup(msec_t now, msec_t when) {
+	interval = (ulong)(when - now);
+	do {
+	    when = interval;
+	    SetTimer(wnd, DSP_TimerID, interval, NULL);
+	} while (interval != when);
+    }
+#else
+    int evtfd;
+    Socket isock;
+    volatile bool polling;
+    SocketSet rset, wset;
+    Socket wsock;
+
+    void reset(void) {
+	char buf[16];
+
+	lock.unlock();
+	isock.read(buf, sizeof (buf));
+	lock.lock();
+    }
+    void wakeup(msec_t, msec_t) {
+	if (polling) {
+	    polling = false;
+	    wsock.write("", 1);
+	}
+    }
+#endif
 };
 
 template<class D, class S>
@@ -388,50 +442,38 @@ protected:
     virtual void start(S &ssock) { ssock.start(); }
 };
 
-inline void DispatchObjList::pop(DispatchObj *obj) {
-    if (front == obj) {
-	if ((front = obj->next) == NULL)
-	    back = NULL;
-    } else {
-	for (DispatchObj *p = front; p; p = p->next) {
-	    if (p->next == obj) {
-		if ((p->next = obj->next) == NULL)
-		    back = p;
-		break;
-	    }
-	}
-    }
+inline void DispatchObj::cancel(void) { dspr.cancelReady(*this); }
+
+inline void DispatchObj::ready(DispatchObjCB cb, bool hipri, DispatchMsg
+    reason) {
+    callback(cb);
+    dspr.addReady(*this, hipri, reason);
 }
 
-inline DispatchObj *DispatchObjList::pop_front(void) {
-    DispatchObj *obj = front;
-    
-    if ((front = obj->next) == NULL)
-	back = NULL;
-    return obj;
+inline DispatchTimer::~DispatchTimer() {
+    DispatchTimer::cancel();
+    dspr.delTimer(*this);
 }
 
-inline void DispatchObjList::push_back(DispatchObj *obj) {
-    obj->next = NULL;
-    if (back)
-	back = back->next = obj;
-    else
-	back = front = obj;
+inline void DispatchTimer::cancel(void) { dspr.cancelTimer(*this); }
+
+inline void DispatchTimer::init(void) { dspr.addTimer(*this); }
+
+inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
+    callback(cb);
+    if (msec != DSP_PREVIOUS)
+	to = msec;
+    dspr.setTimer(*this, to);
 }
 
-inline void DispatchObjList::push_front(DispatchObj *obj) {
-    obj->next = front;
-    front = obj;
-    if (!back)
-	back = obj;
-}
+inline void DispatchSocket::cancel(void) { dspr.cancelSocket(*this); }
 
-inline void DispatchObjList::push_front(DispatchObjList &lst) {
-    if (lst.back) {
-	lst.back->next = front;
-	front = lst.front;
-	lst.front = lst.back = NULL;
-    }
+inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg msg)
+    {
+    callback(cb);
+    if (msec != DSP_PREVIOUS)
+	to = msec;
+    dspr.pollSocket(*this, to, msg);
 }
 
 #endif // Dispatch_h

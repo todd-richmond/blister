@@ -111,9 +111,9 @@ static TSNumber<uint> ops, errs;
 static TSNumber<usec_t> usecs;
 
 void EchoTest::EchoClientSocket::onConnect(void) {
-    if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
+    if (msg == DispatchTimeout || msg == DispatchClose) {
 	errs++;
-	dloge(T("client connect"), msg == Dispatcher::Timeout ? T("timeout") :
+	dloge(T("client connect"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	erase();
     } else {
@@ -140,9 +140,9 @@ void EchoTest::EchoClientSocket::output() {
     }
     if (loops != -1)
 	loops--;
-    if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
+    if (msg == DispatchTimeout || msg == DispatchClose) {
 	errs++;
-	dloge(T("client write"), msg == Dispatcher::Timeout ? T("timeout") :
+	dloge(T("client write"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	timeout(start, wait);
 	return;
@@ -167,9 +167,9 @@ void EchoTest::EchoClientSocket::output() {
 void EchoTest::EchoClientSocket::input() {
     int len;
 
-    if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
+    if (msg == DispatchTimeout || msg == DispatchClose) {
 	errs++;
-	dloge(T("client read"), msg == Dispatcher::Timeout ? T("timeout") :
+	dloge(T("client read"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	timeout(start, wait);
 	dtiming.add(T("error"), 0);
@@ -197,7 +197,7 @@ void EchoTest::EchoClientSocket::input() {
 }
 
 void EchoTest::EchoClientSocket::repeat() {
-    msg = Dispatcher::Nomsg;
+    msg = DispatchNone;
     out = 0;
     begin = microticks();
     output();
@@ -206,8 +206,8 @@ void EchoTest::EchoClientSocket::repeat() {
 void EchoTest::EchoServerSocket::input() {
     char tmp[MAXREAD];
 
-    if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
-	dloge(T("server read"), msg == Dispatcher::Timeout ? T("timeout") :
+    if (msg == DispatchTimeout || msg == DispatchClose) {
+	dloge(T("server read"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	erase();
     } else if ((in = read(tmp, sizeof (tmp))) < 0) {
@@ -236,8 +236,8 @@ void EchoTest::EchoServerSocket::input() {
 void EchoTest::EchoServerSocket::output() {
     int len;
 
-    if (msg == Dispatcher::Timeout || msg == Dispatcher::Close) {
-	dloge(T("server write"), msg == Dispatcher::Timeout ? T("timeout") :
+    if (msg == DispatchTimeout || msg == DispatchClose) {
+	dloge(T("server write"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	erase();
 	return;

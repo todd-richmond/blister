@@ -19,7 +19,7 @@
 #define Timing_h
 
 #include <vector>
-#include STL_HASH_MAP
+#include STL_UNORDERED_MAP_H
 #include "Thread.h"
 
 /*
@@ -112,12 +112,8 @@ private:
 	vector<timing_t> starts;
     };
 
-#ifdef STL_HASH_MAP_4ARGS
-    typedef hash_map<const tchar *, Stats *, strhash<tchar>, strhasheq<tchar> >
+    typedef unordered_map<const tchar *, Stats *, strhash<tchar>, streq<tchar> >
 	timingmap;
-#else
-    typedef hash_map<const tchar *, Stats *, strhash<tchar> > timingmap;
-#endif
 
     mutable SpinLock lck;
     ThreadLocalClass<Tlsdata> tls;
@@ -125,10 +121,11 @@ private:
 
     static const tchar *format(timing_t tot, tchar *buf);
     static bool less_name(const Stats *a, const Stats *b) {
-	return stringcmp(a->name, b->name) < 0;
+	return stringless(a->name, b->name);
     }
-    static bool less_time(const Stats *a, const Stats *b) {
-	return a->tot == b->tot ? less_name(a, b) : a->tot > b->tot;
+    static bool greater_time(const Stats *a, const Stats *b) {
+	return a->tot == b->tot ? stringless(a->name, b->name) : a->tot >
+	    b->tot;
     }
 };
 
