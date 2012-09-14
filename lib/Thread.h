@@ -30,6 +30,7 @@ typedef HANDLE thread_t;
 #define THREAD_FUNC		uint __stdcall
 #define THREAD_HDL()		GetCurrentThread()
 #define THREAD_ID()		(thread_t)GetCurrentThreadId()
+#define THREAD_PAUSE()		YieldProcessor()
 #define THREAD_YIELD()		Sleep(0)
 
 typedef volatile long atomic_t;
@@ -69,6 +70,11 @@ typedef pthread_t thread_t;
 #define THREAD_FUNC		void *
 #define THREAD_HDL()		pthread_self()
 #define THREAD_ID()		pthread_self()
+#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+#define THREAD_PAUSE()		asm volatile("pause" ::: "memory")
+#else
+#define THREAD_PAUSE()
+#endif
 #define THREAD_YIELD()		sched_yield()
 
 #ifdef __GNUC__
@@ -322,12 +328,15 @@ public:
 	while (atomic_lck(lck)) {
 	    uint spin = spins;
 
-	    while (lck) {
-		if (!spin--) {
-		    THREAD_YIELD();
+	    do {
+		if (spin) {
+		    --spin;
+		    THREAD_PAUSE();
+		} else {
 		    spin = spins;
+		    THREAD_YIELD();
 		}
-	    }
+	    } while (lck);
 	}
     }
     void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
