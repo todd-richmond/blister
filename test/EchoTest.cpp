@@ -166,12 +166,13 @@ void EchoTest::EchoClientSocket::output() {
     int len;
 
     if (!loops || qflag) {
+	write("", 1);
 	erase();
 	return;
     }
     if (msg == DispatchTimeout || msg == DispatchClose) {
 	errs++;
-	if (loops != -1)
+	if (loops > 0)
 	    loops--;
 	dloge(T("client write"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
@@ -180,7 +181,7 @@ void EchoTest::EchoClientSocket::output() {
     }
     if ((len = write(data + out, dsz - out)) < 0) {
 	errs++;
-	if (loops != -1)
+	if (loops > 0)
 	    loops--;
 	dloge(T("client write failed:"), errstr());
 	timeout(start, wait);
@@ -188,7 +189,7 @@ void EchoTest::EchoClientSocket::output() {
     }
     out += len;
     if (out == dsz) {
-	if (loops != -1)
+	if (loops > 0)
 	    loops--;
 	dlogt(T("client write"), len);
 	in = 0;
@@ -215,7 +216,8 @@ void EchoTest::EchoServerSocket::input() {
 		T("close"));
 	erase();
     } else if ((in = read(tmp, sizeof (tmp))) < 0) {
-	dloge(T("server read failed:"), errstr());
+	if (loops && !qflag)
+	    dloge(T("server read failed:"), errstr());
 	erase();
     } else if (in == 0) {
 	readable(input);
