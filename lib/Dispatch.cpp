@@ -757,7 +757,7 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
 	if (tmt < due) {
 	    due = tmt;
 	    lock.unlock();
-	    wakeup(due - now);
+	    wakeup((ulong)(due - now));
 	    return;
 	}
     } else {
@@ -899,7 +899,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
     if (sarray[m] == (ds.flags & DSP_SelectAll)) {
 	if (resched) {
 	    lkr.unlock();
-	    wakeup(due - now);
+	    wakeup((ulong)(due - now));
 	}
 	return;
     }
@@ -987,7 +987,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 #endif
     if (resched) {
 	lkr.unlock();
-	wakeup(due - now);
+	wakeup((ulong)(due - now));
     }
 }
 
