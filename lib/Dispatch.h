@@ -106,12 +106,6 @@ private:
 
 class DispatchTimer: public DispatchObj {
 public:
-    struct compare {
-	bool operator()(const DispatchTimer *a, const DispatchTimer *b) const {
-	    return a->due == b->due ? a < b : a->due < b->due;
-	}
-    };
-
     DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
 	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
@@ -129,6 +123,12 @@ public:
     virtual void cancel(void);
 
 protected:
+    struct compare {
+	bool operator()(const DispatchTimer *a, const DispatchTimer *b) const {
+	    return a->due == b->due ? a < b : a->due < b->due;
+	}
+    };
+
     ulong to;
 
 private:
@@ -261,9 +261,11 @@ private:
 	TimerSet(): split(0) {}
 
 	msec_t half(void) const { return split; }
+	size_t size(void) const { return unsorted.size(); }
+	size_t soon(void) const { return sorted.size(); }
 
 	void erase(DispatchTimer &dt) {
-	    if (dt.due < split)
+	    if (dt.due <= split)
 		sorted.erase(&dt);
 	    unsorted.erase(&dt);
 	}
@@ -273,7 +275,7 @@ private:
 	    if (it != unsorted.end()) {
 		DispatchTimer *dt = *it;
 		
-		if (dt->due < split)
+		if (dt->due <= split)
 		    sorted.erase(dt);
 		unsorted.erase(it);
 		dt->due = DSP_NEVER_DUE;
@@ -287,7 +289,7 @@ private:
 	    if (it != sorted.end()) {
 		DispatchTimer *dt = *it;
 
-		if (dt->due < when) {
+		if (dt->due <= when) {
 		    sorted.erase(it);
 		    dt->due = DSP_NEVER_DUE;
 		    return dt;
@@ -309,7 +311,7 @@ private:
 		unsorted.end(); ++it) {
 		DispatchTimer *dt = *it;
 
-		if (dt->due < split)
+		if (dt->due <= split)
 		    sorted.insert(dt);
 		if (dt->due != DSP_NEVER_DUE)
 		    ret = true;
@@ -319,10 +321,10 @@ private:
 	void set(DispatchTimer &dt, msec_t when) {
 	    if (dt.due == when)
 		return;
-	    if (dt.due < split)
+	    if (dt.due <= split)
 		sorted.erase(&dt);
 	    dt.due = when;
-	    if (when < split)
+	    if (when <= split)
 		sorted.insert(&dt);
 	}
 
@@ -344,7 +346,6 @@ private:
     void delTimer(DispatchTimer &dt) { timers.erase(dt); }
     void removeTimer(DispatchTimer &dt);
     void setTimer(DispatchTimer &dt, ulong tm);
-    bool timer(DispatchTimer &dt, msec_t to);
 
     friend class DispatchSocket;
     void cancelSocket(DispatchSocket &ds);
@@ -373,12 +374,11 @@ private:
     static uint socketmsg;
     static const int DSP_TimerID = 1;
 
-    void wakeup(msec_t now, msec_t when) {
-	interval = (ulong)(when - now);
+    void wakeup(ulong msec) {
+	interval = msec;
 	do {
-	    when = interval;
-	    SetTimer(wnd, DSP_TimerID, interval, NULL);
-	} while (interval != when);
+	    SetTimer(wnd, DSP_TimerID, msec, NULL);
+	} while (interval > msec);
     }
 #else
     int evtfd;
@@ -394,7 +394,7 @@ private:
 	isock.read(buf, sizeof (buf));
 	lock.lock();
     }
-    void wakeup(msec_t, msec_t) {
+    void wakeup(ulong) {
 	if (polling) {
 	    polling = false;
 	    wsock.write("", 1);
