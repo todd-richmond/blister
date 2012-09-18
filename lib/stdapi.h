@@ -63,6 +63,7 @@ typedef unsigned short word;
 #define NOSERVICE
 #define NOMCX
 #define NOIME
+#define _WIN32_WINNT	0x502
 #define WIN32_LEAN_AND_MEAN
 
 #define rename _rename
@@ -262,14 +263,14 @@ struct stat {
 typedef struct statvfs {
     ulong f_bsize;			/* preferred file system block size */
     ulong f_frsize;			/* fundamental file system block size */
-    ulong f_blocks;			/* total # of blocks of f_frsize on fs */
+    ulong f_blocks;			/* total # of blocks of f_frsize */
     ulong f_bfree;			/* total # of free blocks of f_frsize */
-    ulong f_bavail;			/* # of free blocks avail to non-superuser */
+    ulong f_bavail;			/* # of free blocks for non-superuser */
     ulong f_files;			/* total # of file nodes (inodes) */
     ulong f_ffree;			/* total # of free file nodes */
-    ulong f_favail;			/* # of free nodes avail to non-superuser */
+    ulong f_favail;			/* # of free nodes for non-superuser */
     ulong f_fsid;			/* file system id (dev for now) */
-    char f_basetype[FSTYPSZ];		/* target fs type name, null-terminated */
+    char f_basetype[FSTYPSZ];		/* target fs type name */
     ulong f_flag;			/* bit-mask of flags */
     ulong f_namemax;			/* maximum file name length */
 } statvfs_t;
@@ -394,6 +395,7 @@ EXTERNC
 int clock_gettime(int, struct timespec *ts);
 EXTERNC_
 #endif
+
 #ifndef CLOCK_REALTIME_FAST
 #define CLOCK_REALTIME_FAST CLOCK_REALTIME
 #define CLOCK_MONOTONIC_FAST CLOCK_MONOTONIC
@@ -582,10 +584,11 @@ typedef uchar tuchar;
 #endif // UNICODE
 
 typedef const tchar ctchar;
+
+/* routines for linear and current time */
 typedef uint64 msec_t;
 typedef uint64 usec_t;
 
-// common includes, defines and code for C/C++ software
 inline usec_t microtime(void) {
     struct timeval tv;
 
@@ -602,6 +605,7 @@ EXTERNC_
 #define millitime()	((msec_t)(microtime() / 1000))
 #define milliticks()	((msec_t)(microticks() / 1000))
 
+// common includes, defines and code for C/C++ software
 #ifdef __cplusplus
 
 #include <functional>
