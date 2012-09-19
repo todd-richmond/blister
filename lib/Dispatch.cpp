@@ -843,11 +843,11 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
     static uint ioarray[] = {
 	DSP_Readable | DSP_Closeable, DSP_Writeable | DSP_Closeable,
 	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable,
-	DSP_Writeable | DSP_Closeable, DSP_Closeable, 0, 0, 0
+	DSP_Writeable | DSP_Closeable, DSP_Closeable, 0, 0
     };
     static uint sarray[] = {
 	DSP_SelectRead, DSP_SelectWrite, DSP_SelectRead | DSP_SelectWrite,
-	DSP_SelectAccept, DSP_SelectWrite, DSP_SelectClose, 0, 0, 0
+	DSP_SelectAccept, DSP_SelectWrite, DSP_SelectClose, 0, 0
     };
 
 #ifdef DSP_WIN32_ASYNC
@@ -932,10 +932,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	if (m == DispatchWrite || m == DispatchReadWrite || m ==
 	    DispatchConnect)
 	    wset.set(ds.fd());
-	if (polling) {
-	    tmt = now;
+	if (polling)
 	    resched = true;
-	}
     } else {
 	lkr.unlock();
 #ifdef DSP_DEVPOLL
