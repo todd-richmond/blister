@@ -87,22 +87,18 @@ static msec_t _milliticks(void) {
     static volatile long lck;
 
     while (InterlockedExchange(&lck, 1)) {
-	static SYSTEM_INFO si;
-
-	if (si.dwNumberOfProcessors == 1)
-	    Sleep(0);
-	else if (!si.dwNumberOfProcessors)
-	    GetSystemInfo(&si);
+	while (lck)
+	    YieldProcessor();
     }
     now = timeGetTime();	    /* GetTickCount() only has 16ms accuracy */
     if (now < last) {
-	if (!++cnt) {
-	    last = now;
-	} else {
+	if (++cnt) {
 	    ulong tmp = now;
 
 	    now += now - last;
 	    last = tmp;
+	} else {
+	    last = now;
 	}
     }
     ret = (msec_t)cnt * (ulong)-1 + now - last;
