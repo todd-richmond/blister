@@ -1035,7 +1035,7 @@ public:
     thread_t handle(void) const { return hdl; }
     bool running(void) const { return getState() == Running; }
     bool suspended(void) const { return getState() == Suspended; }
-    bool terminated(void) const { return getState() == Terminated; }
+    bool terminated(void) const { return state == Terminated; }
 
     operator thread_t(void) const { return hdl; }
     bool operator ==(const Thread &t) const { return THREAD_EQUAL(id, t.id); }
@@ -1068,7 +1068,7 @@ private:
     int retval;
     volatile ThreadState state;
     
-    void clear(bool self = true);
+    void clear(void);
     static int init(void *thisp);
     static THREAD_FUNC threadInit(void *thisp);
 

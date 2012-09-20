@@ -206,8 +206,7 @@ Thread::~Thread() {
 }
 
 // set state and notify threadgroup
-void Thread::clear(bool self) {
-    (void)self;
+void Thread::clear(void) {
     lck.lock();
     if (id != NOID) {
 #ifdef _WIN32
@@ -219,9 +218,9 @@ void Thread::clear(bool self) {
     }
     hdl = 0;
     state = Terminated;
+    group->notify(*this);
     cv.set();
     lck.unlock();
-    group->notify(*this);
 }
 
 // exit thread cleanly - called by itself
@@ -411,7 +410,7 @@ bool Thread::terminate(void) {
 	if (ret) {
 	    retval = -2;
 	    lkr.unlock();
-	    clear(false);
+	    clear();
 	}
     } else if (state == Terminated) {
 	ret = true;
@@ -424,21 +423,19 @@ bool Thread::wait(ulong timeout) {
     bool ret = false;
     Locker lkr(lck);
 
-    if (state == Init || state == Terminated) {
+    if (state == Init) {
 	ret = true;
-    } else {
-	if (id == NOID) {
-	    lkr.unlock();
+    } else if (id == NOID) {
+	lkr.unlock();
 #ifdef _WIN32
-	    ret = WaitForSingleObject(hdl, timeout) == WAIT_OBJECT_0;
+	ret = WaitForSingleObject(hdl, timeout) == WAIT_OBJECT_0;
 #else
-	    // pthreads do not support a timeout
-	    if (timeout == INFINITE)
-		ret = pthread_join(hdl, NULL) == 0;
+	// pthreads do not support a timeout
+	if (timeout == INFINITE)
+	    ret = pthread_join(hdl, NULL) == 0;
 #endif
-	} else {
-	    ret = cv.wait(timeout);
-	}
+    } else {
+	ret = cv.wait(timeout);
     }
     return ret;
 }
@@ -527,7 +524,6 @@ void ThreadGroup::remove(Thread &thread) {
     threads.erase(&thread);
 }
 
-// start a group's main thread
 bool ThreadGroup::start(uint stacksz, bool suspend, bool aterm) {
     if (master.getState() != Init && master.getState() != Terminated)
 	return false;
@@ -548,18 +544,18 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
 
 	for (it = threads.begin(); it != threads.end(); ++it) {
 	    Thread *thrd = *it;
-	    ThreadState tstate = thrd->getState();
 	    
 	    if (main && thrd != &master) {
 		continue;
-	    } else if (tstate == Terminated) {
+	    } else if (thrd->terminated()) {
 		if (!all) {
 		    threads.erase(it);
+		    lkr.unlock();
+		    thrd->wait();
 		    thrd->group = NULL;
 		    return thrd;
 		}
-	    } else if (tstate != Terminated && thrd->id != NOID &&
-		!THREAD_ISSELF(thrd->id)) {
+	    } else if (thrd->id != NOID && !THREAD_ISSELF(thrd->id)) {
 		found = true;
 	    }
 	}
