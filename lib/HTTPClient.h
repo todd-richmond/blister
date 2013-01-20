@@ -30,7 +30,7 @@ public:
     tstring host, path, prot, query;
     ushort port;
 
-    const URL &operator =(const URL &url);
+    URL &operator =(const URL &url);
     const tstring fullpath(void) const;
     const tstring relpath(void) const {
 	return query.empty() ? path : path + T("?") + query;

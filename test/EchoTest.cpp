@@ -86,7 +86,7 @@ public:
 	EchoServerSocket> {
     public:
 	EchoListenSocket(EchoTest &dspr, ulong timeout):
-	    SimpleDispatchListenSocket<EchoTest, EchoServerSocket>(dspr, SOCK_STREAM, false),
+	    SimpleDispatchListenSocket<EchoTest, EchoServerSocket>(dspr),
 	    tmt(timeout) {}
 
 	void start(EchoServerSocket &ess) { ess.timeout(tmt); ess.start(); }
@@ -263,12 +263,13 @@ void EchoTest::EchoServerSocket::output() {
     }
 }
 
-void EchoTest::connect(const Sockaddr &addr, uint count, ulong delay,
-    ulong tmt, ulong wait) {
+void EchoTest::connect(const Sockaddr &addr, uint count, ulong delay, ulong tmt,
+    ulong wait) {
     for (uint u = 0; u < count; u++) {
-	EchoClientSocket *ec = new EchoClientSocket(*this, addr, tmt, wait);
+	EchoClientSocket *ecs = new EchoClientSocket(*this, addr, tmt, wait);
 
-	ec->start(u * (count < wait / delay ? wait / count : delay));
+	ecs->detach();
+	ecs->start(u * (count < wait / delay ? wait / count : delay));
     }
 }
 
@@ -278,6 +279,7 @@ bool EchoTest::listen(const tchar *host, ulong timeout) {
     if (!els->listen(host)) {
 	dlog << Log::Err << T("mod=") << NAME << T(" cmd=listen addr=") <<
 	    els->address().str() << ' ' << tstrerror(els->err()) << endlog;
+	delete els;
 	return false;
     }
     return true;

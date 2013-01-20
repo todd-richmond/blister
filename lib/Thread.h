@@ -925,7 +925,7 @@ public:
     C operator --(void) { TSLocker lkr(lck); return --c; }
     C operator --(int) { TSLocker lkr(lck); return c--; }
     template<class N> C operator =(N n) { TSLocker lkr(lck); return c = n; }
-    template<class N> C operator =(const TSNumber<N> n) { TSLocker lkr(lck); return c = n; }
+    template<class N> C operator =(const TSNumber<N> &n) { TSLocker lkr(lck); return c = n; }
     template<class N> C operator +=(N n) { TSLocker lkr(lck); return c += n; }
     template<class N> C operator -=(N n) { TSLocker lkr(lck); return c -= n; }
     template<class N> C operator *=(N n) { TSLocker lkr(lck); return c *= n; }

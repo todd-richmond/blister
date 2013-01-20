@@ -462,10 +462,10 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 	set<Thread *>::iterator ii;
 	
 	grouplck.lock();
-	for (i = groups.begin(); i != groups.end(); i++) {
+	for (i = groups.begin(); i != groups.end(); ++i) {
 	    tg = *i;
 	    tg->lock.lock();
-	    for (ii = tg->threads.begin(); ii != tg->threads.end(); ii++) {
+	    for (ii = tg->threads.begin(); ii != tg->threads.end(); ++ii) {
 		if (THREAD_ISSELF((*ii)->id))
 		    break;
 	    }

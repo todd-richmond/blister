@@ -53,14 +53,15 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
     size_t idlen = tstrlen(id) + 1;
     size_t passlen = tstrlen(pass) + 1;
     size_t uusz;
-    char *buf, *uubuf;
+    char *uubuf;
     bool ret = false;
 
     if (exts.find(T("AUTH ")) == exts.npos) {
 	// return "success" if server is open and does not allow auth
 	ret = true;
     } else if (exts.find(T(" PLAIN")) != exts.npos) {
-	buf = new char[idlen + passlen + 1];
+	char *buf = new char[idlen + passlen + 1];
+
 	buf[0] = '\0';
 	memcpy(buf + 1, tchartoachar(id), idlen);
 	memcpy(buf + 1 + idlen, tchartoachar(pass), passlen);

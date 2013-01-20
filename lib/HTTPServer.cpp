@@ -578,7 +578,6 @@ void HTTPServerSocket::get(bool head) {
     struct stat sbuf;
     const char *p;
     int fd;
-    int i;
     uint sts = 200;
     const char *val;
     string s;
@@ -593,7 +592,7 @@ void HTTPServerSocket::get(bool head) {
 	s += "/default.html";		    // deal w/ language later
     if ((p = strrchr(s.c_str(), '.')) != NULL) {
 	p++;
-	for (i = 0; mime[i].ext; i++) {
+	for (int i = 0; mime[i].ext; i++) {
 	    if (!stricmp(p, mime[i].ext)) {
 		type = mime[i].type;
 		subtype = mime[i].subtype;

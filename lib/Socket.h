@@ -103,13 +103,13 @@ public:
 	addr.sa.sa_family = families[proto];
     }
     Sockaddr(const sockaddr &sa) { set(sa); }
-    Sockaddr(const Sockaddr &sa) { addr = sa.addr; name = sa.name; }
+    Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
 
     bool operator ==(const Sockaddr &sa) const { 
 	return !memcmp(&addr, &sa.addr, sizeof (addr));
     }
     bool operator !=(const Sockaddr &sa) const { return !operator ==(sa); }
-    const Sockaddr &operator =(const Sockaddr &sa) {
+    Sockaddr &operator =(const Sockaddr &sa) {
 	addr = sa.addr;
 	name = sa.name;
 	return *this;
@@ -221,7 +221,7 @@ public:
     ~Socket() { if (--sbuf->count == 0) delete sbuf; }
 
     const Socket &operator =(socket_t sock);
-    const Socket &operator =(const Socket &r);
+    Socket &operator =(const Socket &r);
     bool operator ==(socket_t sock) const { return sbuf->sock == sock; }
     bool operator ==(const Socket &r) const
 	{ return sbuf == r.sbuf || sbuf->sock == r.sbuf->sock; }
@@ -387,7 +387,7 @@ public:
     SocketSet(const SocketSet &ss): fds(NULL), maxsz(0), sz(0) { *this = ss; }
     ~SocketSet() { delete [] fds; }
     
-    const SocketSet &operator =(const SocketSet &r);
+    SocketSet &operator =(const SocketSet &r);
     template<class C> socket_t operator [](C at) const {
 	return SSET_FD((uint)at);
     }
@@ -438,22 +438,24 @@ inline bool SocketSet::get(socket_t fd) const {
 }
 
 inline const SocketSet &SocketSet::operator =(const SocketSet &ss) {
-    sz = ss.sz;
+    if (&ss != this) {
+	sz = ss.sz;
 #ifdef _WIN32
-    if (maxsz < sz) {
-	maxsz = ss.maxsz;
-	delete [] fds;
-	fds = (fd_set *)new socket_t[maxsz + 1];
-    }
-    memcpy(fds, ss.fds, (sz + 1) * sizeof (socket_t));
+	if (maxsz < sz) {
+	    maxsz = ss.maxsz;
+	    delete [] fds;
+	    fds = (fd_set *)new socket_t[maxsz + 1];
+	}
+	memcpy(fds, ss.fds, (sz + 1) * sizeof (socket_t));
 #else
-    if (maxsz < sz) {
-	maxsz = ss.maxsz;
-	delete [] fds;
-	fds = new pollfd[maxsz];
-    }
-    memcpy(fds, ss.fds, sz * sizeof (pollfd));
+	if (maxsz < sz) {
+	    maxsz = ss.maxsz;
+	    delete [] fds;
+	    fds = new pollfd[maxsz];
+	}
+	memcpy(fds, ss.fds, sz * sizeof (pollfd));
 #endif
+    }
     return *this;
 }
 

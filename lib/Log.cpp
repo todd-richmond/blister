@@ -144,12 +144,10 @@ bool Log::LogFile::reopen(void) {
 
 void Log::LogFile::roll(void) {
     string afile(tstringtoastring(file)), apath(tstringtoastring(path));
-    char buf[1024];
     DIR *dir;
     struct dirent *ent;
     uint files = 0;
     time_t now;
-    uint oldext = 0;
     string oldfile;
     string::size_type pos;
     string s1, s2, s3;
@@ -175,6 +173,7 @@ void Log::LogFile::roll(void) {
     if ((dir = opendir(s1.empty() ? "." : s1.c_str())) != NULL) {
 	for (;;) {
 	    uint ext;
+	    uint oldext = 0;
 	    ulong oldtime = (ulong)-1;
 
 	    files = 0;
@@ -222,6 +221,8 @@ void Log::LogFile::roll(void) {
 	closedir(dir);
     }
     if (cnt && path == file) {
+	char buf[32];
+
 	sprintf(buf, ".%u", files);
 	s1 = afile + buf;
 	for (uint u = files; u > 1; u--) {
@@ -482,8 +483,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	char buf[40], cbuf[32];
 	int i = (syslogfac << 3) | (clvl - (clvl < Note ? 1 : 2));
 
-	ctime_r(&now_sec, cbuf);
-	sprintf(buf, "<%d>%.15s", i, cbuf + 4);
+	sprintf(buf, "<%d>%.15s", i, ctime_r(&now_sec, cbuf) + 4);
 	ss = buf;
 	if (!mailfrom.empty()) {
 	    ss += ' ';

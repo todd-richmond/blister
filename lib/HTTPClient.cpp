@@ -23,7 +23,7 @@
 
 static const int StreamSize = 3 * 1460;
 
-const URL &URL::operator =(const URL &url) {
+URL &URL::operator =(const URL &url) {
     if (this != &url) {
 	prot = url.prot;
 	host = url.host;
@@ -155,8 +155,8 @@ void URL::unescape(tstring &str, bool plus) {
     str.erase(i);
 }
 
-HTTPClient::HTTPClient(): ressz(0), result(0), rto(90 * 1000), wto(60 * 1000),
-    sstrm(StreamSize), sts(0), sz(0) {}
+HTTPClient::HTTPClient(): ka(true), ressz(0), result(0), rto(90 * 1000),
+    wto(60 * 1000), sstrm(StreamSize), sts(0), sz(0) {}
 
 bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     if (sock.open() && sa == addr)
@@ -224,7 +224,7 @@ loop:
     if (!connect(addr, ka))
 	goto done;
     start = milliticks();
-    if ((sent = (ulong)sock.writev(iov, 2) == (ulong)(req.size() + datasz)) ==
+    if ((sent = ((ulong)sock.writev(iov, 2) == (ulong)(req.size() + datasz))) ==
 	false ||
 	// shutdown causes huge cpu spikes on NT - not sure why
 #if 0

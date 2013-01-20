@@ -341,9 +341,17 @@ private:
     bool ready(DispatchObj &obj, bool hipri = false);
 
     friend class DispatchTimer;
-    void addTimer(DispatchTimer &dt) { timers.insert(dt); }
+    void addTimer(DispatchTimer &dt) {
+	FastSpinLocker lkr(lock);
+
+	timers.insert(dt);
+    }
     void cancelTimer(DispatchTimer &dt);
-    void delTimer(DispatchTimer &dt) { timers.erase(dt); }
+    void delTimer(DispatchTimer &dt) {
+	FastSpinLocker lkr(lock);
+
+	timers.erase(dt);
+    }
     void removeTimer(DispatchTimer &dt);
     void setTimer(DispatchTimer &dt, ulong tm);
 

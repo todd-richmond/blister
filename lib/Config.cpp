@@ -316,7 +316,7 @@ bool Config::write(tostream &os, bool inistyle) const {
     attrmap::const_iterator it;
     vector<tstring> lines;
     vector<tstring>::const_iterator lit;
-    tstring s, sect;
+    tstring s;
 
     for (it = amap.begin(); it != amap.end(); ++it) {
 	Value *val = it->second;

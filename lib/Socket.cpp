@@ -365,7 +365,7 @@ bool CIDR::find(uint addr) const {
     return false;
 }
 
-const Socket &Socket::operator =(socket_t sock) {
+Socket &Socket::operator =(socket_t sock) {
     int type = sbuf->type;
 
     if (--sbuf->count == 0)
@@ -375,7 +375,7 @@ const Socket &Socket::operator =(socket_t sock) {
 }
 
 
-const Socket &Socket::operator =(const Socket &r) {
+Socket &Socket::operator =(const Socket &r) {
     if (sbuf == r.sbuf)
 	return *this;
     if (--sbuf->count == 0)
@@ -674,19 +674,19 @@ long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
 }
 
 bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
-    int ret;
 #ifdef _WIN32
     struct timeval tv = { msec / 1000, (msec % 1000) * 1000 };
 
     fds->fd_count = sz;
     eset = iset = *this;
-    if ((ret = select(0, iset.fds, NULL, eset.fds,
-	msec == SOCK_INFINITE ? NULL : &tv)) == -1)
+    if (select(0, iset.fds, NULL, eset.fds, msec == SOCK_INFINITE ? NULL :
+	&tv) == -1)
 	return false;
     iset.sz = iset.fds->fd_count;
     eset.sz = eset.fds->fd_count;
     return true;
 #else
+    int ret;
     uint u;
 
     for (u = 0; u < sz; u++)
@@ -707,19 +707,19 @@ bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
 }
 
 bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
-    int ret;
 #ifdef _WIN32
     struct timeval tv = { msec / 1000, (msec % 1000) * 1000 };
 
     fds->fd_count = sz;
     eset = oset = *this;
-    if ((ret = select(0, NULL, oset.fds, eset.fds,
-	msec == SOCK_INFINITE ? NULL : &tv)) == -1)
+    if (select(0, NULL, oset.fds, eset.fds, msec == SOCK_INFINITE ? NULL :
+	&tv) == -1)
 	return false;
     oset.sz = oset.fds->fd_count;
     eset.sz = eset.fds->fd_count;
     return true;
 #else
+    int ret;
     uint u;
 
     for (u = 0; u < sz; u++)
@@ -741,20 +741,20 @@ bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
 
 bool SocketSet::iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
     uint msec) {
-    int ret;
 #ifdef _WIN32
     struct timeval tv = { msec / 1000, (msec % 1000) * 1000 };
 
     fds->fd_count = sz;
     eset = iset = oset = *this;
-    if ((ret = select(0, iset.fds, oset.fds, eset.fds,
-	msec == SOCK_INFINITE ? NULL : &tv)) == -1)
+    if (select(0, iset.fds, oset.fds, eset.fds, msec == SOCK_INFINITE ? NULL :
+	&tv) == -1)
 	return false;
     iset.sz = iset.fds->fd_count;
     oset.sz = oset.fds->fd_count;
     eset.sz = eset.fds->fd_count;
     return true;
 #else
+    int ret;
     uint u;
 
     for (u = 0; u < sz; u++)

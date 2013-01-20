@@ -100,7 +100,7 @@ typedef struct pollfd event_t;
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
-    shutdown(true), threads(0), waking(0),
+    maxthreads(0), shutdown(true), stacksz(0), threads(0), waking(0),
 #ifdef DSP_WIN32_ASYNC
      interval(DSP_NEVER), wnd(0)
 #else
@@ -629,7 +629,46 @@ uint Dispatcher::handleEvents(void *evts, uint nevts) {
 	    reset();
 	    continue;
 	}
+	if (evt->filter == EVFILT_READ) {
+	    if (ds->msg == DispatchNone && ds->flags & DSP_Scheduled)
+		ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
+		DispatchRead;
+	    else
+		ds->flags |= DSP_Readable;
+	} else if (evt->filter == EVFILT_WRITE) {
+	    if (ds->msg == DispatchNone && ds->flags & DSP_Scheduled)
+		ds->msg = DispatchWrite;
+	    else
+		ds->flags |= DSP_Writeable;
+	}
+	if (evt->flags & (EV_EOF | EV_ERROR)) {
+	    if (evt->flags & EV_ERROR) {
+		if (evt->data == EBADF || evt->data == EINVAL ||
+		    evt->data == ENOENT)
+		    continue;
+		ds->err((int)evt->data);
+	    }
+	    if (ds->msg == DispatchNone && ds->flags & DSP_Scheduled)
+		ds->msg = DispatchClose;
+	    else
+		ds->flags |= DSP_Closeable;
+	}
+	if (ds->flags & DSP_Scheduled && ready(*ds, ds->msg == DispatchAccept))
+	    count++;
+	/*
 	if (ds->flags & DSP_Scheduled) {
+	    if (evt->filter == EVFILT_READ) {
+		if (ds->msg == DispatchNone)
+		    ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
+			DispatchRead;
+		else
+		    ds->flags |= DSP_Readable;
+	    } else if (evt->filter == EVFILT_WRITE) {
+		if (ds->msg == DispatchNone)
+		    ds->msg = DispatchWrite;
+		else
+		    ds->flags |= DSP_Writeable;
+	    }
 	    if (evt->flags & (EV_EOF | EV_ERROR)) {
 		if (evt->flags & EV_ERROR) {
 		    if (evt->data == EBADF || evt->data == EINVAL ||
@@ -641,17 +680,6 @@ uint Dispatcher::handleEvents(void *evts, uint nevts) {
 		    ds->msg = DispatchClose;
 		else
 		    ds->flags |= DSP_Closeable;
-	    } else if (evt->filter == EVFILT_READ) {
-		if (ds->msg == DispatchNone)
-		    ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
-			DispatchRead;
-		else
-		    ds->flags |= DSP_Readable;
-	    } else if (evt->filter == EVFILT_WRITE) {
-		if (ds->msg == DispatchNone)
-		    ds->msg = DispatchWrite;
-		else
-		    ds->flags |= DSP_Writeable;
 	    }
 	    if (ready(*ds, ds->msg == DispatchAccept))
 		count++;
@@ -670,6 +698,7 @@ uint Dispatcher::handleEvents(void *evts, uint nevts) {
 		ds->flags |= DSP_Writeable;
 	    }
 	}
+ */
 #endif
 	removeTimer(*ds);
     }
@@ -734,7 +763,7 @@ void Dispatcher::wake(uint tasks, bool master) {
 }
 
 void Dispatcher::cancelTimer(DispatchTimer &dt) {
-    SpinLocker lkr(lock);
+    FastSpinLocker lkr(lock);
 
     if (dt.flags & DSP_ReadyAll)
 	removeReady(dt);
@@ -997,11 +1026,10 @@ void Dispatcher::addReady(DispatchObj &obj, bool hipri, DispatchMsg reason) {
 }
 
 void Dispatcher::cancelReady(DispatchObj &obj) {
-    if (obj.flags & DSP_ReadyAll) {
-	lock.lock();
+    FastSpinLocker lkr(lock);
+
+    if (obj.flags & DSP_ReadyAll)
 	removeReady(obj);
-	lock.unlock();
-    }
 }
 
 void Dispatcher::removeReady(DispatchObj &obj) {

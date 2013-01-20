@@ -214,7 +214,6 @@ void Service::setsignal(bool abrt) {
 }
 
 int Service::run(int argc, const tchar * const *argv) {
-    bool debug = false;
     int ret;
 
     console = getenv("USERNAME") != NULL;
@@ -223,9 +222,7 @@ int Service::run(int argc, const tchar * const *argv) {
 
 	while (*p == '-')
 	    p++;
-	if (!tstricmp(p, T("debug")))
-	    debug = true;
-	else if (!tstricmp(p, T("0")) || !tstricmp(p, T("console")))
+	if (!tstricmp(p, T("0")) || !tstricmp(p, T("console")))
 	    console = true;
 	else if (!tstricmp(p, T("d")) || !tstricmp(p, T("daemon")))
 	    console = false;
@@ -388,9 +385,9 @@ bool Service::update(Status status) {
 bool Service::install(const tchar *file, const tchar *desc,
     const tchar * const * depend, bool manual) {
     tchar buf[MAX_PATH];
+    size_t i;
     tchar *p = NULL, *pp;
     tstring root, prog;
-    size_t i, sz;
 
     if (uninstall())
 	open();
@@ -406,7 +403,9 @@ bool Service::install(const tchar *file, const tchar *desc,
 	desc = prog.c_str();
     }
     if (depend) {
-	for (i = 0, sz = 0; depend[i]; i++)
+	size_t sz = 0;
+
+	for (i = 0; depend[i]; i++)
 	    sz += tstrlen(depend[i]) + 1;
 	if ((p = new tchar[sz + 1]) != NULL) {
 	    for (i = 0, pp = p; depend[i]; i++) {
@@ -540,19 +539,20 @@ ServiceData::ServiceData(const tchar *service, uint num, uint size):
 }
 
 DWORD ServiceData::open(LPWSTR lpDeviceNames) {
-    HANDLE hdl;
-    LONG status;
-    HKEY key;
-    DWORD size;
-    DWORD type;
-    DWORD namesz;
-    PERF_INSTANCE_DEFINITION *pid;
-    PERF_COUNTER_BLOCK *pcb;
     static Lock lock;
 
     (void)lpDeviceNames;
     lock.lock();
     if (!init) {
+	HANDLE hdl;
+	LONG status;
+	HKEY key;
+	DWORD size;
+	DWORD type;
+	DWORD namesz;
+	PERF_INSTANCE_DEFINITION *pid;
+	PERF_COUNTER_BLOCK *pcb;
+
 	tstring s(T("SYSTEM\\CurrentControlSet\\Services\\") + name +
 	    T("\\Performance"));
 
@@ -874,7 +874,7 @@ int Service::ctrl_handler(void *) {
 	    str = T("SIGUSR2");
 	    break;
 	default:
-	    sprintf(buf, T("%u"), sig);
+	    sprintf(buf, T("%i"), sig);
 	    str = buf;
 	    break;
 	};
