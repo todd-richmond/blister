@@ -107,7 +107,6 @@ static msec_t _milliticks(void) {
 }
 
 usec_t microticks(void) {
-    static int lck;
     static uint64 tps;
 
     if (tps) {
@@ -116,6 +115,8 @@ usec_t microticks(void) {
 	if (QueryPerformanceCounter((LARGE_INTEGER *)&now))
 	    return now * 1000000 / tps;
     } else {
+	static int lck;
+
 	if (!lck) {
 	    QueryPerformanceFrequency((LARGE_INTEGER *)&tps);
 	    lck = 1;
@@ -892,20 +893,19 @@ static int dir_stat(const char *d, struct stat *buf) {
 }
 
 int statvfs(const char *path, struct statvfs *buf) {
-    ulong sectorsPerCluster;
     ulong bytesPerSector;
     ulong freeClusters;
+    ulong sectorsPerCluster;
     ulong totalClusters;
-    
-    int rc;
     char *cp;
-    char rootdir[4];
+    int rc;
 
     /* try root directory. This doesn't handle filesystems not mapped 
      * to drive a letter or a path without a drive letter
      */
     cp = strchr(path, ':');
     if (cp) {
+	char rootdir[4];
 	size_t size = cp - path + 1;
 
 	if (size >= sizeof (rootdir))

@@ -62,7 +62,7 @@ public:
     class EchoServerSocket: public DispatchServerSocket {
     public:
 	EchoServerSocket(Dispatcher &dspr, Socket &sock):
-	    DispatchServerSocket(dspr, sock), buf(NULL) {}
+	    DispatchServerSocket(dspr, sock), buf(NULL), in(0), out(0) {}
 	virtual ~EchoServerSocket() { delete [] buf; }
 
 	void timeout(ulong timeout) { tmt = timeout; }
@@ -172,8 +172,7 @@ void EchoTest::EchoClientSocket::output() {
     }
     if (msg == DispatchTimeout || msg == DispatchClose) {
 	errs++;
-	if (loops > 0)
-	    loops--;
+	loops.test_and_decr();
 	dloge(T("client write"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	timeout(start, wait);
@@ -181,16 +180,14 @@ void EchoTest::EchoClientSocket::output() {
     }
     if ((len = write(data + out, dsz - out)) < 0) {
 	errs++;
-	if (loops > 0)
-	    loops--;
+	loops.test_and_decr();
 	dloge(T("client write failed:"), errstr());
 	timeout(start, wait);
 	return;
     }
     out += len;
     if (out == dsz) {
-	if (loops > 0)
-	    loops--;
+	loops.test_and_decr();
 	dlogt(T("client write"), len);
 	in = 0;
 	readable(input, tmt);

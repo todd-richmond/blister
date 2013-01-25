@@ -220,7 +220,7 @@ public:
     Socket(const Socket &r) { r.sbuf->count++; sbuf = r.sbuf; }
     ~Socket() { if (--sbuf->count == 0) delete sbuf; }
 
-    const Socket &operator =(socket_t sock);
+    Socket &operator =(socket_t sock);
     Socket &operator =(const Socket &r);
     bool operator ==(socket_t sock) const { return sbuf->sock == sock; }
     bool operator ==(const Socket &r) const
@@ -437,7 +437,7 @@ inline bool SocketSet::get(socket_t fd) const {
     return false;
 }
 
-inline const SocketSet &SocketSet::operator =(const SocketSet &ss) {
+inline SocketSet &SocketSet::operator =(const SocketSet &ss) {
     if (&ss != this) {
 	sz = ss.sz;
 #ifdef _WIN32

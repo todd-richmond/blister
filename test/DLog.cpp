@@ -49,7 +49,6 @@ int tmain(int argc, tchar *argv[]) {
     Log::Level lvl = Log::Info;
     ulong ka = 0;
     bool out = false;
-    bool roll = false;
     tstring s;
 
     signal(SIGINT, signal_handler);
@@ -183,8 +182,8 @@ int tmain(int argc, tchar *argv[]) {
 	    dlog.prefix(argv[i]);
 	} else if (!tstricmp(argv[i], T("-r")) || !tstricmp(argv[i],
 	    T("--roll"))) {
-	    roll = true;
 	    dlog.roll();
+	    return 0;
 	} else if (!tstricmp(argv[i], T("-s")) || !tstricmp(argv[i],
 	    T("--syslog"))) {
 	    uint fac = 1;

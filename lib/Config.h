@@ -114,8 +114,8 @@ public:
     bool iniformat(void) const { return ini; }
     const tstring &prefix(void) const { return pre; }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
-    bool read(const tchar *file, bool apppend = false);
-    bool read(tistream &is, bool apppend = false);
+    bool read(const tchar *file, const tchar *pre = NULL, bool append = false);
+    bool read(tistream &is, const tchar *pre = NULL, bool append = false);
     bool write(tostream &os) const { return write(os, ini); }
     bool write(tostream &os, bool ini) const;
     bool write(const tchar *file = NULL) const { return write(file, ini); }
@@ -165,7 +165,7 @@ private:
 };
 
 inline tistream &operator >>(tistream &is, Config &cfg) {
-    cfg.read(is, true);
+    cfg.read(is, NULL, true);
     return is;
 }
 

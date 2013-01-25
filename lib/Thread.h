@@ -940,6 +940,20 @@ public:
     // dangerous - do not operate on class directly if using these functions
     C get(void) const { return c; }
     template<class N> C set(N n) { return c = n; }
+    C test_and_decr() { return test_and_sub(1); }
+    template<class N> N test_and_sub(N n) {
+	TSLocker lkr(lck);
+	
+	if (c <= 0) {
+	    n = 0;
+	} else if (n > c) {
+	    n = static_cast<N>(c);
+	    c = 0;
+	} else {
+	    c -= static_cast<C>(n);
+	}
+	return n;
+    }
     void lock(void) { lck.lock(); }
     void unlock(void) { lck.unlock(); }
 

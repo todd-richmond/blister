@@ -71,12 +71,12 @@ int tmain(int argc, tchar *argv[]) {
 	    return -1;
     }
     if (file) {
-	if (!cfg.read(file)) {
+	if (!cfg.read(file, prefix)) {
 	    tcerr << T("unable to read ") << file << endl;
 	    return -1;
 	}
     } else {
-	cfg.read(tcin);
+	cfg.read(tcin, prefix);
     }
     exists = cfg.exists(attr, section);
     if (check) {

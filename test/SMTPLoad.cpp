@@ -407,7 +407,7 @@ int SMTPLoad::onStart(void) {
 	lvars[T("pass")] = data;
 	start = last = microticks();
 	io = 0;
-	for (it = cmds.begin(); it != cmds.end() && !qflag; it++) {
+	for (it = cmds.begin(); it != cmds.end() && !qflag; ++it) {
 	    LoadCmd *cmd = *it;
 
 	    if (!tstricmp(cmd->cmd.c_str(), T("sleep"))) {
@@ -561,7 +561,7 @@ void SMTPLoad::print(tostream &out, usec_t last) {
 
     os << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
-    for (it = cmds.begin(); it != cmds.end(); it++) {
+    for (it = cmds.begin(); it != cmds.end(); ++it) {
 	cmd = *it;
 	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
 	    continue;
@@ -607,7 +607,7 @@ void SMTPLoad::reset(bool all) {
     vector<LoadCmd *>::const_iterator it;
     LoadCmd *cmd;
 
-    for (it = cmds.begin(); it != cmds.end(); it++) {
+    for (it = cmds.begin(); it != cmds.end(); ++it) {
 	cmd = *it;
 	cmd->count = 0;
 	cmd->err = 0;
@@ -634,7 +634,7 @@ void SMTPLoad::uninit(void) {
     delete [] body;
     delete [] bodycache;
     delete [] bodysz;
-    for (vector<LoadCmd *>::const_iterator it = cmds.begin(); it != cmds.end(); it++)
+    for (vector<LoadCmd *>::const_iterator it = cmds.begin(); it != cmds.end(); ++it)
 	delete *it;
     cmds.clear();
 }
@@ -654,7 +654,6 @@ int tmain(int argc, tchar *argv[]) {
     bool allfiles = false;
     const tchar *bodyfile = NULL;
     ulong cachesz = 64;
-    bool debug = false;
     const tchar *host = T("localhost:25");
     bool first = true;
     int filecnt = 0;
@@ -682,9 +681,6 @@ int tmain(int argc, tchar *argv[]) {
 	    bodyfile = argv[++i];
 	} else if (!tstricmp(argv[i], T("-c"))) {
 	    cachesz = tstrtoul(argv[++i], NULL, 10);
-	} else if (!tstricmp(argv[i], T("-d"))) {
-	    debug = true;
-	    unlink("debug.out");
 	} else if (!tstricmp(argv[i], T("-h"))) {
 	    host = argv[++i];
 	} else if (!tstricmp(argv[i], T("-l"))) {
@@ -717,7 +713,7 @@ int tmain(int argc, tchar *argv[]) {
 	if (!program)
 	    program = tstrrchr(argv[0], '\\');
 	tcerr << T("usage: ") << (program ? program + 1 : argv[0]) <<
-	    T(" [-a [numfiles]] [-b bodyfile|bodydir] [-c cachemb] [-d]\n")
+	    T(" [-a [numfiles]] [-b bodyfile|bodydir] [-c cachemb]\n")
 	    T("\t[-h host[:port]] [-l loops] [-m maxuser] [-q|-v]* [-r]\n")
 	    T("\t[-s stattime] [-t threads] [-w timeout] cmdfile") << endl;
 	return 1;
@@ -782,7 +778,8 @@ int tmain(int argc, tchar *argv[]) {
     dlog.level(Log::None);
     if (fs.is_open())
 	fs.close();
-    while ((thread = (SMTPLoad *)ThreadGroup::MainThreadGroup.wait(3000)) != NULL)
+    while ((thread = static_cast<SMTPLoad *>(ThreadGroup::MainThreadGroup.wait(
+	3000))) != NULL)
 	delete thread;
     SMTPLoad::uninit();
     return 0;

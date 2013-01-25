@@ -40,9 +40,8 @@ Config::Value::Value(const tchar *val, size_t len): expand(false), quote(0) {
 }
 
 Config::Config(const tchar *file, const tchar *str): ini(false), locker(0) {
-    prefix(str);
     if (file)
-	read(file);
+	read(file, str);
 }
 
 const tstring &Config::expand(const Value *value) const {
@@ -289,12 +288,13 @@ bool Config::parse(tistream &is) {
     return true;
 }
 
-bool Config::read(tistream &is, bool app) {
+bool Config::read(tistream &is, const tchar *str, bool app) {
     bool ret;
 
     if (!is)
 	return false;
     lock();
+    prefix(str);
     if (!app)
 	clear();
     ret = parse(is);
@@ -302,13 +302,13 @@ bool Config::read(tistream &is, bool app) {
     return ret;
 }
 
-bool Config::read(const tchar *file, bool app) {
+bool Config::read(const tchar *file, const tchar *str, bool app) {
     if (file)
 	path = file;
 
     tifstream is(path.c_str());
 
-    return read(is, app);
+    return read(is, str, app);
 }
 
 bool Config::write(tostream &os, bool inistyle) const {

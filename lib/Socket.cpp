@@ -138,9 +138,11 @@ bool Sockaddr::set(const addrinfo *ai) {
 }
 
 bool Sockaddr::set(const tchar *host, Proto proto) {
-    const tchar *p = NULL, *pp;
+    const tchar *p = NULL;
 
     if (host && (p = tstrchr(host, ':')) != NULL) {
+	const tchar *pp;
+	
 	if ((pp = tstrchr(p + 1, ':')) != NULL) 
 	    p = tstrrchr(pp, ';');
     }
@@ -373,7 +375,6 @@ Socket &Socket::operator =(socket_t sock) {
     sbuf = new SocketBuf(type, sock, false);
     return *this;
 }
-
 
 Socket &Socket::operator =(const Socket &r) {
     if (sbuf == r.sbuf)

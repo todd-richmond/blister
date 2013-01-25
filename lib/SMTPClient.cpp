@@ -26,7 +26,8 @@
 
 string SMTPClient::crlf("\r\n");
 
-SMTPClient::SMTPClient(): sstrm(sock), lmtp(false) {}
+SMTPClient::SMTPClient(): sstrm(sock), datasent(false), lmtp(false),
+    mime(false), parts(0) {}
 
 bool SMTPClient::add(vector<tstring> &v, const tchar *id) {
     RFC822Addr addrs(id);
