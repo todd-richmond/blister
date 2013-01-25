@@ -26,7 +26,11 @@
 int clock_gettime(int id, struct timespec *ts) {
     if (id == CLOCK_MONOTONIC) {
 	uint64_t t = mach_absolute_time();
+	static struct mach_timebase_info mti;
 
+	if (!mti.denom)
+	    mach_timebase_info(&mti);
+	t = t * mti.numer / mti.denom;
 	ts->tv_sec  = t / (1000 * 1000 * 1000);
 	ts->tv_nsec = t % 1000;
 	return 0;
@@ -44,7 +48,13 @@ int clock_gettime(int id, struct timespec *ts) {
 
 usec_t microticks(void) {
 #ifdef __APPLE__
-    return mach_absolute_time() / 1000;
+    static struct mach_timebase_info mti;
+
+    if (!mti.denom) {
+	mach_timebase_info(&mti);
+	mti.denom *= 1000;
+    }
+    return mach_absolute_time() * mti.numer / mti.denom;
 #elif defined(CLOCK_MONOTONIC)
     struct timespec ts;
 
@@ -82,6 +92,17 @@ usec_t microticks(void) {
 	lastusec = now;
     }
     return lastutick;
+#endif
+}
+
+msec_t milliticks(void) {
+#ifdef CLOCK_MONOTONIC_COARSE
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    return (msec_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+#else
+    return (msec_t)(microticks() / 1000);
 #endif
 }
 

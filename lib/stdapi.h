@@ -598,12 +598,12 @@ inline usec_t microtime(void) {
 
 EXTERNC
 extern usec_t microticks(void);
+extern msec_t milliticks(void);
 extern int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test);
 EXTERNC_
 
 #define millitime()	((msec_t)(microtime() / 1000))
-#define milliticks()	((msec_t)(microticks() / 1000))
 
 // common includes, defines and code for C/C++ software
 #ifdef __cplusplus
