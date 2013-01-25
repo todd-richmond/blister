@@ -1,4 +1,4 @@
-AC_INIT(Blister, 0.9)
+AC_INIT(Blister, 1.0)
 AM_INIT_AUTOMAKE
 
 AC_PROG_MAKE_SET
