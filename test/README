@@ -16,6 +16,6 @@ httpload - scriptable, multi-threaded HTTP load test with statistics reporting.
 Supports GET commands with optional keep-alives and POST commands with data from
 a single file or directory
 
-smtload - scriptable, multi-threaded SMTP load test with statistics reporting.
+smtpload - scriptable, multi-threaded SMTP load test with statistics reporting.
 Supports random RCPT TO addressess and DATA from a single file or directory
 

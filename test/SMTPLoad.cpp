@@ -392,7 +392,7 @@ int SMTPLoad::onStart(void) {
 	lock.unlock();
 	if (!tmp)
 	    break;
-	id = tmpid ? tmpid % (muser ? muser : id || 1) : 0;
+	id = tmpid ? tmpid % (muser ? muser : id) : 0;
 	tsprintf(data, T("%lu"), id);
 	lvars[T("id")] = data;
 	if ((ait = vars.find(T("user"))) == vars.end())
