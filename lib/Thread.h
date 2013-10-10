@@ -605,7 +605,7 @@ public:
 	} else {
 	    mach_timespec ts;
 
-	    ts.tv_sec = msec / 1000;
+	    ts.tv_sec = (uint)(msec / 1000);
 	    ts.tv_nsec = (msec % 1000) * 1000000;
 	    return semaphore_timedwait(hdl, ts) == 0;
 	}

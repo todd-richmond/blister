@@ -1118,7 +1118,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 	for (; n > 0; p += 4, n -= 3) {
 	    if (n >= 3) {
 		if (sz < 4) {
-		    delete [] out;
+		    delete [] (char *)output;
 		    return false;
 		}
 		out[0] = DEC(p[0]) << 2 | DEC(p[1]) >> 4;
@@ -1129,13 +1129,13 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 		sz -= 4;
 	    } else {
 		if (sz < 2) {
-		    delete [] out;
+		    delete [] (char *)output;
 		    return false;
 		}
 		out[0] = DEC(p[0]) << 2 | DEC(p[1]) >> 4;
 		if (n >= 2) {
 		    if (sz < 3) {
-			delete [] out;
+			delete [] (char *)output;
 			return false;
 		    }
 		    out[1] = DEC(p[1]) << 4 | DEC(p[2]) >> 2;
@@ -1152,7 +1152,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     while (isspace(*p))
 	p++;
     if (memcmp(p, "end", 3)) {
-	delete [] out;
+	delete [] (char *)output;
 	return false;
     }
     return true;
