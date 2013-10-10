@@ -193,7 +193,7 @@ public:
     DispatchClientSocket(DispatchObj &parent, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(parent, sock, msec) {}
 
-    void connect(const Sockaddr &addr, ulong msec = 40000, DispatchObjCB cb =
+    void connect(const Sockaddr &addr, ulong msec = 30000, DispatchObjCB cb =
 	NULL);
 
 protected:
@@ -360,6 +360,7 @@ private:
     void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg);
 
     void cleanup(void);
+    void defer(DispatchObj &obj);
     bool exec(void);
     uint handleEvents(void *evts, uint cnt);
     int run(void);
@@ -368,7 +369,7 @@ private:
 
     SpinLock lock;
     msec_t due;
-    ObjectList<DispatchObj> rlist;
+    ObjectList<DispatchObj> flist, rlist;
     Lifo lifo;
     uint maxthreads;
     volatile bool shutdown;

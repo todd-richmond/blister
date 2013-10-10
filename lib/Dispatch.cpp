@@ -127,7 +127,12 @@ bool Dispatcher::exec() {
 	DispatchObj *obj = rlist.pop_front();
 	DispatchObj::Group *group = obj->group;
 
-	if (group->active) {
+	if (obj->flags & DSP_Freed) {
+	    lock.unlock();
+	    delete obj;
+	    lock.lock();
+	    continue;
+	} else if (group->active) {
 	    obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
 	    group->glist.push_back(*obj);
 	    continue;
@@ -150,10 +155,6 @@ bool Dispatcher::exec() {
 	    rlist.push_back(*obj);
 	} else if (obj->flags & DSP_Ready) {
 	    rlist.push_back(*obj);
-	} else if (obj->flags & DSP_Freed) {
-	    lock.unlock();
-	    delete obj;
-	    lock.lock();
 	}
     }
     return !shutdown;
@@ -541,11 +542,26 @@ void Dispatcher::cleanup(void) {
 	obj->terminate();
 	lock.lock();
     }
+    lock.unlock();
+    while (flist)
+	delete flist.pop_front();
+    lock.lock();
     while ((dt = timers.get()) != NULL) {
 	lock.unlock();
 	dt->terminate();
 	lock.lock();
     }
+    lock.unlock();
+    while (flist)
+	delete flist.pop_front();
+    lock.lock();
+}
+
+void Dispatcher::defer(DispatchObj &obj) {
+    FastSpinLocker lkr(lock);
+    
+    obj.flags |= DSP_Freed;
+    flist.push_back(obj);
 }
 
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
@@ -555,99 +571,53 @@ uint Dispatcher::handleEvents(void *evts, uint nevts) {
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds;
 	event_t *evt = (event_t *)evts + u;
+
 #ifdef DSP_DEVPOLL
+#define DSP_EVENT_ERR(evt)	evt->revents & (POLLERR | POLLHUP)
+#define DSP_EVENT_READ(evt)	evt->revents & POLLIN
+#define DSP_EVENT_WRITE(evt)	evt->revents & POLLOUT
+
 	socketmap::const_iterator sit;
 
-	if (evt->fd == isock) {
-	    reset();
+	if (evt->fd == isock)
+	    ds = NULL;
+	else if ((sit = smap.find(evt->fd)) == smap.end())
 	    continue;
-	} else if ((sit = smap.find(evt->fd)) == smap.end()) {
-	    continue;
-	}
-	ds = sit->second;
-	if (ds->flags & DSP_Scheduled) {
-	    if (evt->revents & POLLIN)
-		ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
-		    DispatchRead;
-	    if (evt->events & POLLOUT) {
-		if (ds->msg == DispatchNone)
-		    ds->msg = DispatchWrite;
-		else
-		    ds->flags |= DSP_Writeable;
-	    }
-	    if (evt->revents & (POLLERR | POLLHUP)) {
-		if (ds->msg == DispatchNone)
-		    ds->msg = DispatchClose;
-		else
-		    ds->flags |= DSP_Closeable;
-	    }
-	    if (ready(*ds))
-		count++;
-	} else {
-	    if (evt->events & POLLIN)
-		ds->flags |= DSP_Readable;
-	    if (evt->events & POLLOUT)
-		ds->flags |= DSP_Writeable;
-	    if (evt->events & (POLLERR | POLLHUP))
-		ds->flags |= DSP_Closeable;
-	}
+	else
+	    ds = sit->second;
+
 #elif defined(DSP_EPOLL)
+#define DSP_EVENT_ERR(evt)	evt->events & (EPOLLERR | EPOLLHUP)
+#define DSP_EVENT_READ(evt)	evt->events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)
+#define DSP_EVENT_WRITE(evt)	evt->events & EPOLLOUT
+
 	ds = (DispatchSocket *)evt->data.ptr;
-	if (!ds) {
-	    reset();
-	    continue;
-	}
-	if (ds->flags & DSP_Scheduled) {
-	    if (evt->events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP))
-		ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
-		    DispatchRead;
-	    if (evt->events & EPOLLOUT) {
-		if (ds->msg == DispatchNone)
-		    ds->msg = DispatchWrite;
-		else
-		    ds->flags |= DSP_Writeable;
-	    }
-	    if (evt->events & (EPOLLERR | EPOLLHUP)) {
-		if (ds->msg == DispatchNone)
-		    ds->msg = DispatchClose;
-		else
-		    ds->flags |= DSP_Closeable;
-	    }
-	    if (ready(*ds, ds->msg == DispatchAccept))
-		count++;
-	} else {
-	    if (evt->events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP))
-		ds->flags |= DSP_Readable;
-	    if (evt->events & EPOLLOUT)
-		ds->flags |= DSP_Writeable;
-	    if (evt->events & (EPOLLERR | EPOLLHUP))
-		ds->flags |= DSP_Closeable;
-	}
+
 #elif defined(DSP_KQUEUE)
+#define DSP_EVENT_ERR(evt)	evt->flags & (EV_EOF | EV_ERROR)
+#define DSP_EVENT_READ(evt)	evt->filter == EVFILT_READ
+#define DSP_EVENT_WRITE(evt)	evt->filter == EVFILT_WRITE
+
 	ds = (DispatchSocket *)evt->udata;
+#endif
 	if (!ds) {
 	    reset();
 	    continue;
 	}
-	if (evt->filter == EVFILT_READ) {
+	if (DSP_EVENT_READ(evt)) {
 	    if (ds->msg == DispatchNone && ds->flags & DSP_Scheduled)
 		ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
-		DispatchRead;
+		    DispatchRead;
 	    else
 		ds->flags |= DSP_Readable;
-	} else if (evt->filter == EVFILT_WRITE) {
+	}
+	if (DSP_EVENT_WRITE(evt)) {
 	    if (ds->msg == DispatchNone && ds->flags & DSP_Scheduled)
 		ds->msg = DispatchWrite;
 	    else
 		ds->flags |= DSP_Writeable;
 	}
-	if (evt->flags & (EV_EOF | EV_ERROR)) {
-	    if (evt->flags & EV_ERROR) {
-		if (evt->data == EBADF || evt->data == EINVAL ||
-		    evt->data == ENOENT)
-		    continue;
-		ds->err((int)evt->data);
-	    }
+	if (DSP_EVENT_ERR(evt)) {
 	    if (ds->msg == DispatchNone && ds->flags & DSP_Scheduled)
 		ds->msg = DispatchClose;
 	    else
@@ -655,53 +625,9 @@ uint Dispatcher::handleEvents(void *evts, uint nevts) {
 	}
 	if (ds->flags & DSP_Scheduled && ready(*ds, ds->msg == DispatchAccept))
 	    count++;
-	/*
-	if (ds->flags & DSP_Scheduled) {
-	    if (evt->filter == EVFILT_READ) {
-		if (ds->msg == DispatchNone)
-		    ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
-			DispatchRead;
-		else
-		    ds->flags |= DSP_Readable;
-	    } else if (evt->filter == EVFILT_WRITE) {
-		if (ds->msg == DispatchNone)
-		    ds->msg = DispatchWrite;
-		else
-		    ds->flags |= DSP_Writeable;
-	    }
-	    if (evt->flags & (EV_EOF | EV_ERROR)) {
-		if (evt->flags & EV_ERROR) {
-		    if (evt->data == EBADF || evt->data == EINVAL ||
-			evt->data == ENOENT)
-			continue;
-		    ds->err((int)evt->data);
-		}
-		if (ds->msg == DispatchNone)
-		    ds->msg = DispatchClose;
-		else
-		    ds->flags |= DSP_Closeable;
-	    }
-	    if (ready(*ds, ds->msg == DispatchAccept))
-		count++;
-	} else {
-	    if (evt->flags & EV_ERROR) {
-		if (evt->data == EBADF || evt->data == EINVAL ||
-		    evt->data == ENOENT)
-		    continue;
-		ds->err((int)evt->data);
-		ds->flags |= DSP_Closeable;
-	    } else if (evt->flags & EV_EOF) {
-		ds->flags |= DSP_Closeable;
-	    } else if (evt->filter == EVFILT_READ) {
-		ds->flags |= DSP_Readable;
-	    } else if (evt->filter == EVFILT_WRITE) {
-		ds->flags |= DSP_Writeable;
-	    }
-	}
- */
-#endif
 	removeTimer(*ds);
     }
+    rlist.push_back(flist);
     return count;
 }
 #endif
@@ -737,7 +663,7 @@ void Dispatcher::wake(uint tasks, bool master) {
 	static uint wake_max = Processor::count() + 1;
 
 	while (tasks && rlist) {
-	    if (waking >= wake_max - (master ? 0 : 1))
+	    if (waking >= (master ? wake_max : wake_max - 1))
 		break;
 	    waking++;
 	    lock.unlock();
@@ -1068,18 +994,20 @@ bool Dispatcher::ready(DispatchObj &obj, bool hipri) {
 void DispatchObj::detach(void) { flags |= DSP_Detached; }
 
 void DispatchObj::erase(void) {
-    if (flags & (DSP_Active | DSP_ReadyAll | DSP_SelectAll))
+    if (flags & (DSP_Active | DSP_ReadyAll | DSP_Scheduled | DSP_SelectAll)) {
 	cancel();
-    if (flags & DSP_Active)
-	flags |= DSP_Freed;
-    else
+	dspr.defer(*this);
+    } else {
 	delete this;
+    }
+
 }
 
 void DispatchObj::terminate(void) {
-    cancel();
     if (flags & DSP_Detached)
 	erase();
+    else
+	cancel();
 }
 
 DispatchSocket::DispatchSocket(Dispatcher &d, int type, ulong msec):
@@ -1097,8 +1025,8 @@ DispatchSocket::DispatchSocket(DispatchObj &parent, int type, ulong msec):
     flags |= DSP_Socket;
 }
 
-DispatchSocket::DispatchSocket(DispatchObj &parent, const Socket &s, ulong msec):
-    DispatchTimer(parent, msec), Socket(s), mapped(false) {
+DispatchSocket::DispatchSocket(DispatchObj &parent, const Socket &s, ulong
+    msec): DispatchTimer(parent, msec), Socket(s), mapped(false) {
     flags |= DSP_Socket;
 }
 
