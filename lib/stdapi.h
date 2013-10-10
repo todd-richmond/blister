@@ -117,7 +117,7 @@ typedef unsigned short word;
 #define O_COMPRESSED	0x010000
 #define O_POSIX		0x020000
 #define O_SYNC		0x040000
-#define O_NOBUFFERING	0x080000
+#define O_DIRECT	0x080000
 #define O_OVERLAPPED	0x100000
 #define O_BACKUP	0x200000
 #define O_NONBLOCK	0x400000
@@ -369,7 +369,9 @@ EXTERNC_
 #define O_BINARY	0
 #endif
 #define O_COMPRESSED	0
-#define O_NOBUFFERING	0
+#ifndef O_DIRECT
+#define O_DIRECT	0
+#endif
 #define O_SEQUENTIAL	0
 #define O_SHORT_LIVED	0
 

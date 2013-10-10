@@ -638,25 +638,25 @@ int open(const char *p, int oflag, ...) {
 	return -1;
     }
     fileattrib = FILE_ATTRIBUTE_NORMAL;
-    if (oflag & O_SHORT_LIVED)
-	fileattrib |= FILE_ATTRIBUTE_TEMPORARY;
+    if (oflag & O_BACKUP)
+	fileattrib |= FILE_FLAG_BACKUP_SEMANTICS;
     if (oflag & O_COMPRESSED)
 	fileattrib |= FILE_ATTRIBUTE_COMPRESSED;
-    if (oflag & O_TEMPORARY)
-	fileattrib |= FILE_FLAG_DELETE_ON_CLOSE;
-    if (oflag & O_SYNC)
-	fileattrib |= FILE_FLAG_WRITE_THROUGH;
-    if (oflag & O_NOBUFFERING)
+    if (oflag & O_DIRECT)
 	fileattrib |= FILE_FLAG_NO_BUFFERING;
     if (oflag & O_OVERLAPPED)
 	fileattrib |= FILE_FLAG_OVERLAPPED;
-    if (oflag & O_BACKUP)
-	fileattrib |= FILE_FLAG_BACKUP_SEMANTICS;
     if (oflag & O_POSIX) {
 	if (path[1] == ':')
 	    *((LPTSTR)path) = (char)totupper(path[0]);
 	fileattrib |= FILE_FLAG_POSIX_SEMANTICS;
     }
+    if (oflag & O_SHORT_LIVED)
+	fileattrib |= FILE_ATTRIBUTE_TEMPORARY;
+    if (oflag & O_SYNC)
+	fileattrib |= FILE_FLAG_WRITE_THROUGH;
+    if (oflag & O_TEMPORARY)
+	fileattrib |= FILE_FLAG_DELETE_ON_CLOSE;
     if (oflag & O_SEQUENTIAL)
 	fileattrib |= FILE_FLAG_SEQUENTIAL_SCAN;
     else if (oflag & O_RANDOM)
