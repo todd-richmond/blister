@@ -83,9 +83,9 @@ void Config::clear(void) {
     }
 }
 
-void Config::erase(const tchar *attr) {
+void Config::erase(const tchar *attr, const tchar *sect) {
     Locker lkr(lck, !THREAD_ISSELF(locker));
-    attrmap::iterator it = amap.find(attr);
+    attrmap::iterator it = amap.find(keystr(attr, sect));
 
     if (it != amap.end()) {
 	const tchar *p = it->first;

@@ -61,19 +61,21 @@ public:
     ~Config() { clear(); }
 
     void clear(void);
-    void erase(const tchar *attr);
+    void erase(const tchar *attr, const tchar *sect = NULL);
     bool exists(const tchar *attr, const tchar *sect = NULL) {
 	Locker lkr(lck, !THREAD_ISSELF(locker));
 
 	return lookup(attr, sect) != NULL;
     }
-    const tstring get(const tchar *attr, const tchar *def = NULL,
-	const tchar *sect = NULL) const;
-    const tstring get(const tstring &attr, const tstring &def,
-	const tstring &sect) const
-	{ return get(attr.c_str(), def.c_str(), sect.c_str()); }
-    const tstring get(const tstring &attr, const tstring &def) const
-	{ return get(attr.c_str(), def.c_str()); }
+    const tstring get(const tchar *attr, const tchar *def = NULL, const tchar
+	*sect = NULL) const;
+    const tstring get(const tstring &attr, const tstring &def, const tstring
+	&sect) const {
+	return get(attr.c_str(), def.c_str(), sect.c_str());
+    }
+    const tstring get(const tstring &attr, const tstring &def) const {
+	return get(attr.c_str(), def.c_str());
+    }
     const tstring get(const tstring &attr) const { return get(attr.c_str()); }
     bool get(const tchar *attr, bool def, const tchar *sect = NULL) const;
     double get(const tchar *attr, double def, const tchar *sect = NULL) const;
