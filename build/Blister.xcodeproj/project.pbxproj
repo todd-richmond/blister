@@ -252,7 +252,7 @@
 		F7AA211013149F2C00272F6A /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0450;
+				LastUpgradeCheck = 0500;
 			};
 			buildConfigurationList = F7AA211313149F2C00272F6A /* Build configuration list for PBXProject "Blister" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -314,7 +314,8 @@
 		F7AA212513149F2C00272F6A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				CLANG_STATIC_ANALYZER_MODE = deep;
+				CLANG_WARN_IMPLICIT_SIGN_CONVERSION = NO;
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
@@ -345,11 +346,13 @@
 		F7AA212613149F2C00272F6A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				CLANG_STATIC_ANALYZER_MODE = deep;
+				CLANG_WARN_IMPLICIT_SIGN_CONVERSION = NO;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = YES;
 				GCC_OPTIMIZATION_LEVEL = 3;
 				GCC_PREPROCESSOR_DEFINITIONS = NDEBUG;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
