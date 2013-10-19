@@ -773,6 +773,7 @@ using namespace __gnu_cxx;
 #else
 #define STL_UNORDERED_MAP_H	<tr1/unordered_map>
 #define STL_UNORDERED_SET_H	<tr1/unordered_set>	
+namespace std { namespace tr1 {} }
 using namespace std::tr1;
 #endif
 

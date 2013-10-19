@@ -254,7 +254,7 @@ private:
 
     class TimerSet {
     public:
-	typedef set<DispatchTimer *, DispatchTimer::compare> sorted_timerset;
+	typedef ::set<DispatchTimer *, DispatchTimer::compare> sorted_timerset;
 	typedef unordered_set<DispatchTimer *, ptrhash<DispatchTimer> >
 	    unsorted_timerset;
 

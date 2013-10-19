@@ -420,24 +420,23 @@ bool Thread::terminate(void) {
 
 // wait for thread to exit
 bool Thread::wait(ulong timeout) {
-    bool ret = false;
     Locker lkr(lck);
 
-    if (state == Init) {
-	ret = true;
+    if (state == Init || state == Terminated) {
+	return true;
     } else if (id == NOID) {
 	lkr.unlock();
 #ifdef _WIN32
-	ret = WaitForSingleObject(hdl, timeout) == WAIT_OBJECT_0;
+	return WaitForSingleObject(hdl, timeout) == WAIT_OBJECT_0;
 #else
 	// pthreads do not support a timeout
 	if (timeout == INFINITE)
-	    ret = pthread_join(hdl, NULL) == 0;
+	    return pthread_join(hdl, NULL) == 0;
 #endif
     } else {
-	ret = cv.wait(timeout);
+	return cv.wait(timeout);
     }
-    return ret;
+    return false;
 }
 
 ThreadGroup::ThreadGroup(bool aterm): cv(lock), autoterm(aterm), state(Init) {
@@ -544,7 +543,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
 
 	for (it = threads.begin(); it != threads.end(); ++it) {
 	    Thread *thrd = *it;
-	    
+
 	    if (main && thrd != &master) {
 		continue;
 	    } else if (thrd->terminated()) {
