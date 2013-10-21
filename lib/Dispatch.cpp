@@ -539,7 +539,10 @@ void Dispatcher::cleanup(void) {
 	if (obj->flags & DSP_ReadyGroup)
 	    obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
 	lock.unlock();
-	obj->terminate();
+	if (obj->flags & DSP_Freed)
+	    delete obj;
+	else
+	    obj->terminate();
 	lock.lock();
     }
     lock.unlock();

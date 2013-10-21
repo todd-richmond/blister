@@ -299,23 +299,22 @@ private:
 	}
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
 	DispatchTimer *peek(void) {
-	    sorted_timerset::const_iterator it = sorted.begin();
-
-	    return it == sorted.end() ? NULL : *it;
+	    return sorted.empty() ? NULL : *sorted.begin();
 	}
 	bool reorder(msec_t when) {
 	    bool ret = false;
-	    
-	    split = when;
-	    for (unsorted_timerset::iterator it = unsorted.begin(); it !=
+
+	    for (unsorted_timerset::const_iterator it = unsorted.begin(); it !=
 		unsorted.end(); ++it) {
 		DispatchTimer *dt = *it;
 
-		if (dt->due <= split)
-		    sorted.insert(dt);
-		if (dt->due != DSP_NEVER_DUE)
+		if (dt->due != DSP_NEVER_DUE) {
 		    ret = true;
+		    if (dt->due > split && dt->due < when)
+			sorted.insert(dt);
+		}
 	    }
+	    split = when;
 	    return ret;
 	}
 	void set(DispatchTimer &dt, msec_t when) {
@@ -330,8 +329,8 @@ private:
 
     private:
 	sorted_timerset sorted;
-	unsorted_timerset unsorted;
 	msec_t split;
+	unsorted_timerset unsorted;
     };
 
     friend class DispatchObj;
