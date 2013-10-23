@@ -131,16 +131,15 @@ inline atomic_t atomic_lck(atomic_t &lck) {
 #else
 
 typedef volatile int atomic_t;
-
 #define atomic_ref(i)		__sync_add_and_fetch(&i, 1)
 #define atomic_rel(i)		__sync_add_and_fetch(&i, -1)
 
 #define atomic_add(i, j)	__sync_fetch_and_add(&i, j)
 #define atomic_and(i, j)	__sync_fetch_and_and(&i, j)
 #define atomic_bar()		__sync_synchronize()
-// sync_lock_release() supposedly fails on some x64 procs
-// #define atomic_clr(i)		__sync_lock_release(&i)
-#define atomic_clr(i)		__sync_lock_test_and_set(&i, 0)
+// sync_lock_release() supposedly fails on some older x64 procs?
+#define atomic_clr(i)		__sync_lock_release(&i)
+//#define atomic_clr(i)		__sync_lock_test_and_set(&i, 0)
 #define atomic_dec(i)		__sync_fetch_and_add(&i, -1)
 #define atomic_exc(i, j)	__sync_fetch_exchange_not_implemented(&i, j)
 #define atomic_inc(i)		__sync_fetch_and_add(&i, 1)
