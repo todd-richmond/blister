@@ -620,7 +620,7 @@ protected:
 
 class Semaphore: nocopy {
 public:
-    Semaphore(uint init = 0): hdl((sem_t)-1) { open(init); }
+    Semaphore(uint init = 0): valid(false) { open(init); }
     ~Semaphore() { close(); }
 
     operator sem_t(void) const { return hdl; }
@@ -628,18 +628,19 @@ public:
     int get(void) const {
 	int ret;
 
-	return sem_getvalue((sem_t *)&hdl, &ret) ? -1 : ret;
+	return !valid || sem_getvalue((sem_t *)&hdl, &ret) ? -1 : ret;
     }
 
     bool close(void) {
-	bool ret = hdl != (sem_t)-1 && sem_destroy(&hdl) == 0;
-
-	hdl = (sem_t)-1;
-	return ret;
+	if (valid) {
+            valid = false;
+            return sem_destroy(&hdl) == 0;
+        }
+        return true;
     }
     bool open(uint init = 0) {
 	close();
-	return sem_init(&hdl, 0, init) == 0;
+	return valid = sem_init(&hdl, 0, init) == 0;
     }
     bool set(uint cnt = 1) {
 	while (cnt--) {
@@ -664,6 +665,7 @@ public:
 
 protected:
     sem_t hdl;
+    bool valid;
 };
 
 #endif
@@ -962,6 +964,65 @@ protected:
 };
 
 /* Last-in-first-out queue useful for thread pools */
+#ifdef __APPLE__
+class Lifo: nocopy {
+public:
+    struct Waiting {};
+
+    Lifo(): hdl(0), sz(0) {
+	semaphore_create(mach_task_self(), &hdl, SYNC_POLICY_LIFO, 0);
+    }
+    ~Lifo() { semaphore_destroy(mach_task_self(), hdl); }
+
+    operator bool(void) const { return sz != 0; }
+    bool empty(void) const { return sz == 0; }
+    uint size(void) const { return (uint)sz; }
+
+    uint broadcast(void) {
+	uint ret = sz;
+
+	atomic_clr(sz);
+	semaphore_signal_all(hdl);
+	return ret;
+    }
+    uint set(uint count = 1) {
+	while (count) {
+	    if (atomic_dec(sz) > 0) {
+		semaphore_signal(hdl);
+		--count;
+	    } else {
+		atomic_inc(sz);
+		break;
+	    }
+	}
+	return count;
+    }
+    bool wait(Waiting &w, ulong msec = INFINITE) {
+	bool ret;
+
+	(void)w;
+	atomic_inc(sz);
+	if (msec == INFINITE) {
+	    ret = semaphore_wait(hdl) == 0;
+	} else {
+	    mach_timespec ts;
+
+	    ts.tv_sec = (uint)(msec / 1000);
+	    ts.tv_nsec = (msec % 1000) * 1000000;
+	    ret = semaphore_timedwait(hdl, ts) == 0;
+	}
+	if (!ret)
+	    atomic_dec(sz);
+	return ret;
+    }
+
+protected:
+    semaphore_t hdl;
+    atomic_t sz;
+};
+
+#else
+
 class Lifo {
 public:
     class Waiting {
@@ -979,7 +1040,22 @@ public:
     bool empty(void) const { return head == NULL; }
     uint size(void) const { return sz; }
 
-    void broadcast(void) { set((uint)-1); }
+    uint broadcast(void) {
+	Waiting *w;
+	uint ret = 0;
+
+	lck.lock();
+	w = head;
+	head = NULL;
+	sz = 0;
+	lck.unlock();
+	while (w) {
+	    w->sema4.set();
+	    w = w->next;
+	    ++ret;
+	}
+	return ret;
+    }
     uint set(uint count = 1) {
 	lck.lock();
 	while (head && count) {
@@ -1022,6 +1098,8 @@ private:
     SpinLock lck;
     volatile uint sz;
 };
+
+#endif
 
 // Thread routines
 typedef int (*ThreadRoutine)(void *userdata);
