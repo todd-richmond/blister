@@ -892,47 +892,52 @@ struct striless {
 template <class C>
 class ObjectList: nocopy {
 public:
-    ObjectList(): back(NULL), front(NULL) {}
+    ObjectList(): back(NULL), front(NULL), sz(0) {}
 
     bool operator !(void) const { return front == NULL; }
     operator bool(void) const { return front != NULL; }
     bool empty(void) const { return front == NULL; }
     const C *peek(void) const { return front; }
+    uint size(void) const { return sz; }
 
     void pop(C &obj) {
 	if (front == &obj) {
 	    if ((front = obj.next) == NULL)
 		back = NULL;
+	    --sz;
 	} else {
 	    for (C *p = front; p; p = p->next) {
 		if (p->next == &obj) {
 		    if ((p->next = obj.next) == NULL)
 			back = p;
+		    --sz;
 		    break;
 		}
 	    }
 	}
     }
     C *pop_back(void) {
-	if (front == back) {
-	    C *obj = back;
+	C *obj = back;
 
+	if (front == back) {
 	    front = back = NULL;
-	    return obj;
 	} else {
-	    for (C *p = front; p; p = p->next) {
-		if (p->next == back) {
-		    back = p;
-		    return p;
-		}
-	    }
+	    C *p = front;
+
+	    while (p->next != back)
+		p = p->next;
+	    back = p;
+	    back->next = NULL;
 	}
+	--sz;
+	return obj;
     }
     C *pop_front(void) {
 	C *obj = front;
 	
-	if ((front = obj->next) == NULL)
+	if ((front = front->next) == NULL)
 	    back = NULL;
+	--sz;
 	return obj;
     }
     void push_back(C &obj) {
@@ -941,12 +946,7 @@ public:
 	    back = back->next = &obj;
 	else
 	    back = front = &obj;
-    }
-    void push_front(C &obj) {
-	obj.next = front;
-	front = &obj;
-	if (!back)
-	    back = &obj;
+	++sz;
     }
     void push_back(ObjectList &lst) {
 	if (lst.front) {
@@ -956,18 +956,29 @@ public:
 		front = lst.front;
 	    back = lst.back;
 	    lst.front = lst.back = NULL;
+	    sz += lst.sz;
+	    lst.sz = 0;
 	}
+    }
+    void push_front(C &obj) {
+	if ((obj.next = front) == NULL)
+	    back = &obj;
+	front = &obj;
+	++sz;
     }
     void push_front(ObjectList &lst) {
 	if (lst.back) {
 	    lst.back->next = front;
 	    front = lst.front;
 	    lst.front = lst.back = NULL;
+	    sz += lst.sz;
+	    lst.sz = 0;
 	}
     }
 
 private:
     C *back, *front;
+    uint sz;
 };
 
 #endif

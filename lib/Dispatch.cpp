@@ -20,12 +20,11 @@
 #include <time.h>
 #include "Dispatch.h"
 
-static const ulong MAX_SELECT_TIMER = 5 * 1000;
-static const int MAX_WAIT_TIME = 1 * 60 * 1000;
-static const int MAX_IDLE_TIMER = 5 * 1000;
-static const int MIN_IDLE_TIMER = 1 * 1000;
-static const int MIN_EVENTS = 32;
-static const int MAX_EVENTS = 128;
+static const uint MAX_WAIT_TIME = 1 * 60 * 1000;
+static const uint MAX_IDLE_TIMER = 10 * 1000;
+static const uint MIN_IDLE_TIMER = 1 * 1000;
+static const uint MIN_EVENTS = 32;
+static const uint MAX_EVENTS = 128;
 
 static const uint DSP_Socket = 0x0001;
 static const uint DSP_Detached = 0x0002;
@@ -100,7 +99,7 @@ typedef struct pollfd event_t;
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
-    maxthreads(0), shutdown(true), stacksz(0), threads(0), waking(0),
+    maxthreads(0), running(0), shutdown(true), stacksz(0), threads(0),
 #ifdef DSP_WIN32_ASYNC
      interval(DSP_NEVER), wnd(0)
 #else
@@ -140,9 +139,11 @@ bool Dispatcher::exec() {
 	    group->active = true;
 	}
 	obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
+	running++;
 	lock.unlock();
 	obj->dcb(obj);
 	lock.lock();
+	running--;
 	obj->flags &= ~DSP_Active;
 	group->active = false;
 	if (group->glist) {
@@ -164,16 +165,13 @@ int Dispatcher::run() {
     Lifo::Waiting waiting;
 
     lock.lock();
-    waking--;
     while (exec()) {
 	bool b = threads == lifo.size() + 1;
 
 	lock.unlock();
 	b = lifo.wait(waiting, b ? INFINITE : MAX_WAIT_TIME);
 	lock.lock();
-	if (b)
-	    waking--;
-	else
+	if (!b)
 	    break;
     }
     threads--;
@@ -200,9 +198,9 @@ int Dispatcher::onStart() {
 	return -1;
     }
     due = DSP_NEVER_DUE;
+    running = 0;
     shutdown = false;
     threads = 0;
-    waking = 0;
     while (!shutdown) {
 	GetMessage(&msg, wnd, 0, 0);
 	if (shutdown)
@@ -380,9 +378,9 @@ int Dispatcher::onStart() {
     }
     lock.lock();
     due = DSP_NEVER_DUE;
+    running = 0;
     shutdown = false;
     threads = 0;
-    waking = 0;
     now = milliticks();
     while (!shutdown) {
 	bool reorder = false;
@@ -663,29 +661,38 @@ void Dispatcher::wake(uint tasks, bool master) {
 	if (master)
 	    exec();
     } else {
-	static uint wake_max = Processor::count() + 1;
+	uint wake;
 
-	while (tasks && rlist) {
-	    if (waking >= (master ? wake_max : wake_max - 1))
+	while (tasks && !shutdown) {
+	    wake = threads - running - lifo.size();
+	    wake = wake > rlist.size() ? 0 : rlist.size() - wake;
+	    if (wake < tasks)
+		tasks = wake;
+	    if (!tasks) {
 		break;
-	    waking++;
-	    lock.unlock();
-	    if (!threads || lifo.set()) {
-		Thread *t;
-		
-		lock.lock();
-		if (threads >= maxthreads || shutdown) {
-		    waking--;
-		    break;
-		}
-		threads++;
+	    } else if (lifo && tasks >= lifo.size()) {
 		lock.unlock();
-		t = new Thread();
-		t->start(worker, this, stacksz, this);
-		while ((t = wait(0)) != NULL)
-		    delete t;
+		wake = lifo.broadcast();
+		tasks = wake >= tasks ? 0 : tasks - wake;
+	    } else if (tasks) {
+		lock.unlock();
+		if (!threads || lifo.set()) {
+		    Thread *t;
+		    
+		    lock.lock();
+		    if (threads >= maxthreads || shutdown)
+			break;
+		    threads++;
+		    lock.unlock();
+		    t = new Thread();
+		    t->start(worker, this, stacksz, this);
+		    while ((t = wait(0)) != NULL)
+			delete t;
+		} else if (tasks > 1) {
+		    THREAD_YIELD();
+		}
+		tasks--;
 	    }
-	    tasks--;
 	    lock.lock();
 	}
     }

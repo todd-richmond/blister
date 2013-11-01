@@ -371,10 +371,11 @@ private:
     ObjectList<DispatchObj> flist, rlist;
     Lifo lifo;
     uint maxthreads;
+    volatile uint running;
     volatile bool shutdown;
     socketmap smap;
     uint stacksz;
-    volatile uint threads, waking;
+    volatile uint threads;
     TimerSet timers;
 #ifdef DSP_WIN32_ASYNC
     volatile ulong interval;
