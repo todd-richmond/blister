@@ -1041,18 +1041,19 @@ public:
     uint size(void) const { return sz; }
 
     uint broadcast(void) {
-	Waiting *w;
-	uint ret = 0;
+	Waiting *w, *next;
+	uint ret;
 
 	lck.lock();
 	w = head;
 	head = NULL;
+	ret = sz;
 	sz = 0;
 	lck.unlock();
 	while (w) {
+	    next = w->next;
 	    w->sema4.set();
-	    w = w->next;
-	    ++ret;
+	    w = next;
 	}
 	return ret;
     }
