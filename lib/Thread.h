@@ -633,14 +633,14 @@ public:
 
     bool close(void) {
 	if (valid) {
-            valid = false;
-            return sem_destroy(&hdl) == 0;
-        }
-        return true;
+	    valid = false;
+	    return sem_destroy(&hdl) == 0;
+	}
+	return true;
     }
     bool open(uint init = 0) {
 	close();
-	return valid = sem_init(&hdl, 0, init) == 0;
+	return valid = (sem_init(&hdl, 0, init) == 0);
     }
     bool set(uint cnt = 1) {
 	while (cnt--) {
