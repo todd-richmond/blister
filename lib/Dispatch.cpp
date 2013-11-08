@@ -670,7 +670,7 @@ void Dispatcher::wake(uint tasks, bool master) {
 		tasks = wake;
 	    if (!tasks) {
 		break;
-	    } else if (lifo && tasks >= lifo.size()) {
+	    } else if (lifo && (tasks / 2 + 1) >= lifo.size()) {
 		lock.unlock();
 		wake = lifo.broadcast();
 		tasks = wake >= tasks ? 0 : tasks - wake;
