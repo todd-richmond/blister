@@ -165,11 +165,13 @@ private:
     static SockInit init;
 #endif
 
-    union {
+    typedef union {
 	sockaddr sa;
 	sockaddr_in sa4;
 	sockaddr_in6 sa6;
-    } addr;
+    } sockaddr_any;
+
+    sockaddr_any addr;
     mutable tstring name;
 };
 

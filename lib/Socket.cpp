@@ -239,7 +239,7 @@ ushort Sockaddr::size(ushort family) {
     else if (family == AF_INET6)
 	return sizeof (sockaddr_in6);
     else
-	return sizeof (sockaddr);
+	return sizeof (sockaddr_any);
 }
 
 const tstring Sockaddr::str(void) const {
