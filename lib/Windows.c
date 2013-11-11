@@ -80,7 +80,7 @@ int gettimeofday(struct timeval *tv, struct timezone *tz) {
     return 0;
 }
 
-static msec_t _milliticks(void) {
+msec_t milliticks(void) {
     ulong now;
     msec_t ret;
     static ulong cnt = (ulong)-1, last = (ulong)-1;
@@ -124,7 +124,7 @@ usec_t microticks(void) {
 	if (tps)
 	    return microticks();
     }
-    return _milliticks() * 1000;
+    return milliticks() * 1000;
 }
 
 static uint rename_lock(const char *path) {
