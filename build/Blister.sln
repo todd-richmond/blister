@@ -1,6 +1,8 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.21005.1
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EchoTest", "..\test\EchoTest.vcxproj", "{2DBFE77C-76D2-4026-A7A6-2D6085F8B082}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Blister", "..\lib\Blister.vcxproj", "{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}"
@@ -16,6 +18,8 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DTiming", "..\test\DTiming.vcxproj", "{3C1E9C53-05EC-4D42-B531-731157DE3521}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPd", "..\test\HTTPd.vcxproj", "{2DBF271C-51D2-9A26-A726-ADF085F3B082}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Daemonize", "..\test\Daemonize.vcxproj", "{28BCEA7C-16D2-4236-D796-266095F1BF82}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -157,6 +161,22 @@ Global
 		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release|Win32.Build.0 = Release|Win32
 		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release|x64.ActiveCfg = Release|x64
 		{2DBF271C-51D2-9A26-A726-ADF085F3B082}.Release|x64.Build.0 = Release|x64
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Debug Unicode|Win32.ActiveCfg = Debug Unicode|Win32
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Debug Unicode|Win32.Build.0 = Debug Unicode|Win32
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Debug Unicode|x64.ActiveCfg = Debug Unicode|x64
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Debug Unicode|x64.Build.0 = Debug Unicode|x64
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Debug|Win32.ActiveCfg = Debug|Win32
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Debug|Win32.Build.0 = Debug|Win32
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Debug|x64.ActiveCfg = Debug|x64
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Debug|x64.Build.0 = Debug|x64
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Release Unicode|Win32.ActiveCfg = Release Unicode|Win32
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Release Unicode|Win32.Build.0 = Release Unicode|Win32
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Release Unicode|x64.ActiveCfg = Release Unicode|x64
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Release Unicode|x64.Build.0 = Release Unicode|x64
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Release|Win32.ActiveCfg = Release|Win32
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Release|Win32.Build.0 = Release|Win32
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Release|x64.ActiveCfg = Release|x64
+		{28BCEA7C-16D2-4236-D796-266095F1BF82}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

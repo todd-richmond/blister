@@ -3,12 +3,14 @@ include $(top_srcdir)/build/Makefile.inc
 CPPFLAGS = -I../lib
 LDFLAGS = -L../lib -lblister
 
-bin_PROGRAMS = cfg dlog dtiming httpload smtpload
+bin_PROGRAMS = cfg daemonize dlog dtiming httpload smtpload
 noinst_PROGRAMS = echotest httpd
 sysconf_DATA = http.wld smtp.wld
 
 cfg_SOURCES = Cfg.cpp
 cfg_LDFLAGS = -static
+daemonize_SOURCES = Daemonize.cpp
+daemonize_LDFLAGS = -static
 dlog_SOURCES = DLog.cpp
 dlog_LDFLAGS = -static
 dtiming_SOURCES = DTiming.cpp

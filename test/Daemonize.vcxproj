@@ -35,8 +35,8 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{2DBF271C-51D2-9A26-A726-ADF085F3B082}</ProjectGuid>
-    <RootNamespace>HTTPd</RootNamespace>
+    <ProjectGuid>{28BCEA7C-16D2-4236-D796-266095F1BF82}</ProjectGuid>
+    <RootNamespace>Daemonize</RootNamespace>
     <Keyword>Win32Proj</Keyword>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -198,6 +198,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
       <TargetMachine>MachineX86</TargetMachine>
+      <Profile>false</Profile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -309,6 +310,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
       <TargetMachine>MachineX64</TargetMachine>
+      <Profile>false</Profile>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -404,7 +406,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="HTTPd.cpp" />
+    <ClCompile Include="Daemonize.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\lib\Blister.vcxproj">
