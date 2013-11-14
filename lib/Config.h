@@ -95,8 +95,6 @@ public:
 
 	set(attr, val, sect, false);
     }
-    void set(const tchar *attr, const tchar *val, const tchar *attr2,
-	const tchar *val2, ... /* , const tchar *sect = NULL, NULL */);
     void set(const tchar *attr, const bool val, const tchar *sect = NULL)
 	{ set(attr, val ? T("t") : T("f"), sect); }
     void set(const tchar *attr, int val, const tchar *sect = NULL)
@@ -111,6 +109,8 @@ public:
 	{ tchar buf[24]; tsprintf(buf, T("%f"), val); set(attr, buf, sect); }
     void set(const tchar *attr, double val, const tchar *sect = NULL)
 	{ tchar buf[24]; tsprintf(buf, T("%g"), val); set(attr, buf, sect); }
+    void setv(const tchar *attr, const tchar *val, ... /* , const tchar
+	*sect = NULL, NULL */);
     void lock(void) { lck.lock(); locker = THREAD_HDL(); }
     void unlock(void) { lck.unlock(); locker = 0; }
     bool iniformat(void) const { return ini; }

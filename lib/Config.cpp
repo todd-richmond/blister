@@ -168,26 +168,24 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
     }
 }
 
-void Config::set(const tchar *attr1, const tchar *val1, const tchar *attr2,
-    const tchar *val2, ...) {
+void Config::setv(const tchar *attr1, const tchar *val1, ...) {
     const tchar *arg, *attr = NULL, *sect = NULL;
     attrmap::iterator it;
     Locker lkr(lck, !THREAD_ISSELF(locker));
     va_list vl;
 
-    va_start(vl, val2);
+    va_start(vl, val1);
     while ((arg = va_arg(vl, const tchar *)) != NULL)
 	sect = sect == NULL ? arg : NULL;
     va_end(vl);
     set(attr1, val1, sect, false);
-    set(attr2, val2, sect, false);
-    va_start(vl, val2);
+    va_start(vl, val1);
     while ((arg = va_arg(vl, const tchar *)) != NULL) {
 	if (attr) {
 	    set(attr, arg, sect, false);
 	    attr = NULL;
 	} else {
-	    attr = keystr(arg, sect);
+	    attr = arg;
 	}
     }
     va_end(vl);
