@@ -146,7 +146,8 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
 
     it = amap.find(key);
     if (it == amap.end()) {
-	amap[tstrdup(key)] = new Value(val, tstrlen(val));
+	amap.insert(make_pair<const tchar *, Value *>(tstrdup(key), new
+	    Value(val, tstrlen(val))));
     } else {
 	Value *value = it->second;
 
