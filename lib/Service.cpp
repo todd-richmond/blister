@@ -713,7 +713,7 @@ bool Service::open(void) {
     stStatus = Stopped;
     splitpath(path.c_str(), NULL, root, prog);
     s = root + "var/run/";
-    if (access(s.c_str(), 0))
+    if (access(s.c_str(), R_OK))
     	s = root;
     s += name + T(".pid");
     if ((fd = ::open(s.c_str(), O_RDONLY)) == -1)
@@ -918,8 +918,12 @@ int Service::run(int argc, const tchar * const *argv) {
 		T("unable to fork")) << endlog;
 	    ::exit(1);
 	}
-	fd = ::open(T("/dev/null"), O_RDWR);
+	fd = ::open(T("/dev/null"), O_RDONLY);
 	dup2(fd, 0);
+	::close(fd);
+	if ((fd = ::open((service->name + T(".out")).c_str(), O_APPEND |
+	    O_BINARY | O_CREAT | O_WRONLY | O_SEQUENTIAL, 0640)) == -1)
+	    fd = ::open(T("/dev/null"), O_WRONLY);
 	dup2(fd, 1);
 	dup2(fd, 2);
 	::close(fd);
@@ -969,19 +973,24 @@ bool Service::start(int argc, const tchar * const *argv) {
     if ((fpid = fork()) == -1) {
 	errnum = errno;
 	return false;
-    } else if (!pid) {
+    } else if (!fpid) {
 	unsetenv("LOGNAME");
 	exit(run(argc, argv));
     } else {
 	bool started = false;
+	int ret;
 
-	waitpid(fpid, NULL, 0);
+	waitpid(fpid, &ret, 0);
+	ret = WIFEXITED(ret) ? WEXITSTATUS(ret) : WIFSIGNALED(ret) ?
+	    WTERMSIG(ret) : 0;
 	for (int i = 0; i < 10 * 30; i++) {
 	    if ((sts = status()) == Running || sts == Pausing ||
 		sts == Paused || sts == Refreshing || sts == Resuming) {
 		break;
 	    } else if (sts == Starting) {
 		started = true;
+	    } else if (ret) {
+		return false;
 	    } else if ((sts == Error || sts == Stopped) &&
 		(started || i > 50)) {
 		return false;
@@ -1238,13 +1247,19 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     splitpath(argv[0], name.c_str(), installdir, s);
     srvcpath = path;
     lckfile = installdir + T("var/run/");
-    if (access(tstringtoachar(lckfile), 0))
+    if (access(tstringtoachar(lckfile), W_OK))
     	lckfile = installdir;
     lckfile += name;
     lckfile += T(".pid");
-    s = T("");
-    s += name;
-    cfg.prefix(s.c_str());
+    if (!console) {
+	tstring logfile = installdir + T("var/log/");
+
+	if (access(tstringtoachar(logfile), W_OK))
+	    logfile = installdir;
+	logfile += name;
+	dlog.file(Log::Info, (logfile + T(".log")).c_str());
+    }
+    cfg.prefix(name.c_str());
     dlog.source(name.c_str());
     stStatus = Starting;
     do {
@@ -1281,11 +1296,11 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     }
     if (cfgfile.empty()) {
 	s = installdir + T("etc/") + name + T(".cfg");
-	if (access(tstringtoachar(s), 0)) {
+	if (access(tstringtoachar(s), R_OK)) {
 	    s = installdir + name + T(".cfg");
-	    if (access(tstringtoachar(s), 0)) {
+	    if (access(tstringtoachar(s), R_OK)) {
 		s = name + T(".cfg");
-		if (access(tstringtoachar(s), 0))
+		if (access(tstringtoachar(s), R_OK))
 		    s.erase();
 	    }
 	}
@@ -1400,7 +1415,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		    if (waitpid(child, &sts, flg) > 0) {
 			alarm(0);
 			dlog.level(lvl);
-			ret = WIFEXITED(sts) ? WEXITSTATUS(sts) : 0;
+			ret = WIFEXITED(sts) ? WEXITSTATUS(sts) :
+			    WIFSIGNALED(sts) ? WTERMSIG(sts) : 0;
 			if (!qflag)
 			    dlog << Log::Warn << Log::mod(name) <<
 				Log::cmd(T("watch")) <<
@@ -1546,7 +1562,8 @@ bool Daemon::onRefresh() {
     cfg.set(T("name"), name.c_str(), Log::section());
     cfg.set(T("version"), ver.c_str());
     instance = cfg.get(T("instance"), T("default"));
-    dlog.set(cfg);
+    if (!cfgfile.empty())
+	dlog.set(cfg);
     cfg.unlock();
     if (!child && refreshed)
 	dlog << Log::Note << Log::mod(name) << Log::cmd(T("reload")) << endlog;
@@ -1586,12 +1603,7 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv,
     const tchar *dname): Daemon(dname ? dname : T("")), interval(60),
     maxmem(0) {
     int ac;
-    const tchar *prog = tstrrchr(argv[0], '/');
 
-    if (!prog && (prog = tstrrchr(argv[0], '\\')) == NULL)
-	prog = argv[0];
-    else
-	prog++;
     for (ac = 2; ac < argc; ac++) {
 	const tchar *p = argv[ac];
 
@@ -1609,14 +1621,26 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv,
 	    ac++;
     }
     if (ac >= argc) {
+	const tchar *prog = tstrrchr(argv[0], '/');
+
+	if (!prog && (prog = tstrrchr(argv[0], '\\')) == NULL)
+	    prog = argv[0];
+	else
+	    prog++;
 	cout << "usage:" << endl << T("\t") << prog <<
 	    T(" start [--check seconds] [--maxmem kb] [--name str] cmd ...") <<
 	    endl << T("\t") << prog <<
-	    T(" status|stop|exit|refresh|pause|continue [--name str] cmd ...") << endl;
+	    T(" continue|exit|pause|refresh|status|stop [--name str] cmd") <<
+	    endl;
 	exit(1);
     }
-    if (name.empty())
+    if (name.empty()) {
+	tstring::size_type i;
+
 	name = argv[ac];
+	if ((i = name.find_last_of(T("."))) != name.npos)
+	    name.erase(i);
+    }
 }
 
 bool WatchDaemon::onRefresh(void) {
@@ -1656,13 +1680,14 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
 #endif
     running();
-    if (!args.empty())
-	dlog << Log::Info << Log::mod(name) << Log::kv(T("args"), args) <<
-	    endlog;
+    dlog << Log::Info << Log::mod(name) << Log::cmd(T("exec")) <<
+	Log::kv(T("file"), argv[ac]) <<
+	Log::kv(T("args"), args) << endlog;
     dlog.close();
     texecvp(argv[ac], (tchar **)&argv[ac]);
     dlog << Log::Err << Log::mod(name) << Log::cmd(T("exec")) <<
+	Log::kv(T("file"), argv[ac]) <<
 	Log::kv(T("err"), strerror(errno)) << endlog;
-    return 2;
+    return (uint)-1;
 }
 
