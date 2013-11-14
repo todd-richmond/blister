@@ -258,7 +258,7 @@ void Log::LogFile::set(const Config &cfg, const tchar *sect,
 
 	if (!dir.empty()) {
 	    dir += T("/log");
-	    if (access(tstringtoachar(dir), 0))
+	    if (access(tstringtoachar(dir), W_OK))
 		dir = cfg.get(T("installdir"));
 	    dir += T("/");
 	    file = dir + file;
@@ -600,7 +600,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
 	tstring::size_type pos;
 
 	src = cfg.prefix();
-	if ((pos = src.find_last_of(T("."))) != s.npos)
+	if ((pos = src.find_last_of(T("."))) != src.npos)
 	    src.erase(0, pos + 1);
     }
     syslog(str2enum(cfg.get(T("syslog.level"), T("err"), sect).c_str()),
