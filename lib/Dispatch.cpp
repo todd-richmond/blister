@@ -271,7 +271,7 @@ int Dispatcher::onStart() {
 		    KillTimer(wnd, DSP_TimerID);
 		}
 	    } else if (dt->due < now + interval || interval < MIN_IDLE_TIMER) {
-		due = dt->due;
+		due = dt->due > now ? dt->due : 0;
 		interval = (ulong)(dt->due - now);
 		SetTimer(wnd, DSP_TimerID, interval, NULL);
 	    } else {
