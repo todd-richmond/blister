@@ -876,7 +876,7 @@ typedef FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> FastRLocker
 typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker;
 
 /* Fast reference counter class */
-#ifdef NO_ATOMIC_INC
+#ifdef NO_ATOMIC_ADD
 class RefCount: nocopy {
 public:
     RefCount(uint init = 1): cnt(init) {}
