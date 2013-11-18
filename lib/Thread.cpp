@@ -191,8 +191,9 @@ Thread::Thread(thread_t handle, ThreadGroup *tg, bool aterm): cv(lck),
     group = ThreadGroup::add(*this, tg);
 }
 
-Thread::Thread(void): cv(lck), autoterm(false), group(NULL), hdl(0), id(NOID),
-    retval(0), state(Init) {}
+Thread::Thread(void): cv(lck), autoterm(false), data(NULL), group(NULL), hdl(0),
+    id(NOID), retval(0), state(Init) {
+}
 
 Thread::~Thread() {
     if (hdl && id != NOID) {
@@ -403,6 +404,7 @@ bool Thread::terminate(void) {
 
     if (state == Running || state == Suspended) {
 #ifdef _WIN32
+#pragma warning(disable: 6258)
 	ret = TerminateThread(hdl, 1) == TRUE;
 #else
 	ret = pthread_cancel(hdl) == 0;
@@ -439,7 +441,7 @@ bool Thread::wait(ulong timeout) {
     return false;
 }
 
-ThreadGroup::ThreadGroup(bool aterm): cv(lock), autoterm(aterm), state(Init) {
+ThreadGroup::ThreadGroup(bool aterm): cv(cvlck), autoterm(aterm), state(Init) {
     grouplck.lock();
     id = (thread_t)((ulong)nextId++);
     groups.insert(this);
@@ -463,12 +465,12 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 	grouplck.lock();
 	for (i = groups.begin(); i != groups.end(); ++i) {
 	    tg = *i;
-	    tg->lock.lock();
+	    tg->cvlck.lock();
 	    for (ii = tg->threads.begin(); ii != tg->threads.end(); ++ii) {
 		if (THREAD_ISSELF((*ii)->id))
 		    break;
 	    }
-	    tg->lock.unlock();
+	    tg->cvlck.unlock();
 	    if (ii == tg->threads.end())
 		tg = NULL;
 	    else
@@ -478,16 +480,16 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 	if (tg == NULL)
 	    tg = &MainThreadGroup;
     }
-    tg->lock.lock();
+    tg->cvlck.lock();
     tg->threads.insert(&thread);
-    tg->lock.unlock();
+    tg->cvlck.unlock();
     return tg;
 }
 
 // control all threads in group - does not work yet if caller is in same group
 void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
     set<Thread *>::iterator it;
-    Locker lck(lock);
+    Locker lck(cvlck);
     
     state = ts;
     for (it = threads.begin(); it != threads.end(); ++it) {
@@ -501,7 +503,7 @@ int ThreadGroup::init(void *thisp) {
 }
 
 void ThreadGroup::notify(const Thread &thread) {
-    Locker lkr(lock);
+    Locker lkr(cvlck);
 
     if (thread == master)
 	cv.broadcast();
@@ -511,14 +513,14 @@ void ThreadGroup::notify(const Thread &thread) {
 
 void ThreadGroup::priority(int pri) {
     set<Thread *>::iterator it;
-    Locker lkr(lock);
+    Locker lkr(cvlck);
 
     for (it = threads.begin(); it != threads.end(); ++it)
 	(*it)->priority(pri);
 }
 
 void ThreadGroup::remove(Thread &thread) {
-    Locker lkr(lock);
+    Locker lkr(cvlck);
 
     threads.erase(&thread);
 }
@@ -534,7 +536,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
     set<Thread *>::iterator it;
     bool signaled = false;
     msec_t start = milliticks();
-    Locker lkr(lock);
+    Locker lkr(cvlck);
 
     do {
 	// wait for one thread at a time to save having to deal with

@@ -148,21 +148,21 @@ public:
 
     virtual DWORD open(LPWSTR lpDeviceNames);
     virtual DWORD close(void);
-    virtual DWORD collect(LPWSTR value, LPVOID *data, LPDWORD total,
-	LPDWORD types);
-    void add(uint size = 4, uint type = PERF_COUNTER_RAWCOUNT,
-	uint level = PERF_DETAIL_NOVICE);
+    virtual DWORD collect(LPWSTR value, LPVOID *data, LPDWORD total, LPDWORD
+	types);
+    void add(uint size = 4, uint type = PERF_COUNTER_RAWCOUNT, uint level =
+	PERF_DETAIL_NOVICE);
 
 private:
-    tstring name;
-    uint counter;
-    uint help;
-    uint datasz, mapsz, ctrs;
-    uint last, offset;
     volatile int count;
+    uint counter;
+    void *data;
+    uint ctrs, datasz, mapsz;
+    uint help;
     bool init;
+    uint last, offset;
     void *map;
-    tchar *data;
+    tstring name;
 };
 #endif
 

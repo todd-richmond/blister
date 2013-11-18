@@ -108,15 +108,17 @@ static void splitpath(const tchar *path, const tchar *name, tstring &root,
 #define PREFIX T("service_")
 
 Service::Service(const tchar *servicename, const tchar *h): name(servicename),
-    bPause(false), errnum(0), ctrlfunc(NULL), hStatus(0), hSCManager(0),
-    hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0) {
+    bPause(false), errnum(0), ctrlfunc(NULL), gid(0), hStatus(0), hSCManager(0),
+    hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0),
+    pid(0), stStatus(Stopped), uid(0) {
     if (h)
 	host = h;
 }
 
 Service::Service(const tchar *servicename, bool pauseable): name(servicename),
-    bPause(pauseable), errnum(0), ctrlfunc(service_handler), hStatus(0),
-    hSCManager(0), hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0) {
+    bPause(pauseable), errnum(0), ctrlfunc(service_handler), gid(0), hStatus(0),
+    hSCManager(0), hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0),
+    pid(0), stStatus(Stopped), uid(0) {
     service = this;
 }
 
@@ -507,14 +509,15 @@ void Service::exit(int code) {
 }
 
 tstring Service::errstr() const {
-    tchar *msg = NULL;
-    tstring s;
+    tchar *msg;
+    tstring s(T("Service Error"));
 
-    FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
-	FORMAT_MESSAGE_ARGUMENT_ARRAY,
-	NULL, errnum, LANG_NEUTRAL, (tchar *)&msg, 0, NULL);
-    s = msg;
-    LocalFree((HLOCAL)msg);
+    if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+	FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ARGUMENT_ARRAY, NULL,
+	errnum, LANG_NEUTRAL, (tchar *)&msg, 0, NULL)) {
+	s = msg;
+	LocalFree((HLOCAL)msg);
+    }
     return s;
 }
 
@@ -534,8 +537,8 @@ void *Service::open(uint size) {
 }
 
 ServiceData::ServiceData(const tchar *service, uint num, uint size):
-    name(service), ctrs(num), count(0), init(false), mapsz(size), last(0),
-    offset(0), counter(0), help(0) {
+    count(0), counter(0), ctrs(num), data(NULL), datasz(0), help(0),
+    init(false), last(0), map(NULL), mapsz(size), name(service), offset(0) {
 }
 
 DWORD ServiceData::open(LPWSTR lpDeviceNames) {
@@ -591,7 +594,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    ctrs * sizeof (PERF_COUNTER_DEFINITION);
 	datasz = (size_t)size + sizeof (PERF_INSTANCE_DEFINITION) + DWORD_MULTIPLE(namesz) +
 	    sizeof (PERF_COUNTER_BLOCK);
-	if ((data = new tchar [datasz]) == NULL) {
+	if ((data = new char [datasz]) == NULL) {
 	    UnmapViewOfFile(map);
 	    return 1;
 	}
@@ -605,7 +608,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	pot->NumInstances = 1;
 	pot->ObjectNameTitleIndex = counter;
 	pot->ObjectHelpTitleIndex = help;
-	pid = (PERF_INSTANCE_DEFINITION *)(data + size);
+	pid = (PERF_INSTANCE_DEFINITION *)((char *)data + size);
 	pid->ByteLength = sizeof (PERF_INSTANCE_DEFINITION) +
 	    DWORD_MULTIPLE(namesz) + 4;
 	pid->ParentObjectTitleIndex = 0;
@@ -667,7 +670,7 @@ DWORD ServiceData::collect(LPWSTR value, LPVOID *datap, LPDWORD total, LPDWORD t
 
 void ServiceData::add(uint size, uint type, uint level) {
     PERF_COUNTER_DEFINITION *pcd = (PERF_COUNTER_DEFINITION *)
-	(data + sizeof (PERF_OBJECT_TYPE)) + last;
+	((char *)data + sizeof (PERF_OBJECT_TYPE)) + last;
 
     pcd->ByteLength = sizeof (PERF_COUNTER_DEFINITION);
     pcd->CounterNameTitleIndex = (last + 1) * 2 + counter;
@@ -1222,7 +1225,7 @@ bool Daemon::update(Status status) {
 
 bool Daemon::setids() {
     if (uid != (uid_t)-1) {
-	fchown(lckfd, uid, gid);
+	(void)fchown(lckfd, uid, gid);
 	dlog.setids(uid, gid);
 	if (setgid(gid) || setuid(uid)) {
 	    dlog << Log::Err << Log::mod(name) << Log::kv(T("err"),

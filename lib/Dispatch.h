@@ -375,8 +375,8 @@ private:
     volatile bool shutdown;
     socketmap smap;
     uint stacksz;
-    volatile uint threads;
     TimerSet timers;
+    volatile uint workers;
 #ifdef DSP_WIN32_ASYNC
     volatile ulong interval;
     HWND wnd;

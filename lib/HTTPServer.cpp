@@ -89,9 +89,11 @@ static string CRLF("\r\n");
 bool HTTPServerSocket::date;
 
 HTTPServerSocket::HTTPServerSocket(Dispatcher &dspr, Socket &sock):
-    DispatchServerSocket(dspr, sock), data(NULL), postdata(NULL), datasz(0),
-    sz(0), delpost(false), nagleon(true), fmap(NULL), rto(RTimeout),
-    wto(WTimeout) {
+    DispatchServerSocket(dspr, sock), cmd(NULL), path(NULL), prot(NULL),
+    data(NULL), postdata(NULL), datasz(0), postsz(0), postin(0), sz(0),
+    delpost(false), ka(false), nagleon(true), fmap(NULL), rto(RTimeout),
+    wto(WTimeout), savechar(0), _status(0)  {
+    ZERO(iov);
 }
 
 HTTPServerSocket::~HTTPServerSocket(void) {
@@ -173,6 +175,7 @@ void HTTPServerSocket::readpost() {
 	if (postsz == (uint)-1) {
 	    left = in = 0;
 	    postsz = postin;
+	    postdata[postsz] = '\0';
 	} else {
 	    erase();
 	    return;
@@ -185,7 +188,7 @@ void HTTPServerSocket::readpost() {
     if (left || postsz == (uint)-1) {
 	readable(readpost, rto);
     } else {
-	savechar = postdata[postsz];
+	savechar = postdata[postin];
 	postdata[postsz] = '\0';
 	exec();
     }
@@ -309,7 +312,7 @@ void HTTPServerSocket::parse(void) {
 	    pp = p + 1;
 	    while (p > buf && (p[-1] == ' ' || p[-1] == '\t'))
 		p--;
-	    *p++ = '\0';
+	    *p = '\0';
 	    p = pp;
 	    while (*p == ' ' || *p == '\t')
 		p++;

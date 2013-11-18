@@ -1203,7 +1203,7 @@ protected:
     virtual void onSuspend(void) {}
     
 private:
-    Lock lock;
+    Lock cvlck;
     Condvar cv;
     bool autoterm;
     thread_t id;

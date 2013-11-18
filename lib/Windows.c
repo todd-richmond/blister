@@ -86,10 +86,8 @@ msec_t milliticks(void) {
     static ulong cnt = (ulong)-1, last = (ulong)-1;
     static volatile long lck;
 
-    while (InterlockedExchange(&lck, 1)) {
-	while (lck)
-	    YieldProcessor();
-    }
+    while (InterlockedExchange(&lck, 1))
+	YieldProcessor();
     now = timeGetTime();	    /* GetTickCount() only has 16ms accuracy */
     if (now < last) {
 	if (++cnt) {
@@ -497,13 +495,13 @@ void closedir(DIR *dirp) {
 }
 
 int link(const char *from, const char *to) {
-    HANDLE hdl;
-    WIN32_STREAM_ID sid;
-    DWORD out;
-    LPVOID lpContext = NULL;
-    WCHAR FileLink[MAX_PATH + 1];
     WCHAR buf[MAX_PATH];
     LPWSTR FilePart;
+    HANDLE hdl;
+    WCHAR lbuf[MAX_PATH + 1];
+    LPVOID lpContext = NULL;
+    DWORD out;
+    WIN32_STREAM_ID sid;
     int sz;
     uint lck;
     int ret = -1;
@@ -518,12 +516,13 @@ int link(const char *from, const char *to) {
 	return ret;
     }
 #ifdef _UNICODE
-    (void)buf;
-    sz = GetFullPathName(to, MAX_PATH, FileLink, &FilePart);
+    sz = GetFullPathName(to, MAX_PATH, lbuf, &FilePart);
 #else
-    MultiByteToWideChar(CP_ACP, 0, to, (int)strlen(to) + 1, buf, sizeof (buf) /
-	sizeof (WCHAR));
-    sz = GetFullPathNameW(buf, MAX_PATH, FileLink, &FilePart);
+    if (MultiByteToWideChar(CP_ACP, 0, to, (int)strlen(to) + 1, buf,
+	sizeof (buf) / sizeof (WCHAR)) > 0)
+	sz = GetFullPathNameW(buf, MAX_PATH, lbuf, &FilePart);
+    else
+	sz = 0;
 #endif
     if (sz == 0) {
 	_dosmaperr(GetLastError());
@@ -549,7 +548,7 @@ int link(const char *from, const char *to) {
 	CloseHandle(hdl);
 	return ret;
     }
-    if (BackupWrite(hdl, (LPBYTE)FileLink, sid.Size.LowPart,
+    if (BackupWrite(hdl, (LPBYTE)lbuf, sid.Size.LowPart,
 	&out, FALSE, FALSE, &lpContext))
     	ret = 0;
     else
