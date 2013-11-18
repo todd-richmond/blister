@@ -1,0 +1,15 @@
+#!/bin/sh
+set -x
+
+PWD=`pwd`
+BASE=`basename ${PWD}`
+
+aclocal || exit 1
+autoconf || exit 1
+libtoolize --automake || exit 1
+automake -a || exit 1
+rm -rf autom4te.cache
+
+cd ..
+zip -r ${BASE}.zip ${BASE}
+
