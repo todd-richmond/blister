@@ -467,7 +467,7 @@ void HTTPServerSocket::reply(const char *p, size_t len) {
 
     if (!len && p)
 	len = strlen(p);
-    i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)ss.size() + len);
+    i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)(ss.size() + len));
     hdrs.write(buf, i);
     iov[0].iov_base = (char *)hdrs.str();
     iov[0].iov_len = (size_t)hdrs.size();
@@ -552,7 +552,16 @@ void HTTPServerSocket::header(const char *attr, const char *val) {
 
 void HTTPServerSocket::error(uint sts) {
     const char *p;
-    static const char *errstr[] = {
+    static const char *err2xx[] = {
+	"OK", "Created", "Accepted", "Non-Authoritative Information",
+	"No Content", "Reset Content", "Parial Content"
+    };
+    static const char *err3xx[] = {
+	"Multiple Choices", "Moved Permanently", "Found", "See Other",
+	"Not Modified", "Use Proxy", "Reserved", "Temporary Redirect"
+
+    };
+    static const char *err4xx[] = {
 	"Bad Request", "Unauthorized", "Payment required", "Forbidden",
 	"Not Found", "Method Not Allowed", "Not Acceptable",
 	"Proxy Authentication Required", "Request Timeout", "Conflict",
@@ -561,11 +570,27 @@ void HTTPServerSocket::error(uint sts) {
 	"Unsupported Media Type", "Requested Range Not Satisfiable",
 	"Expectation Failed"
     };
-
-    if (sts >= 400 && sts < 400 + sizeof (errstr) / sizeof (char *))
-	p = errstr[sts % 400];
+    static const char *err5xx[] = {
+	"Bad Request", "Unauthorized", "Payment required", "Forbidden",
+	"Internal Server Error", "Not Implemented", "Bad Gateway",
+	"Service Unavailable", "Gateway Timeout", "Version Not Supported"
+    };
+#ifdef _WIN32
+#pragma warning(disable: 6385)
+#endif
+    if (sts >= 200 && sts < 200 + sizeof (err2xx) / sizeof (char *))
+	p = err2xx[sts % 200];
+    else if (sts >= 300 && sts < 300 + sizeof (err3xx) / sizeof (char *))
+	p = err3xx[sts % 300];
+    else if (sts >= 400 && sts < 400 + sizeof (err4xx) / sizeof (char *))
+	p = err4xx[sts % 400];
+    else if (sts >= 500 && sts < 500 + sizeof (err5xx) / sizeof (char *))
+	p = err5xx[sts % 500];
     else
 	p = "HTTP error";
+#ifdef _WIN32
+#pragma warning(default: 6385)
+#endif
     status(sts, "text", "plain");
     ss << sts << ' ' << p << CRLF;
     _status = sts;
