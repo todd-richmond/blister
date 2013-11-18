@@ -1,8 +1,6 @@
 AC_INIT(Blister, 1.0)
 AM_INIT_AUTOMAKE
 
-AC_PROG_MAKE_SET
-
 AM_CONDITIONAL(OSX, test "`uname -s`" = Darwin)
 AM_CONDITIONAL(Linux, test "`uname -s`" = Linux)
 AM_CONDITIONAL(SunOS, test "`uname -s`" = SunOS)
