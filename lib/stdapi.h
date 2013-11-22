@@ -568,6 +568,9 @@ typedef char tchar;
 typedef uchar tuchar;
 #endif // UNICODE
 
+#define tstreq(a, b)	!tstrcmp(a, b)
+#define tstrieq(a, b)	!tstricmp(a, b)
+
 typedef const tchar ctchar;
 
 /* routines for linear and current time */
