@@ -288,16 +288,15 @@ bool Config::parse(tistream &is) {
 }
 
 bool Config::read(tistream &is, const tchar *str, bool app) {
+    Locker lkr(lck, !THREAD_ISSELF(locker));
     bool ret;
 
     if (!is)
 	return false;
-    lock();
     prefix(str);
     if (!app)
 	clear();
     ret = parse(is);
-    unlock();
     return ret;
 }
 
