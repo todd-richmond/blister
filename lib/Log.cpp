@@ -143,16 +143,15 @@ bool Log::LogFile::reopen(void) {
 }
 
 void Log::LogFile::roll(void) {
-    string afile(tstringtoastring(file)), apath(tstringtoastring(path));
-    DIR *dir;
-    struct dirent *ent;
+    tDIR *dir;
+    struct tdirent *ent;
     uint files = 0;
     time_t now;
-    string oldfile;
-    string::size_type pos;
-    string s1, s2, s3;
+    tstring oldfile;
+    tstring::size_type pos;
+    tstring s1, s2, s3;
     struct stat sbuf;
-    char sep;
+    tchar sep;
 
     close();
     if (!enable)
@@ -160,7 +159,7 @@ void Log::LogFile::roll(void) {
     lock();
     now = cnt && !sec && fstat(fd, &sbuf) == 0 ? (time_t)sbuf.st_ctime :
 	::time(NULL);
-    s1 = apath;
+    s1 = path;
     if ((pos = s1.rfind('/')) == s1.npos && (pos = s1.rfind('\\')) == s1.npos) {
 	sep = '/';
 	s2 = s1;
@@ -170,16 +169,16 @@ void Log::LogFile::roll(void) {
 	s2 = s1.substr(pos + 1);
 	s1.erase(pos);
     }
-    if ((dir = opendir(s1.empty() ? "." : s1.c_str())) != NULL) {
+    if ((dir = topendir(s1.empty() ? T(".") : s1.c_str())) != NULL) {
 	for (;;) {
 	    uint ext;
 	    uint oldext = 0;
 	    ulong oldtime = (ulong)-1;
 
 	    files = 0;
-	    while ((ent = readdir(dir)) != NULL) {
-		if (strncmp(ent->d_name, s2.c_str(), s2.size()) ||
-		    (apath == ent->d_name && path != file))
+	    while ((ent = treaddir(dir)) != NULL) {
+		if (tstrncmp(ent->d_name, s2.c_str(), s2.size()) ||
+		    (path == ent->d_name && path != file))
 		    continue;
 		if (s1.empty()) {
 		    s3 = ent->d_name;
@@ -188,14 +187,14 @@ void Log::LogFile::roll(void) {
 		    s3 += sep;
 		    s3 += ent->d_name;
 		}
-		if ((s3 == apath && path != file))
+		if ((s3 == path && path != file))
 		    continue;
 		files++;
-		if (stat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
+		if (tstat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
 		    (ulong)oldtime) {
 		    if ((pos = s3.rfind('.')) != s3.npos &&
 			isdigit((int)s3[++pos])) {
-			ext = atoi(s3.c_str() + pos);
+			ext = ttoi(s3.c_str() + pos);
 			if (ext < oldext)
 			    continue;
 			else
@@ -211,30 +210,30 @@ void Log::LogFile::roll(void) {
 		(!sec || oldtime < (ulong)(now - sec))) ||
 		(sec && oldtime < (ulong)(now - sec))) &&
 		(!cnt || files >= cnt)) {
-		unlink(oldfile.c_str());
+		tunlink(oldfile.c_str());
 		files--;
-		rewinddir(dir);
+		trewinddir(dir);
 	    } else {
 		break;
 	    }
 	}
-	closedir(dir);
+	tclosedir(dir);
     }
     if (cnt && path == file) {
-	char buf[32];
+	tchar buf[32];
 
-	sprintf(buf, ".%u", files);
-	s1 = afile + buf;
+	tsprintf(buf, T(".%u"), files);
+	s1 = file + buf;
 	for (uint u = files; u > 1; u--) {
-	    unlink(s1.c_str());
-	    sprintf(buf, ".%u", u - 1);
-	    s2 = afile + buf;
-	    rename(s2.c_str(), s1.c_str());
+	    tunlink(s1.c_str());
+	    tsprintf(buf, T(".%u"), u - 1);
+	    s2 = file + buf;
+	    trename(s2.c_str(), s1.c_str());
 	    s1 = s2;
 	}
-	rename(afile.c_str(), s1.c_str());
+	trename(file.c_str(), s1.c_str());
     } else if (path != file) {
-	unlink(apath.c_str());
+	tunlink(path.c_str());
     }
     close();
     lock();

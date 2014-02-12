@@ -35,15 +35,24 @@
 #define HASH_SIZE	    769
 #define rename_unlock(lck)  if (locks) InterlockedExchange(locks + lck, 0)
 
-#define TPATHVAR(s)	    const char *s
-#define TPATH(a, b)	    (b = a)
-
 static HANDLE lockhdl;
 static long *locks;
 
-static int dir_stat(const char *dir, struct stat *buf);
+static int adir_stat(const char *dir, struct stat *buf);
+static int dir_stat(const WIN32_FILE_ATTRIBUTE_DATA *fad, struct stat *buf);
+static int wdir_stat(const wchar *dir, struct stat *buf);
 static int file_stat(HANDLE hnd, struct stat *buf);
 static ulong local_to_time_t(SYSTEMTIME *stm);
+
+static int A_TO_W(const char *path, wchar *buf) {
+    DWORD len;
+
+    if ((len = MultiByteToWideChar(CP_ACP, 0, path, (int)strlen(path) + 1, buf,
+	MAX_PATH)) > 0 && len <= MAX_PATH)
+	return 1;
+    errno = EINVAL;
+    return 0;
+}
 
 static void __cdecl stdapi_cleanup(void) {
     UnmapViewOfFile(locks);
@@ -125,7 +134,7 @@ usec_t microticks(void) {
     return milliticks() * 1000;
 }
 
-static uint rename_lock(const char *path) {
+static uint rename_lock(const wchar *path) {
     uint hash = 0;
     static volatile int init, init1;
 
@@ -153,7 +162,7 @@ static uint rename_lock(const char *path) {
     hash = hash % HASH_SIZE;
     if (locks) {
 	while (InterlockedExchange(locks + hash, 1))
-	    Sleep(1);
+	    Sleep(0);
     }
     return hash;
 }
@@ -180,28 +189,39 @@ void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
 }
 #endif
 
-#if !defined(_WIN32_WCE) || defined(_WIN32_WCE_EMULATION)
 int close(int fd) {
-    if (fd == -1) {
+    if (fd == -1)
 	errno = EINVAL;
-	return -1;
-    }
-    if (!CloseHandle((HANDLE)fd)) {
+    else if (CloseHandle((HANDLE)fd))
+	return 0;
+    else
 	_dosmaperr(GetLastError());
-	return -1;
-    }
-    return 0;
+    return -1;
 }
-#endif
 
 int creat(const char *path, int flag) {
-    return open(path, O_CREAT|O_TRUNC, flag);
+    return open(path, O_CREAT | O_TRUNC, flag);
+}
+
+int wcreat(const wchar *path, int flag) {
+    return wopen(path, O_CREAT | O_TRUNC, flag);
+}
+
+int copy_file(const char *from, const char *to, int check) {
+    wchar fbuf[MAX_PATH], tbuf[MAX_PATH];
+
+    return A_TO_W(from, fbuf) && A_TO_W(to, tbuf) ? wcopy_file(fbuf, tbuf,
+	check) : -1;
+}
+
+int wcopy_file(const wchar *from, const wchar *to, int check) {
+    if (CopyFileW(from, to, check))
+	return 0;
+    _dosmaperr(GetLastError());
+    return -1;
 }
 
 int dup(int fd) {
-#ifdef _WIN32_WCE
-    return -1;
-#else
     HANDLE hdl;
 
     if (!DuplicateHandle(GetCurrentProcess(), (HANDLE)fd,
@@ -210,13 +230,9 @@ int dup(int fd) {
 	return -1;
     }
     return (int)hdl;
-#endif
 }
 
 FILE *fdopen(int fd, const char *how) {
-#ifdef _WIN32_WCE
-    return NULL;
-#else
     int flags = 0;
 
     if (*how == 'a')
@@ -224,7 +240,6 @@ FILE *fdopen(int fd, const char *how) {
     else if (!strcmp(how, "r"))
 	flags |= O_RDONLY;
     return _fdopen(_open_osfhandle(fd, flags), how);
-#endif
  }
 
 int flock(int fd, int op) {
@@ -254,15 +269,10 @@ int flock(int fd, int op) {
 /* fsync emulation - don't fail on console output */
 int fsync(int fd) {
     if (!FlushFileBuffers((HANDLE)fd)) {
-#ifdef _WIN32_WCE
-	_dosmaperr(GetLastError());
-	return -1;
-#else
 	if (GetFileType((HANDLE)fd) != FILE_TYPE_CHAR) {
 	    _dosmaperr(GetLastError());
 	    return -1;
 	}
-#endif
     }
     return 0;
 }
@@ -389,22 +399,12 @@ long tell(int fd) {
     return (long)newpos;
 }
 
-int copy_file(const char *f, const char *t, int check) {
-    TPATHVAR(from);
-    TPATHVAR(to);
-
-    TPATH(f, from);
-    TPATH(t, to);
-    return CopyFileA(from, to, check) ? 0 : -1;
-}
-
 DIR *opendir(const char *name) {
     DIR *dirp;
     DWORD attr;
     const char *p;
     const char *wild = NULL;
     size_t len;
-    TPATHVAR(path);
 
     len = strlen(name);
     p = name + len - 1;
@@ -425,49 +425,90 @@ DIR *opendir(const char *name) {
 	}
     }
     len = p - name;
-    if ((dirp = malloc(sizeof (struct DIR) + len + 1 +
-	(wild ? strlen(wild) : sizeof ("/*.*")))) == NULL)
-       return dirp;
+    if ((dirp = malloc(sizeof (struct DIR) + (len + 1 +
+	(wild ? strlen(wild) : sizeof ("/*.*"))) * sizeof (char))) == NULL)
+	return dirp;
     memcpy(&dirp->path, name, len);
     dirp->path[len] = '\0';
-    TPATH(dirp->path, path);
-    if ((attr = GetFileAttributesA(path)) == (DWORD)-1 ||
+    if ((attr = GetFileAttributesA(dirp->path)) == (DWORD)-1 ||
 	!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
 	errno = ENOTDIR;
 	free(dirp);
-	return 0;
+	return NULL;
     }
     strcpy(dirp->path + len, "/");
-    if (wild)
-	strcpy(dirp->path + len + 1, wild);
-    else
-	strcpy(dirp->path + len + 1, "*.*");
+    strcpy(dirp->path + len + 1, wild ? wild : "*.*");
     dirp->hdl = 0;
     dirp->dir.d_off = 0;
-    if ((dirp->wfd = malloc(sizeof (*(dirp->wfd)))) == NULL) {
-	free(dirp);
-	return 0;
+    dirp->dir.d_name = dirp->wfd.cFileName;
+    return dirp;
+}
+
+WDIR *wopendir(const wchar *name) {
+    WDIR *dirp;
+    DWORD attr;
+    const wchar *p;
+    const wchar *wild = NULL;
+    size_t len;
+
+    len = wcslen(name);
+    p = name + len - 1;
+    if (*p != '\\' && *p != '/') {
+	while (p >= name) {
+	    if (*p == '?' || *p == '*')
+		wild = p;
+	    else if (*p == '\\' || *p == '/')
+		break;
+	    p--;
+	}
+	if (wild) {
+	    wild = p + 1;
+	    if (p < name)
+		p = name;
+	} else {
+	    p = name + len;
+	}
     }
-#ifdef _WIN32_WCE
-    WideCharToMultiByte(CP_THREAD_ACP, 0, dirp->wfd->cFileName, -1,
-	dirp->pbuf, sizeof (dirp->pbuf) / 2, NULL, NULL);
-    dirp->dir.d_name = dirp->pbuf;
-#else
-    dirp->dir.d_name = dirp->wfd->cFileName;
-#endif
+    len = p - name;
+    if ((dirp = malloc(sizeof (struct WDIR) + (len + 1 +
+	(wild ? wcslen(wild) : sizeof (L"/*.*"))) * sizeof (wchar))) == NULL)
+	return dirp;
+    memcpy(&dirp->path, name, len);
+    dirp->path[len] = '\0';
+    if ((attr = GetFileAttributesW(dirp->path)) == (DWORD)-1 ||
+	!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
+	errno = ENOTDIR;
+	free(dirp);
+	return NULL;
+    }
+    wcscpy(dirp->path + len, L"/");
+    wcscpy(dirp->path + len + 1, wild ? wild : L"*.*");
+    dirp->hdl = 0;
+    dirp->dir.d_off = 0;
+    dirp->dir.d_name = dirp->wfd.cFileName;
     return dirp;
 }
 
 struct dirent *readdir(DIR *dirp) {
-    TPATHVAR(path);
-
-    TPATH(dirp->path, path);
     if (!dirp->hdl) {
-	dirp->hdl = FindFirstFileA(path, dirp->wfd);
+	dirp->hdl = FindFirstFileA(dirp->path, &dirp->wfd);
 	if (dirp->hdl == INVALID_HANDLE_VALUE)
 	    return NULL;
     } else {
-	if (!FindNextFileA(dirp->hdl, dirp->wfd))
+	if (!FindNextFileA(dirp->hdl, &dirp->wfd))
+	    return NULL;
+	dirp->dir.d_off++;
+    }
+    return &dirp->dir;
+}
+
+struct wdirent *wreaddir(WDIR *dirp) {
+    if (!dirp->hdl) {
+	dirp->hdl = FindFirstFileW(dirp->path, &dirp->wfd);
+	if (dirp->hdl == INVALID_HANDLE_VALUE)
+	    return NULL;
+    } else {
+	if (!FindNextFileW(dirp->hdl, &dirp->wfd))
 	    return NULL;
 	dirp->dir.d_off++;
     }
@@ -487,49 +528,68 @@ void seekdir(DIR *dirp, long pos) {
 	readdir(dirp);
 }
 
+void wseekdir(WDIR *dirp, long pos) {
+    if (pos == dirp->dir.d_off) {
+	return;
+    } else if (pos < dirp->dir.d_off) {
+	FindClose(dirp->hdl);
+	dirp->hdl = 0;
+    } else {
+	pos -= dirp->dir.d_off;
+    }
+    while (pos--)
+	wreaddir(dirp);
+}
+
 void closedir(DIR *dirp) {
     if (dirp->hdl != INVALID_HANDLE_VALUE)
 	FindClose(dirp->hdl);
-    free(dirp->wfd);
+    free(dirp);
+}
+
+void wclosedir(WDIR *dirp) {
+    if (dirp->hdl != INVALID_HANDLE_VALUE)
+	FindClose(dirp->hdl);
     free(dirp);
 }
 
 int link(const char *from, const char *to) {
-    WCHAR buf[MAX_PATH];
-    LPWSTR FilePart;
+    wchar fbuf[MAX_PATH], tbuf[MAX_PATH];
+
+    return A_TO_W(from, fbuf) && A_TO_W(to, tbuf) ? wlink(fbuf, tbuf) : -1;
+}
+
+int wlink(const wchar *from, const wchar *to) {
+    wchar buf[MAX_PATH + 1];
+    LPWSTR file;
     HANDLE hdl;
-    WCHAR lbuf[MAX_PATH + 1];
     LPVOID lpContext = NULL;
-    DWORD out;
+    DWORD sz, out;
     WIN32_STREAM_ID sid;
-    int sz;
     uint lck;
     int ret = -1;
 
-    /* check for same drive */
-    if (strnicmp(from, to, 2)) {
-	errno = EINVAL;
+    if (to[1] == ':') {
+	sz = (DWORD)wcslen(to);
+    } else if ((sz = GetFullPathNameW(to, MAX_PATH, buf, &file)) == 0 || sz > MAX_PATH) {
+	_dosmaperr(GetLastError());
 	return ret;
+    } else {
+	to = buf;
     }
-    if (GetFileAttributesA(to) != (DWORD)-1) {
+#pragma warning(disable: 6102)
+    if (GetFileAttributesW(to) != (DWORD)-1) {
 	errno = EEXIST;
 	return ret;
     }
-#ifdef _UNICODE
-    sz = GetFullPathName(to, MAX_PATH, lbuf, &FilePart);
-#else
-    if (MultiByteToWideChar(CP_ACP, 0, to, (int)strlen(to) + 1, buf,
-	sizeof (buf) / sizeof (WCHAR)) > 0)
-	sz = GetFullPathNameW(buf, MAX_PATH, lbuf, &FilePart);
-    else
-	sz = 0;
-#endif
-    if (sz == 0) {
-	_dosmaperr(GetLastError());
+#pragma warning(default: 6102)
+    /* check for same drive */
+    if (wcsnicmp(from, to, 2)) {
+	errno = EINVAL;
 	return ret;
     }
     lck = rename_lock(from);
-    if ((hdl = CreateFileA(from, 0,
+    if ((hdl = CreateFileW(from, 0,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE) {
 	rename_unlock(lck);
@@ -541,14 +601,14 @@ int link(const char *from, const char *to) {
     sid.dwStreamAttributes = 0;
     sid.dwStreamNameSize = 0;
     sid.Size.HighPart = 0;
-    sid.Size.LowPart = (sz + 1) * sizeof (WCHAR);
-    out = (int)((LPBYTE)&sid.cStreamName - (LPBYTE)&sid);
+    sid.Size.LowPart = (sz + 1) * sizeof (wchar);
+    out = (DWORD)((LPBYTE)&sid.cStreamName - (LPBYTE)&sid);
     if (!BackupWrite(hdl, (LPBYTE)&sid, out, &out, FALSE, FALSE, &lpContext)) {
 	_dosmaperr(GetLastError());
 	CloseHandle(hdl);
 	return ret;
     }
-    if (BackupWrite(hdl, (LPBYTE)lbuf, sid.Size.LowPart,
+    if (BackupWrite(hdl, (LPBYTE)to, sid.Size.LowPart,
 	&out, FALSE, FALSE, &lpContext))
     	ret = 0;
     else
@@ -558,22 +618,32 @@ int link(const char *from, const char *to) {
     return ret;
 }
 
-int open(const char *p, int oflag, ...) {
-    char ch;
+int open(const char *path, int oflag, ...) {
+    int mode = 0666;
+    wchar pbuf[MAX_PATH];
+
+    if (oflag & O_CREAT) {
+	va_list ap;
+
+	va_start(ap, oflag);
+	mode = va_arg(ap, int);
+	va_end(ap);
+    }
+    return A_TO_W(path, pbuf) ? wopen(pbuf, oflag, mode) : -1;
+}
+
+int wopen(const wchar *path, int oflag, ...) {
     HANDLE hdl;
     DWORD fileaccess;
     DWORD fileshare;
     DWORD filecreate;
     DWORD fileattrib;
-    DWORD filetype;
+    DWORD filetype = 0;
     DWORD in = 0;
     SECURITY_ATTRIBUTES sa;
     uint lck;
     int mode = 0666;
-    TPATHVAR(path);
 
-    (void)ch; (void)filetype;
-    TPATH(p, path);
     if (oflag & O_CREAT) {
 	va_list ap;
 
@@ -585,16 +655,12 @@ int open(const char *p, int oflag, ...) {
     sa.nLength = sizeof (sa);
     sa.lpSecurityDescriptor = NULL;
     sa.bInheritHandle = (oflag & O_NOINHERIT) ? FALSE : TRUE;
-
-    /* figure out binary/text mode */
     if ((oflag & O_BINARY) == 0) {
 	if (oflag & O_TEXT || _fmode == O_TEXT)
 	    oflag |= O_TEXT;
 	else
 	    oflag |= O_BINARY;
     }
-
-    /* decode the access flags */
     switch (oflag & (O_RDONLY | O_WRONLY | O_RDWR)) {
       case O_RDONLY:
 	fileaccess = GENERIC_READ;
@@ -660,10 +726,8 @@ int open(const char *p, int oflag, ...) {
 	fileattrib |= FILE_FLAG_SEQUENTIAL_SCAN;
     else if (oflag & O_RANDOM)
 	fileattrib |= FILE_FLAG_RANDOM_ACCESS;
-
-    /* try to open/create the file */
-    lck = rename_lock(p);
-    hdl = CreateFileA(path, fileaccess, fileshare, &sa,
+    lck = rename_lock(path);
+    hdl = CreateFileW(path, fileaccess, fileshare, &sa,
 	filecreate, fileattrib, NULL);
     rename_unlock(lck);
     if (hdl == INVALID_HANDLE_VALUE) {
@@ -678,93 +742,88 @@ int open(const char *p, int oflag, ...) {
     }
     if (!(oflag & O_TEXT && oflag & O_RDWR))
 	return (int)hdl;
-    /* find out what type of file (file/device/pipe) */
-    if ((filetype = GetFileType(hdl)) == FILE_TYPE_UNKNOWN) {
-	CloseHandle(hdl);
-	_dosmaperr(GetLastError());	/* map error */
-	return -1;
-    }
+    if ((filetype = GetFileType(hdl)) == FILE_TYPE_UNKNOWN)
+	return (int)hdl;
     if (filetype != FILE_TYPE_PIPE && filetype != FILE_TYPE_CHAR) {
-	/* We have a text mode file.  If it ends in CTRL-Z, we wish to
-	   remove the CTRL-Z character, so that appending will work.
-	   We do this by seeking to the end of file, reading the last
-	   byte, and shortening the file if it is a CTRL-Z.
-	 */
+	/* remove CTRL-Z from end of file if present */
+	char ch;
+
 	if (SetFilePointer(hdl, 0, NULL, FILE_END) == (DWORD)-1) {
 	    CloseHandle(hdl);
 	    return -1;
 	}
-	/* Seek was OK, read the last char in file. The last
-	   char is a CTRL-Z if and only if _read returns 0
-	   and ch ends up with a CTRL-Z.
-	 */
 	if (ReadFile(hdl, &ch, 1, &in, NULL) && in && ch == 26) {
-	    /* read was OK and we got CTRL-Z! Wipe it out! */
 	    if (SetFilePointer(hdl, 1, NULL, FILE_END) == (DWORD)-1 ||
 		!SetEndOfFile(hdl) ||
 		SetFilePointer(hdl, 0, NULL, FILE_BEGIN) == (DWORD)-1) {
-		    CloseHandle(hdl);
-		    return -1;
+		CloseHandle(hdl);
+		return -1;
 	    }
 	}
     }
     return (int)hdl;
 }
 
-/* rename that emulates atomic operations very expensively */
-int rename(const char *f, const char *t) {
-    char oldbuf[MAX_PATH + 10];
-    uint lck;
-    int ret = 0;
-    char *p;
-    TPATHVAR(from);
-    TPATHVAR(to);
-    TPATHVAR(old);
+/* rename that emulates atomic operations expensively */
+int rename(const char *from, const char *to) {
+    wchar fbuf[MAX_PATH], tbuf[MAX_PATH];
 
-    TPATH(f, from);
-    TPATH(t, to);
-    if (MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING))
+    return A_TO_W(from, fbuf) && A_TO_W(to, tbuf) ? wrename(fbuf, tbuf) : -1;
+}
+
+int wrename(const wchar *from, const wchar *to) {
+    uint lck;
+    wchar oldbuf[MAX_PATH + 10];
+    const wchar *old;
+    wchar *p;
+    int ret = 0;
+
+    if (MoveFileExW(from, to, MOVEFILE_REPLACE_EXISTING))
 	return ret;
-    strcpy(oldbuf, t);
-    p = strrchr(oldbuf, '/');
-    sprintf(p ? p + 1 : oldbuf, "%u", (uint)microticks() ^ rand());
-    lck = rename_lock(t);
-    TPATH(oldbuf, old);
-    if (!MoveFileExA(to, old, MOVEFILE_REPLACE_EXISTING)) {
+    wcscpy(oldbuf, to);
+    p = wcsrchr(oldbuf, '/');
+    wsprintfW(p ? p + 1 : oldbuf, L"%u", (uint)microticks() ^ rand());
+    lck = rename_lock(to);
+    old = oldbuf;
+    if (!MoveFileExW(to, old, MOVEFILE_REPLACE_EXISTING)) {
 	_dosmaperr(GetLastError());
 	if (errno == ENOENT)
 	    oldbuf[0] = '\0';
 	else
 	    ret = -1;
     }
-    if (!ret && !MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING)) {
+    if (!ret && !MoveFileExW(from, to, MOVEFILE_REPLACE_EXISTING)) {
 	_dosmaperr(GetLastError());
-	MoveFileA(old, to);
+	MoveFileW(old, to);
 	ret = -1;
     }
     rename_unlock(lck);
     if (!ret && oldbuf[0])
-	DeleteFileA(old);
+	DeleteFileW(old);
     return ret;
 }
 
 /* stat that opens the file so that inodes are set properly */
-int stat(const char *p, struct stat *buf) {
+int stat(const char *path, struct stat *buf) {
+    wchar pbuf[MAX_PATH];
+
+    return A_TO_W(path, pbuf) ? wstat(pbuf, buf) : -1;
+}
+
+int wstat(const wchar *path, struct stat *buf) {
     HANDLE hdl;
     uint lck;
     int ret;
-    TPATHVAR(path);
 
-    TPATH(p, path);
-    lck = rename_lock(p);
-    hdl = CreateFileA(path, 0,
+    lck = rename_lock(path);
+    hdl = CreateFileW(path, 0,
 	FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
-	NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
     rename_unlock(lck);
     if (hdl == (HANDLE)-1) {
 	ret = GetLastError();
 	if (ret == ERROR_ACCESS_DENIED)
-	    return dir_stat(p, buf);
+	    return wdir_stat(path, buf);
 	_dosmaperr(ret);
 	ret = -1;
     } else {
@@ -834,36 +893,38 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
     return 0;
 }
 
-static int dir_stat(const char *d, struct stat *buf) {
+static int adir_stat(const char *dir, struct stat *buf) {
     WIN32_FILE_ATTRIBUTE_DATA fad;
+
+    if (GetFileAttributesExA(dir, GetFileExInfoStandard, &fad))
+	return dir_stat(&fad, buf);
+    _dosmaperr(GetLastError());
+    return -1;
+}
+
+static int dir_stat(const WIN32_FILE_ATTRIBUTE_DATA *fad, struct stat *buf) {
     FILETIME LocalFTime;
     SYSTEMTIME SystemTime;
-    TPATHVAR(dir);
 
-    TPATH(d, dir);
-    if (!GetFileAttributesExA(dir, GetFileExInfoStandard, &fad)) {
-	_dosmaperr(GetLastError());
-	return -1;
-    }
     buf->st_ino = buf->st_uid = buf->st_gid = 0;
     buf->st_nlink = 1;
     buf->st_rdev = buf->st_dev = 0;
-    buf->st_mode = (ushort)(fad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ?
+    buf->st_mode = (ushort)(fad->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ?
 	S_IFDIR : S_IFREG);
-    if (fad.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
+    if (fad->dwFileAttributes & FILE_ATTRIBUTE_READONLY)
 	buf->st_mode |= (S_IREAD + (S_IREAD >> 3) + (S_IREAD >> 6));
     else
 	buf->st_mode |= ((S_IREAD|S_IWRITE) + ((S_IREAD|S_IWRITE) >> 3)
 	  + ((S_IREAD|S_IWRITE) >> 6));
 
-    if (!FileTimeToLocalFileTime(&fad.ftLastWriteTime, &LocalFTime) ||
+    if (!FileTimeToLocalFileTime(&fad->ftLastWriteTime, &LocalFTime) ||
 	 !FileTimeToSystemTime(&LocalFTime, &SystemTime))
 	return -1;
     buf->st_mtime = local_to_time_t(&SystemTime);
 #ifdef ATIME_SUPPORT
-    if (fad.ftLastAccessTime.dwLowDateTime ||
-	fad.ftLastAccessTime.dwHighDateTime) {
-	if (!FileTimeToLocalFileTime(&fad.ftLastAccessTime, &LocalFTime) ||
+    if (fad->ftLastAccessTime.dwLowDateTime ||
+	fad->ftLastAccessTime.dwHighDateTime) {
+	if (!FileTimeToLocalFileTime(&fad->ftLastAccessTime, &LocalFTime) ||
 	    !FileTimeToSystemTime(&LocalFTime, &SystemTime))
 	    return -1;
 	buf->st_atime = local_to_time_t(&SystemTime);
@@ -873,9 +934,9 @@ static int dir_stat(const char *d, struct stat *buf) {
 #else
     buf->st_atime = 0;
 #endif
-    if (fad.ftCreationTime.dwLowDateTime ||
-	fad.ftCreationTime.dwHighDateTime) {
-	if (!FileTimeToLocalFileTime(&fad.ftCreationTime, &LocalFTime) ||
+    if (fad->ftCreationTime.dwLowDateTime ||
+	fad->ftCreationTime.dwHighDateTime) {
+	if (!FileTimeToLocalFileTime(&fad->ftCreationTime, &LocalFTime) ||
 	    !FileTimeToSystemTime(&LocalFTime, &SystemTime))
 	    return -1;
 	buf->st_ctime = local_to_time_t(&SystemTime);
@@ -883,38 +944,53 @@ static int dir_stat(const char *d, struct stat *buf) {
 	buf->st_ctime = buf->st_mtime;
     }
 #ifdef _USE_INT64
-    buf->st_size = ((__int64)(fad.nFileSizeHigh)) * (0x100000000i64) +
-	(__int64)(fad.nFileSizeLow);
+    buf->st_size = ((__int64)(fad->nFileSizeHigh)) * (0x100000000i64) +
+	(__int64)(fad->nFileSizeLow);
 #else
-    buf->st_size = fad.nFileSizeLow;
+    buf->st_size = fad->nFileSizeLow;
 #endif
     return 0;
 }
 
+static int wdir_stat(const wchar *dir, struct stat *buf) {
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+
+    if (GetFileAttributesExW(dir, GetFileExInfoStandard, &fad))
+	return dir_stat(&fad, buf);
+    _dosmaperr(GetLastError());
+    return -1;
+}
+
 int statvfs(const char *path, struct statvfs *buf) {
+    wchar pbuf[MAX_PATH];
+
+    return A_TO_W(path, pbuf) ? wstatvfs(pbuf, buf) : -1;
+}
+
+int wstatvfs(const wchar *path, struct statvfs *buf) {
     ulong bytesPerSector;
     ulong freeClusters;
     ulong sectorsPerCluster;
     ulong totalClusters;
-    char *cp;
+    wchar *cp;
     int rc;
 
     /* try root directory. This doesn't handle filesystems not mapped 
      * to drive a letter or a path without a drive letter
      */
-    cp = strchr(path, ':');
+    cp = wcschr(path, ':');
     if (cp) {
-	char rootdir[4];
+	wchar rootdir[4];
 	size_t size = cp - path + 1;
 
-	if (size >= sizeof (rootdir))
-	    size = sizeof (rootdir) - 1;
-	strncpy(rootdir, path, size);
+	if (size >= sizeof (rootdir) / sizeof (wchar))
+	    size = (sizeof (rootdir) / sizeof (wchar)) - 1;
+	wcsncpy(rootdir, path, size);
 	rootdir[size] = '\0';
-	rc = GetDiskFreeSpaceA(rootdir, &sectorsPerCluster, &bytesPerSector,
+	rc = GetDiskFreeSpaceW(rootdir, &sectorsPerCluster, &bytesPerSector,
 	    &freeClusters, &totalClusters);
     } else {
-	rc = GetDiskFreeSpaceA(path, &sectorsPerCluster, &bytesPerSector,
+	rc = GetDiskFreeSpaceW(path, &sectorsPerCluster, &bytesPerSector,
 	    &freeClusters, &totalClusters);
     }
     if (!rc) {

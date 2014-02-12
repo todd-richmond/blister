@@ -145,6 +145,8 @@ typedef unsigned short word;
 #define LOCK_NB		4
 #define LOCK_UN		8
 
+#define PATH_MAX	MAX_PATH
+
 #define bcopy(a, b, c)  memmove(b, a, c)
 #define bzero(a, b)	memset(a, 0, b)
 #define chown(path, owner, group)   0
@@ -215,15 +217,29 @@ typedef struct dirent {
     char *d_name;
 } dirent;
 
+typedef struct wdirent {
+    wchar *d_ino;
+    long d_off;
+    wchar *d_name;
+} wdirent;
+
 typedef struct DIR {
     void *hdl;
-    dirent  dir;
-    struct _WIN32_FIND_DATAA *wfd;
+    dirent dir;
+    WIN32_FIND_DATAA wfd;
     char path[1];
 } DIR;
 
-#define telldir(p)	(p->dir.d_off)
-#define rewinddir(dirp)	seekdir(dirp, 0L)
+typedef struct WDIR {
+    void *hdl;
+    wdirent dir;
+    WIN32_FIND_DATAW wfd;
+    wchar path[1];
+} WDIR;
+
+#define telldir(p)	    (p->dir.d_off)
+#define rewinddir(dirp)	    seekdir(dirp, 0L)
+#define wrewinddir(dirp)    wseekdir(dirp, 0L)
 
 /* stat routines that support inodes and devices properly */
 struct stat {
@@ -270,44 +286,58 @@ struct timezone {
 };
 
 EXTERNC
-extern int access(const char *, int);
-extern int chmod(const char *, int);
-extern int chsize(int, long);
-extern int close(int);
-extern int creat(const char *, int);
-extern int dup(int);
-extern int dup2(int, int);
-extern int eof(int);
-extern long filelength(int);
-extern int flock(int, int);
-extern int gettimeofday(struct timeval *tv, struct timezone *tz);
-extern int isatty(int);
-extern int lockf(int fd, int op, long len);
-extern int locking(int, int, long);
-extern long lseek(int, long, int);
-extern char *mktemp(char *);
-extern int open(const char *, int, ...);
-extern int read(int, void *, unsigned int);
-extern int rename(const char *, const char *);
-extern int setmode(int, int);
-extern int sopen(const char *, int, int, ...);
-extern long tell(int);
-extern int umask(int);
-extern int unlink(const char *);
-extern int write(int, const void *, unsigned int);
+extern int access(const char *path, int mode);
+extern int chmod(const char *path, int mode);
+extern int chsize(int fd, long len);
+extern int close(int fd);
+extern void closedir(DIR *dir);
+extern int creat(const char *path, int mode);
+extern int copy_file(const char *from, const char *to, int check);
+extern int dup(int fd);
+extern int dup2(int from, int to);
+extern int eof(int fd);
+extern long filelength(int fd);
+extern int flock(int fd, int op);
+extern int fstat(int fd, struct stat *buf);
 extern int fsync(int fd);
 extern int ftruncate(int fd, long len);
-extern int link(const char *, const char *);
-extern int fstat(int fd, struct stat *);
-extern int sigsend(idtype_t idtype, id_t id, int sig);
-extern int stat(const char *, struct stat *);
-extern int statvfs(const char *path, struct statvfs *buf);
+extern int gettimeofday(struct timeval *tv, struct timezone *tz);
+extern int isatty(int fd);
+extern int link(const char *from, const char *to);
+extern int lockf(int fd, int op, long len);
+extern long lseek(int, long, int);
+extern char *mktemp(char *path);
+extern int open(const char *path, int mode, ...);
+extern DIR *opendir(const char *path);
+extern int read(int, void *, unsigned int);
+extern dirent *readdir(DIR *dir);
 extern long readv(int fd, struct iovec *vec, int numvec);
+extern int rename(const char *from, const char *to);
+extern void seekdir(DIR *dir, long offset);
+extern int setmode(int fd, int mode);
+extern int sigsend(idtype_t idtype, id_t id, int sig);
+extern int stat(const char *path, struct stat *buf);
+extern int statvfs(const char *path, struct statvfs *buf);
+extern long tell(int fd);
+extern int umask(int mode);
+extern int unlink(const char *path);
+extern int waccess(const wchar *path, int mode);
+extern int wchmod(const wchar *path, int mode);
+extern void wclosedir(WDIR *dir);
+extern int wcopy_file(const wchar *from, const wchar *to, int check);
+extern int wcreat(const wchar *path, int mode);
+extern wchar *wmktemp(wchar *path);
+extern int wlink(const wchar *from, const wchar *to);
+extern int wopen(const wchar *path, int mode, ...);
+extern WDIR *wopendir(const wchar *path);
+extern wdirent *wreaddir(WDIR *dir);
+extern int wrename(const wchar *from, const wchar *to);
+extern int write(int, const void *, uint);
 extern long writev(int fd, const struct iovec *vec, int numvec);
-extern void closedir(DIR *);
-extern DIR *opendir(const char *);
-extern dirent *readdir(DIR *);
-extern void seekdir(DIR *, long);
+extern void wseekdir(WDIR *dir, long);
+extern int wstat(const wchar *wpath, struct stat *buf);
+extern int wstatvfs(const wchar *wpath, struct statvfs *buf);
+extern int wunlink(const wchar *path);
 EXTERNC_
 
 #define asctime_r(tm, buf, len)	((void)(buf, len), asctime(tm))
@@ -503,6 +533,21 @@ typedef ullong uint64;
 #define tscanf		wscanf
 #define tsscanf		swscanf
 
+#define tdirent		wdirent
+#define tDIR		WDIR
+
+#define taccess		_waccess
+#define tclosedir	wclosedir
+#define tlink		wlink
+#define topendir	wopendir
+#define treaddir	wreaddir
+#define trename		wrename
+#define trewinddir	wrewinddir
+#define tseekdir	wseekdir
+#define tstat		wstat
+#define tstatvfs	wstatvfs
+#define tunlink		_wunlink
+
 typedef wchar tchar;
 typedef wchar tuchar;
 
@@ -563,6 +608,21 @@ typedef wchar tuchar;
 #define tfscanf		fscanf
 #define tscanf		scanf
 #define tsscanf		sscanf
+
+#define tdirent		dirent
+#define tDIR		DIR
+
+#define taccess		access
+#define tclosedir	closedir
+#define tlink		link
+#define topendir	opendir
+#define treaddir	readdir
+#define trename		rename
+#define trewinddir	rewinddir
+#define tseekdir	seekdir
+#define tstat		stat
+#define tstatvfs	statvfs
+#define tunlink		unlink
 
 typedef char tchar;
 typedef uchar tuchar;

@@ -22,6 +22,7 @@
 
 #ifdef _WIN32
 #pragma warning(disable: 6328)
+#pragma warning(disable: 6330)
 #endif
 
 string SMTPClient::crlf("\r\n");
