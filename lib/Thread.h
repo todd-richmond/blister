@@ -751,7 +751,18 @@ protected:
 
 class Condvar: nocopy {
 public:
-    Condvar(Lock &lck): lock(lck) { pthread_cond_init(&cv, NULL); }
+    Condvar(Lock &lck): lock(lck) {
+#ifdef __APPLE__
+	pthread_cond_init(&cv, NULL);
+#elif !defined(__ANDROID__)
+	pthread_condattr_t attr;
+
+	pthread_condattr_init(&attr);
+	pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+	pthread_cond_init(&cv, &attr);
+	pthread_condattr_destroy(&attr);
+#endif
+    }
     ~Condvar() { pthread_cond_destroy(&cv); }
     
     void broadcast(void) { pthread_cond_broadcast(&cv); }
@@ -762,28 +773,16 @@ public:
 	} else {
 	    timespec ts;
 
-	    clock_gettime(CLOCK_REALTIME, &ts);
-	    ts.tv_sec += msec / 1000;
-	    ts.tv_nsec += (msec % 1000) * 1000000;
+	    ts.tv_sec = (uint)(msec / 1000);
+	    ts.tv_nsec = (msec % 1000) * 1000000;
+#ifdef __APPLE__
+	    return pthread_cond_timedwait_relative_np(&cv, lock, &ts) == 0;
+#elif defined(__ANDROID__)
+	    return pthread_cond_timedwait_monotonic_np(cond, lock, &ts) == 0;
+#else
 	    return pthread_cond_timedwait(&cv, lock, &ts) == 0;
+#endif
 	}
-    }
-    bool wait(ulong msec, const timespec &now) {
-	timespec ts(now);
-
-	ts.tv_sec += msec / 1000;
-	ts.tv_nsec += (msec % 1000) * 1000000;
-	return pthread_cond_timedwait(&cv, lock, &ts) == 0;
-    }
-    bool wait(const timespec &ts) {
-	return pthread_cond_timedwait(&cv, lock, &ts) == 0;
-    }
-    bool wait(const timeval &tv) {
-	timespec ts;
-
-	ts.tv_sec = tv.tv_sec;
-	ts.tv_nsec = tv.tv_usec * 1000;
-	return pthread_cond_timedwait(&cv, lock, &ts) == 0;
     }
 
 protected:
