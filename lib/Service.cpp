@@ -45,34 +45,43 @@ KillFunc killfunc = (KillFunc)pthread.get(T("pthread_kill_other_threads_np"));
 #define OPEN_MAX 256
 #endif
 
-static void splitpath(const tchar *path, const tchar *name, tstring &root,
+void Service::splitpath(const tchar *path, const tchar *name, tstring &root,
     tstring &prog) {
-    const tchar *sep;
-    tstring s;
+    tchar buf[PATH_MAX + 2];
     const tchar *p = NULL;
+    tstring::size_type pos;
+    tstring s;
+    const tchar *sep;
 
     (void)name;
     p = tgetenv(T("installdir"));
     if (p) {
-	s = p;
+	root = p;
     } else {
-	if ((sep = tstrrchr(path, '/')) == NULL)
-	    sep = tstrrchr(path, '\\');
-	if (sep && sep - path > 4 && !tstrnicmp(sep - 3, T("bin"), 3))
-	    sep -= 4;
-	if (sep)
-	    s.assign(path, sep - path);
-	else
-	    s = '.';
+	if (path[0] == '/' || path[1] == ':') {
+	    root = path;
+	} else {
+	    (void)tgetcwd(buf, sizeof(buf) / sizeof(tchar));
+	    root = buf;
+	    root += '/';
+	    root += path;
+	}
+	if ((pos = root.find_last_of('/')) == root.npos)
+	    pos = root.find_last_of('\\');
+	if (pos >= 4 && !tstrnicmp(root.c_str() + pos - 3, T("bin"), 3))
+	    pos -= 4;
+	else if (pos >= 6 && !tstrnicmp(root.c_str() + pos - 5, T(".libs"), 5))
+	    pos -= 6;
+	root.erase(pos);
     }
 #ifdef _WIN32
     if (name) {
-	tchar buf[256];
 	HKEY key;
 	DWORD size;
 	DWORD type;
 
-	tsprintf(buf, T("SYSTEM\\CurrentControlSet\\Services\\%s\\Parameters"), name);
+	tsprintf(buf, T("SYSTEM\\CurrentControlSet\\Services\\%s\\Parameters"),
+	    name);
 	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,
 	    buf, 0L, KEY_ALL_ACCESS, &key) == ERROR_SUCCESS) {
 	    size = sizeof (buf);
@@ -87,8 +96,6 @@ static void splitpath(const tchar *path, const tchar *name, tstring &root,
 	}
     }
 #endif
-    root = s;
-    root += '/';
     if ((p = tstrrchr(path, '/')) == NULL && (p = tstrrchr(path, '\\')) == NULL)
 	p = path;
     else
@@ -128,9 +135,10 @@ Service::~Service() {
     close();
 }
 
-bool Service::open() {
+bool Service::open(const tchar *file) {
     const tchar *s = host.c_str();
 
+    (void)file;
     if (!hSCManager)
 	hSCManager = OpenSCManager(*s ? s : NULL, NULL,	SC_MANAGER_ALL_ACCESS);
     if (hSCManager) {
@@ -218,17 +226,6 @@ void Service::setsignal(bool abrt) {
 int Service::run(int argc, const tchar * const *argv) {
     int ret;
 
-    console = getenv("USERNAME") != NULL;
-    for (int i = 1; i < argc; i++) {
-	const tchar *p = argv[i];
-
-	while (*p == '-')
-	    p++;
-	if (!tstricmp(p, T("0")) || !tstricmp(p, T("console")))
-	    console = true;
-	else if (!tstricmp(p, T("d")) || !tstricmp(p, T("daemon")))
-	    console = false;
-    }
     sigpid = getpid();
     if (console) {
 	ret = service->onStart(argc, argv);
@@ -265,7 +262,7 @@ void __stdcall Service::srv_main(DWORD argc, tchar **argv) {
     service->ssStatus.dwServiceSpecificExitCode = 0;
     service->ssStatus.dwWin32ExitCode = 0;
     for (i = 1; i < (int)argc; i++) {
-	if (!tstricmp(T("debug"), argv[i])) {
+	if (tstreq(T("debug"), argv[i])) {
 	    debug = true;
 	    break;
 	}
@@ -386,7 +383,7 @@ bool Service::update(Status status) {
 
 bool Service::install(const tchar *file, const tchar *desc,
     const tchar * const * depend, bool manual) {
-    tchar buf[MAX_PATH];
+    tchar buf[PATH_MAX];
     size_t i;
     tchar *p = NULL, *pp;
     tstring root, prog;
@@ -399,9 +396,9 @@ bool Service::install(const tchar *file, const tchar *desc,
     }
     if (!desc) {
 	splitpath(file, NULL, root, prog);
-	prog[0] = (tchar)towupper(prog[0]);
+	prog[0] = (tchar)totupper(prog[0]);
 	for (i = 1; i < prog.size(); i++)
-	    prog[0] = (tchar)towlower(prog[0]);
+	    prog[0] = (tchar)totlower(prog[0]);
 	desc = prog.c_str();
     }
     if (depend) {
@@ -704,22 +701,18 @@ Service::~Service() {
     service = NULL;
 }
 
-bool Service::open(void) {
+bool Service::open(const tchar *file) {
     char buf[16];
     int fd, in;
     struct flock fl;
     string root, prog;
-    string s;
 
     errnum = ESRCH;
     pid = 0;
     stStatus = Stopped;
-    splitpath(path.c_str(), NULL, root, prog);
-    s = root + "var/run/";
-    if (access(s.c_str(), R_OK))
-    	s = root;
-    s += name + T(".pid");
-    if ((fd = ::open(s.c_str(), O_RDONLY)) == -1)
+    if (file)
+	lckfile = file;
+    if ((fd = ::open(lckfile.c_str(), O_RDONLY)) == -1)
 	return false;
     ZERO(fl);
     fl.l_type = F_WRLCK;
@@ -899,21 +892,11 @@ int Service::run(int argc, const tchar * const *argv) {
 	while (setrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur >= 1024)
 	    rl.rlim_cur -= 512;
     }
-    console = getenv("LOGNAME") != NULL;
-    for (int i = 1; i < argc; i++) {
-	const tchar *p = argv[i];
-
-	while (*p == '-')
-	    p++;
-	if (!tstricmp(p, T("0")) || !tstricmp(p, T("console")))
-	    console = true;
-	else if (!tstricmp(p, T("d")) || !tstricmp(p, T("daemon")))
-	    console = false;
-    }
     if (!console) {
 	int fd;
     	pid_t fpid = fork();
 
+	dlog.file(Log::Info, service->logfile.c_str());
 	if (fpid > 0) {
 	    ::exit(0);
 	} else if (fpid == -1) {
@@ -924,8 +907,8 @@ int Service::run(int argc, const tchar * const *argv) {
 	fd = ::open(T("/dev/null"), O_RDONLY);
 	dup2(fd, 0);
 	::close(fd);
-	if ((fd = ::open((service->name + T(".out")).c_str(), O_APPEND |
-	    O_BINARY | O_CREAT | O_WRONLY | O_SEQUENTIAL, 0640)) == -1)
+	if ((fd = ::open(service->outfile.c_str(), O_APPEND | O_BINARY |
+	    O_CREAT | O_WRONLY | O_SEQUENTIAL, 0640)) == -1)
 	    fd = ::open(T("/dev/null"), O_WRONLY);
 	dup2(fd, 1);
 	dup2(fd, 2);
@@ -964,20 +947,19 @@ bool Service::uninstall() {
 
 bool Service::start(int argc, const tchar * const *argv) {
     pid_t fpid;
-    Status sts = status();
     uint loop = 15;
+    Status sts;
 
-    while (loop-- && sts == Stopping) {
+    while (loop-- && (sts = status()) == Stopping)
 	sleep(1);
-	sts = status();
-    }
     if (sts != Error && sts != Stopped)
 	return false;
-    if ((fpid = fork()) == -1) {
+    if (console) {
+	run(argc, argv);
+    } else if ((fpid = fork()) == -1) {
 	errnum = errno;
 	return false;
-    } else if (!fpid) {
-	unsetenv("LOGNAME");
+    } else if (fpid == 0) {
 	exit(run(argc, argv));
     } else {
 	bool started = false;
@@ -1071,13 +1053,15 @@ string Service::errstr() const {
 #endif
 
 int Service::execute(int argc, const tchar * const *argv) {
-    int ac = argc;
+    int ac = 1;
     const tchar **av;
-    const tchar *cmd = T("");
+    const tchar *cmd = T("?");
+    tstring prog;
     int ret = 0;
     Service::Status sts;
 
 #ifndef _WIN32
+    console = isatty(1);
     if (getuid() != geteuid() && getuid() != 0) {
 	tcout << name << T(": uid permission denied") << endl;
 	return 1;
@@ -1086,93 +1070,159 @@ int Service::execute(int argc, const tchar * const *argv) {
     av = new const tchar *[argc + 1];
     path = argv[0];
     if (path[0] != '/' && path[1] != ':') {
-	int sz = 1024 + 2 + (int)path.size();
-	tchar *buf = new tchar[sz];
+	tchar buf[PATH_MAX + 2];
 
-	(void)tgetcwd(buf, sz);
-	tstrcat(buf, T("/"));
-	path = buf + path;
-	delete [] buf;
+	(void)tgetcwd(buf, sizeof(buf) / sizeof(tchar));
+	path = buf;
+	path += '/';
+	path += argv[0];
     }
     av[0] = path.c_str();
-    if (argc > 1) {
-	cmd = argv[1];
+    for (int i = 1; i < argc; i++) {
+	cmd = argv[i];
 	while (*cmd == '-')
 	    cmd++;
-	ac--;
-	memcpy(&av[1], &argv[2], sizeof (char *) * argc - 2);
+	if (tstreq(cmd, T("console"))) {
+	    console = true;
+	} else if (tstreq(cmd, T("daemon"))) {
+	    console = false;
+	} else if (tstreq(cmd, T("installdir"))) {
+	    if (i == argc - 1) {
+		dlog.err(T("install directory required"));
+		return -1;
+	    }
+	    installdir = argv[++i];
+	} else if (tstreq(cmd, T("logfile"))) {
+	    if (i == argc - 1) {
+		dlog.err(T("log filename required"));
+		return -1;
+	    }
+	    logfile = argv[++i];
+	} else if (tstreq(cmd, T("outfile"))) {
+	    if (i == argc - 1) {
+		dlog.err(T("output filename required"));
+		return -1;
+	    }
+	    outfile = argv[++i];
+	} else if (tstreq(cmd, T("pidfile"))) {
+	    if (i == argc - 1) {
+		dlog.err(T("pid filename required"));
+		return -1;
+	    }
+	    lckfile = argv[++i];
+	} else {
+	    while (++i < argc)
+		av[ac++] = argv[i];
+	    break;
+	}
     }
-    if (*cmd && (ret = command(cmd, ac, av)) != -1) {
-    } else if (!tstricmp(cmd, T("install"))) {
+    splitpath(argv[0], name.c_str(), installdir, prog);
+    if (name.empty())
+	name = prog;
+    dlog.source(name.c_str());
+    set_files();
+    if ((ret = command(cmd, ac, av)) != -1) {
+    } else if (tstreq(cmd, T("install"))) {
 	ret = !install(NULL, av[0], &av[1]);
-    } else if (!tstricmp(cmd, T("uninstall"))) {
+    } else if (tstreq(cmd, T("uninstall"))) {
 	ret = !uninstall();
-    } else if (!tstricmp(cmd, T("abort")) || !tstricmp(cmd, T("kill"))) {
+    } else if (tstreq(cmd, T("abort")) || tstreq(cmd, T("kill"))) {
 	ret = !abort();
-    } else if (!tstricmp(cmd, T("help")) || !tstricmp(cmd, T("?"))) {
-	tcout << name << T(": [") << endl <<
-	    T("\tcondrestart | restart | start [ args ]") << endl <<
+    } else if (tstreq(cmd, T("help")) || tstreq(cmd, T("?"))) {
+	tcout << name << T("\t[--installdir dir] [--pidfile file]:") << endl <<
+	    T("\t[--console|--daemon] [--logfile file] [--outfile file]") <<
+	    T(" condrestart|") << endl <<
+	    T("\t\trestart|start [args]") << endl <<
 	    T("\thelp") << endl <<
-	    T("\tinstall [ description [ dependencies ] ]") << endl <<
-	    T("\tkill") << endl <<
-	    T("\tpause") << endl <<
-	    T("\trefresh") << endl <<
-	    T("\tresume") << endl <<
-	    T("\troll") << endl <<
-	    T("\tstate") << endl <<
-	    T("\tstatus") << endl <<
-	    T("\tstop") << endl <<
-	    T("\tuninstall") << endl <<
-	    T("\tversion") << endl << T("]") << endl;
-    } else if (!tstricmp(cmd, T("pause")) || !tstricmp(cmd, T("suspend"))) {
+	    T("\tinstall [description [dependencies]]") << endl <<
+	    T("\tkill") << endl << T("\tpause") << endl <<
+	    T("\trefresh") << endl << T("\tresume") << endl <<
+	    T("\troll") << endl << T("\tstate") << endl <<
+	    T("\tstatus") << endl << T("\tstop") << endl <<
+	    T("\tuninstall") << endl << T("\tversion") << endl << endl;
+    } else if (tstreq(cmd, T("pause")) || tstreq(cmd, T("suspend"))) {
 	ret = !pause();
-    } else if (!tstricmp(cmd, T("refresh")) ||
-	!tstricmp(T("reload"), cmd)) {
+    } else if (tstreq(cmd, T("refresh")) ||
+	tstreq(T("reload"), cmd)) {
 	ret = !refresh();
-    } else if (!tstricmp(cmd, T("condrestart"))) {
+    } else if (tstreq(cmd, T("condrestart"))) {
 	ret = !stop(false);
 	if (ret)
 	    errnum = ESRCH;
 	else
 	    ret = !start(ac, av);
-    } else if (!tstricmp(cmd, T("restart"))) {
+    } else if (tstreq(cmd, T("restart"))) {
 	stop();
 	ret = !start(ac, av);
-    } else if (!tstricmp(cmd, T("continue")) || !tstricmp(cmd, T("resume"))) {
+    } else if (tstreq(cmd, T("continue")) || tstreq(cmd, T("resume"))) {
 	ret = !resume();
-    } else if (!tstricmp(cmd, T("sigusr1")) || !tstricmp(cmd, T("roll")) ||
-	!tstricmp(cmd, T("rollover"))) {
+    } else if (tstreq(cmd, T("sigusr1")) || tstreq(cmd, T("roll")) ||
+	tstreq(cmd, T("rollover"))) {
 	ret = !sigusr1();
-    } else if (!tstricmp(cmd, T("sigusr2"))) {
+    } else if (tstreq(cmd, T("sigusr2"))) {
 	ret = !sigusr2();
-    } else if (!tstricmp(cmd, T("start"))) {
+    } else if (tstreq(cmd, T("start"))) {
 	ret = !start(ac, av);
 	if (ret && status() != Error) {
 	    ret = 0;
 	    tcout << name << T(": ") << status(status()) << endl;
 	}
-    } else if (!tstricmp(cmd, T("state"))) {
+    } else if (tstreq(cmd, T("state"))) {
 	sts = status();
 	errnum = 0;
 	ret = (int)sts;
-    } else if (!tstricmp(cmd, T("status"))) {
+    } else if (tstreq(cmd, T("status"))) {
 	sts = status();
 	errnum = 0;
 	ret = (sts == Error || sts == Stopped);
 	tcout << name << T(": ") << status(sts) << endl;
-    } else if (!tstricmp(cmd, T("stop")) || !tstricmp(cmd, T("exit"))) {
-	ret = status() == Stopped ? 0 : !stop(!tstricmp(cmd, T("exit")));
-    } else if (!tstricmp(cmd, T("version"))) {
+    } else if (tstreq(cmd, T("stop")) || tstreq(cmd, T("exit"))) {
+	ret = status() == Stopped ? 0 : !stop(tstreq(cmd, T("exit")));
+    } else if (tstreq(cmd, T("version"))) {
 	tcout << ver << endl;
     } else {
-	memcpy(&av[1], &argv[1], sizeof (char *) * argc - 1);
-	ac = argc;
     	ret = run(ac, av);
     }
     if (ret && errnum)
 	tcerr << name << T(": ") << errstr() << endl;
     delete [] av;
     return ret;
+}
+
+void Service::set_files(void) {
+    if (lckfile.empty()) {
+	lckfile = T("/var/run");
+	if (taccess(lckfile.c_str(), R_OK | W_OK)) {
+	    lckfile = installdir + T("log");
+	    if (taccess(lckfile.c_str(), R_OK | W_OK))
+		lckfile = installdir;
+	}
+	lckfile += '/';
+	lckfile += name;
+	lckfile += T(".pid");
+    }
+    if (logfile.empty()) {
+	logfile = T("/var/log");
+	if (taccess(logfile.c_str(), R_OK | W_OK)) {
+	    logfile = installdir + T("log");
+	    if (taccess(logfile.c_str(), R_OK | W_OK))
+		logfile = installdir;
+	}
+	logfile += '/';
+	logfile += name;
+	logfile += T(".log");
+    }
+    if (outfile.empty()) {
+	outfile = T("/var/log");
+	if (taccess(outfile.c_str(), R_OK | W_OK)) {
+	    outfile = installdir + T("log");
+	    if (taccess(outfile.c_str(), R_OK | W_OK))
+		outfile = installdir;
+	}
+	outfile += '/';
+	outfile += name;
+	outfile += T(".out");
+    }
 }
 
 int Service::onStart(int argc, const tchar * const *argv) {
@@ -1209,7 +1259,7 @@ Daemon::~Daemon() {
 	    T("stopped")) << endlog;
     if (lckfd != -1) {
 	if (!watch || child)
-	    unlink(tstringtoachar(lckfile));
+	    tunlink(lckfile.c_str());
 	lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 	::close(lckfd);
     }
@@ -1242,28 +1292,14 @@ bool Daemon::setids() {
 int Daemon::onStart(int argc, const tchar * const *argv) {
     char buf[64];
     bool buffer;
+    tstring logfile;
     int ret = 0;
     tstring s;
     struct stat sbuf, sfile;
 
     time(&start);
-    splitpath(argv[0], name.c_str(), installdir, s);
     srvcpath = path;
-    lckfile = installdir + T("var/run/");
-    if (access(tstringtoachar(lckfile), W_OK))
-    	lckfile = installdir;
-    lckfile += name;
-    lckfile += T(".pid");
-    if (!console) {
-	tstring logfile = installdir + T("var/log/");
-
-	if (access(tstringtoachar(logfile), W_OK))
-	    logfile = installdir;
-	logfile += name;
-	dlog.file(Log::Info, (logfile + T(".log")).c_str());
-    }
     cfg.prefix(name.c_str());
-    dlog.source(name.c_str());
     stStatus = Starting;
     do {
 	lckfd = ::open(tstringtoachar(lckfile), O_CREAT|O_WRONLY, S_IREAD |
@@ -1292,7 +1328,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		p++;
 	else
 	    continue;
-	if (!tstricmp(p, T("config"))) {
+	if (tstreq(p, T("config"))) {
 	    cfgfile = argv[i + 1];
 	    break;
 	}
@@ -1498,7 +1534,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    }
 	} while (!qflag && child && !ret);
 	if (child) {
-	    unlink(lckfile.c_str());
+	    tunlink(lckfile.c_str());
 	    lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 	    ::close(lckfd);
 	    exit(ret);
@@ -1507,7 +1543,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     } else {
 	ret = Service::onStart(argc, argv);
 	ftruncate(lckfd, 0);
-	sprintf(buf, "%ld", (long)sigpid);
+	sprintf(buf, "%lu", (ulong)sigpid);
 	lseek(lckfd, 0, SEEK_SET);
 	write(lckfd, buf, (uint)strlen(buf));
 	dlog.buffer(buffer);

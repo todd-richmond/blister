@@ -82,6 +82,7 @@ protected:
     bool bPause;
     long errnum;
     gid_t gid;
+    tstring installdir, lckfile, logfile, outfile;
     tstring name;
     tstring path;
     pid_t pid;
@@ -114,8 +115,11 @@ protected:
     static int run(int argc = 0, const tchar * const *argv = NULL);
 
  private:
-    bool open(void);
     bool close(void);
+    bool open(const tchar *file = NULL);
+    void set_files(void);
+    static void splitpath(const tchar *path, const tchar *name, tstring &root,
+	tstring &prog);
 
 #ifdef _WIN32
     typedef void (__stdcall *service_ctrl_t)(ulong cmd);
@@ -180,10 +184,9 @@ public:
 
 protected:
     Config cfg;
-    tstring cfgfile, instance, installdir;
+    tstring cfgfile, instance;
     pid_t child;
     int lckfd;
-    tstring lckfile;
     bool refreshed;
     time_t start;
     bool watch;
