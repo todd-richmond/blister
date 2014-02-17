@@ -192,7 +192,7 @@ Thread::Thread(thread_t handle, ThreadGroup *tg, bool aterm): cv(lck),
 }
 
 Thread::Thread(void): cv(lck), autoterm(false), data(NULL), group(NULL), hdl(0),
-    id(NOID), retval(0), state(Init) {
+    id(NOID), main(NULL), retval(0), state(Init) {
 }
 
 Thread::~Thread() {

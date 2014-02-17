@@ -326,7 +326,7 @@ private:
 	Level lvl;
 
     	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m):
-	    gmt(false), mp(m), len(0), locked(false), fd(-1) {
+	    gmt(false), mp(m), len(0), locked(false), lvl(dlvl), fd(-1) {
 	    set(dlvl, dfile, 3, 5 * 1024 * 1024, 0);
 	    enable = denable;
 	}

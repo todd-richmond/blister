@@ -19,13 +19,10 @@
 #define Socket_h
 
 #ifdef _WIN32
-#ifndef _WINSOCK2API_
 #include <winsock2.h>
-#endif
 #pragma warning(disable: 6386)
 #include <ws2tcpip.h>
 #pragma warning(default: 6386)
-
 #pragma warning(disable: 4097)
 
 #define socklen_t	int

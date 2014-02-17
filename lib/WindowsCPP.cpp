@@ -18,7 +18,7 @@
 #include "stdapi.h"
 
 // hack to work around broken Microsoft libraries
-#if !defined(_DLL)
+#ifndef _DLL
 
 #ifdef std
 #undef std

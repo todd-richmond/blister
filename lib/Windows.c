@@ -15,8 +15,6 @@
  * limitations under the License.
  */
 
-#undef _UNICODE
-
 #include "stdapi.h"
 #include <ctype.h>
 #include <errno.h>
@@ -38,9 +36,12 @@
 static HANDLE lockhdl;
 static long *locks;
 
-static int adir_stat(const char *dir, struct stat *buf);
+#ifdef _DLL
+#define _dosmaperr	__dosmaperr
+static void _dosmaperr(ulong oserrno);
+#endif
+
 static int dir_stat(const WIN32_FILE_ATTRIBUTE_DATA *fad, struct stat *buf);
-static int wdir_stat(const wchar *dir, struct stat *buf);
 static int file_stat(HANDLE hnd, struct stat *buf);
 static ulong local_to_time_t(SYSTEMTIME *stm);
 
@@ -200,11 +201,11 @@ int close(int fd) {
 }
 
 int creat(const char *path, int flag) {
-    return open(path, O_CREAT | O_TRUNC, flag);
+    return open(path, O_CREAT | O_TRUNC | O_WRONLY, flag);
 }
 
 int wcreat(const wchar *path, int flag) {
-    return wopen(path, O_CREAT | O_TRUNC, flag);
+    return wopen(path, O_CREAT | O_TRUNC | O_WRONLY, flag);
 }
 
 int copy_file(const char *from, const char *to, int check) {
@@ -822,8 +823,12 @@ int wstat(const wchar *path, struct stat *buf) {
     rename_unlock(lck);
     if (hdl == (HANDLE)-1) {
 	ret = GetLastError();
-	if (ret == ERROR_ACCESS_DENIED)
-	    return wdir_stat(path, buf);
+	if (ret == ERROR_ACCESS_DENIED) {
+	    WIN32_FILE_ATTRIBUTE_DATA fad;
+
+	    if (GetFileAttributesExW(path, GetFileExInfoStandard, &fad))
+		return dir_stat(&fad, buf);
+	}
 	_dosmaperr(ret);
 	ret = -1;
     } else {
@@ -893,15 +898,6 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
     return 0;
 }
 
-static int adir_stat(const char *dir, struct stat *buf) {
-    WIN32_FILE_ATTRIBUTE_DATA fad;
-
-    if (GetFileAttributesExA(dir, GetFileExInfoStandard, &fad))
-	return dir_stat(&fad, buf);
-    _dosmaperr(GetLastError());
-    return -1;
-}
-
 static int dir_stat(const WIN32_FILE_ATTRIBUTE_DATA *fad, struct stat *buf) {
     FILETIME LocalFTime;
     SYSTEMTIME SystemTime;
@@ -950,15 +946,6 @@ static int dir_stat(const WIN32_FILE_ATTRIBUTE_DATA *fad, struct stat *buf) {
     buf->st_size = fad->nFileSizeLow;
 #endif
     return 0;
-}
-
-static int wdir_stat(const wchar *dir, struct stat *buf) {
-    WIN32_FILE_ATTRIBUTE_DATA fad;
-
-    if (GetFileAttributesExW(dir, GetFileExInfoStandard, &fad))
-	return dir_stat(&fad, buf);
-    _dosmaperr(GetLastError());
-    return -1;
 }
 
 int statvfs(const char *path, struct statvfs *buf) {

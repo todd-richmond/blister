@@ -198,12 +198,6 @@ typedef enum idtype {
     P_PID, P_PPID, P_PGID, P_SID, P_CID, P_UID, P_GID, P_ALL
 } idtype_t;
 
-/* local MSVC routines we need in overridden versions */
-#ifdef _DLL
-#define _dosmaperr  __dosmaperr
-#endif
-extern void _dosmaperr(ulong oserrno);
-
 /*
  * replacement CLib calls support automic rename, deleting open files
  * and using sockets as fds
