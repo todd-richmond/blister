@@ -41,8 +41,6 @@ static long *locks;
 static void _dosmaperr(ulong oserrno);
 #endif
 
-static int dir_stat(const WIN32_FILE_ATTRIBUTE_DATA *fad, struct stat *buf);
-static int file_stat(HANDLE hnd, struct stat *buf);
 static ulong local_to_time_t(SYSTEMTIME *stm);
 
 static int A_TO_W(const char *path, wchar *buf) {
@@ -712,11 +710,8 @@ int wopen(const wchar *path, int oflag, ...) {
 	fileattrib |= FILE_FLAG_NO_BUFFERING;
     if (oflag & O_OVERLAPPED)
 	fileattrib |= FILE_FLAG_OVERLAPPED;
-    if (oflag & O_POSIX) {
-	if (path[1] == ':')
-	    *((LPTSTR)path) = (char)totupper(path[0]);
+    if (oflag & O_POSIX)
 	fileattrib |= FILE_FLAG_POSIX_SEMANTICS;
-    }
     if (oflag & O_SHORT_LIVED)
 	fileattrib |= FILE_ATTRIBUTE_TEMPORARY;
     if (oflag & O_SYNC)
@@ -811,37 +806,6 @@ int stat(const char *path, struct stat *buf) {
     return A_TO_W(path, pbuf) ? wstat(pbuf, buf) : -1;
 }
 
-int wstat(const wchar *path, struct stat *buf) {
-    HANDLE hdl;
-    uint lck;
-    int ret;
-
-    lck = rename_lock(path);
-    hdl = CreateFileW(path, 0,
-	FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
-	NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
-    rename_unlock(lck);
-    if (hdl == (HANDLE)-1) {
-	ret = GetLastError();
-	if (ret == ERROR_ACCESS_DENIED) {
-	    WIN32_FILE_ATTRIBUTE_DATA fad;
-
-	    if (GetFileAttributesExW(path, GetFileExInfoStandard, &fad))
-		return dir_stat(&fad, buf);
-	}
-	_dosmaperr(ret);
-	ret = -1;
-    } else {
-	ret = file_stat(hdl, buf);
-	CloseHandle(hdl);
-    }
-    return ret;
-}
-
-int fstat(int fd, struct stat *buf) {
-    return file_stat((HANDLE)fd, buf);
-}
-
 static int file_stat(HANDLE hnd, struct stat *buf) {
     BY_HANDLE_FILE_INFORMATION bhfi;
     FILETIME LocalFTime;
@@ -858,11 +822,11 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
     if (bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
 	buf->st_mode |= (S_IREAD + (S_IREAD >> 3) + (S_IREAD >> 6));
     else
-	buf->st_mode |= ((S_IREAD|S_IWRITE) + ((S_IREAD|S_IWRITE) >> 3)
-	  + ((S_IREAD|S_IWRITE) >> 6));
+	buf->st_mode |= ((S_IREAD | S_IWRITE) + ((S_IREAD | S_IWRITE) >> 3)
+	+ ((S_IREAD | S_IWRITE) >> 6));
 
     if (!FileTimeToLocalFileTime(&bhfi.ftLastWriteTime, &LocalFTime) ||
-	 !FileTimeToSystemTime(&LocalFTime, &SystemTime))
+	!FileTimeToSystemTime(&LocalFTime, &SystemTime))
 	return -1;
     buf->st_mtime = local_to_time_t(&SystemTime);
 #ifdef ATIME_SUPPORT
@@ -889,38 +853,43 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
     }
 #ifdef _USE_INT64
     buf->st_size = ((__int64)(bhfi.nFileSizeHigh)) * (0x100000000i64) +
-	       (__int64)(bhfi.nFileSizeLow);
+	(__int64)(bhfi.nFileSizeLow);
 #else
     buf->st_size = bhfi.nFileSizeLow;
 #endif
     buf->st_ino = ((__int64)(bhfi.nFileIndexHigh)) * (0x100000000i64) +
-	       (__int64)(bhfi.nFileIndexLow);
+	(__int64)(bhfi.nFileIndexLow);
     return 0;
 }
 
-static int dir_stat(const WIN32_FILE_ATTRIBUTE_DATA *fad, struct stat *buf) {
+static int dir_stat(const wchar *path, struct stat *buf) {
     FILETIME LocalFTime;
     SYSTEMTIME SystemTime;
+    WIN32_FILE_ATTRIBUTE_DATA fad;
 
+    if (GetFileAttributesExW(path, GetFileExInfoStandard, &fad)) {
+	_dosmaperr(GetLastError());
+	return -1;
+    }
     buf->st_ino = buf->st_uid = buf->st_gid = 0;
     buf->st_nlink = 1;
     buf->st_rdev = buf->st_dev = 0;
-    buf->st_mode = (ushort)(fad->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ?
-	S_IFDIR : S_IFREG);
-    if (fad->dwFileAttributes & FILE_ATTRIBUTE_READONLY)
+    buf->st_mode = (ushort)(fad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ?
+    S_IFDIR : S_IFREG);
+    if (fad.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
 	buf->st_mode |= (S_IREAD + (S_IREAD >> 3) + (S_IREAD >> 6));
     else
-	buf->st_mode |= ((S_IREAD|S_IWRITE) + ((S_IREAD|S_IWRITE) >> 3)
-	  + ((S_IREAD|S_IWRITE) >> 6));
+	buf->st_mode |= ((S_IREAD | S_IWRITE) + ((S_IREAD | S_IWRITE) >> 3)
+	+ ((S_IREAD | S_IWRITE) >> 6));
 
-    if (!FileTimeToLocalFileTime(&fad->ftLastWriteTime, &LocalFTime) ||
-	 !FileTimeToSystemTime(&LocalFTime, &SystemTime))
+    if (!FileTimeToLocalFileTime(&fad.ftLastWriteTime, &LocalFTime) ||
+	!FileTimeToSystemTime(&LocalFTime, &SystemTime))
 	return -1;
     buf->st_mtime = local_to_time_t(&SystemTime);
 #ifdef ATIME_SUPPORT
-    if (fad->ftLastAccessTime.dwLowDateTime ||
-	fad->ftLastAccessTime.dwHighDateTime) {
-	if (!FileTimeToLocalFileTime(&fad->ftLastAccessTime, &LocalFTime) ||
+    if (fad.ftLastAccessTime.dwLowDateTime ||
+	fad.ftLastAccessTime.dwHighDateTime) {
+	if (!FileTimeToLocalFileTime(&fad.ftLastAccessTime, &LocalFTime) ||
 	    !FileTimeToSystemTime(&LocalFTime, &SystemTime))
 	    return -1;
 	buf->st_atime = local_to_time_t(&SystemTime);
@@ -930,9 +899,9 @@ static int dir_stat(const WIN32_FILE_ATTRIBUTE_DATA *fad, struct stat *buf) {
 #else
     buf->st_atime = 0;
 #endif
-    if (fad->ftCreationTime.dwLowDateTime ||
-	fad->ftCreationTime.dwHighDateTime) {
-	if (!FileTimeToLocalFileTime(&fad->ftCreationTime, &LocalFTime) ||
+    if (fad.ftCreationTime.dwLowDateTime ||
+	fad.ftCreationTime.dwHighDateTime) {
+	if (!FileTimeToLocalFileTime(&fad.ftCreationTime, &LocalFTime) ||
 	    !FileTimeToSystemTime(&LocalFTime, &SystemTime))
 	    return -1;
 	buf->st_ctime = local_to_time_t(&SystemTime);
@@ -940,12 +909,39 @@ static int dir_stat(const WIN32_FILE_ATTRIBUTE_DATA *fad, struct stat *buf) {
 	buf->st_ctime = buf->st_mtime;
     }
 #ifdef _USE_INT64
-    buf->st_size = ((__int64)(fad->nFileSizeHigh)) * (0x100000000i64) +
-	(__int64)(fad->nFileSizeLow);
+    buf->st_size = ((__int64)(fad.nFileSizeHigh)) * (0x100000000i64) +
+	(__int64)(fad.nFileSizeLow);
 #else
-    buf->st_size = fad->nFileSizeLow;
+    buf->st_size = fad.nFileSizeLow;
 #endif
     return 0;
+}
+
+int wstat(const wchar *path, struct stat *buf) {
+    HANDLE hdl;
+    uint lck;
+    int ret;
+
+    lck = rename_lock(path);
+    hdl = CreateFileW(path, 0,
+	FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+	OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
+    rename_unlock(lck);
+    if (hdl == (HANDLE)-1) {
+	ret = GetLastError();
+	if (ret == ERROR_ACCESS_DENIED)
+	    return dir_stat(path, buf);
+	_dosmaperr(ret);
+	ret = -1;
+    } else {
+	ret = file_stat(hdl, buf);
+	CloseHandle(hdl);
+    }
+    return ret;
+}
+
+int fstat(int fd, struct stat *buf) {
+    return file_stat((HANDLE)fd, buf);
 }
 
 int statvfs(const char *path, struct statvfs *buf) {

@@ -105,6 +105,7 @@ typedef unsigned short word;
 #define O_BACKUP	0x200000
 #define O_NONBLOCK	0x400000
 #define O_DSYNC		O_SYNC
+#define O_TMPFILE	O_TEMPORARY
 
 #define SIGHUP		SIGBREAK
 #define SIGCHLD		80	/* out of range */
@@ -381,6 +382,10 @@ EXTERNC_
 #endif
 #define O_SEQUENTIAL	0
 #define O_SHORT_LIVED	0
+#ifndef O_TMPFILE
+#define O_TMPFILE	0
+#endif
+#define O_TEMPORARY	O_TMPFILE
 
 #define stricmp		strcasecmp
 #define strnicmp	strncasecmp
@@ -454,6 +459,10 @@ EXTERNC_
 #define MAXBYTE		0xff
 #define MAXWORD		0xffff
 #define MAXDWORD	0xffffffff
+
+#ifndef O_NOATIME
+#define O_NOATIME	0
+#endif
 
 typedef char int8;
 typedef uchar uint8;
