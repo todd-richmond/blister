@@ -351,6 +351,7 @@ EXTERNC_
 
 #include <unistd.h>
 #include <fcntl.h>
+#include <float.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -371,6 +372,11 @@ EXTERNC_
 
 #ifndef ENOSR
 #define ENOSR		ENOBUFS
+#endif
+
+#ifndef __DBL_EPSILON__
+#define DBL_EPSILON     2.2204460492503131e-016
+#define FLT_EPSILON     1.192092896e-07F
 #endif
 
 #ifndef O_BINARY
