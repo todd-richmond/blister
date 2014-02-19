@@ -24,7 +24,6 @@ int tmain(int argc, tchar *argv[]) {
     bool boolean = false, check = false, integer = false, nonewline = false;
     bool exists;
     int i;
-    tstring s;
 
     for (i = 1; i < argc; i++) {
 	if (!tstrcmp(argv[i], T("-?")) || !tstrcmp(argv[i], T("--help"))) {

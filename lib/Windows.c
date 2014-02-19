@@ -156,8 +156,10 @@ static uint rename_lock(const wchar *path) {
 	    init = TRUE;
 	}
     }
-    while (*path)
-	hash = hash * *path + *path++;
+    while (*path) {
+	hash = hash * *path + *path;
+	path++;
+    }
     hash = hash % HASH_SIZE;
     if (locks) {
 	while (InterlockedExchange(locks + hash, 1))
@@ -295,12 +297,18 @@ int lockfile(int fd, short op, short whence, ulong start, ulong len,
     OVERLAPPED ov;
 
     ZERO(ov);
-    if (whence == SEEK_SET)
+    if (whence == SEEK_SET) {
 	ov.Offset = start;
-    else if (whence == SEEK_CUR)
+    } else if (whence == SEEK_CUR) {
 	ov.Offset = SetFilePointer((HANDLE)fd, 0, 0, FILE_CURRENT) + start;
-    else if (whence == SEEK_END)
-	ov.Offset = GetFileSize((HANDLE)fd, NULL) - start;
+    } else if (whence == SEEK_END) {
+	LARGE_INTEGER li;
+
+	GetFileSizeEx((HANDLE)fd, &li);
+	li.QuadPart -= start;
+	ov.Offset = li.LowPart;
+	ov.OffsetHigh = li.HighPart;
+    }
     if (op == F_UNLCK) {
 	if (!UnlockFileEx((HANDLE)fd, 0, len, 0, &ov)) {
 	    _dosmaperr(GetLastError());
@@ -576,14 +584,15 @@ int wlink(const wchar *from, const wchar *to) {
     } else {
 	to = buf;
     }
+#pragma warning(push)
 #pragma warning(disable: 6102)
     if (GetFileAttributesW(to) != (DWORD)-1) {
 	errno = EEXIST;
 	return ret;
     }
-#pragma warning(default: 6102)
+#pragma warning(pop)
     /* check for same drive */
-    if (wcsnicmp(from, to, 2)) {
+    if (wcsnicmp(from, to, 2) != 0) {
 	errno = EINVAL;
 	return ret;
     }
@@ -618,7 +627,7 @@ int wlink(const wchar *from, const wchar *to) {
 }
 
 int open(const char *path, int oflag, ...) {
-    int mode = 0666;
+    int mode = 0;
     wchar pbuf[MAX_PATH];
 
     if (oflag & O_CREAT) {
@@ -641,7 +650,7 @@ int wopen(const wchar *path, int oflag, ...) {
     DWORD in = 0;
     SECURITY_ATTRIBUTES sa;
     uint lck;
-    int mode = 0666;
+    int mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 
     if (oflag & O_CREAT) {
 	va_list ap;

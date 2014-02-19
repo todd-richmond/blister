@@ -19,7 +19,7 @@
 #include <errno.h>
 #include "Thread.h"
 
-static const thread_t NOID = (thread_t)-1;
+static const thread_id_t NOID = (thread_id_t)-1;
 
 Lock ThreadGroup::grouplck;
 set<ThreadGroup *> ThreadGroup::groups;
@@ -339,10 +339,7 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     else
 	state = Running;
 #ifdef _WIN32
-    uint tid;
-
-    hdl = (HANDLE)_beginthreadex(NULL, stacksz, threadInit, this, 0, &tid);
-    id = (thread_t)tid;
+    hdl = (HANDLE)_beginthreadex(NULL, stacksz, threadInit, this, 0, (uint *)&id);
 #else
     pthread_attr_t attr;
 
@@ -405,7 +402,7 @@ bool Thread::terminate(void) {
     if (state == Running || state == Suspended) {
 #ifdef _WIN32
 #pragma warning(disable: 6258)
-	ret = TerminateThread(hdl, 1) == TRUE;
+	ret = TerminateThread(hdl, 1) != FALSE;
 #else
 	ret = pthread_cancel(hdl) == 0;
 #endif
@@ -443,7 +440,7 @@ bool Thread::wait(ulong timeout) {
 
 ThreadGroup::ThreadGroup(bool aterm): cv(cvlck), autoterm(aterm), state(Init) {
     grouplck.lock();
-    id = (thread_t)((ulong)nextId++);
+    id = (thread_id_t)((ulong)nextId++);
     groups.insert(this);
     grouplck.unlock();
 }

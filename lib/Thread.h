@@ -25,11 +25,12 @@
 #include <windows.h>
 
 typedef HANDLE thread_t;
+typedef DWORD thread_id_t;
 
 #define THREAD_EQUAL(x, y)	(x == y)
 #define THREAD_FUNC		uint __stdcall
 #define THREAD_HDL()		GetCurrentThread()
-#define THREAD_ID()		(thread_t)GetCurrentThreadId()
+#define THREAD_ID()		GetCurrentThreadId()
 #define THREAD_PAUSE()		YieldProcessor()
 #define THREAD_YIELD()		Sleep(0)
 
@@ -64,6 +65,7 @@ typedef uint tlskey_t;
 #include <pthread.h>
 
 typedef pthread_t thread_t;
+typedef pthread_t thread_id_t;
 
 #define INFINITE		(ulong)-1
 #define THREAD_EQUAL(x, y)	pthread_equal(x, y)
@@ -1118,7 +1120,7 @@ public:
 
     int exitStatus(void) const { return retval; }
     ThreadState getState(void) const { Locker lkr(lck); return state; }
-    thread_t getId(void) const { return id; }
+    thread_id_t getId(void) const { return id; }
     ThreadGroup *getThreadGroup(void) const { return group; }
     thread_t handle(void) const { return hdl; }
     bool running(void) const { return getState() == Running; }
@@ -1151,7 +1153,8 @@ private:
     bool autoterm;
     void *data;
     ThreadGroup *group;
-    thread_t hdl, id;
+    thread_t hdl;
+    thread_id_t id;
     ThreadRoutine main;
     int retval;
     volatile ThreadState state;
@@ -1174,7 +1177,7 @@ public:
     static ThreadGroup MainThreadGroup;
 
     ThreadState getState(void) const { return state; }
-    thread_t getId(void) const { return id; }
+    thread_id_t getId(void) const { return id; }
     const Thread &getMainThread(void) const { return master; }
     size_t size(void) const { return threads.size(); }
     
@@ -1205,7 +1208,7 @@ private:
     Lock cvlck;
     Condvar cv;
     bool autoterm;
-    thread_t id;
+    thread_id_t id;
     volatile ThreadState state;
     set<Thread *> threads;
     Thread master;

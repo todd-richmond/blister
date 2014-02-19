@@ -305,11 +305,11 @@ loop:
 		delete [] result;
 		result = newres;
 	    }
-	    if ((int)(in = (size_t)sstrm.read(result + ressz, (size_t)room)) > 0) {
+	    if ((long)(in = (size_t)sstrm.read(result + ressz, room)) > 0) {
 		ressz += in;
 		ret = true;
 	    }
-	    if (in == (size_t)-1 || (ulong)in < room)
+	    if (in == (size_t)-1 || in < room)
 		break;
 	    room -= in;
 	}

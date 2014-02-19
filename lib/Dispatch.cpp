@@ -527,7 +527,6 @@ void Dispatcher::cleanup(void) {
 	lifo.broadcast();
 	t = wait(30000);
 	delete t;
-	t = NULL;
 	lock.lock();
     } while (t != NULL);
     while (rlist) {

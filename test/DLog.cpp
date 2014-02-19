@@ -128,7 +128,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("--input"))) {
 	    if (++i == argc)
 		break;
-	    if (tstrcmp(argv[i], T("-"))) {
+	    if (tstrcmp(argv[i], T("-")) != 0) {
 		ifs.open(tchartoachar(argv[i]));
 		if (!ifs.good()) {
 		    tcerr<< T("unable to open ") << argv[i] << endl;

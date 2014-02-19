@@ -278,7 +278,7 @@ void HTTPServerSocket::parse(void) {
 	    continue;
 	*p++ = '\0';
     }
-    if (strnicmp(prot, "HTTP/1.", 7) || !prot[7] || prot[8] ||
+    if (strnicmp(prot, "HTTP/1.", 7) != 0 || !prot[7] || prot[8] ||
 	!isdigit((int)prot[7])) {
 	prot = "HTTP/1.0";
 	error(400);
@@ -579,6 +579,7 @@ void HTTPServerSocket::error(uint sts) {
 	"Service Unavailable", "Gateway Timeout", "Version Not Supported"
     };
 #ifdef _WIN32
+#pragma warning(push)
 #pragma warning(disable: 6385)
 #endif
     if (sts >= 200 && sts < 200 + sizeof (err2xx) / sizeof (char *))
@@ -592,7 +593,7 @@ void HTTPServerSocket::error(uint sts) {
     else
 	p = "HTTP error";
 #ifdef _WIN32
-#pragma warning(default: 6385)
+#pragma warning(pop)
 #endif
     status(sts, "text", "plain");
     ss << sts << ' ' << p << CRLF;

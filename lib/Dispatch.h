@@ -423,11 +423,12 @@ public:
 
     bool listen(const tchar *host = NULL, bool enable = true,
 	int backlog = SOCK_BACKLOG) {
-	tstring s(dspr.config().get(T("host"), host, S::section()));
+	const Config &cfg = dspr.config();
+	tstring s(cfg.get(T("host"), host, S::section()));
 
-	if (!dspr.config().get(T("enable"), enable, S::section()))
+	if (!cfg.get(T("enable"), enable, S::section()))
 	    return true;
-	backlog = dspr.config().get(T("backlog"), backlog, S::section());
+	backlog = cfg.get(T("backlog"), backlog, S::section());
 	if (DispatchListenSocket::listen(Sockaddr(s.c_str()), true, backlog)) {
 	    dlog << Log::Info << T("mod=") << S::section() <<
 		T(" cmd=listen addr=") << s << endlog;

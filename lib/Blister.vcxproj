@@ -275,6 +275,7 @@
       <EnablePREfast>false</EnablePREfast>
       <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <MinimalRebuild />
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
@@ -303,6 +304,7 @@
       </DebugInformationFormat>
       <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <MinimalRebuild />
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
@@ -331,6 +333,7 @@
       </DebugInformationFormat>
       <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <MinimalRebuild />
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
@@ -343,7 +346,8 @@
     <ClCompile>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>PACKAGE="Blister";VERSION="0.2";%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <MinimalRebuild>true</MinimalRebuild>
+      <MinimalRebuild>
+      </MinimalRebuild>
       <ExceptionHandling>false</ExceptionHandling>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>

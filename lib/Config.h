@@ -111,7 +111,7 @@ public:
 	{ tchar buf[24]; tsprintf(buf, T("%g"), val); set(attr, buf, sect); }
     void setv(const tchar *attr, const tchar *val, ... /* , const tchar
 	*sect = NULL, NULL */);
-    void lock(void) { lck.lock(); locker = THREAD_HDL(); }
+    void lock(void) { lck.lock(); locker = THREAD_ID(); }
     void unlock(void) { lck.unlock(); locker = 0; }
     bool iniformat(void) const { return ini; }
     const tstring &prefix(void) const { return pre; }
@@ -142,7 +142,7 @@ private:
     mutable tstring _buf, _key;
     bool ini;
     mutable Lock lck;
-    thread_t locker;
+    thread_id_t locker;
     tstring path;
     tstring pre;
 

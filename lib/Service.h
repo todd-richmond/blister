@@ -57,8 +57,8 @@ public:
 
     long error(void) const { return errnum; }
     tstring errstr(void) const;
-    tstring version(void) const { return ver; }
-    void version(tstring s) { ver = s; }
+    const tstring &version(void) const { return ver; }
+    void version(const tstring &s) { ver = s; }
     Status status(void);
     bool install(const tchar *path = NULL, const tchar *desc = NULL,
 	const tchar * const *depend = NULL, bool manual = false);

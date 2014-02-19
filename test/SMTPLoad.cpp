@@ -269,7 +269,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 	    if (host && !tstricmp(attr, T("host")))
 		continue;
 	    val = tstrtok(NULL, T(""));
-	    if (!attr || !val) {
+	    if (!val) {
 		tcerr << T("invalid value: line ") << line << endl;
 		return false;
 	    }
@@ -371,7 +371,6 @@ int SMTPLoad::onStart(void) {
     CLIENT sc;
     attrmap lvars;
     ulong diff;
-    tstring s;
     vector<LoadCmd *>::const_iterator it;
     attrmap::const_iterator ait;
 
@@ -507,8 +506,8 @@ int SMTPLoad::onStart(void) {
 	diff = (ulong)(end - start);
 	lock.lock();
 	tusec += diff - smsec * 1000;
-	count++;
-	tcount++;
+	++count;
+	++tcount;
 	if (!minusec || diff < minusec)
 	    minusec = diff;
 	if (diff > maxusec)
@@ -537,7 +536,7 @@ inline tstring format(ulong u) {
 inline tstring format(float f) {
     tchar buf[16];
 
-    if (f == 0)
+    if (f - 0 < FLT_EPSILON)
 	tstrcpy(buf, T("       0"));
     else if (f >= 100)
 	tsprintf(buf, T(" %7u"), (unsigned)(f + .5));

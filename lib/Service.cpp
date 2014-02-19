@@ -198,6 +198,7 @@ void Service::signal_handler(int sig) {
     _exit(1);
 }
 
+#pragma warning(push)
 #pragma warning(disable: 4702)
 
 long Service::exception_handler(_EXCEPTION_POINTERS *info) {
@@ -207,7 +208,7 @@ long Service::exception_handler(_EXCEPTION_POINTERS *info) {
     return EXCEPTION_CONTINUE_EXECUTION;
 }
 
-#pragma warning(default: 4702)
+#pragma warning(pop)
 
 void Service::setsignal(bool abrt) {
     if (console)
@@ -240,16 +241,16 @@ int Service::run(int argc, const tchar * const *argv) {
 	entry[0].lpServiceProc = srv_main;
 	entry[1].lpServiceName = NULL;
 	entry[1].lpServiceProc = NULL;
-	ret = StartServiceCtrlDispatcher(entry) != TRUE;
+	ret = StartServiceCtrlDispatcher(entry) == FALSE;
     }
     return ret;
 }
 
 void __stdcall Service::srv_main(DWORD argc, tchar **argv) {
+    tchar *arg0 = argv[0];
+    bool debug = false;
     tchar modulename[128];
     int ret = 0;
-    int i;
-    bool debug = false;
 
     if (service->name == argv[0])
 	service->hStatus = RegisterServiceCtrlHandler(service->name.c_str(),
@@ -261,8 +262,8 @@ void __stdcall Service::srv_main(DWORD argc, tchar **argv) {
     service->ssStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     service->ssStatus.dwServiceSpecificExitCode = 0;
     service->ssStatus.dwWin32ExitCode = 0;
-    for (i = 1; i < (int)argc; i++) {
-	if (tstreq(T("debug"), argv[i])) {
+    for (uint u = 1; u < argc; u++) {
+	if (tstreq(T("debug"), argv[u])) {
 	    debug = true;
 	    break;
 	}
@@ -274,6 +275,7 @@ void __stdcall Service::srv_main(DWORD argc, tchar **argv) {
 	}
 	ret = service->onStart(argc, argv);
     }
+    argv[0] = arg0;
     service->ssStatus.dwWin32ExitCode = ret;
     dlog.stop();
     if (!console)
@@ -290,7 +292,7 @@ void Service::handle(ulong sig) {
       case SERVICE_CONTROL_SHUTDOWN:
       case SERVICE_CONTROL_STOP:
 	update(Stopping);
-	GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+	GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0); //-V549
 	break;
       case SERVICE_CONTROL_ABORT:
 	onAbort();
@@ -378,7 +380,7 @@ bool Service::update(Status status) {
 	ssStatus.dwCheckPoint = checkpoint = 0;
     else
 	ssStatus.dwCheckPoint = ++checkpoint;
-    return SetServiceStatus(hStatus, &ssStatus) == TRUE;
+    return SetServiceStatus(hStatus, &ssStatus) != FALSE;
 }
 
 bool Service::install(const tchar *file, const tchar *desc,
@@ -647,7 +649,8 @@ DWORD ServiceData::collect(LPWSTR value, LPVOID *datap, LPDWORD total, LPDWORD t
 	return ERROR_SUCCESS;
     if (value && !wcscmp(value, L"Foreign")) {
 	return ERROR_SUCCESS;
-    } else if (value && wcscmp(value, L"Global") && wcscmp(value, L"Costly")) {
+    } else if (value && wcscmp(value, L"Global") != 0 && wcscmp(value,
+	L"Costly") != 0) {
     /*
 	if (!(IsNumberInUnicodeList(
 	    MSDataDefinition.MS_ObjectType.ObjectNameTitleIndex, value)))
@@ -1292,7 +1295,6 @@ bool Daemon::setids() {
 int Daemon::onStart(int argc, const tchar * const *argv) {
     char buf[64];
     bool buffer;
-    tstring logfile;
     int ret = 0;
     tstring s;
     struct stat sbuf, sfile;

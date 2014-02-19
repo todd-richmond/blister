@@ -20,9 +20,10 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#pragma warning(push)
 #pragma warning(disable: 6386)
 #include <ws2tcpip.h>
-#pragma warning(default: 6386)
+#pragma warning(pop)
 #pragma warning(disable: 4097)
 
 #define socklen_t	int
@@ -97,7 +98,7 @@ public:
     Sockaddr(const hostent *h) { set(h); }
     Sockaddr(Proto proto = TCP) {
 	ZERO(addr);
-	addr.sa.sa_family = families[proto];
+	addr.sa.sa_family = families[(uint)proto];
     }
     Sockaddr(const sockaddr &sa) { set(sa); }
     Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
@@ -310,10 +311,6 @@ public:
 	    wtimeout((uint)(tv.tv_sec * 1000 + tv.tv_usec / 1000));
 	return true;
     }
-    int rwindow(void) const { return getsockopt(SOL_SOCKET, SO_RCVLOWAT); }
-    bool rwindow(int size) { return setsockopt(SOL_SOCKET, SO_RCVLOWAT, size); }
-    int wwindow(void) const { return getsockopt(SOL_SOCKET, SO_SNDLOWAT); }
-    bool wwindow(int size) { return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size); }
 
     int read(void *buf, uint len) const;
     int read(void *buf, uint len, Sockaddr &sa) const;
@@ -329,8 +326,8 @@ public:
 protected:
     class SocketBuf {
     public:
-	SocketBuf(int t, socket_t s, bool o): blck(true), count(1), err(0),
-	    own(o), sock(s), rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE) {}
+	SocketBuf(int t, socket_t s, bool o): sock(s), count(1), err(0),
+	    rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE), blck(true), own(o) {}
 	~SocketBuf() { if (own) close(); }
 
 	bool blocked(void) const { return ::blocked(err); }
@@ -356,14 +353,13 @@ protected:
 	bool interrupted(void) const { return ::interrupted(err); }
 
     private:
-	bool blck;
+	socket_t sock;
 	uint count;
 	mutable int err;
-	bool own;
-	socket_t sock;
 	uint rto;
 	int type;
 	uint wto;
+	bool blck, own;
 
 	friend class Socket;
     };

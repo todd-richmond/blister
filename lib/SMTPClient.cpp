@@ -998,7 +998,7 @@ static inline void encode(const void *input, size_t len, void *output,
 	    out[0] = ENC(in[0] >> 2);
 	    out[1] = ENC(((in[0] << 4) & 060) | ((in[1] >> 4) & 017));
 	    out[2] = ENC(((in[1] << 2) & 074) | ((in[2] >> 6) & 03));
-	    out[3] = ENC(in[2] & 077);
+	    out[3] = ENC(in[2]);
 	    out += 4;
 	    outsz += 4;
 	    in += 3;
@@ -1064,7 +1064,7 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&output,
       'X', 'Y', 'Z', '[', '\\', ']', '^', '_'
     };
 
-    outsz = (uint)tstrlen(file);
+    outsz = (size_t)tstrlen(file);
     if ((output = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) == NULL)
 	return false;
     memcpy(output, begin, sizeof (begin) - 1);
@@ -1088,7 +1088,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     outsz = 0;
     while (isspace(*p))
 	p++;
-    if (strnicmp(p, "begin ", 6))
+    if (strnicmp(p, "begin ", 6) != 0)
 	return false;
     p += 5;
     while (isspace(*p))
@@ -1103,7 +1103,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     file.erase();
     while (*p != '\r' && *p != '\n'&& !isspace(*p))
 	file.append(1, *p++);
-    sz -= (uint)(p - in);
+    sz -= (size_t)(p - in);
     if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
 	return false;
     while (sz) {
@@ -1152,7 +1152,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     out[0] = '\0';
     while (isspace(*p))
 	p++;
-    if (memcmp(p, "end", 3)) {
+    if (memcmp(p, "end", 3) != 0) {
 	delete [] (char *)output;
 	return false;
     }

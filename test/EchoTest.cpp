@@ -112,7 +112,7 @@ static TSNumber<usec_t> usecs;
 
 void EchoTest::EchoClientSocket::onConnect(void) {
     if (msg == DispatchTimeout || msg == DispatchClose) {
-	errs++;
+	++errs;
 	dloge(T("client connect"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	erase();
@@ -134,7 +134,7 @@ void EchoTest::EchoClientSocket::input() {
     int len;
 
     if (msg == DispatchTimeout || msg == DispatchClose) {
-	errs++;
+	++errs;
 	dloge(T("client read"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	timeout(start, wait);
@@ -142,7 +142,7 @@ void EchoTest::EchoClientSocket::input() {
 	return;
     }
     if ((len = read(data + in, dsz - in)) < 0) {
-	errs++;
+	++errs;
 	dloge(T("client read failed:"), errstr());
 	timeout(start, wait);
 	return;
@@ -151,7 +151,7 @@ void EchoTest::EchoClientSocket::input() {
     if (in == dsz) {
 	usec_t usec = microticks() - begin;
 
-	ops++;
+	++ops;
 	usecs += usec;
 	dtiming.add(T("echo"), usec);
 	dlogt(T("client read"), len);
@@ -171,7 +171,7 @@ void EchoTest::EchoClientSocket::output() {
 	return;
     }
     if (msg == DispatchTimeout || msg == DispatchClose) {
-	errs++;
+	++errs;
 	loops.test_and_decr();
 	dloge(T("client write"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
@@ -179,7 +179,7 @@ void EchoTest::EchoClientSocket::output() {
 	return;
     }
     if ((len = write(data + out, dsz - out)) < 0) {
-	errs++;
+	++errs;
 	loops.test_and_decr();
 	dloge(T("client write failed:"), errstr());
 	timeout(start, wait);
@@ -293,7 +293,6 @@ int tmain(int argc, tchar *argv[]) {
     int i;
     const tchar *path = T("echo this short test string as quickly as possible");
     msec_t last, now;
-    tstring s;
     struct stat sbuf;
     ulong delay = 20, tmt = TIMEOUT, wait = 0;
     uint sockets = 20, threads = 20;

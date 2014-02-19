@@ -112,7 +112,7 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 #endif
 	}
     } else {
-	write(fd, buf, chars * sizeof (tchar));
+	write(fd, buf, (int)(chars * sizeof (tchar)));
 	if (file[0] != '>')
 	    len += chars * sizeof (tchar);
     }
@@ -177,7 +177,7 @@ void Log::LogFile::roll(void) {
 
 	    files = 0;
 	    while ((ent = treaddir(dir)) != NULL) {
-		if (tstrncmp(ent->d_name, s2.c_str(), s2.size()) ||
+		if (tstrncmp(ent->d_name, s2.c_str(), s2.size()) != 0 ||
 		    (path == ent->d_name && path != file))
 		    continue;
 		if (s1.empty()) {

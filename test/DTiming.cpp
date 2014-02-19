@@ -44,7 +44,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("--input"))) {
 	    if (++i == argc)
 		break;
-	    if (tstrcmp(argv[i], T("-"))) {
+	    if (tstrcmp(argv[i], T("-")) != 0) {
 		ifs.open(tchartoachar(argv[i]));
 		if (!ifs.good()) {
 		    tcerr<< T("unable to open ") << argv[i] << endl;
@@ -83,7 +83,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[key duration]*\n") << endl;
 	    return 1;
     }
-    while (!out) {
+    if (!out) {
 	while (getline(ifs.is_open() ? ifs : tcin, s)) {
 	    if (!s.empty()) {
 		const tchar *p = s.c_str(), *pp;
@@ -98,7 +98,6 @@ int tmain(int argc, tchar *argv[]) {
 		timing(key.c_str(), tstrtoul(pp, NULL, 10) * mult);
 	    }
 	}
-	break;
     }
     tcout << dtiming.data(byname, columns);
     return 0;

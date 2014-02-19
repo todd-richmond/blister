@@ -209,7 +209,7 @@ public:
 	    long out;
 
 	    iov[0].iov_base = pb;
-	    iov[0].iov_len = (ulong)(pp - pb);
+	    iov[0].iov_len = (size_t)(pp - pb);
 	    iov[1].iov_base = (char *)p;
 	    iov[1].iov_len = (size_t)sz;
 	    out = fd.writev(iov, 2);
@@ -250,7 +250,7 @@ public:
     virtual ~bufferstream() {}
 
     streamsize pcount(void) const { return sb.pcount(); }
-    streamsize size(void) const { return sb.pcount(); }
+    streamsize size(void) const { return pcount(); }
     const C *str(void) const { return sb.str(); }
 
     void reset(void) { if (sb.pcount()) basic_ostream<C>::seekp(0, ios::beg); }
