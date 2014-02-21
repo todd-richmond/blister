@@ -519,16 +519,16 @@ int Dispatcher::onStart() {
 #endif
 
 void Dispatcher::cleanup(void) {
-    DispatchTimer *dt;
-    Thread *t = NULL;
+    lock.unlock();
+    for (;;) {
+	Thread *t;
 
-    do {
-	lock.unlock();
 	lifo.broadcast();
-	t = wait(30000);
+	if ((t = wait(30000)) == NULL)
+	    break;
 	delete t;
-	lock.lock();
-    } while (t != NULL);
+    };
+    lock.lock();
     while (rlist) {
 	DispatchObj *obj = rlist.pop_front();
 
@@ -549,6 +549,9 @@ void Dispatcher::cleanup(void) {
     while (flist)
 	delete flist.pop_front();
     lock.lock();
+
+    DispatchTimer *dt;
+
     while ((dt = timers.get()) != NULL) {
 	lock.unlock();
 	dt->terminate();
