@@ -60,7 +60,6 @@
 
 /* Begin PBXFileReference section */
 		F7AA211913149F2C00272F6A /* Blister.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = Blister.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
-		F7AA211D13149F2C00272F6A /* Blister-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Blister-Prefix.pch"; sourceTree = "<group>"; };
 		F7AA211E13149F2C00272F6A /* BlisterProj.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = BlisterProj.xcconfig; path = Blister.xcodeproj/BlisterProj.xcconfig; sourceTree = SOURCE_ROOT; };
 		F7AA211F13149F2C00272F6A /* BlisterTarget.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = BlisterTarget.xcconfig; path = Blister.xcodeproj/BlisterTarget.xcconfig; sourceTree = SOURCE_ROOT; };
 		F7AA212A13149FAF00272F6A /* Config.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Config.cpp; path = ../lib/Config.cpp; sourceTree = "<group>"; };
@@ -130,7 +129,7 @@
 				F7AA217F131C246200272F6A /* Echotest */,
 			);
 			name = Products;
-			sourceTree = "<group>";
+			sourceTree = SOURCE_ROOT;
 		};
 		F7AA211B13149F2C00272F6A /* Blister */ = {
 			isa = PBXGroup;
@@ -162,19 +161,10 @@
 				F7AA214213149FAF00272F6A /* Unix.c */,
 				F7AA211E13149F2C00272F6A /* BlisterProj.xcconfig */,
 				F7AA211F13149F2C00272F6A /* BlisterTarget.xcconfig */,
-				F7AA211C13149F2C00272F6A /* Supporting Files */,
 			);
 			name = Blister;
 			path = ../lib;
 			sourceTree = SOURCE_ROOT;
-		};
-		F7AA211C13149F2C00272F6A /* Supporting Files */ = {
-			isa = PBXGroup;
-			children = (
-				F7AA211D13149F2C00272F6A /* Blister-Prefix.pch */,
-			);
-			name = "Supporting Files";
-			sourceTree = "<group>";
 		};
 		F7AA2181131C246200272F6A /* Echotest */ = {
 			isa = PBXGroup;
@@ -314,9 +304,12 @@
 		F7AA212513149F2C00272F6A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
 				CLANG_STATIC_ANALYZER_MODE = deep;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_IMPLICIT_SIGN_CONVERSION = NO;
+				CLANG_WARN_INT_CONVERSION = YES;
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_ENABLE_OBJC_EXCEPTIONS = NO;
@@ -334,6 +327,7 @@
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_HIDDEN_VIRTUAL_FUNCTIONS = YES;
 				GCC_WARN_INITIALIZER_NOT_FULLY_BRACKETED = YES;
+				GCC_WARN_NON_VIRTUAL_DESTRUCTOR = YES;
 				GCC_WARN_SHADOW = YES;
 				GCC_WARN_SIGN_COMPARE = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
@@ -352,9 +346,12 @@
 		F7AA212613149F2C00272F6A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
 				CLANG_STATIC_ANALYZER_MODE = deep;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_IMPLICIT_SIGN_CONVERSION = NO;
+				CLANG_WARN_INT_CONVERSION = YES;
 				DEAD_CODE_STRIPPING = YES;
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
@@ -374,6 +371,7 @@
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_HIDDEN_VIRTUAL_FUNCTIONS = YES;
 				GCC_WARN_INITIALIZER_NOT_FULLY_BRACKETED = YES;
+				GCC_WARN_NON_VIRTUAL_DESTRUCTOR = YES;
 				GCC_WARN_SHADOW = YES;
 				GCC_WARN_SIGN_COMPARE = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;

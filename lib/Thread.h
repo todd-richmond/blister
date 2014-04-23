@@ -289,28 +289,22 @@ protected:
 /*
  * Thread synchronization classes
  *
- * SpinLock: fastest possible lock, but cannot wait for extended periods
+ * SpinLock: fastest lock with exponential backoff but no sleep
  * Lock: fast lock that may spin before sleeping
  * Mutex: lock that does not spin before sleeping
  * RWLock: reader/writer lock
  * Condvar: condition variable around a Lock
  */
 
-#define DEFAULT_SPINS 40
-
 #ifdef NO_ATOMIC_LOCK
 
 class SpinLock: nocopy {
 public:
-    SpinLock(uint cnt = DEFAULT_SPINS) {
-	spin(cnt);
-	pthread_spin_init(&lck, NULL);
-    }
+    SpinLock() { pthread_spin_init(&lck, NULL); }
     ~SpinLock() { pthread_spin_destroy(&lck); }
 
     operator pthread_spinlock_t *() { return &lck; }
 
-    void spin(uint cnt) { (void)cnt; }
     void lock(void) { pthread_spin_lock(&lck); }
     bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
     void unlock(void) { pthread_spin_unlock(&lck); }
@@ -321,38 +315,40 @@ protected:
 
 #else
 
+#define SPINLOCK_YIELD    1 << 6
+
 class SpinLock: nocopy {
 public:
-    SpinLock(uint cnt = DEFAULT_SPINS): lck(0) { spin(cnt); }
+    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1), lck(0) {}
 
     void lock(void) {
 	while (atomic_lck(lck)) {
-	    uint spin = spins;
+	    ushort pause = init;
 
 	    do {
-		if (spin) {
-		    --spin;
-		    THREAD_PAUSE();
-		} else {
-		    spin = spins;
+		if (pause == SPINLOCK_YIELD) {
+		    pause = init;
 		    THREAD_YIELD();
+		} else {
+		    for (ushort u = 0; u < pause; ++u)
+			THREAD_PAUSE();
+		    pause <<= 1;
 		}
 	    } while (lck);
 	}
     }
-    void spin(uint cnt) { spins = Processor::count() == 1 ? 0 : cnt; }
     bool trylock(void) { return atomic_lck(lck) == 0; }
     void unlock(void) { atomic_clr(lck); }
 
 private:
+    ushort init;
     atomic_t lck;
-    uint spins;
 };
 
 #endif
 
-typedef LockerTemplate<SpinLock> SpinLocker;
 typedef FastLockerTemplate<SpinLock> FastSpinLocker;
+typedef LockerTemplate<SpinLock> SpinLocker;
 
 #ifdef _WIN32
 #define msleep(msec)   Sleep(msec)
