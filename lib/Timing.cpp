@@ -43,6 +43,7 @@ void Timing::add(const tchar *key, timing_t diff) {
     FastSpinLocker lkr(lck);
     timingmap::const_iterator it = tmap.find(key);
 
+#ifndef __clang_analyzer__
     if (it == tmap.end()) {
 	key = tstrdup(key);
 	stats = tmap[key] = new Stats(key);
@@ -52,6 +53,7 @@ void Timing::add(const tchar *key, timing_t diff) {
     stats->cnt++;
     stats->cnts[slot]++;
     stats->tot += diff;
+#endif
 }
 
 void Timing::clear() {

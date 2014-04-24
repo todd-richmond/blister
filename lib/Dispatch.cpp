@@ -694,7 +694,7 @@ void Dispatcher::wake(uint tasks, bool master) {
 		    while ((t = wait(0)) != NULL)
 			delete t;
 		} else if (tasks > 1) {
-		    THREAD_YIELD();
+		    THREAD_PAUSE();
 		}
 		tasks--;
 	    }

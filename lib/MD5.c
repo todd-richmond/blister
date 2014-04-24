@@ -336,7 +336,7 @@ md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes)
     int offset = (pms->count[0] >> 3) & 63;
     md5_word_t nbits = (md5_word_t)(nbytes << 3);
 
-    if (nbytes <= 0)
+    if (data == NULL || nbytes <= 0)
 	return;
 
     /* Update the message length. */
