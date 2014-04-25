@@ -1,4 +1,4 @@
-AC_INIT(Blister, 1.0)
+AC_INIT(Blister, 1.1)
 AM_INIT_AUTOMAKE
 
 AM_CONDITIONAL(OSX, test "`uname -s`" = Darwin)

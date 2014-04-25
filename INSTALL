@@ -1,9 +1,9 @@
 To build on UNIX(BSD, Linux, OSX, Solaris), run the build/build script.
 This sets up your system specific configure tools, builds the shared library
-and builds all test programs
+and compiles all test programs
 
-To build on Windows with Visual Studio 2012, use the build/Blister.sln
+To build on Windows with Visual Studio 2013, use the build/Blister.sln
 project file
 
-To build on OSX with XCode 4.5, use the build/Blister.xcworkspace project file
+To build on OSX with XCode 5, use the build/Blister.xcworkspace project file
 
