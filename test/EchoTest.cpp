@@ -40,7 +40,8 @@ public:
     class EchoClientSocket: public DispatchClientSocket {
     public:
 	EchoClientSocket(EchoTest &es, const Sockaddr &a, ulong t, ulong w):
-	    DispatchClientSocket(es), addr(a), tmt(t), wait(w) {}
+	    DispatchClientSocket(es), addr(a), begin(0), in(0), out(0), tmt(t),
+	    wait(w) {}
 	virtual ~EchoClientSocket() {}
 
 	virtual void start(ulong msec) { timeout(start, msec); }
@@ -62,7 +63,8 @@ public:
     class EchoServerSocket: public DispatchServerSocket {
     public:
 	EchoServerSocket(Dispatcher &dspr, Socket &sock):
-	    DispatchServerSocket(dspr, sock), buf(NULL), in(0), out(0) {}
+	    DispatchServerSocket(dspr, sock), buf(NULL), in(0), out(0),
+	    tmt(TIMEOUT) {}
 	virtual ~EchoServerSocket() { delete [] buf; }
 
 	void timeout(ulong timeout) { tmt = timeout; }

@@ -503,7 +503,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		addr += c;
 		break;
 	    }
-	    // FALL THROUGH - backslash before whitespace is ignored
+	    /* no break backslash before whitespace is ignored */
 	case ' ':
 	case '\t':
 	case '\v':
@@ -514,7 +514,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		addr += ' ';
 		break;
 	    }
-	    // FALL THROUGH
+	    /* no break */
 	case '\0':
 	    --input;
 	    goto pass1done;
@@ -546,11 +546,12 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	    }
 	    switch (c = addr[pos++]) {
 	    case ',':
-		if (!local_part.empty()) {
 	    case '@':
+		if (!local_part.empty()) {
 		    err = T("Invalid route address");
 		    goto fail;
 		}
+		/* no break */
 	    case ':':
 		// Strip route-address
 		local_part.erase();
@@ -561,7 +562,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		err = T("Invalid domain");
 		goto fail;
 	    }
-
+	    break;
 	case '"':
 	    while ((c = addr[pos++]) != '"') {
 		if (c == '\\')
@@ -593,7 +594,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		err = T("List:; syntax illegal");
 		goto fail;
 	    }
-	    // FALL THROUGH
+	    /* no break */
 	default:
 	    local_part += c;
 	    continue;
@@ -868,11 +869,12 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials) 
 		dst--;
 	    *dst = '\0';
 	    in = src;
-	    return c;
+	    break;
 	} else {
 	    *dst++ = c;
 	}
     }
+    return c;
 }
 
 int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
@@ -917,9 +919,10 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
 		dst--;
 	    *dst = '\0';
 	    in = src;
-	    return c;
+	    break;
 	}
     }
+    return c;
 }
 
 int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
@@ -945,9 +948,10 @@ int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
 		dst--;
 	    *dst = '\0';
 	    in = src;
-	    return c;
+	    break;
 	}
     }
+    return c;
 }
 
 const tstring RFC822Addr::address(uint u, bool n, bool b) const {
@@ -1262,7 +1266,7 @@ static void parse_rfc822space(const tchar *&s) {
 		    p++;
 		    if (*p == ' ' || *p == '\t')
 			break;
-		    // FALL THROUGH
+		    /* no break */
 		case '\0':
 		    s = NULL;
 		    return;

@@ -187,7 +187,8 @@ bool Processor::affinity(ullong mask) {
 }
 
 Thread::Thread(thread_t handle, ThreadGroup *tg, bool aterm): cv(lck),
-    autoterm(aterm), hdl(handle), id(NOID), retval(0), state(Running) {
+    autoterm(aterm), data(NULL), hdl(handle), id(NOID), main(NULL), retval(0),
+    state(Running) {
     group = ThreadGroup::add(*this, tg);
 }
 
@@ -566,7 +567,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
 	    continue;
 	}
 	if (!found || !msec)
-	    return NULL;
+	    break;
 	// Check every 30 seconds in case we missed something
 	if (!cv.wait(min(30000UL, msec)) && msec <= 30000)
 	    return NULL;
@@ -578,5 +579,6 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
 	    start = now;
 	}
     } while (true);
+    return NULL;
 }
 

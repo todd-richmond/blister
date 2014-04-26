@@ -16,6 +16,7 @@
  */
 
 #include "stdapi.h"
+#ifdef _WIN32
 #include <ctype.h>
 #include <errno.h>
 #include <mmsystem.h>
@@ -1277,4 +1278,5 @@ void __dosmaperr(ulong oserrno) {
 	errno = EINVAL;
 }
 
+#endif
 #endif

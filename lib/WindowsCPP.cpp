@@ -16,6 +16,7 @@
  */
 
 #include "stdapi.h"
+#ifdef _WIN32
 
 // hack to work around broken Microsoft libraries
 #ifndef _DLL
@@ -73,4 +74,5 @@ const string _wchartoastring(const wchar *s, int len) {
 	return ret;
     }
 }
+#endif
 

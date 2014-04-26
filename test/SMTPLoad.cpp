@@ -197,8 +197,8 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 	DIR *dir;
 	struct dirent *ent;
 
-	if (stat(tchartoachar(bodyfile), &sbuf) != -1 && sbuf.st_mode &
-	    S_IFREG) {
+	if (stat(tchartoachar(bodyfile), &sbuf) != -1 && (sbuf.st_mode &
+	    S_IFREG)) {
 	    bodycnt = 1;
 	    add(bodyfile);
 	} else if ((dir = opendir(tchartoachar(bodyfile))) != NULL) {

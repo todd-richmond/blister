@@ -23,7 +23,9 @@
 static const uint MAX_WAIT_TIME = 1 * 60 * 1000;
 static const uint MAX_IDLE_TIMER = 10 * 1000;
 static const uint MIN_IDLE_TIMER = 1 * 1000;
+#ifdef DSP_KQUEUE
 static const uint MIN_EVENTS = 32;
+#endif
 static const uint MAX_EVENTS = 128;
 
 static const uint DSP_Socket = 0x0001;
@@ -126,7 +128,7 @@ bool Dispatcher::exec() {
 	DispatchObj::Group *group;
 	DispatchObj *obj = rlist.pop_front();
 
-	if (!obj || obj->flags & DSP_Freed) {
+	if (!obj || (obj->flags & DSP_Freed)) {
 	    lock.unlock();
 	    delete obj;
 	    lock.lock();
@@ -611,25 +613,26 @@ uint Dispatcher::handleEvents(void *evts, uint nevts) {
 	    continue;
 	}
 	if (DSP_EVENT_READ(evt)) {
-	    if (ds->msg == DispatchNone && ds->flags & DSP_Scheduled)
+	    if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
 		ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
 		    DispatchRead;
 	    else
 		ds->flags |= DSP_Readable;
 	}
 	if (DSP_EVENT_WRITE(evt)) {
-	    if (ds->msg == DispatchNone && ds->flags & DSP_Scheduled)
+	    if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
 		ds->msg = DispatchWrite;
 	    else
 		ds->flags |= DSP_Writeable;
 	}
 	if (DSP_EVENT_ERR(evt)) {
-	    if (ds->msg == DispatchNone && ds->flags & DSP_Scheduled)
+	    if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
 		ds->msg = DispatchClose;
 	    else
 		ds->flags |= DSP_Closeable;
 	}
-	if (ds->flags & DSP_Scheduled && ready(*ds, ds->msg == DispatchAccept))
+	if ((ds->flags & DSP_Scheduled) && ready(*ds, ds->msg ==
+	    DispatchAccept))
 	    count++;
 	removeTimer(*ds);
     }
