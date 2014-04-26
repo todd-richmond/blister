@@ -1,10 +1,11 @@
-AUTOMAKE_OPTIONS = foreign
+# eliminate unused configure macros
+DEFS = 
 
-#remove everything that build auto generates
+# remove generated files
 DISTCLEANFILES = aclocal.m4 autom4te.cache/* config.guess config.sub configure \
 	depcomp documentation install-sh ltmain.sh missing mkinstalldirs \
 	Makefile.in
 
-CFLAGS = -Wall -Werror -pipe $(EXTRACFLAGS) @optimize@ 
-CXXFLAGS = $(CFLAGS) -Wno-deprecated -fno-rtti -fno-exceptions
+AM_CFLAGS = -Wall -Werror -pipe $(CFLAGS) @OPTIMIZE@
+AM_CXXFLAGS = -fno-rtti -fno-exceptions $(AM_CFLAGS) -Wno-deprecated
 

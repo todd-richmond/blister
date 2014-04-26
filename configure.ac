@@ -1,5 +1,6 @@
-AC_INIT(Blister, 1.1)
-AM_INIT_AUTOMAKE
+AC_PREREQ([2.69])
+AC_INIT([Blister],[1.1])
+AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 
 AM_CONDITIONAL(OSX, test "`uname -s`" = Darwin)
 AM_CONDITIONAL(Linux, test "`uname -s`" = Linux)
@@ -7,36 +8,44 @@ AM_CONDITIONAL(SunOS, test "`uname -s`" = SunOS)
 AM_CONDITIONAL(Intel32, test "`uname -p`" = i686 -o "`uname -p`" = i386)
 AM_CONDITIONAL(Intel64, test "`uname -p`" = x86_64)
 
+: ${CFLAGS=""}
+: ${CXXFLAGS=""}
+
+AC_C_BIGENDIAN
 AC_PROG_MAKE_SET
 AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_INSTALL
-AC_PROG_LD
-AC_PROG_LIBTOOL
 AC_PROG_LN_S
+AM_PROG_AR
 
-AC_HAVE_LIBRARY(dl)
-AC_HAVE_LIBRARY(nsl)
-AC_HAVE_LIBRARY(pthread)
-AC_HAVE_LIBRARY(rt)
-AC_HAVE_LIBRARY(socket)
+LT_INIT
+LT_LANG([C++])
+LT_PATH_LD
 
-AC_ARG_ENABLE(optimize,
-    [AC_HELP_STRING([--enable-optimize@<:@=CFLAGS@:>@],
-	[C++ compiler options @<:@default=-O3 -g -DNDEBUG@:>@])],
+AC_CHECK_LIB([dl],[main])ac_cv_lib_dl=ac_cv_lib_dl_main
+AC_CHECK_LIB([nsl],[main])ac_cv_lib_nsl=ac_cv_lib_nsl_main
+AC_CHECK_LIB([pthread],[main])ac_cv_lib_pthread=ac_cv_lib_pthread_main
+AC_CHECK_LIB([rt],[main])ac_cv_lib_rt=ac_cv_lib_rt_main
+AC_CHECK_LIB([socket],[main])ac_cv_lib_socket=ac_cv_lib_socket_main
+
+AC_ARG_ENABLE(OPTIMIZE,
+    [AS_HELP_STRING([--enable-optimize@<:@=CFLAGS@:>@],[C++ compiler optimizations @<:@default=-O3 -g -DNDEBUG@:>@])],
     [
 	if test "$enableval" = no -o "$enableval" = debug; then
-	    optimize="-g -D_DEBUG"
+	    OPTIMIZE="-g -D_DEBUG"
 	elif test "$enableval" = yes; then
-	    optimize="-O3 -g -DNDEBUG"
+	    OPTIMIZE="-O3 -g -DNDEBUG"
 	else
-	    optimize="$enableval"
+	    OPTIMIZE="$enableval"
 	fi
     ],
-    [ optimize="-O3 -g -DNDEBUG"]
+    [ OPTIMIZE="-O3 -g -DNDEBUG"]
 )
 
-AC_SUBST(optimize)
+AC_SUBST(OPTIMIZE)
 
-AC_OUTPUT(Makefile lib/Makefile test/Makefile)
+AC_CONFIG_FILES([Makefile lib/Makefile test/Makefile])
+
+AC_OUTPUT
 
