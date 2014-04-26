@@ -23,9 +23,6 @@
 static const uint MAX_WAIT_TIME = 1 * 60 * 1000;
 static const uint MAX_IDLE_TIMER = 10 * 1000;
 static const uint MIN_IDLE_TIMER = 1 * 1000;
-#ifdef DSP_KQUEUE
-static const uint MIN_EVENTS = 32;
-#endif
 static const uint MAX_EVENTS = 128;
 
 static const uint DSP_Socket = 0x0001;
@@ -84,6 +81,8 @@ typedef epoll_event event_t;
 #endif
 
 typedef struct kevent event_t;
+
+static const uint MIN_EVENTS = 32;
 
 #elif defined(__sun__)
 

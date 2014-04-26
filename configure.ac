@@ -1,6 +1,7 @@
 AC_PREREQ([2.69])
 AC_INIT([Blister],[1.1])
-AM_INIT_AUTOMAKE([-Wall -Werror foreign])
+AC_CONFIG_SRCDIR([lib/stdapi.h])
+AM_INIT_AUTOMAKE([-Wall -Werror foreign no-define])
 
 AM_CONDITIONAL(OSX, test "`uname -s`" = Darwin)
 AM_CONDITIONAL(Linux, test "`uname -s`" = Linux)
@@ -23,11 +24,11 @@ LT_INIT
 LT_LANG([C++])
 LT_PATH_LD
 
-AC_CHECK_LIB([dl],[main])ac_cv_lib_dl=ac_cv_lib_dl_main
-AC_CHECK_LIB([nsl],[main])ac_cv_lib_nsl=ac_cv_lib_nsl_main
-AC_CHECK_LIB([pthread],[main])ac_cv_lib_pthread=ac_cv_lib_pthread_main
-AC_CHECK_LIB([rt],[main])ac_cv_lib_rt=ac_cv_lib_rt_main
-AC_CHECK_LIB([socket],[main])ac_cv_lib_socket=ac_cv_lib_socket_main
+AC_CHECK_LIB([dl],[main],[])ac_cv_lib_dl=ac_cv_lib_dl_main
+AC_CHECK_LIB([nsl],[main],[])ac_cv_lib_nsl=ac_cv_lib_nsl_main
+AC_CHECK_LIB([pthread],[main],[])ac_cv_lib_pthread=ac_cv_lib_pthread_main
+AC_CHECK_LIB([rt],[main],[])ac_cv_lib_rt=ac_cv_lib_rt_main
+AC_CHECK_LIB([socket],[main],[])ac_cv_lib_socket=ac_cv_lib_socket_main
 
 AC_ARG_ENABLE(OPTIMIZE,
     [AS_HELP_STRING([--enable-optimize@<:@=CFLAGS@:>@],[C++ compiler optimizations @<:@default=-O3 -g -DNDEBUG@:>@])],
