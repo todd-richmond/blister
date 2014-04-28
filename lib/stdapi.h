@@ -370,13 +370,12 @@ EXTERNC_
     __GNUC_PATCHLEVEL__)
 #endif
 
-#ifndef ENOSR
-#define ENOSR		ENOBUFS
-#endif
-
 #ifndef __DBL_EPSILON__
 #define DBL_EPSILON     2.2204460492503131e-016
 #define FLT_EPSILON     1.192092896e-07F
+#endif
+#ifndef ENOSR
+#define ENOSR		ENOBUFS
 #endif
 
 #ifndef O_BINARY
@@ -408,6 +407,9 @@ typedef unsigned long ulong;
 #endif
 
 #ifdef __APPLE__
+#ifndef PATH_MAX
+#define PATH_MAX	1024
+#endif
 #define CLOCK_REALTIME	0
 #define CLOCK_MONOTONIC	1
 

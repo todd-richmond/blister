@@ -209,9 +209,11 @@ void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
 	return;
     sstrm << tchartoachar(hdr);
     for (it = v.begin(); it != v.end(); ++it) {
+	const tstring &s = *it;
+
 	if (it != v.begin())
 	    sstrm << ",\r\n\t";
-	sstrm << tstringtoachar(*it);
+	sstrm << tstringtoachar(s);
     }
     sstrm << crlf;
 }

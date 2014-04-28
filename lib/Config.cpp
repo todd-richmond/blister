@@ -330,10 +330,10 @@ bool Config::write(tostream &os, bool inistyle) const {
     }
     sort(lines.begin(), lines.end());
     for (lit = lines.begin(); lit != lines.end(); ++lit) {
-	os << *lit << endl;
+	os << *lit << '\n';
 	(void)inistyle;
 	// TODO - write ini style cfg
-	//os << T("[") << it->first << T("]") << endl;
+	//os << T("[") << it->first << T("]") << '\n';
     }
     return os.good();
 }

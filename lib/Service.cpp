@@ -17,9 +17,9 @@
 
 #include "stdapi.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <time.h>
-#include <fcntl.h>
 #include <sys/stat.h>
 #include "Log.h"
 #include "Service.h"

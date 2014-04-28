@@ -185,22 +185,24 @@ public:
     CIDR(const tchar *addrs = NULL) { add(addrs); }
 
     bool add(const tchar *addrs);
-    void erase(void) { ranges.erase(ranges.begin(), ranges.end()); }
+    void clear(void) { ranges.clear(); }
     bool find(const tchar *addr) const;
     bool find(uint addr) const;
-    bool set(const tchar *addrs) { erase(); return add(addrs); }
+    bool set(const tchar *addrs) {
+	clear();
+	return add(addrs);
+    }
 
 private:
-    class Range {
-    public:
-	ulong min, max;
-
+    struct Range {
 	bool operator ()(const Range &a, const Range &b) const {
-	    return a.max < b.min;
+	    return a.rmax < b.rmin;
 	}
 	bool operator <(const Range &a) const {
-	    return min < a.min || (min == a.min && max < a.max);
+	    return rmin < a.rmin || (rmin == a.rmin && rmax < a.rmax);
 	}
+
+	ulong rmin, rmax;
     };
 
     vector<Range> ranges;

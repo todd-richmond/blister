@@ -929,7 +929,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	    DispatchAccept || m == DispatchClose) {
 	    EV_SET(&evts[nevts++], ds.fd(), EVFILT_READ, EV_ADD | EV_CLEAR,
 		NOTE_EOF, 0, &ds);
-	    if (flags & DSP_SelectWrite && m != DispatchReadWrite) {
+	    if ((flags & DSP_SelectWrite) && m != DispatchReadWrite) {
 		EV_SET(&evts[nevts++], ds.fd(), EVFILT_WRITE, EV_DISABLE, 0, 0,
 		    &ds);
 	    }
@@ -938,7 +938,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	    DispatchConnect) {
 	    EV_SET(&evts[nevts++], ds.fd(), EVFILT_WRITE, EV_ADD | EV_CLEAR,
 		NOTE_EOF, 0, &ds);
-	    if (flags & DSP_SelectRead && m != DispatchReadWrite) {
+	    if ((flags & DSP_SelectRead) && m != DispatchReadWrite) {
 		EV_SET(&evts[nevts++], ds.fd(), EVFILT_READ, EV_DISABLE, 0, 0,
 		    &ds);
 	    }

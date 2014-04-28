@@ -316,21 +316,21 @@ bool CIDR::add(const tchar *addrs) {
 	if (tstrchr(addrs, '/') && (tsscanf(addrs, T("%3u.%3u.%3u.%3u/%2d"),
 	    &ip1[0], &ip1[1], &ip1[2], &ip1[3], &maskbits) == 5) &&
 	    VALID_IP(ip1) && maskbits >= 1 && maskbits <= 32) {
-	    range.min = BUILD_IP(ip1) & (~((1 << (32 - maskbits)) - 1) &
+	    range.rmin = BUILD_IP(ip1) & (~((1 << (32 - maskbits)) - 1) &
 		0xFFFFFFFF);
-	    range.max = range.min | (((1 << (32 - maskbits)) - 1) & 0xFFFFFFFF);
+	    range.rmax = range.rmin | (((1 << (32 - maskbits)) - 1) & 0xFFFFFFFF);
 	    ranges.push_back(range);
 	} else if (tstrchr(addrs, '-') && (tsscanf(addrs,
 	    T("%3u.%3u.%3u.%3u-%3u.%3u.%3u.%3u"), &ip1[0], &ip1[1], &ip1[2],
 	    &ip1[3], &ip2[0], &ip2[1], &ip2[2], &ip2[3]) == 8) &&
 	    VALID_IP(ip1) && VALID_IP(ip2)) {
-	    range.min = BUILD_IP(ip1);
-	    range.max = BUILD_IP(ip2);
-	    if (range.max >= range.min)
+	    range.rmin = BUILD_IP(ip1);
+	    range.rmax = BUILD_IP(ip2);
+	    if (range.rmax >= range.rmin)
 		ranges.push_back(range);
 	} else if ((tsscanf(addrs, T("%3u.%3u.%3u.%3u"), &ip1[0], &ip1[1],
 	    &ip1[2], &ip1[3]) == 4) && VALID_IP(ip1)) {
-	    range.min = range.max = BUILD_IP(ip1);
+	    range.rmin = range.rmax = BUILD_IP(ip1);
 	    ranges.push_back(range);
 	}
 	p = addrs;
@@ -358,10 +358,14 @@ bool CIDR::find(uint addr) const {
     vector<Range>::const_iterator it;
     Range range;
 
-    range.min = range.max = addr;
+    range.rmin = range.rmax = addr;
     for (it = lower_bound(ranges.begin(), ranges.end(), range, range);
-	it != ranges.end() && it->min <= range.min; ++it) {
-	if (range.max <= it->max)
+	it != ranges.end(); ++it) {
+	const Range &r = *it;
+
+	if (r.rmin > range.rmin)
+	    break;
+	else if (range.rmax <= r.rmax)
 	    return true;
     }
     return false;
