@@ -6,6 +6,7 @@ AM_LDFLAGS = -L../lib -lblister
 bin_PROGRAMS = cfg daemonize dlog dtiming httpload smtpload
 noinst_PROGRAMS = echotest httpd
 sysconf_DATA = http.wld smtp.wld
+EXTRA_DIST=*.cfg *.wld
 
 cfg_SOURCES = Cfg.cpp
 cfg_LDFLAGS = $(AM_LDFLAGS) -static

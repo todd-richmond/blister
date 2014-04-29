@@ -1,7 +1,7 @@
 AC_PREREQ([2.69])
 AC_INIT([Blister],[1.1])
 AC_CONFIG_SRCDIR([lib/stdapi.h])
-AM_INIT_AUTOMAKE([-Wall -Werror foreign no-define])
+AM_INIT_AUTOMAKE([-Wall -Werror dist-zip foreign no-define no-installinfo no-installman ])
 
 AM_CONDITIONAL(OSX, test "`uname -s`" = Darwin)
 AM_CONDITIONAL(Linux, test "`uname -s`" = Linux)
@@ -24,27 +24,37 @@ LT_INIT
 LT_LANG([C++])
 LT_PATH_LD
 
-AC_CHECK_LIB([dl],[main],[])ac_cv_lib_dl=ac_cv_lib_dl_main
-AC_CHECK_LIB([nsl],[main],[])ac_cv_lib_nsl=ac_cv_lib_nsl_main
-AC_CHECK_LIB([pthread],[main],[])ac_cv_lib_pthread=ac_cv_lib_pthread_main
-AC_CHECK_LIB([rt],[main],[])ac_cv_lib_rt=ac_cv_lib_rt_main
-AC_CHECK_LIB([socket],[main],[])ac_cv_lib_socket=ac_cv_lib_socket_main
+AC_CHECK_LIB([dl],[main])
+AC_CHECK_LIB([pthread],[main])
+AC_CHECK_LIB([rt],[main])
+AC_CHECK_LIB([socket],[main])
+AC_SEARCH_LIBS([gethostbyname],[nsl])
 
-AC_ARG_ENABLE(OPTIMIZE,
+AC_MSG_CHECKING(for compiler optimizations)
+AC_ARG_ENABLE(optimize,
     [AS_HELP_STRING([--enable-optimize@<:@=CFLAGS@:>@],[C++ compiler optimizations @<:@default=-O3 -g -DNDEBUG@:>@])],
     [
-	if test "$enableval" = no -o "$enableval" = debug; then
-	    OPTIMIZE="-g -D_DEBUG"
-	elif test "$enableval" = yes; then
-	    OPTIMIZE="-O3 -g -DNDEBUG"
+	if test "$enable_optimize" = no -o "$enable_optimize" = debug; then
+	    optimize="-g -D_DEBUG"
+	elif test "$enable_optimize" = yes; then
+	    optimize="-O3 -g -DNDEBUG"
 	else
-	    OPTIMIZE="$enableval"
+	    optimize="$enable_optimize"
 	fi
     ],
-    [ OPTIMIZE="-O3 -g -DNDEBUG"]
+    [optimize="-O3 -g -DNDEBUG"]
 )
+AC_MSG_RESULT("$optimize")
+AC_SUBST(optimize)
 
-AC_SUBST(OPTIMIZE)
+COMMON_CFLAGS="-pipe -Wall -Werror $optimize"
+AM_CFLAGS="$AM_CFLAGS $COMMON_CFLAGS"
+AM_CXXFLAGS="$AM_CXXFLAGS -fno-rtti -fno-exceptions -Wno-deprecated $COMMON_CFLAGS"
+
+AC_SUBST([AM_CFLAGS])
+AC_SUBST([AM_CXXFLAGS])
+AC_SUBST([AM_LDFLAGS])
+AC_SUBST([LIBS])
 
 AC_CONFIG_FILES([Makefile lib/Makefile test/Makefile])
 
