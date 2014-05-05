@@ -1093,7 +1093,7 @@ static void cvtdate(int trantype, int datetype, int year, int month,
     return;
 }
 
-static int _isindst(struct tm *tb) {
+static int _isindst(const struct tm *tb) {
     long ms;
     
     if (_daylight == 0)
@@ -1156,7 +1156,7 @@ static int _isindst(struct tm *tb) {
     }
 }
 
-static ulong local_to_time_t(SYSTEMTIME *stm) {
+static ulong local_to_time_t(const SYSTEMTIME *stm) {
     int tmpdays;
     ulong tmptim;
     struct tm tb;

@@ -152,7 +152,7 @@ public:
 
     virtual DWORD open(LPWSTR lpDeviceNames);
     virtual DWORD close(void);
-    virtual DWORD collect(LPWSTR value, LPVOID *data, LPDWORD total, LPDWORD
+    virtual DWORD collect(LPCWSTR value, LPVOID *data, LPDWORD total, LPDWORD
 	types);
     void add(uint size = 4, uint type = PERF_COUNTER_RAWCOUNT, uint level =
 	PERF_DETAIL_NOVICE);

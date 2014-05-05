@@ -478,12 +478,12 @@ inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
 
 inline void DispatchSocket::cancel(void) { dspr.cancelSocket(*this); }
 
-inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg msg)
+inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg reason)
     {
     callback(cb);
     if (msec != DSP_PREVIOUS)
 	to = msec;
-    dspr.pollSocket(*this, to, msg);
+    dspr.pollSocket(*this, to, reason);
 }
 
 #endif // Dispatch_h

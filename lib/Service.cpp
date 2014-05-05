@@ -45,7 +45,7 @@ KillFunc killfunc = (KillFunc)pthread.get(T("pthread_kill_other_threads_np"));
 #define OPEN_MAX 256
 #endif
 
-void Service::splitpath(const tchar *path, const tchar *name, tstring &root,
+void Service::splitpath(const tchar *full, const tchar *service, tstring &root,
     tstring &prog) {
     tchar buf[PATH_MAX + 2];
     const tchar *p = NULL;
@@ -53,18 +53,18 @@ void Service::splitpath(const tchar *path, const tchar *name, tstring &root,
     tstring s;
     const tchar *sep;
 
-    (void)name;
+    (void)service;
     p = tgetenv(T("installdir"));
     if (p) {
 	root = p;
     } else {
-	if (path[0] == '/' || path[1] == ':') {
-	    root = path;
+	if (full[0] == '/' || full[1] == ':') {
+	    root = full;
 	} else {
 	    (void)tgetcwd(buf, sizeof(buf) / sizeof(tchar));
 	    root = buf;
 	    root += '/';
-	    root += path;
+	    root += full;
 	}
 	if ((pos = root.find_last_of('/')) == root.npos)
 	    pos = root.find_last_of('\\');
@@ -75,19 +75,19 @@ void Service::splitpath(const tchar *path, const tchar *name, tstring &root,
 	root.erase(pos);
     }
 #ifdef _WIN32
-    if (name) {
+    if (service) {
 	HKEY key;
 	DWORD size;
 	DWORD type;
 
 	tsprintf(buf, T("SYSTEM\\CurrentControlSet\\Services\\%s\\Parameters"),
-	    name);
+	    service);
 	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,
 	    buf, 0L, KEY_ALL_ACCESS, &key) == ERROR_SUCCESS) {
 	    size = sizeof (buf);
 	    if (RegQueryValueEx(key, T("Install Directory"), 0L, &type,
 		(LPBYTE)&buf, &size)) {
-		dlog << Log::Warn << Log::mod(name) <<
+		dlog << Log::Warn << Log::mod(service) <<
 		    Log::kv(T("err"), T("install key missing")) << endlog;
 	    } else {
 		s = buf;
@@ -96,11 +96,11 @@ void Service::splitpath(const tchar *path, const tchar *name, tstring &root,
 	}
     }
 #endif
-    if ((p = tstrrchr(path, '/')) == NULL && (p = tstrrchr(path, '\\')) == NULL)
-	p = path;
+    if ((p = tstrrchr(full, '/')) == NULL && (p = tstrrchr(full, '\\')) == NULL)
+	p = full;
     else
 	p++;
-    if ((sep = tstrrchr(path, '.')) != NULL && !tstrnicmp(sep, T(".exe"), 4))
+    if ((sep = tstrrchr(full, '.')) != NULL && !tstrnicmp(sep, T(".exe"), 4))
 	prog.assign(p, sep - p);
     else
 	prog = p;
@@ -182,7 +182,7 @@ int __stdcall Service::ctrl_handler(ulong sig) {
     else if (sig == CTRL_SHUTDOWN_EVENT || sig == CTRL_CLOSE_EVENT)
 	service->onStop(true);
 #ifndef NDEBUG
-    else 
+    else
 	DebugBreak();
 #endif
     dlog.flush();
@@ -363,7 +363,7 @@ bool Service::update(Status status) {
     default:
 	return false;
     }
-	
+
     ssStatus.dwCurrentState = state;
     ssStatus.dwWaitHint = 3000;
     if (state == SERVICE_START_PENDING)
@@ -643,7 +643,8 @@ DWORD ServiceData::close(void) {
     return 0;
 }
 
-DWORD ServiceData::collect(LPWSTR value, LPVOID *datap, LPDWORD total, LPDWORD types) {
+DWORD ServiceData::collect(LPCWSTR value, LPVOID *datap, LPDWORD total, LPDWORD
+    types) {
     *types = 0;
     if (!init)
 	return ERROR_SUCCESS;

@@ -149,7 +149,7 @@ bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
 bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
     void *&out, size_t &outsz);
 
-time_t mkgmtime(struct tm *const tmp);
+time_t mkgmtime(const struct tm *const tmp);
 time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);
 void rfc822whitespace(tchar *&s);
 

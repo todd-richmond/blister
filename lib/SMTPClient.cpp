@@ -1303,7 +1303,7 @@ static int tmcomp(const tm *const atmp, const tm *const btmp) {
     return result;
 }
 
-time_t mkgmtime(tm *const tmp) {
+time_t mkgmtime(const tm *const tmp) {
     int bits;
     int dir;
     int seconds;
