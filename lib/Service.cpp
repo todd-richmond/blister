@@ -45,7 +45,7 @@ KillFunc killfunc = (KillFunc)pthread.get(T("pthread_kill_other_threads_np"));
 #define OPEN_MAX 256
 #endif
 
-void Service::splitpath(const tchar *full, const tchar *service, tstring &root,
+void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
     tstring &prog) {
     tchar buf[PATH_MAX + 2];
     const tchar *p = NULL;
@@ -53,7 +53,7 @@ void Service::splitpath(const tchar *full, const tchar *service, tstring &root,
     tstring s;
     const tchar *sep;
 
-    (void)service;
+    (void)id;
     p = tgetenv(T("installdir"));
     if (p) {
 	root = p;
@@ -81,13 +81,13 @@ void Service::splitpath(const tchar *full, const tchar *service, tstring &root,
 	DWORD type;
 
 	tsprintf(buf, T("SYSTEM\\CurrentControlSet\\Services\\%s\\Parameters"),
-	    service);
+	    id);
 	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,
 	    buf, 0L, KEY_ALL_ACCESS, &key) == ERROR_SUCCESS) {
 	    size = sizeof (buf);
 	    if (RegQueryValueEx(key, T("Install Directory"), 0L, &type,
 		(LPBYTE)&buf, &size)) {
-		dlog << Log::Warn << Log::mod(service) <<
+		dlog << Log::Warn << Log::mod(id) <<
 		    Log::kv(T("err"), T("install key missing")) << endlog;
 	    } else {
 		s = buf;
