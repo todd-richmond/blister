@@ -575,7 +575,7 @@ inline tstring format(ulong u) {
 inline tstring format(float f) {
     tchar buf[16];
 
-    if (f - 0 < FLT_EPSILON)
+    if (f - 0.0 < FLT_EPSILON)
 	tstrcpy(buf, T("       0"));
     else if (f >= 100)
 	tsprintf(buf, T(" %7u"), (unsigned)(f + .5));

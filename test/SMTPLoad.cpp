@@ -428,11 +428,11 @@ int SMTPLoad::onStart(void) {
 	    if (cmd->cmd == T("connect")) {
 		ret = sc.connect(cmd->addr, to);
 	    } else if (cmd->cmd == T("auth")) {
-		tstring id;
+		tstring auth;
 
 		p = tstrchr(buf, ' ');
-		id.assign(buf, p - buf);
-		ret = sc.auth(id.c_str(), p + 1);
+		auth.assign(buf, p - buf);
+		ret = sc.auth(auth.c_str(), p + 1);
 	    } else if (cmd->cmd == T("ehlo")) {
 		ret = sc.ehlo(buf);
 	    } else if (cmd->cmd == T("helo")) {
@@ -536,7 +536,7 @@ inline tstring format(ulong u) {
 inline tstring format(float f) {
     tchar buf[16];
 
-    if (f - 0 < FLT_EPSILON)
+    if (f - 0.0 < FLT_EPSILON)
 	tstrcpy(buf, T("       0"));
     else if (f >= 100)
 	tsprintf(buf, T(" %7u"), (unsigned)(f + .5));
