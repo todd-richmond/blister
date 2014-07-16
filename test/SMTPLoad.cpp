@@ -24,9 +24,9 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <fstream>
-#include <map>
 #include <signal.h>
 #include <time.h>
+#include STL_UNORDERED_MAP_H
 #include <sys/stat.h>
 #include "Log.h"
 #ifndef CLIENT
@@ -34,8 +34,9 @@
 #define CLIENT SMTPClient
 #endif
 
-typedef map<tstring, tstring> attrmap;
+typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
+static const char *default_host = T("localhost:25");
 static volatile bool qflag = false, rflag = false;
 
 class SMTPLoad: public Thread {
@@ -227,7 +228,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 	nextfile = startfile;
 	remain *= (bodycnt - startfile);
     }
-    vars[T("host")] = host;
+    vars[T("host")] = host ? host : default_host;
     while (is.getline(buf, sizeof (buf) / sizeof (tchar))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
@@ -492,14 +493,15 @@ int SMTPLoad::onStart(void) {
 	    cmd->complete(ret, diff);
 	    lock.unlock();
 	    if (!ret) {
-		dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") << buf <<
-		    T(" status=") << sc.code() << T(" duration=") << (diff / 1000) <<
-		    T(" result=\"") << sc.result() << '"' << endlog;
+		dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") <<
+		    buf << T(" status=") << sc.code() << T(" duration=") <<
+		    (diff / 1000) << T(" result=\"") << sc.result() << '"' <<
+		    endlog;
 		break;
 	    } else if (dlog.level() >= Log::Info)
-		    dlog << Log::Info << T("cmd=") << cmd->cmd << T(" arg=") << buf <<
-		    T(" status=") << sc.code() << T(" duration=") << (diff / 1000) <<
-		    endlog;
+		dlog << Log::Info << T("cmd=") << cmd->cmd << T(" arg=") <<
+		    buf << T(" status=") << sc.code() << T(" duration=") <<
+		    (diff / 1000) << endlog;
 	}
 	sc.close();
 	end = microticks();
@@ -653,7 +655,7 @@ int tmain(int argc, tchar *argv[]) {
     bool allfiles = false;
     const tchar *bodyfile = NULL;
     ulong cachesz = 64;
-    const tchar *host = T("localhost:25");
+    const tchar *host = NULL;
     bool first = true;
     int filecnt = 0;
     tofstream fs;
@@ -725,10 +727,10 @@ int tmain(int argc, tchar *argv[]) {
     if (!SMTPLoad::init(host, threads, maxuser, ruser, timeout,
 	loops, wld, bodyfile, cachesz * 1024 * 1024, allfiles, filecnt))
 	return -1;
-    dlog << Log::Info << T("test ") << host << ' ' << wld <<
-	T(" (") << threads << T(" thread") << (threads == 1 ? T("") : T("s")) <<
-	T(", ") << loops << T(" loop") << (loops == 1 ? T("") : T("s")) <<
-	T(")") << endlog;
+    dlog << Log::Info << T("test ") << (host ? host : default_host) << ' ' <<
+	wld << T(" (") << threads << T(" thread") << (threads == 1 ? T("") :
+	T("s")) << T(", ") << loops << T(" loop") << (loops == 1 ? T("") :
+	T("s")) << T(")") << endlog;
     for (i = 0; i < threads; i++) {
 	thread = new SMTPLoad;
 	thread->start(32 * 1024);

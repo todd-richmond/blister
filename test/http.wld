@@ -2,7 +2,7 @@
 #     [-r] [-s stattime] [-t threads] [-q|-v]* [-w timeout] cmdfile
 #
 # options:
-#    -b bodyfile/dir: RFC822 message file or directory
+#    -b bodyfile/dir: POST data file or directory
 #    -d: debug to debug.out
 #    -h host[:port]: SMTP host and port - default is localhost:25
 #    -l loops: total number of messages to send
@@ -15,8 +15,8 @@
 #    -v: verbose
 #    -w: HTTP timeout in ms
 
-var host=www.yahoo.com
-var url=/
+var host=localhost:8080
+var resource=index.html
 
-get / http://$(host)/$(url)
+get $(resource) http://$(host)/$(resource)
 

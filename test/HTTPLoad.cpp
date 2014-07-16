@@ -24,15 +24,16 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <fstream>
-#include <map>
 #include <signal.h>
 #include <time.h>
+#include STL_UNORDERED_MAP_H
 #include <sys/stat.h>
 #include "HTTPClient.h"
 #include "Log.h"
 
-typedef map<tstring, tstring> attrmap;
+typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
+static const char *default_host = T("localhost:80");
 static volatile bool qflag = false, rflag = false;
 
 class HTTPLoad: public Thread {
@@ -229,7 +230,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	nextfile = startfile;
 	remain *= (bodycnt - startfile);
     }
-    vars[T("host")] = host;
+    vars[T("host")] = host ? host : default_host;
     while (is.getline(buf, sizeof (buf) / sizeof (tchar))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
@@ -534,8 +535,8 @@ int HTTPLoad::onStart(void) {
 		}
 #endif
 		if (dlog.level() >= Log::Info)
-		    dlog << Log::Info << T("cmd=") << cmd->cmd << T(" arg=") << buf <<
-			T(" status=") << hc.status() <<
+		    dlog << Log::Info << T("cmd=") << cmd->cmd << T(" arg=") <<
+			buf << T(" status=") << hc.status() <<
 			T(" duration=") << (diff / 1000) << endlog;
 	    }
 	}
@@ -696,7 +697,7 @@ int tmain(int argc, tchar *argv[]) {
     bool first = true;
     int filecnt = 0;
     tofstream fs;
-    const tchar *host = T("localhost:80");
+    const tchar *host = NULL;
     int i;
     bool ka = false;
     usec_t last;
@@ -767,14 +768,14 @@ int tmain(int argc, tchar *argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGHUP, signal_handler);
     if (!wld)
-	wld = T("web.wld";)
+	wld = T("http.wld";)
     if (!HTTPLoad::init(host, threads, maxuser, ruser, debug, ka, timeout,
 	loops, wld, bodyfile, cachesz * 1024 * 1024, allfiles, filecnt))
 	return -1;
-    dlog << Log::Info << T("test ") << host << ' ' << wld <<
-	T(" (") << threads << T(" thread") << (threads == 1 ? T("") : T("s")) <<
-	T(", ") << loops << T(" loop") << (loops == 1 ? T("") : T("s")) <<
-	T(")") << endlog;
+    dlog << Log::Info << T("test ") << (host ? host : default_host) << ' ' <<
+	wld << T(" (") << threads << T(" thread") << (threads == 1 ? T("") :
+	T("s")) << T(", ") << loops << T(" loop") << (loops == 1 ? T("") :
+	T("s")) << T(")") << endlog;
     for (i = 0; i < threads; i++) {
 	thread = new HTTPLoad;
 	thread->start(32 * 1024);
