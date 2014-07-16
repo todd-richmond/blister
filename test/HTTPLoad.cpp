@@ -33,7 +33,7 @@
 
 typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
-static const char *default_host = T("localhost:80");
+static const tchar *default_host = T("localhost:80");
 static volatile bool qflag = false, rflag = false;
 
 class HTTPLoad: public Thread {

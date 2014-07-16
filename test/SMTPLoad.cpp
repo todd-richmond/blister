@@ -36,7 +36,7 @@
 
 typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
-static const char *default_host = T("localhost:25");
+static const tchar *default_host = T("localhost:25");
 static volatile bool qflag = false, rflag = false;
 
 class SMTPLoad: public Thread {
