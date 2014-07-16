@@ -1065,7 +1065,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     Service::Status sts;
 
 #ifndef _WIN32
-    console = isatty(1);
+    console = isatty(0);
     if (getuid() != geteuid() && getuid() != 0) {
 	tcout << name << T(": uid permission denied") << endl;
 	return 1;
