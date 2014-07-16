@@ -415,7 +415,8 @@ protected:
 class _Semaphore {
 public:
     _Semaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
-	_open(name, init);
+	if (init != (uint)-1)
+	    _open(name, init);
     }
     ~_Semaphore() { close(); }
 
@@ -429,9 +430,9 @@ public:
 	return h == NULL || CloseHandle(h) != 0;
     }
     bool set(uint cnt = 1) { return ReleaseSemaphore(hdl, cnt, NULL) != 0; }
-    bool trywait(void) { return WaitForSingleObject(hdl, 0) != WAIT_TIMEOUT; }
+    bool trywait(void) { return WaitForSingleObject(hdl, 0) == WAIT_OBJECT_0; }
     bool wait(ulong msec = INFINITE) {
-	return WaitForSingleObject(hdl, msec) != WAIT_TIMEOUT;
+	return WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0;
     }
 
 protected:
@@ -567,26 +568,27 @@ typedef Lock Mutex;
 
 class Semaphore: nocopy {
 public:
-    Semaphore(uint init = 0): hdl(0) { open(init); }
+    Semaphore(uint init = 0): hdl(0) { if (init != (uint)-1) open(init); }
     ~Semaphore() { close(); }
 
     operator semaphore_t(void) const { return hdl; }
     semaphore_t handle(void) const { return hdl; }
 
+    bool broadcast(void) { return semaphore_signal_all(hdl) == 0; }
     bool close(void) {
 	semaphore_t h = hdl;
 
 	hdl = 0;
 	return h == 0 || semaphore_destroy(mach_task_self(), h) == KERN_SUCCESS;
     }
-    bool open(uint init = 0) {
+    bool open(uint init = 0, bool fifo = true) {
 	close();
-	semaphore_create(mach_task_self(), &hdl, SYNC_POLICY_FIFO, init);
-	return hdl != 0;
+	return semaphore_create(mach_task_self(), &hdl, fifo ?
+	    SYNC_POLICY_FIFO : SYNC_POLICY_LIFO, init) == KERN_SUCCESS;
     }
     bool set(uint cnt = 1) {
 	while (cnt--) {
-	    if (semaphore_signal(hdl))
+	    if (semaphore_signal(hdl) != KERN_SUCCESS)
 		return false;
 	}
 	return true;
@@ -594,17 +596,17 @@ public:
     bool trywait(void) {
 	mach_timespec ts = { 0, 0 };
 
-	return semaphore_timedwait(hdl, ts) == 0;
+	return semaphore_timedwait(hdl, ts) == KERN_SUCCESS;
     }
     bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {
-	    return semaphore_wait(hdl) == 0;
+	    return semaphore_wait(hdl) == KERN_SUCCESS;
 	} else {
 	    mach_timespec ts;
 
 	    ts.tv_sec = (uint)(msec / 1000);
 	    ts.tv_nsec = (msec % 1000) * 1000000;
-	    return semaphore_timedwait(hdl, ts) == 0;
+	    return semaphore_timedwait(hdl, ts) == KERN_SUCCESS;
 	}
     }
 
@@ -618,7 +620,7 @@ protected:
 
 class Semaphore: nocopy {
 public:
-    Semaphore(uint init = 0): valid(false) { open(init); }
+    Semaphore(uint init = 0): valid(false) { if (init != (uint)-1) open(init); }
     ~Semaphore() { close(); }
 
     operator sem_t(void) const { return hdl; }
@@ -966,10 +968,8 @@ class Lifo: nocopy {
 public:
     struct Waiting {};
 
-    Lifo(): hdl(0), sz(0) {
-	semaphore_create(mach_task_self(), &hdl, SYNC_POLICY_LIFO, 0);
-    }
-    ~Lifo() { semaphore_destroy(mach_task_self(), hdl); }
+    Lifo(): sema4((uint)-1), sz(0) {}
+    ~Lifo() { close(); }
 
     operator bool(void) const { return sz != 0; }
     bool empty(void) const { return sz == 0; }
@@ -979,13 +979,18 @@ public:
 	uint ret = sz;
 
 	atomic_clr(sz);
-	semaphore_signal_all(hdl);
-	return ret;
+	return sema4.broadcast() ? ret : 0;
+    }
+    bool close(void) {
+	return sema4.close();
+    }
+    bool open(void) {
+	return sema4.open(0, false);
     }
     uint set(uint count = 1) {
 	while (count) {
 	    if (atomic_dec(sz) > 0) {
-		semaphore_signal(hdl);
+		sema4.set();
 		--count;
 	    } else {
 		atomic_inc(sz);
@@ -999,22 +1004,14 @@ public:
 
 	(void)w;
 	atomic_inc(sz);
-	if (msec == INFINITE) {
-	    ret = semaphore_wait(hdl) == 0;
-	} else {
-	    mach_timespec ts;
-
-	    ts.tv_sec = (uint)(msec / 1000);
-	    ts.tv_nsec = (msec % 1000) * 1000000;
-	    ret = semaphore_timedwait(hdl, ts) == 0;
-	}
+	ret = sema4.wait(msec);
 	if (!ret)
 	    atomic_dec(sz);
 	return ret;
     }
 
 protected:
-    semaphore_t hdl;
+    Semaphore sema4;
     atomic_t sz;
 };
 
@@ -1031,7 +1028,7 @@ public:
     };
 
     Lifo(): head(NULL), sz(0) {}
-    ~Lifo() { broadcast(); }
+    ~Lifo() { close(); }
 
     operator bool(void) const { return head != NULL; }
     bool empty(void) const { return head == NULL; }
@@ -1053,6 +1050,12 @@ public:
 	    w = next;
 	}
 	return ret;
+    }
+    bool close(void) { broadcast(); return true; }
+    bool open(void) {
+	head = NULL;
+	sz = 0;
+	return true;
     }
     uint set(uint count = 1) {
 	lck.lock();
