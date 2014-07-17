@@ -376,7 +376,7 @@ int SMTPLoad::onStart(void) {
     attrmap::const_iterator ait;
 
     srand(id ^ ((uint)(microticks() >> 32 ^ time(NULL))));
-    if (mthread > 1)
+    if (id > Processor::count())
 	msleep(rand() % 1000 * ((mthread / 20) + 1));
     while (!qflag) {
 	const tchar *p;
@@ -656,7 +656,6 @@ int tmain(int argc, tchar *argv[]) {
     const tchar *bodyfile = NULL;
     ulong cachesz = 64;
     const tchar *host = NULL;
-    bool first = true;
     int filecnt = 0;
     tofstream fs;
     int i;
@@ -754,9 +753,6 @@ int tmain(int argc, tchar *argv[]) {
 #endif
 	if (qflag) {
 	    break;
-	} else if (first && threads > 1 && SMTPLoad::working()) {
-	    first = false;
-	    SMTPLoad::reset(true);
 	} else if (rflag) {
 	    rflag = false;
 	    SMTPLoad::reset(true);

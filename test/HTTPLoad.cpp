@@ -388,7 +388,7 @@ int HTTPLoad::onStart(void) {
     if (dbg)
 	fs.open("debug.out", ios::trunc | ios::out);
     srand(id ^ ((uint)(microticks() >> 32 ^ time(NULL))));
-    if (mthread > 1)
+    if (id > Processor::count())
 	msleep(rand() % 1000 * ((mthread / 20) + 1));
     while (!qflag) {
 	const tchar *p;
@@ -442,6 +442,7 @@ int HTTPLoad::onStart(void) {
 	    if (dbg)
 		fs << T("\n\n******* ") << cmd->cmd << T(" ") << cmd->arg <<
 		    T(" ") << cmd->url.fullpath() << T(" *******") << endl;
+	    hc.timeout(to, to);
 	    if ((ret = hc.connect(cmd->addr, ka, to)) == true) {
 		if (!cookies.empty()) {
 		    s.erase();
@@ -694,7 +695,6 @@ int tmain(int argc, tchar *argv[]) {
     const tchar *bodyfile = NULL;
     ulong cachesz = 64;
     bool debug = false;
-    bool first = true;
     int filecnt = 0;
     tofstream fs;
     const tchar *host = NULL;
@@ -799,9 +799,6 @@ int tmain(int argc, tchar *argv[]) {
 #endif
 	if (qflag) {
 	    break;
-	} else if (first && threads > 1 && HTTPLoad::working()) {
-	    first = false;
-	    HTTPLoad::reset(true);
 	} else if (rflag) {
 	    rflag = false;
 	    HTTPLoad::reset(true);
