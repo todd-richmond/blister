@@ -84,7 +84,10 @@ public:
 	return it == reshdrs.end() ? NULL : it->second.c_str();
     }
     const attrmap &responses(void) const { return reshdrs; }
-    void timeout(uint r, uint w = SOCK_INFINITE) { rto = r; wto = w; }
+    void timeout(uint r, uint w = SOCK_INFINITE) {
+	sock.rtimeout(rto = r);
+	sock.wtimeout(wto = w);
+    }
 
 protected:
     Sockaddr addr;
