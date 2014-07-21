@@ -395,8 +395,8 @@ bool Socket::accept(Socket &sock) {
 
     sock.close();
     do {
-	if (check((sock.sbuf->sock = movehigh(::accept(sbuf->sock, sa.data(),
-	    &sz))) == SOCK_INVALID ? -1 : 0)) {
+	if (check((sock.sbuf->sock = ::accept(sbuf->sock, sa.data(), &sz)) ==
+	    SOCK_INVALID ? -1 : 0) && (movehigh() || true)) {
 	    sock.sbuf->type = sbuf->type;
 	    return true;
 	}
@@ -455,29 +455,30 @@ bool Socket::listen(int queue) {
     return check(::listen(sbuf->sock, queue));
 }
 
-socket_t Socket::movehigh(socket_t fd) {
+bool Socket::movehigh(void) {
 #ifndef _WIN32
-    if (fd > 2 && fd < 1024) {
-	int newfd = fcntl(fd, F_DUPFD, 1024);
+    if (sbuf->sock <= 1024) {
+	int fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 1025);
 
-	if (newfd >= 0) {
-	    ::closesocket(fd);
-	    return newfd;
+	if (fd == -1
 #ifdef __sun__				// Solaris stdio has lower 256 limit
-	} else if ((newfd = fcntl(sbuf->sock, F_DUPFD, 256)) >= 0) {
-	    ::closesocket(fd);
-	    return newfd;
+	    || (fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 257)) == -1
 #endif
+	    ) {
+	    return false;
+	} else {
+	    ::closesocket(sbuf->sock);
+	    sbuf->sock = fd;
 	}
     }
 #endif
-    return fd;
+    return true;
 }
 
 bool Socket::open(int family) {
     close();
-    return check((sbuf->sock = movehigh(::socket(family, sbuf->type, 0))) ==
-	SOCK_INVALID ? -1 : 0);
+    return check((sbuf->sock = ::socket(family, sbuf->type, 0)) ==
+	SOCK_INVALID ? -1 : 0) && (movehigh() || true);
 }
 
 bool Socket::shutdown(bool in, bool out) {
@@ -491,6 +492,14 @@ bool Socket::blocking(bool on) {
 	return false;
     sbuf->blck = on;
     return true;
+}
+
+bool Socket::cloexec(void) {
+#ifdef _WIN32
+    return true;
+#else
+    return fcntl(sbuf->sock, F_SETFD, FD_CLOEXEC) != -1;
+#endif
 }
 
 bool Socket::cork(void) const {

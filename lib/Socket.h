@@ -250,9 +250,7 @@ public:
 	SOCK_BACKLOG) {
 	return bind(sa, reuse) && listen(queue);
     }
-    bool movehigh(void) {
-	return (sbuf->sock = movehigh(sbuf->sock)) != SOCK_INVALID;
-    }
+    bool movehigh(void);
     bool open(int family);
     bool peername(Sockaddr &sa);
     bool proxysockname(Sockaddr &sa);
@@ -262,6 +260,7 @@ public:
     // get/set socket properties
     bool blocking(void) const { return sbuf->blck; }
     bool blocking(bool on);
+    bool cloexec(void);
     bool cork(void) const;
     bool cork(bool on);
     bool linger(ushort sec = (ushort)-1);
@@ -368,7 +367,6 @@ protected:
     
 protected:
     bool check(int ret) const { return sbuf->check(ret); }
-    socket_t movehigh(socket_t fd);
     bool rwpoll(bool rd) const;
 
     SocketBuf *sbuf;
