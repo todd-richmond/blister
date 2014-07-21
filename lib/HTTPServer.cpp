@@ -629,7 +629,7 @@ void HTTPServerSocket::get(bool head) {
 	    }
 	}
     }
-    if ((fd = ::open(s.c_str(), O_RDONLY|O_SEQUENTIAL, 0666)) == -1) {
+    if ((fd = ::open(s.c_str(), O_RDONLY|O_CLOEXEC|O_SEQUENTIAL, 0666)) == -1) {
 	error(404);
 	return;
     }
