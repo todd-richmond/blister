@@ -204,7 +204,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     req = tchartoachar(op);
     req += ' ';
     req += tchartoachar(path);
-    req += " HTTP/1.0\r\n";
+    req += " HTTP/1.1\r\n";
     if (datasz) {
 	req += "Content-Length: ";
 	sprintf(buf, "%lu", (ulong)datasz);
@@ -233,12 +233,12 @@ loop:
 	!getline(sstrm, s)) {
 	sock.close();
 	if (first && ka && (!sent || rto - (milliticks() - start) > 200)) {
-	    dlog << Log::Debug << T("mod=http action=reconnect") << endlog;
+	    dlog << Log::Debug << T("mod=http cmd=reconnect") << endlog;
 	    sstrm.seekp(0, ios::beg);
 	    first = false;
 	    goto loop;
 	} else {
-	    dlog << Log::Note << T("mod=http action=disconnect") << endlog;
+	    dlog << Log::Note << T("mod=http cmd=disconnect") << endlog;
 	    goto done;
 	}
     }
