@@ -77,10 +77,10 @@ public:
     DispatchMsg reason(void) const { return msg; }
 
     void detach(void);
-    void erase(void);
     void ready(DispatchObjCB cb = NULL, bool hipri = false, DispatchMsg reason =
 	DispatchNone);
     virtual void cancel(void);
+    virtual void erase(void);
     virtual void terminate(void);
 
 protected:
@@ -148,12 +148,14 @@ public:
 	DSP_NEVER);
     DispatchSocket(DispatchObj &parent, const Socket &sock, ulong msec =
 	DSP_NEVER);
-    virtual ~DispatchSocket() { DispatchSocket::cancel(); }
+    virtual ~DispatchSocket() { close(); }
 
-    bool close(void) { cancel(); return Socket::close(); }
+    void close(void);
     virtual void cancel(void);
+    virtual void erase(void);
 
 protected:
+    bool closesocket(void) { return Socket::close(); }
     void poll(DispatchObjCB cb, ulong msec, DispatchMsg msg);
 
     bool mapped;
@@ -345,23 +347,22 @@ private:
 
 	timers.insert(dt);
     }
-    void cancelTimer(DispatchTimer &dt);
+    void cancelTimer(DispatchTimer &dt, bool del = false);
     void delTimer(DispatchTimer &dt) {
 	FastSpinLocker lkr(lock);
 
 	timers.erase(dt);
     }
-    void removeTimer(DispatchTimer &dt);
+    void removeTimer(DispatchTimer &dt) { timers.set(dt, DSP_NEVER_DUE); }
     void setTimer(DispatchTimer &dt, ulong tm);
 
     friend class DispatchSocket;
-    void cancelSocket(DispatchSocket &ds);
+    void cancelSocket(DispatchSocket &ds, bool close = false, bool del = false);
     void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg);
 
     void cleanup(void);
-    void defer(DispatchObj &obj);
     bool exec(void);
-    uint handleEvents(void *evts, uint cnt);
+    uint handleEvents(const void *evts, uint cnt);
     int run(void);
     void wake(uint tasks, bool master);
     static int worker(void *parm);
@@ -461,8 +462,7 @@ inline void DispatchObj::ready(DispatchObjCB cb, bool hipri, DispatchMsg
 }
 
 inline DispatchTimer::~DispatchTimer() {
-    DispatchTimer::cancel();
-    dspr.delTimer(*this);
+    dspr.cancelTimer(*this, true);
 }
 
 inline void DispatchTimer::cancel(void) { dspr.cancelTimer(*this); }
@@ -478,8 +478,12 @@ inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
 
 inline void DispatchSocket::cancel(void) { dspr.cancelSocket(*this); }
 
-inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg reason)
-    {
+inline void DispatchSocket::close(void) { dspr.cancelSocket(*this, true); }
+
+inline void DispatchSocket::erase(void) { dspr.cancelSocket(*this, true, true); }
+
+inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg
+    reason) {
     callback(cb);
     if (msec != DSP_PREVIOUS)
 	to = msec;
