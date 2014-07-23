@@ -773,8 +773,9 @@ public:
 	} else {
 	    timespec ts;
 
-	    ts.tv_sec = (uint)(msec / 1000);
-	    ts.tv_nsec = (msec % 1000) * 1000000;
+	    clock_gettime(CLOCK_MONOTONIC, &ts);
+	    ts.tv_sec += (uint)(msec / 1000);
+	    ts.tv_nsec += (msec % 1000) * 1000000;
 #ifdef __APPLE__
 	    return pthread_cond_timedwait_relative_np(&cv, lock, &ts) == 0;
 #elif defined(__ANDROID__)
