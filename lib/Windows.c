@@ -42,7 +42,7 @@ static long *locks;
 static void _dosmaperr(ulong oserrno);
 #endif
 
-static ulong local_to_time_t(SYSTEMTIME *stm);
+static ulong local_to_time_t(const SYSTEMTIME *stm);
 
 static int A_TO_W(const char *path, wchar *buf) {
     DWORD len;
