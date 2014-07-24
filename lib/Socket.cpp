@@ -395,7 +395,8 @@ bool Socket::accept(Socket &sock) {
 
     sock.close();
     do {
-	if (check(sock.sbuf->sock = ::accept(sbuf->sock, sa.data(), &sz))) {
+	if (check((sock.sbuf->sock = ::accept(sbuf->sock, sa.data(), &sz)) ==
+	    SOCK_INVALID ? -1 : 0)) {
 	    sock.sbuf->type = sbuf->type;
 	    return true;
 	}
@@ -476,7 +477,8 @@ bool Socket::movehigh(void) {
 
 bool Socket::open(int family) {
     close();
-    return check(sbuf->sock = ::socket(family, sbuf->type, 0));
+    return check((sbuf->sock = ::socket(family, sbuf->type, 0)) ==
+	SOCK_INVALID ? -1 : 0);
 }
 
 bool Socket::shutdown(bool in, bool out) {
