@@ -97,6 +97,7 @@ typedef unsigned short word;
 #endif
 
 #define O_SHORT_LIVED	_O_SHORT_LIVED
+#define O_CLOEXEC	0
 #define O_COMPRESSED	0x010000
 #define O_POSIX		0x020000
 #define O_SYNC		0x040000
