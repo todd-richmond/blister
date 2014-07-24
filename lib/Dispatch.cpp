@@ -762,10 +762,8 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 	removeTimer(ds);
 	ds.flags &= ~DSP_Scheduled;
     }
-    if (del) {
+    if (del)
 	ds.flags |= DSP_Freed;
-	flist.push_back(ds);
-    }
     if (ds.mapped && fd != INVALID_SOCKET) {
 	ds.mapped = false;
 #ifdef DSP_WIN32_ASYNC
@@ -826,6 +824,10 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
     if (close) {
 	lkr.unlock();
 	ds.closesocket();
+	if (del) {
+	    lkr.lock();
+	    flist.push_back(ds);
+	}
     }
 }
 
