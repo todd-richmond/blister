@@ -49,13 +49,6 @@ Mutex::Mutex(const tchar *name) {
     }
 }
 
-Process::Process(const Process &proc) {
-    if (!DuplicateHandle(GetCurrentProcess(), proc.hdl, GetCurrentProcess(),
-	&hdl, 0L, TRUE, DUPLICATE_SAME_ACCESS)) {
-	hdl = NULL;
-    }
-}
-
 Process Process::start(tchar *const *args, const int *fds) {
     tstring cmd;
     PROCESS_INFORMATION proc;

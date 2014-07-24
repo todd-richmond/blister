@@ -516,7 +516,6 @@ private:
 class Process {
 public:
     Process(HANDLE hproc): hdl(hproc) {}
-    Process(const Process &proc);
     ~Process() { if (hdl) CloseHandle(hdl); }
 
     static int argc;
