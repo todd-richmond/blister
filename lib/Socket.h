@@ -228,7 +228,6 @@ public:
     bool operator ==(const Socket &r) const
 	{ return sbuf == r.sbuf || sbuf->sock == r.sbuf->sock; }
     bool operator !=(const Socket &r) const { return !operator ==(r); }
-    operator void *(void) const { return sbuf->sock == SOCK_INVALID ? NULL : sbuf; }
     bool operator !(void) const { return sbuf->sock == SOCK_INVALID; }
     operator socket_t() const { return sbuf->sock; }
 
