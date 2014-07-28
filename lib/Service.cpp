@@ -233,14 +233,13 @@ int Service::run(int argc, const tchar * const *argv) {
 	exiting = true;
 	dlog.stop();
     } else {
-	SERVICE_TABLE_ENTRY entry[2];
+	SERVICE_TABLE_ENTRY entry[] = {
+	    { (tchar *)service->name.c_str(), srv_main },
+	    { NULL, NULL }
+	};
 
 	FreeConsole();
 	AllocConsole();
-	entry[0].lpServiceName = (tchar *)service->name.c_str();
-	entry[0].lpServiceProc = srv_main;
-	entry[1].lpServiceName = NULL;
-	entry[1].lpServiceProc = NULL;
 	ret = StartServiceCtrlDispatcher(entry) == FALSE;
     }
     return ret;
