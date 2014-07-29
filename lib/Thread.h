@@ -573,7 +573,7 @@ public:
     operator semaphore_t(void) const { return hdl; }
     semaphore_t handle(void) const { return hdl; }
 
-    bool broadcast(void) { return semaphore_signal_all(hdl) == 0; }
+    bool broadcast(void) { return semaphore_signal_all(hdl) == KERN_SUCCESS; }
     bool close(void) {
 	semaphore_t h = hdl;
 
@@ -963,60 +963,6 @@ protected:
 };
 
 /* Last-in-first-out queue useful for thread pools */
-#ifdef __APPLE__
-class Lifo: nocopy {
-public:
-    struct Waiting {};
-
-    Lifo(): sema4((uint)-1), sz(0) {}
-    ~Lifo() { close(); }
-
-    operator bool(void) const { return sz != 0; }
-    bool empty(void) const { return sz == 0; }
-    uint size(void) const { return (uint)sz; }
-
-    uint broadcast(void) {
-	uint ret = sz;
-
-	atomic_clr(sz);
-	return sema4.broadcast() ? ret : 0;
-    }
-    bool close(void) {
-	return sema4.close();
-    }
-    bool open(void) {
-	return sema4.open(0, false);
-    }
-    uint set(uint count = 1) {
-	while (count) {
-	    if (atomic_dec(sz) > 0) {
-		sema4.set();
-		--count;
-	    } else {
-		atomic_inc(sz);
-		break;
-	    }
-	}
-	return count;
-    }
-    bool wait(Waiting &w, ulong msec = INFINITE) {
-	bool ret;
-
-	(void)w;
-	atomic_inc(sz);
-	ret = sema4.wait(msec);
-	if (!ret)
-	    atomic_dec(sz);
-	return ret;
-    }
-
-protected:
-    Semaphore sema4;
-    atomic_t sz;
-};
-
-#else
-
 class Lifo {
 public:
     class Waiting {
@@ -1100,15 +1046,13 @@ private:
     volatile uint sz;
 };
 
-#endif
-
 // Thread routines
 typedef int (*ThreadRoutine)(void *userdata);
 typedef bool (Thread::*ThreadControlRoutine)(void);
 
 enum ThreadState { Init, Running, Suspended, Terminated };
 
-// manage a thread performing some operation
+/* manage OS native threads */
 class Thread: nocopy {
 public:
     Thread(thread_t handle, ThreadGroup *tg = NULL, bool autoterm = false);
@@ -1165,7 +1109,7 @@ private:
     friend class ThreadGroup;
 };
 
-// manage a group of one or more, possibly dissimilar threads
+/* manage a group of one or more, possibly dissimilar threads */
 typedef void (ThreadGroup::*ThreadGroupControlRoutine)(bool);
 
 class ThreadGroup: nocopy {
