@@ -385,10 +385,10 @@ int Dispatcher::onStart() {
 
 	RETRY(pwrite(evtfd, &evts[0], sizeof (evts[0]), 0));
 #elif defined(DSP_EPOLL)
-	int fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-
+	wfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+cout<<"tfr wfd "<<wfd<<endl;
 	evts[0].events = EPOLLIN;
-	RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, fd, evts));
+	RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, wfd, evts));
 #endif
     }
     lock.lock();

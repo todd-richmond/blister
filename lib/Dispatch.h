@@ -89,7 +89,7 @@ protected:
 
     DispatchObjCB dcb;
     Dispatcher &dspr;
-    uint flags;
+    volatile uint flags;
     DispatchMsg msg;
 
 private:
