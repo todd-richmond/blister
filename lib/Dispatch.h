@@ -33,6 +33,7 @@
  */
 #endif
 
+
 class Dispatcher;
 class DispatchObj;
 
@@ -262,6 +263,7 @@ private:
 
 	TimerSet(): split(0) {}
 
+	bool empty(void) const { return unsorted.empty() && sorted.empty(); }
 	msec_t half(void) const { return split; }
 	size_t size(void) const { return unsorted.size(); }
 	size_t soon(void) const { return sorted.size(); }
@@ -365,6 +367,7 @@ private:
     uint handleEvents(const void *evts, uint cnt);
     int run(void);
     void wake(uint tasks, bool master);
+    void wakeup(ulong msec);
     static int worker(void *parm);
 
     SpinLock lock;
@@ -383,33 +386,14 @@ private:
     HWND wnd;
     static uint socketmsg;
     static const int DSP_TimerID = 1;
-
-    void wakeup(ulong msec) {
-	interval = msec;
-	do {
-	    SetTimer(wnd, DSP_TimerID, msec, NULL);
-	} while (interval > msec);
-    }
 #else
-    int evtfd;
+    int evtfd, wfd;
     Socket isock;
     volatile bool polling;
     SocketSet rset, wset;
     Socket wsock;
 
-    void reset(void) {
-	char buf[16];
-
-	lock.unlock();
-	isock.read(buf, sizeof (buf));
-	lock.lock();
-    }
-    void wakeup(ulong) {
-	if (polling) {
-	    polling = false;
-	    wsock.write("", 1);
-	}
-    }
+    void reset(void);
 #endif
 };
 

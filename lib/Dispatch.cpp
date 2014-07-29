@@ -20,6 +20,9 @@
 #include <time.h>
 #include "Dispatch.h"
 
+#define RETRY(call) while ((call) == -1 && interrupted(errno)) \
+	;
+
 static const uint MAX_WAIT_TIME = 1 * 60 * 1000;
 static const uint MAX_IDLE_TIMER = 10 * 1000;
 static const uint MIN_IDLE_TIMER = 1 * 1000;
@@ -61,6 +64,7 @@ uint Dispatcher::socketmsg;
 #define DSP_EPOLL
 
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #ifndef EPOLLRDHUP
 #define EPOLLRDHUP 0x2000
 #endif
@@ -104,7 +108,7 @@ Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
 #ifdef DSP_WIN32_ASYNC
      interval(DSP_NEVER), wnd(0)
 #else
-    evtfd(-1), isock(SOCK_STREAM), polling(false), wsock(SOCK_STREAM)
+    evtfd(-1), wfd(-1), isock(SOCK_STREAM), polling(false), wsock(SOCK_STREAM)
 #endif
     {
 #ifdef DSP_WIN32_ASYNC
@@ -254,8 +258,6 @@ int Dispatcher::onStart() {
 		removeTimer(*ds);
 	    }
 	} else if (msg.message == WM_TIMER) {
-	    bool reorder = false;
-	    
 	    now = milliticks();
 	    lock.lock();
 	    while ((dt = timers.get(now)) != NULL) {
@@ -265,21 +267,21 @@ int Dispatcher::onStart() {
 	    }
 	    dt = timers.peek();
 	    if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
-		reorder = timers.reorder(now + MAX_IDLE_TIMER);
+		timers.reorder(now + MAX_IDLE_TIMER);
 		dt = timers.peek();
 	    }
 	    if (dt == NULL) {
-		if (reorder || interval < MIN_IDLE_TIMER) {
-		    due = now + MAX_IDLE_TIMER;
-		    interval = MAX_IDLE_TIMER;
-		    SetTimer(wnd, DSP_TimerID, interval, NULL);
-		} else {
+		if (timers.empty()) {
 		    due = DSP_NEVER_DUE;
 		    interval = DSP_NEVER;
 		    KillTimer(wnd, DSP_TimerID);
+		} else {
+		    due = now + MAX_IDLE_TIMER;
+		    interval = MAX_IDLE_TIMER;
+		    SetTimer(wnd, DSP_TimerID, interval, NULL);
 		}
 	    } else if (dt->due < now + interval || interval < MIN_IDLE_TIMER) {
-		due = dt->due > now ? dt->due : 0;
+		due = dt->due > now ? dt->due : now;
 		interval = (ulong)(dt->due - now);
 		SetTimer(wnd, DSP_TimerID, interval, NULL);
 	    } else {
@@ -304,8 +306,6 @@ int Dispatcher::onStart() {
 #else
 
 int Dispatcher::onStart() {
-    Socket asock(SOCK_STREAM);
-    Sockaddr addr(T("localhost"));
     uint count = 0;
     DispatchSocket *ds = NULL;
     DispatchTimer *dt = NULL;
@@ -316,7 +316,9 @@ int Dispatcher::onStart() {
     socketmap::const_iterator sit;
     uint u = 0;
 
-#ifndef _WIN32
+#ifdef DSP_POLL
+    evtfd = wfd = -1;
+#else
     sigset_t sigs;
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
     event_t evts[MAX_EVENTS];
@@ -328,17 +330,14 @@ int Dispatcher::onStart() {
     sigaddset(&sigs, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &sigs, NULL);
 #ifdef DSP_DEVPOLL
-    do {
-	evtfd = open("/dev/poll", O_RDWR);
-    } while (evtfd == -1 && interrupted(errno));
+    evtfd = open("/dev/poll", O_RDWR);
 #elif defined(DSP_EPOLL)
-    do {
-	evtfd = epoll_create(10000);
-    } while (evtfd == -1 && interrupted(errno));
+    evtfd = epoll_create(10000);
 #elif defined(DSP_KQUEUE)
     timespec ts;
 
     evtfd = kqueue();
+    // ensure kqueue functions properly 
     EV_SET(&evts[0], -1, EVFILT_READ, EV_ADD, 0, 0, NULL);
     if (kevent(evtfd, &evts[0], 1, &evts[0], 1, NULL) != 1 || evts[0].ident !=
 	(uintptr_t)-1 || evts[0].flags != EV_ERROR) {
@@ -346,44 +345,50 @@ int Dispatcher::onStart() {
 	evtfd = -1;
     }
 #endif
-    if (evtfd != -1)
-	fcntl(evtfd, F_SETFD, 1);
 #endif
-    if (!asock.listen(addr) || !asock.sockname(addr) ||
-	!asock.blocking(false))
-	return -1;
-    wsock.connect(addr, 0);
-    while (!asock.accept(isock)) {
-	if (++u == 50)
+#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
+    if (evtfd == -1) {
+#endif
+	Socket asock(SOCK_STREAM);
+	Sockaddr addr(T("127.0.0.1"));
+
+	if (!asock.listen(addr) || !asock.sockname(addr) ||
+	    !asock.blocking(false)) {
+	    close(evtfd);
 	    return -1;
-	msleep(100);
+	}
+	wsock.connect(addr, 0);
+	while (!asock.accept(isock)) {
+	    if (++u == 50) {
+		close(evtfd);
+		return -1;
+	    }
+	    msleep(100);
+	}
+	asock.close();
+	isock.blocking(false);
+	isock.cloexec();
+	wsock.blocking(false);
+	wsock.cloexec();
+#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
     }
-    asock.close();
-    isock.blocking(false);
-    isock.cloexec();
-    wsock.blocking(false);
-    wsock.cloexec();
+#endif
     if (evtfd == -1) {
 	rset.set(isock);
     } else {
+#ifndef _WIN32
+	fcntl(evtfd, F_SETFD, FD_CLOEXEC);
+#endif
 #ifdef DSP_DEVPOLL
 	evts[0].fd = isock.fd();
 	evts[0].events = POLLIN;
 
-	while (pwrite(evtfd, &evts[0], sizeof (evts[0]), 0) == -1 &&
-	    interrupted(errno))
-	    ;
+	RETRY(pwrite(evtfd, &evts[0], sizeof (evts[0]), 0));
 #elif defined(DSP_EPOLL)
+	int fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+
 	evts[0].events = EPOLLIN;
-	while (epoll_ctl(evtfd, EPOLL_CTL_ADD, isock.fd(), evts) == -1 &&
-	    interrupted(errno))
-	    ;
-#elif defined(DSP_KQUEUE)
-	EV_SET(&evts[0], isock.fd(), EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0,
-	    NULL);
-	while (kevent(evtfd, evts, 1, NULL, 0, NULL) == -1 &&
-	    interrupted(errno))
-	    ;
+	RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, fd, evts));
 #endif
     }
     lock.lock();
@@ -394,24 +399,22 @@ int Dispatcher::onStart() {
     workers = 0;
     now = milliticks();
     while (!shutdown) {
-	bool reorder = false;
-
 	if (evtfd == -1) {
 	    irset = rset;
 	    iwset = wset;
 	}
 	dt = timers.peek();
 	if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
-	    reorder = timers.reorder(now + MAX_IDLE_TIMER);
+	    timers.reorder(now + MAX_IDLE_TIMER);
 	    dt = timers.peek();
 	}
 	if (dt == NULL) {
-	    if (count || reorder) {
-		msec = MAX_IDLE_TIMER;
-		due = now + MAX_IDLE_TIMER;
-	    } else {
+	    if (timers.empty()) {
 		msec = SOCK_INFINITE;
 		due = DSP_NEVER_DUE;
+	    } else {
+		msec = MAX_IDLE_TIMER;
+		due = now + MAX_IDLE_TIMER;
 	    }
 	} else {
 	    msec = dt->due > now ? (uint)(dt->due - now) : 0;
@@ -522,6 +525,8 @@ int Dispatcher::onStart() {
     }
     cleanup();
     lock.unlock();
+    if (wfd != -1)
+	close(wfd);
     if (evtfd != -1)
 	close(evtfd);
     return 0;
@@ -650,6 +655,20 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 }
 #endif
 
+#ifndef DSP_WIN32_ASYNC
+void Dispatcher::reset(void) {
+    char buf[16];
+
+    lock.unlock();
+#ifdef DSP_EPOLL
+    RETRY(read(wfd, buf, sizeof (buf)));
+#else
+    RETRY(wsock.read(buf, sizeof (buf)));
+#endif
+    lock.lock();
+}
+#endif
+
 bool Dispatcher::start(uint mthreads, uint stack, bool suspend, bool autoterm) {
     maxthreads = mthreads;
     stacksz = stack ? stack : 128 * 1024;
@@ -677,43 +696,71 @@ void Dispatcher::wake(uint tasks, bool master) {
     if (maxthreads == 0) {
 	if (master)
 	    exec();
-    } else {
-	uint wake;
+	return;
+    }
+    while (tasks && rlist && !shutdown) {
+	uint wake = workers - running - lifo.size();
 
-	while (tasks && !shutdown) {
-	    wake = workers - running - lifo.size();
-	    wake = wake > rlist.size() ? 0 : rlist.size() - wake;
-	    if (wake < tasks)
-		tasks = wake;
-	    if (!tasks) {
-		break;
+	wake = wake >= rlist.size() ? 0 : rlist.size() - wake;
+	if (wake && wake < tasks)
+	    tasks = wake;
+	if (lifo && (tasks / 2 + 1) >= lifo.size()) {
+	    lock.unlock();
+	    wake = lifo.broadcast();
+	    tasks = wake >= tasks ? 0 : tasks - wake;
+	} else {
+	    bool b = workers == 0;
+	    Thread *t;
 
-	    } else if (lifo && (tasks / 2 + 1) >= lifo.size()) {
+	    lock.unlock();
+	    if (b || lifo.set()) {
+		lock.lock();
+		if (workers >= maxthreads || shutdown)
+		    break;
+		workers++;
 		lock.unlock();
-		wake = lifo.broadcast();
-		tasks = wake >= tasks ? 0 : tasks - wake;
-	    } else if (tasks) {
-		lock.unlock();
-		if (!workers || lifo.set()) {
-		    Thread *t;
-
-		    lock.lock();
-		    if (workers >= maxthreads || shutdown)
-			break;
-		    workers++;
-		    lock.unlock();
-		    t = new Thread();
-		    t->start(worker, this, stacksz, this);
-		    while ((t = wait(0)) != NULL)
-			delete t;
-		} else if (tasks > 1) {
-		    THREAD_PAUSE();
-		}
-		tasks--;
+		t = new Thread();
+		t->start(worker, this, stacksz, this);
+		while ((t = wait(0)) != NULL)
+		    delete t;
+	    } else if (tasks > 1) {
+		THREAD_PAUSE();
 	    }
-	    lock.lock();
+	    tasks--;
+	}
+	lock.lock();
+    }
+}
+
+void Dispatcher::wakeup(ulong msec) {
+#ifdef DSP_WIN32_ASYNC
+    interval = msec;
+    do {
+	SetTimer(wnd, DSP_TimerID, msec, NULL);
+    } while (interval > msec);
+#else
+    (void)msec;
+    if (polling) {
+	polling = false;
+	if (wsock.open()) {
+	    wsock.write("", 1);
+	} else {
+#ifdef DSP_EPOLL
+	    eventfd_t inc = 1;
+
+	    RETRY(eventfd_write(wfd, inc));
+#elif defined(DSP_KQUEUE)
+	    event_t evt;
+	    timespec ts;
+
+	    ts.tv_sec = msec / 1000;
+	    ts.tv_nsec = (msec % 1000) * 1000000;
+	    EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, 0, NULL);
+	    RETRY(kevent(evtfd, &evt, 1, NULL, 0, &ts));
+#endif
 	}
     }
+#endif
 }
 
 void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
@@ -788,15 +835,11 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 
 	    event_t evt = { fd, POLLREMOVE, 0 };
 
-	    while (pwrite(evtfd, &evt, sizeof (evt), 0) == -1 &&
-		interrupted(errno))
-		;
+	    RETRY(pwrite(evtfd, &evt, sizeof (evt), 0));
 #elif defined(DSP_EPOLL)
 	    ds.flags &= ~DSP_SelectAll;
 	    lkr.unlock();
-	    while (epoll_ctl(evtfd, EPOLL_CTL_DEL, fd, 0) == -1 &&
-		interrupted(errno))
-		;
+	    RETRY(epoll_ctl(evtfd, EPOLL_CTL_DEL, fd, 0));
 #elif defined(DSP_KQUEUE)
 	    event_t chgs[2], evts[MIN_EVENTS];
 	    int nevts = 0;
@@ -808,9 +851,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 		EV_SET(&chgs[nevts++], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
 	    ds.flags &= ~DSP_SelectAll;
 	    lkr.unlock();
-	    while ((nevts = kevent(evtfd, chgs, nevts, evts, MIN_EVENTS, &ts))
-		== -1 && interrupted(errno))
-		;
+	    RETRY(nevts = kevent(evtfd, chgs, nevts, evts, MIN_EVENTS, &ts));
 	    if (nevts > 0) {
 		lkr.lock();
 		nevts = handleEvents(evts, (uint)nevts);
@@ -935,15 +976,13 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 #ifdef DSP_DEVPOLL
 	event_t evt = { ds.fd(), sockevts[m] | POLLERR | POLLHUP, 0 };
 
-	while (pwrite(evtfd, &evt, sizeof (evt), 0) == -1 && interrupted(errno))
-	    ;
+	RETRY(pwrite(evtfd, &evt, sizeof (evt), 0));
 #elif defined(DSP_EPOLL)
 	event_t evt;
 
 	evt.data.ptr = &ds;
 	evt.events = sockevts[m] | EPOLLERR | EPOLLHUP;
-	while (epoll_ctl(evtfd, op, ds.fd(), &evt) == -1 && interrupted(errno))
-	    ;
+	RETRY(epoll_ctl(evtfd, op, ds.fd(), &evt));
 #elif defined(DSP_KQUEUE)
 	event_t chgs[4], evts[MIN_EVENTS];
 	int nevts = 0;
@@ -967,9 +1006,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 		    &ds);
 	    }
 	}
-	while ((nevts = kevent(evtfd, chgs, nevts, evts, MIN_EVENTS, &ts)) ==
-	    -1 && interrupted(errno))
-	    ;
+	RETRY(nevts = kevent(evtfd, chgs, nevts, evts, MIN_EVENTS, &ts));
 	if (nevts > 0) {
 	    lkr.lock();
 	    nevts = handleEvents(evts, (uint)nevts);
