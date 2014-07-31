@@ -18,7 +18,6 @@
 #ifndef SMTPClient_h
 #define SMTPClient_h
 
-#include <fstream>
 #include <time.h>
 #include "Socket.h"
 

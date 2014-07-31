@@ -204,7 +204,13 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     req = tchartoachar(op);
     req += ' ';
     req += tchartoachar(path);
-    req += " HTTP/1.1\r\n";
+    req += " HTTP/1.1\r\nHost: ";
+    req += addr.host();
+    if (addr.port() != 80) {
+	req += ':';
+	req += addr.port();
+    }
+    req += "\r\n";
     if (datasz) {
 	req += "Content-Length: ";
 	sprintf(buf, "%lu", (ulong)datasz);
