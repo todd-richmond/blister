@@ -18,5 +18,5 @@
 var host=localhost:8080
 var resource=index.html
 
-get $(resource) http://$(host)/$(resource)
+get $(resource) http://$(host)/$(resource) 404
 
