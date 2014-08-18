@@ -182,7 +182,7 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
 
 bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     size_t datasz) {
-    char buf[16];
+    char buf[32];
     bool first = true;
     size_t in;
     iovec iov[2];
@@ -205,17 +205,15 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     req += ' ';
     req += tchartoachar(path);
     req += " HTTP/1.1\r\nHost: ";
-    req += addr.host();
+    req += tstringtoastring(addr.host());
     if (addr.port() != 80) {
-	req += ':';
-	req += addr.port();
+	sprintf(buf, ":%u", addr.port());
+	req += buf;
     }
     req += "\r\n";
     if (datasz) {
-	req += "Content-Length: ";
-	sprintf(buf, "%lu", (ulong)datasz);
+	sprintf(buf, "Content-Length: %lu\r\n", (ulong)datasz);
 	req += buf;
-	req += "\r\n";
     }
     if (ka)
 	req += "Pragma: Keep-Alive\r\nConnection: Keep-Alive\r\n";
