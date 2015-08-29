@@ -142,7 +142,7 @@ uint Processor::count(void) {
 }
 
 ullong Processor::affinity(void) {
-    ullong mask = (ulong)-1;
+    ullong mask = (ullong)-1;
 #ifdef _WIN32
     DWORD_PTR pmask, smask;
 
@@ -152,9 +152,10 @@ ullong Processor::affinity(void) {
     cpu_set_t cset;
 
     if (!sched_getaffinity(0, sizeof (cset), &cset)) {
+	mask = 0;
 	for (uint u = 0; u < sizeof (mask) * 8; u++) {
 	    if (CPU_ISSET(u, &cset))
-		mask |= 1 << u;
+		mask |= (ullong)1 << u;
 	}
     }
 #endif
@@ -169,7 +170,7 @@ bool Processor::affinity(ullong mask) {
 
     CPU_ZERO(&cset);
     for (uint u = 0; u < sizeof (mask) * 8; u++) {
-	if (mask && (1 << u))
+	if (mask && ((ullong)1 << u))
 	    CPU_SET(u, &cset);
     }
     return sched_setaffinity(0, sizeof (cset), &cset) == 0;
@@ -277,12 +278,11 @@ bool Thread::resume(void) {
     if (state == Suspended) {
 	state = Running;
 #ifdef _WIN32
-	ret = ResumeThread(hdl) != -1;
+	if (!(ret = ResumeThread(hdl) != -1))
+	    state = Suspended;
 #else
 	ret = true;
 #endif
-	if (!ret)
-	    state = Suspended;
     }
     return ret;
 }

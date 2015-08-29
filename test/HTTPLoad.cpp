@@ -53,9 +53,9 @@ public:
 private:
     class LoadCmd {
     public:
-	LoadCmd(const tchar *c, const tchar *a, const URL &u,
-	    const tchar *d = NULL, const tchar *s = NULL, const tchar *v = NULL):
-	    cmd(c), arg(a), data(d ? d : T("")), value(v ? v : T("")),
+	LoadCmd(const tchar *c, const tchar *a, const URL &u, const tchar *d =
+	    NULL, const tchar *s = NULL, const tchar *v = NULL): cmd(c), arg(a ?
+	    a : T("")), data(d ? d : T("")), value(v ? v : T("")),
 	    status(s ? (ushort)ttoi(s) : 200), url(u), usec(0), tusec(0),
 	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0),
 	    count(0), tcount(0), err(0), terr(0) {}
@@ -171,14 +171,14 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     bool randuser, bool debug, bool keepalive, ulong timeout, long loops,
     const tchar *file, const tchar *bodyfile, ulong cachesz, bool all,
     int fcnt) {
-    tifstream is(file);
-    URL url;
+    Sockaddr addr;
     tchar buf[1024];
     tchar *cmd, *req, *arg, *data = NULL, *value = NULL, *status = NULL, *p;
-    int line = 0;
+    tifstream is(file);
     int len;
-    Sockaddr addr;
     LoadCmd *lcmd;
+    int line = 0;
+    URL url;
 
     mthread = maxthread;
     muser = maxuser;
@@ -198,11 +198,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	struct stat sbuf;
 	DIR *dir;
 
-	if (stat(tchartoachar(bodyfile), &sbuf) != -1 && (sbuf.st_mode &
-	    S_IFREG)) {
-	    bodycnt = 1;
-	    add(bodyfile);
-	} else if ((dir = opendir(tchartoachar(bodyfile))) != NULL) {
+	if ((dir = opendir(tchartoachar(bodyfile))) != NULL) {
 	    struct dirent *ent;
 
 	    while ((ent = readdir(dir)) != NULL)
@@ -218,17 +214,24 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 		add(s.c_str());
 	    }
 	    closedir(dir);
+	} else if (stat(tchartoachar(bodyfile), &sbuf) != -1 && sbuf.st_mode &
+	    S_IFREG) {
+	    bodycnt = 1;
+	    add(bodyfile);
 	} else {
 	    tcerr << T("invalid body file: ") << bodyfile << endl;
+	    return false;
 	}
     }
     if (allfiles && bodycnt > 0) {
+	lock.lock();
 	if (filecnt > 0 && (uint)filecnt < bodycnt)
 	    bodycnt = filecnt;
 	else if (filecnt < 0 && uint(-1 * filecnt) < bodycnt)
 	    startfile = bodycnt - uint(-1 * filecnt);
 	nextfile = startfile;
 	remain *= (bodycnt - startfile);
+	lock.unlock();
     }
     vars[T("host")] = host ? host : default_host;
     while (is.getline(buf, sizeof (buf) / sizeof (tchar))) {
@@ -374,7 +377,7 @@ uint HTTPLoad::next() {
 
 int HTTPLoad::onStart(void) {
     usec_t start, end, last, now, io;
-    tchar buf[1024], data[1024];
+    tchar buf[1024], data[4096];
     HTTPClient hc;
     tofstream fs;
     attrmap lvars;
@@ -429,10 +432,13 @@ int HTTPLoad::onStart(void) {
 		ulong len;
 
 		p = cmd->arg.c_str();
-		if (*p == '%')
-		    len = rand() % tstrtoul(p + 1, NULL, 10);
-		else
+		if (*p == '%') {
+		    len = tstrtoul(p + 1, NULL, 10);
+		    if (len)
+			len = rand() % len;
+		} else {
 		    len = tstrtoul(p, NULL, 10);
+		}
 		smsec += len;
 		msleep(len);
 		last = microticks();
@@ -476,6 +482,8 @@ int HTTPLoad::onStart(void) {
 			if (d != bodycache[u])
 			    delete [] d;
 		    }
+		} else if (cmd->data.length() >= sizeof (data)) {
+		    ret = false;
 		} else {
 		    tstrcpy(data, cmd->data.c_str());
 		    expand(data, lvars);

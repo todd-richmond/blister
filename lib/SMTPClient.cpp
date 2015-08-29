@@ -1166,9 +1166,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 }
 
 bool base64decode(const void *input, size_t sz, char *&output, size_t &outsz) {
-    int add_bits;
     const char *in = (const char *)input;
-    int mask;
     char *out;
     int out_byte = 0, out_bits = 0;
     static const uchar table[256] = {
@@ -1210,7 +1208,8 @@ bool base64decode(const void *input, size_t sz, char *&output, size_t &outsz) {
     if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
 	return false;
     while (sz) {
-	add_bits = table[(int)*in++];
+	int add_bits = table[(int)*in++];
+
 	sz--;
 	if (add_bits >= 64) {
 	    if (in[0] == '=' && in[1] == '=' && in[2] == '=')
@@ -1235,7 +1234,8 @@ bool base64decode(const void *input, size_t sz, char *&output, size_t &outsz) {
 	    *out++ = (char)out_byte;
 	    out_byte = 0;
 	} else {
-	    mask = out_bits == 8 ? 0xFF : (0xFF << (out_bits - 8));
+	    int mask = 0xFF << (out_bits - 8);
+
 	    *out++ = (char)((out_byte & mask) >> (out_bits - 8));
 	    out_byte &= ~mask;
 	}

@@ -350,7 +350,7 @@ private:
 	void set(Level lvl, const tchar *file, uint cnt, ulong sz, ulong sec);
 	void unlock(void) {
 	    if (locked) {
-		unlockfd();
+		(void)unlockfd();
 		locked = false;
 	    }
 	}
@@ -360,7 +360,7 @@ private:
 	tstring path;
 
 	bool lockfd(void);
-	void unlockfd(void);
+	bool unlockfd(void);
     };
 
     struct Tlsdata {

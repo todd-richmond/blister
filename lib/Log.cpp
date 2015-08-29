@@ -165,7 +165,7 @@ void Log::LogFile::roll(void) {
 	s2 = s1;
 	s1.erase();
     } else {
-	sep = s1[pos];
+	sep = s1.at(pos);
 	s2 = s1.substr(pos + 1);
 	s1.erase(pos);
     }
@@ -192,8 +192,8 @@ void Log::LogFile::roll(void) {
 		files++;
 		if (tstat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
 		    (ulong)oldtime) {
-		    if ((pos = s3.rfind('.')) != s3.npos &&
-			isdigit((int)s3[++pos])) {
+		    if ((pos = s3.rfind('.')) != s3.npos && pos < s3.size() -
+			1 && isdigit((int)s3[++pos])) {
 			ext = ttoi(s3.c_str() + pos);
 			if (ext < oldext)
 			    continue;
@@ -221,19 +221,22 @@ void Log::LogFile::roll(void) {
     }
     if (cnt && path == file) {
 	tchar buf[32];
+	uint u;
 
 	tsprintf(buf, T(".%u"), files);
 	s1 = file + buf;
-	for (uint u = files; u > 1; u--) {
-	    tunlink(s1.c_str());
+	for (u = files; u > 1; u--) {
 	    tsprintf(buf, T(".%u"), u - 1);
 	    s2 = file + buf;
-	    trename(s2.c_str(), s1.c_str());
+	    (void)tunlink(s1.c_str());
+	    if (trename(s2.c_str(), s1.c_str()))
+		break;
 	    s1 = s2;
 	}
-	trename(file.c_str(), s1.c_str());
+	if (!u)
+	    (void)trename(file.c_str(), s1.c_str());
     } else if (path != file) {
-	tunlink(path.c_str());
+	(void)tunlink(path.c_str());
     }
     close();
     lock();
@@ -300,9 +303,8 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
     len = 0;
 }
 
-void Log::LogFile::unlockfd(void) {
-    if (fd >= 0)
-	lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
+bool Log::LogFile::unlockfd(void) {
+    return fd >= 0 ? lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0) : true;
 }
 
 Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true),

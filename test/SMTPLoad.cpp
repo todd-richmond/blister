@@ -173,13 +173,14 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
     ulong maxuser, bool randuser, ulong timeout, long loops,
     const tchar *file, const tchar *bodyfile, ulong cachesz, bool all,
     int fcnt) {
-    tifstream is(file);
+    Sockaddr addr;
     tchar buf[1024];
     tchar *cmt, *cmd, *arg = NULL, *status = NULL, *p;
-    uint line = 0;
-    int len;
-    Sockaddr addr;
+    tifstream is(file);
     LoadCmd *lcmd;
+    int len;
+    uint line = 0;
+    Locker lkr(lock);
 
     mthread = maxthread;
     muser = maxuser;
@@ -196,13 +197,10 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
     if (bodyfile) {
 	struct stat sbuf;
 	DIR *dir;
-	struct dirent *ent;
 
-	if (stat(tchartoachar(bodyfile), &sbuf) != -1 && (sbuf.st_mode &
-	    S_IFREG)) {
-	    bodycnt = 1;
-	    add(bodyfile);
-	} else if ((dir = opendir(tchartoachar(bodyfile))) != NULL) {
+	if ((dir = opendir(tchartoachar(bodyfile))) != NULL) {
+	    struct dirent *ent;
+
 	    while ((ent = readdir(dir)) != NULL)
 		bodycnt++;
 	    rewinddir(dir);
@@ -216,17 +214,24 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 		add(s.c_str());
 	    }
 	    closedir(dir);
+	} else if (stat(tchartoachar(bodyfile), &sbuf) != -1 && sbuf.st_mode &
+	    S_IFREG) {
+	    bodycnt = 1;
+	    add(bodyfile);
 	} else {
 	    tcerr << T("invalid body file: ") << bodyfile << endl;
+	    return false;
 	}
     }
     if (allfiles && bodycnt > 0) {
+	lock.lock();
 	if (filecnt > 0 && (uint)filecnt < bodycnt)
 	    bodycnt = filecnt;
 	else if (filecnt < 0 && uint(-1 * filecnt) < bodycnt)
 	    startfile = bodycnt - uint(-1 * filecnt);
 	nextfile = startfile;
 	remain *= (bodycnt - startfile);
+	lock.unlock();
     }
     vars[T("host")] = host ? host : default_host;
     while (is.getline(buf, sizeof (buf) / sizeof (tchar))) {
@@ -368,7 +373,7 @@ uint SMTPLoad::next(void) {
 
 int SMTPLoad::onStart(void) {
     usec_t start, end, last, now, io;
-    tchar buf[1024], data[1024];
+    tchar buf[1024], data[4096];
     CLIENT sc;
     attrmap lvars;
     ulong diff;
@@ -414,19 +419,25 @@ int SMTPLoad::onStart(void) {
 		ulong len;
 
 		p = cmd->arg.c_str();
-		if (*p == '%')
-		    len = rand() % tstrtoul(p + 1, NULL, 10);
-		else
+		if (*p == '%') {
+		    len = tstrtoul(p + 1, NULL, 10);
+		    if (len)
+			len = rand() % len;
+		} else {
 		    len = tstrtoul(p, NULL, 10);
+		}
 		smsec += len;
 		msleep(len);
 		last = microticks();
 		io = 0;
 		continue;
+	    } else if (cmd->arg.length() < sizeof (data)) {
+		tstrcpy(buf, cmd->arg.c_str());
+		expand(buf, lvars);
+		ret = true;
 	    }
-	    tstrcpy(buf, cmd->arg.c_str());
-	    expand(buf, lvars);
-	    if (cmd->cmd == T("connect")) {
+	    if (!ret) {
+	    } else if (cmd->cmd == T("connect")) {
 		ret = sc.connect(cmd->addr, to);
 	    } else if (cmd->cmd == T("auth")) {
 		tstring auth;

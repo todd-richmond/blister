@@ -339,21 +339,20 @@ int tmain(int argc, tchar *argv[]) {
 	    path = argv[i];
 	}
     }
-    if (access(tchartoachar(path), 0) == 0) {
-	ZERO(sbuf);
-	if ((fd = open(tchartoachar(path), O_RDONLY)) == -1 || fstat(fd,
-	    &sbuf)) {
+    if ((fd = open(tchartoachar(path), O_RDONLY)) == -1 || fstat(fd, &sbuf)) {
+	if (access(tchartoachar(path), 0) == 0) {
 	    tcerr << T("echotest: unable to open ") << path << endl;
 	    return 1;
+	} else {
+	    dsz = (uint)tstrlen(path) * sizeof (tchar);
+	    data = new char[dsz];
+	    memcpy(data, path, dsz);
 	}
+    } else {
 	dsz = (uint)sbuf.st_size;
 	data = new char[dsz];
-	read(fd, data, dsz);
+	dsz = read(fd, data, dsz);
 	close(fd);
-    } else {
-	dsz = (uint)tstrlen(path);
-	data = new char[(dsz + 1) * sizeof (tchar)];
-	memcpy(data, path, dsz * sizeof (tchar));
     }
     if (!host)
 	host = T("localhost:8888");

@@ -209,7 +209,7 @@ bool Sockaddr::set(const sockaddr &sa) {
     else
 	return false;
     memcpy(&addr.sa, &sa, len);
-    memset((char *)&addr.sa + len, 0, sizeof (addr) - len);
+    memset((char *)&addr.sa + len, 0, sizeof (addr.sa) - len);
     return true;
 }
 

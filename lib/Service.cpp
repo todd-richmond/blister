@@ -720,14 +720,14 @@ bool Service::open(const tchar *file) {
     ZERO(fl);
     fl.l_type = F_WRLCK;
     fl.l_whence = SEEK_SET;
-    if (fcntl(fd, F_GETLK, &fl) == -1 || !fl.l_pid)
-	return false;
-    pid = (pid_t)fl.l_pid;
-    stStatus = (Status)fl.l_len;
-    if ((in = (int)read(fd, buf, sizeof (buf))) > 0) {
-	buf[in] = '\0';
-	pid = atoi(buf);
-	lseek(fd, 0, SEEK_SET);
+    if (fcntl(fd, F_GETLK, &fl) != -1 && fl.l_pid) {
+	pid = (pid_t)fl.l_pid;
+	stStatus = (Status)fl.l_len;
+	if ((in = (int)read(fd, buf, sizeof (buf) - 1)) > 0) {
+	    buf[in] = '\0';
+	    pid = atoi(buf);
+	    lseek(fd, 0, SEEK_SET);
+	}
     }
     ::close(fd);
     return pid != 0;
@@ -907,15 +907,18 @@ int Service::run(int argc, const tchar * const *argv) {
 		T("unable to fork")) << endlog;
 	    ::exit(1);
 	}
-	fd = ::open(T("/dev/null"), O_RDONLY);
-	dup2(fd, 0);
-	::close(fd);
+	if ((fd = ::open(T("/dev/null"), O_RDONLY)) != -1) {
+	    dup2(fd, 0);
+	    ::close(fd);
+	}
 	if ((fd = ::open(service->outfile.c_str(), O_APPEND | O_BINARY |
 	    O_CREAT | O_WRONLY | O_SEQUENTIAL, 0640)) == -1)
 	    fd = ::open(T("/dev/null"), O_WRONLY);
-	dup2(fd, 1);
-	dup2(fd, 2);
-	::close(fd);
+	if (fd != -1) {
+	    dup2(fd, 1);
+	    dup2(fd, 2);
+	    ::close(fd);
+	}
 	setsid();
     }
     ret = service->onStart(argc, argv);	// 1st svc only
@@ -1092,24 +1095,28 @@ int Service::execute(int argc, const tchar * const *argv) {
 	} else if (tstreq(cmd, T("installdir"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("install directory required"));
+		delete [] av;
 		return -1;
 	    }
 	    installdir = argv[++i];
 	} else if (tstreq(cmd, T("logfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("log filename required"));
+		delete [] av;
 		return -1;
 	    }
 	    logfile = argv[++i];
 	} else if (tstreq(cmd, T("outfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("output filename required"));
+		delete [] av;
 		return -1;
 	    }
 	    outfile = argv[++i];
 	} else if (tstreq(cmd, T("pidfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("pid filename required"));
+		delete [] av;
 		return -1;
 	    }
 	    lckfile = argv[++i];
@@ -1262,17 +1269,17 @@ Daemon::~Daemon() {
 	    T("stopped")) << endlog;
     if (lckfd != -1) {
 	if (!watch || child)
-	    tunlink(lckfile.c_str());
-	lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
+	    (void)tunlink(lckfile.c_str());
+	(void)lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 	::close(lckfd);
     }
 }
 
 bool Daemon::update(Status status) {
     if (status < stStatus)
-	lockfile(lckfd, F_UNLCK, SEEK_SET, status, 0, 0);
+	(void)lockfile(lckfd, F_UNLCK, SEEK_SET, status, 0, 0);
     else
-	lockfile(lckfd, F_WRLCK, SEEK_SET, 0, status, 0);
+	(void)lockfile(lckfd, F_WRLCK, SEEK_SET, 0, status, 0);
     return Service::update(status);
 }
 
@@ -1304,7 +1311,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     cfg.prefix(name.c_str());
     stStatus = Starting;
     do {
-	lckfd = ::open(tstringtoachar(lckfile), O_CREAT|O_WRONLY, S_IREAD |
+	lckfd = ::open(tstringtoachar(lckfile), O_CREAT | O_WRONLY, S_IREAD |
 	    S_IWRITE);
 	if (lckfd == -1 || lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 1)) {
 	    dlog << Log::Warn << Log::mod(name) << T("sts=running") << endlog;
@@ -1313,6 +1320,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    lckfd = -1;
 	    return 1;
 	}
+	// coverity[fs_check_call : FALSE ]
 	if (fstat(lckfd, &sbuf) || stat(tstringtoachar(lckfile), &sfile) ||
 	    sbuf.st_ino != sfile.st_ino) {
 	    ::close(lckfd);

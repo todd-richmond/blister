@@ -112,7 +112,7 @@ public:
     void setv(const tchar *attr, const tchar *val, ... /* , const tchar
 	*sect = NULL, NULL */);
     void lock(void) { lck.lock(); locker = THREAD_ID(); }
-    void unlock(void) { lck.unlock(); locker = 0; }
+    void unlock(void) { locker = 0; lck.unlock(); }
     bool iniformat(void) const { return ini; }
     const tstring &prefix(void) const { return pre; }
     void prefix(const tchar *str) { pre = str ? str : T(""); }

@@ -160,10 +160,10 @@ typedef volatile int atomic_t;
 
 typedef pthread_key_t tlskey_t;
 
-#define tls_init(k)		pthread_key_create(&key, NULL)
-#define tls_free(k)		pthread_key_delete(key)
-#define tls_get(k)		pthread_getspecific(key)
-#define tls_set(k, v)		pthread_setspecific(key, v)
+#define tls_init(k)		ZERO(k); pthread_key_create(&k, NULL)
+#define tls_free(k)		pthread_key_delete(k)
+#define tls_get(k)		pthread_getspecific(k)
+#define tls_set(k, v)		pthread_setspecific(k, v)
 
 #endif
 
@@ -184,7 +184,7 @@ public:
 	lck(lock), locked(lockit) { if (lockit) (lck.*LOCK)(); }
     ~LockerTemplate() { if (locked) (lck.*UNLOCK)(); }
 
-    void lock(void) { if (!locked) { (lck.*LOCK)(); locked = true; } }
+    void lock(void) { if (!locked) { locked = true; (lck.*LOCK)(); } }
     void relock(void) {
 	if (locked) {
 	    (lck.*UNLOCK)();
@@ -194,7 +194,7 @@ public:
 	}
 	(lck.*LOCK)();
     }
-    void unlock(void) { if (locked) { locked = false; (lck.*UNLOCK)(); } }
+    void unlock(void) { if (locked) { (lck.*UNLOCK)(); locked = false; } }
 
 private:
     C &lck;
@@ -534,10 +534,10 @@ private:
 #else
 
 inline void msleep(ulong msec) {
-    struct timespec ts = { 
-	ts.tv_sec = msec / 1000, ts.tv_nsec = (msec % 1000) * 1000000
-    };
+    struct timespec ts;
 
+    ts.tv_sec = msec / 1000;
+    ts.tv_nsec = (msec % 1000) * 1000000;
     nanosleep(&ts, NULL);
 }
 

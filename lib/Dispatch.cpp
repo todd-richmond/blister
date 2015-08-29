@@ -20,8 +20,7 @@
 #include <time.h>
 #include "Dispatch.h"
 
-#define RETRY(call) while ((call) == -1 && interrupted(errno)) \
-	;
+#define RETRY(call) while ((call) == -1 && interrupted(errno))
 
 static const uint MAX_WAIT_TIME = 1 * 60 * 1000;
 static const uint MAX_IDLE_TIMER = 10 * 1000;
@@ -347,20 +346,23 @@ int Dispatcher::onStart() {
 #endif
 #endif
 #if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
+#define CLOSE_EVTFD(fd)
     if (evtfd == -1) {
+#else
+#define CLOSE_EVTFD(fd)	close(fd)
 #endif
 	Socket asock(SOCK_STREAM);
 	Sockaddr addr(T("127.0.0.1"));
 
 	if (!asock.listen(addr) || !asock.sockname(addr) ||
 	    !asock.blocking(false)) {
-	    close(evtfd);
+	    CLOSE_EVTFD(evtfd);
 	    return -1;
 	}
-	wsock.connect(addr, 0);
+	(void)wsock.connect(addr, 0);
 	while (!asock.accept(isock)) {
 	    if (++u == 50) {
-		close(evtfd);
+		CLOSE_EVTFD(evtfd);
 		return -1;
 	    }
 	    msleep(100);
@@ -377,7 +379,7 @@ int Dispatcher::onStart() {
 	rset.set(isock);
     } else {
 #ifndef _WIN32
-	fcntl(evtfd, F_SETFD, FD_CLOEXEC);
+	(void)fcntl(evtfd, F_SETFD, FD_CLOEXEC);
 #endif
 #ifdef DSP_DEVPOLL
 	evts[0].fd = isock.fd();

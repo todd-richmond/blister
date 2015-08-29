@@ -243,9 +243,11 @@ loop:
 	    goto loop;
 	} else {
 	    dlog << Log::Note << T("mod=http cmd=disconnect") << endlog;
+	    iov[0].iov_base = (char *)NULL;
 	    goto done;
 	}
     }
+    iov[0].iov_base = (char *)NULL;
     p = s.c_str();
     while (*p != ' ' && *p != '\t')
 	p++;

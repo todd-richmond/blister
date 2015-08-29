@@ -1,4 +1,4 @@
-AC_PREREQ([2.69])
+AC_PREREQ([2.63])
 AC_INIT([Blister],[1.2])
 AC_CONFIG_SRCDIR([lib/stdapi.h])
 AM_INIT_AUTOMAKE([-Wall -Werror dist-zip foreign no-define no-installinfo no-installman ])
@@ -18,7 +18,7 @@ AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_INSTALL
 AC_PROG_LN_S
-AM_PROG_AR
+#AM_PROG_AR
 
 LT_INIT
 LT_LANG([C++])

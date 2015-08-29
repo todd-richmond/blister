@@ -203,10 +203,12 @@ void Timing::record(const tchar *key) {
 	}
 	caller = *it;
 	tlsd.callers.pop_back();
-	if (!key)
-	    key = caller.c_str();
 	diff = n - *(tlsd.starts.rbegin());
 	tlsd.starts.pop_back();
+	if (!key) {
+	    key = caller.c_str();
+	    break;
+	}
     } while (!caller.empty() && caller != key);
     if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
