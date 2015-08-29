@@ -242,7 +242,7 @@
 		F7AA211013149F2C00272F6A /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0630;
+				LastUpgradeCheck = 0640;
 			};
 			buildConfigurationList = F7AA211313149F2C00272F6A /* Build configuration list for PBXProject "Blister" */;
 			compatibilityVersion = "Xcode 6.3";
@@ -332,6 +332,8 @@
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_PARAMETER = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				ONLY_ACTIVE_ARCH = YES;
 				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
@@ -373,6 +375,7 @@
 				GCC_WARN_UNUSED_PARAMETER = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LLVM_LTO = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.10;
 				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
