@@ -200,16 +200,12 @@ bool Sockaddr::set(const hostent *h) {
 }
 
 bool Sockaddr::set(const sockaddr &sa) {
-    uint len;
-
     if (sa.sa_family == AF_INET)
-	len = sizeof (sockaddr_in);
+	addr.sa4 = (const sockaddr_in &)sa;
     else if (sa.sa_family == AF_INET6)
-	len = sizeof (sockaddr_in6);
+	addr.sa6 = (const sockaddr_in6 &)sa;
     else
 	return false;
-    memcpy(&addr.sa, &sa, len);
-    memset((char *)&addr.sa + len, 0, sizeof (addr.sa) - len);
     return true;
 }
 
