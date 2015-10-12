@@ -30,7 +30,6 @@ Timing &dtiming(_dtiming());
 
 void Timing::add(const tchar *key, timing_t diff) {
     uint slot;
-    Stats *stats;
     static timing_t limits[TIMINGSLOTS - 1] = {
 	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
     };
@@ -40,10 +39,11 @@ void Timing::add(const tchar *key, timing_t diff) {
 	    break;
     }
 
+#ifndef __clang_analyzer__
     FastSpinLocker lkr(lck);
     timingmap::const_iterator it = tmap.find(key);
+    Stats *stats;
 
-#ifndef __clang_analyzer__
     if (it == tmap.end()) {
 	key = tstrdup(key);
 	stats = tmap[key] = new Stats(key);
@@ -78,10 +78,6 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
     vector<const Stats *> sorted;
     const Stats *stats;
     uint u;
-    static const tchar *hdrs[TIMINGSLOTS] = {
-	T("10u"), T(".1m"), T(" 1m"), T("10m"), T(".1s"), T(" 1s"), T(" 5s"),
-	T("10s"), T("30s"), T("...")
-    };
 
     for (it = tmap.begin(); it != tmap.end(); ++it)
 	sorted.push_back(it->second);
@@ -96,6 +92,11 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	}
     }
     if (columns) {
+	static const tchar *hdrs[TIMINGSLOTS] = {
+	    T("10u"), T(".1m"), T(" 1m"), T("10m"), T(".1s"), T(" 1s"),
+	    T(" 5s"), T("10s"), T("30s"), T("...")
+	};
+
 	if (columns > TIMINGSLOTS)
 	    columns = TIMINGSLOTS;
 	start = last < columns ? 0 : last - columns + 1;
@@ -107,13 +108,15 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	s += (tchar)'\n';
     }
     for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
-	tchar abuf[16], buf[128], cbuf[16], sbuf[16];
+	tchar buf[128], sbuf[16];
 	ulong sum = 0;
 	timing_t tot;
 
 	stats = *sit;
 	tot = stats->tot;
 	if (columns) {
+	    tchar cbuf[16];
+
 	    for (u = 0; u <= start; u++)
 		sum += stats->cnts[u];
 	    if (stats->cnt >= 100000000)
@@ -122,11 +125,14 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 		tsprintf(cbuf, T("%5luk"), stats->cnt / 1000);
 	    else
 		tsprintf(cbuf, T("%5lu"), stats->cnt);
-	    if (tot)
+	    if (tot) {
+		tchar abuf[16];
+
 		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->name, format(tot,
 		    sbuf), cbuf, format(tot / stats->cnt, abuf));
-	    else
+	    } else {
 		tsprintf(buf, T("%-35s%6s"), stats->name, cbuf);
+	    }
 	} else {
 	    if (!s.empty())
 		s += (tchar)',';

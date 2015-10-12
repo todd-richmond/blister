@@ -57,7 +57,7 @@
 class Config: nocopy {
 public:
     Config(const tchar *file = NULL, const tchar *pre = NULL);
-    Config(tistream &is): ini(false), locker(0) { is >> *this; }
+    explicit Config(tistream &is): ini(false), locker(0) { is >> *this; }
     ~Config() { clear(); }
 
     void clear(void);

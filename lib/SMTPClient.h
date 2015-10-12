@@ -96,7 +96,10 @@ private:
 
 class RFC821Addr: nocopy {
 public:
-    RFC821Addr(const tchar *address = NULL) { if (address) parse(address); }
+    explicit RFC821Addr(const tchar *address = NULL) {
+	if (address)
+	    parse(address);
+    }
     RFC821Addr(const tchar *&address, tstring &reterr) {
 	parseaddr(address);
 	reterr = err;
@@ -121,7 +124,10 @@ private:
 
 class RFC822Addr: nocopy {
 public:
-    RFC822Addr(const tchar *addrs = NULL): buf(NULL) { if (addrs) parse(addrs); }
+    explicit RFC822Addr(const tchar *addrs = NULL): buf(NULL) {
+	if (addrs)
+	    parse(addrs);
+    }
     ~RFC822Addr() { delete [] buf; }
 
     vector<const tchar *> domain, mbox, name, route;

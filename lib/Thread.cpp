@@ -232,7 +232,7 @@ void Thread::end(int status) {
 
 // call into ThreadMain with correct class scope
 int Thread::init(void *thisp) {
-    return ((Thread *)thisp)->onStart();
+    return (static_cast<Thread *> (thisp))->onStart();
 }
 
 bool Thread::priority(int pri) {
@@ -278,7 +278,8 @@ bool Thread::resume(void) {
     if (state == Suspended) {
 	state = Running;
 #ifdef _WIN32
-	if (!(ret = ResumeThread(hdl) != -1))
+	ret = ResumeThread(hdl) != -1;
+	if (!ret)
 	    state = Suspended;
 #else
 	ret = true;
@@ -289,7 +290,7 @@ bool Thread::resume(void) {
 
 // setup thread and call it's main routine
 THREAD_FUNC Thread::threadInit(void *arg) {
-    Thread *thread = (Thread *)arg;
+    Thread *thread = static_cast<Thread *> (arg);
     ThreadState istate = thread->state;
     int status;
     
@@ -490,7 +491,7 @@ void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
 }
 
 int ThreadGroup::init(void *thisp) {
-    return ((ThreadGroup *)thisp)->onStart();
+    return (static_cast<ThreadGroup *>(thisp))->onStart();
 }
 
 void ThreadGroup::notify(const Thread &thread) {

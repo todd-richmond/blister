@@ -50,7 +50,6 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
     tchar buf[PATH_MAX + 2];
     const tchar *p = NULL;
     tstring::size_type pos;
-    tstring s;
     const tchar *sep;
 
     (void)id;
@@ -90,7 +89,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 		dlog << Log::Warn << Log::mod(id) <<
 		    Log::kv(T("err"), T("install key missing")) << endlog;
 	    } else {
-		s = buf;
+		full = buf;
 	    }
 	    RegCloseKey(key);
 	}
@@ -705,10 +704,8 @@ Service::~Service() {
 }
 
 bool Service::open(const tchar *file) {
-    char buf[16];
-    int fd, in;
+    int fd;
     struct flock fl;
-    string root, prog;
 
     errnum = ESRCH;
     pid = 0;
@@ -721,6 +718,9 @@ bool Service::open(const tchar *file) {
     fl.l_type = F_WRLCK;
     fl.l_whence = SEEK_SET;
     if (fcntl(fd, F_GETLK, &fl) != -1 && fl.l_pid) {
+	char buf[16];
+	int in;
+
 	pid = (pid_t)fl.l_pid;
 	stStatus = (Status)fl.l_len;
 	if ((in = (int)read(fd, buf, sizeof (buf) - 1)) > 0) {
@@ -771,11 +771,10 @@ void Service::signal_handler(int sig) {
 	    service->onSigusr2();
 	} else if (sig == SIGPIPE || sig == SIGALRM) {
 	} else if (sig == SIGABRT || sig == SIGBUS || sig == SIGFPE ||
-	    sig == SIGILL || sig == SIGTRAP || sig == SIGSEGV
 #ifdef SIGSTKFLT
-	    || sig == SIGSTKFLT
+	    sig == SIGSTKFLT ||
 #endif
-	    ) {
+	    sig == SIGILL || sig == SIGTRAP || sig == SIGSEGV) {
 	    service->onAbort();
 	}
     }
@@ -1633,7 +1632,7 @@ void Daemon::onSigusr1() {
 }
 
 void Daemon::watch_handler(int sig) {
-    Daemon *thisp = (Daemon *)service;
+    Daemon *thisp = static_cast<Daemon *>(service);
 
     if (!thisp->child)
 	return;

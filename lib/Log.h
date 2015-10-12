@@ -135,7 +135,7 @@ public:
 	}
     };
 
-    Log(Level level = Info);
+    explicit Log(Level level = Info);
     ~Log();
 
     bool alert(void) const { return afd.enable; }
@@ -304,7 +304,7 @@ public:
 private:
     class FlushThread: public Thread {
     public:
-	FlushThread(Log &lg): l(lg), qflag(false) {}
+	explicit FlushThread(Log &lg): l(lg), qflag(false) {}
 
 	void quit(void) { qflag = true; }
 

@@ -351,7 +351,7 @@ int tmain(int argc, tchar *argv[]) {
     } else {
 	dsz = (uint)sbuf.st_size;
 	data = new char[dsz];
-	dsz = read(fd, data, dsz);
+	dsz = (uint)read(fd, data, dsz);
 	close(fd);
     }
     if (!host)

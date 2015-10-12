@@ -258,7 +258,7 @@ public:
 private:
     class bufferbuf: public basic_stringbuf<C> {
     public:
-	bufferbuf(ios::openmode m): basic_stringbuf<C>(m) {}
+	explicit bufferbuf(ios::openmode m): basic_stringbuf<C>(m) {}
 
 	streamsize pcount(void) const {
 	    return basic_stringbuf<C>::pptr() - basic_stringbuf<C>::pbase();

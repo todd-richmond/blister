@@ -302,13 +302,14 @@ const tstring Sockaddr::str(void) const {
 #define VALID_IP(ip) (ip[0] < 256 && ip[1] < 256 && ip[2] < 256 && ip[3] < 256)
 
 bool CIDR::add(const tchar *addrs) {
-    uint ip1[4], ip2[4];
-    int maskbits = 32;
-    const tchar *p;
-    Range range;
     size_t sz = ranges.size();
 
     while (addrs) {
+	uint ip1[4], ip2[4];
+	int maskbits = 32;
+	Range range;
+	const tchar *p = addrs;
+
 	if (tstrchr(addrs, '/') && (tsscanf(addrs, T("%3u.%3u.%3u.%3u/%2d"),
 	    &ip1[0], &ip1[1], &ip1[2], &ip1[3], &maskbits) == 5) &&
 	    VALID_IP(ip1) && maskbits >= 1 && maskbits <= 32) {
@@ -328,7 +329,6 @@ bool CIDR::add(const tchar *addrs) {
 	    range.rmin = range.rmax = BUILD_IP(ip1);
 	    ranges.push_back(range);
 	}
-	p = addrs;
 	if ((addrs = tstrchr(p, ',')) != NULL ||
 	    (addrs = tstrchr(p, ';')) != NULL ||
 	    (addrs = tstrchr(p, ' ')) != NULL)

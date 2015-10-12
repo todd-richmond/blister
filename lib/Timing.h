@@ -99,7 +99,7 @@ public:
 
 private:
     struct Stats {
-	Stats(const tchar *n): cnt(0), name(n), tot(0) { ZERO(cnts); }
+	explicit Stats(const tchar *n): cnt(0), name(n), tot(0) { ZERO(cnts); }
 
 	ulong cnt;
 	ulong cnts[TIMINGSLOTS];

@@ -87,7 +87,7 @@ class Sockaddr {
 public:
     enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6  };
 
-    Sockaddr(const addrinfo *ai) { set(ai); }
+    explicit Sockaddr(const addrinfo *ai) { set(ai); }
     Sockaddr(const tchar *host, Proto proto = TCP) { set(host, proto); }
     Sockaddr(const tchar *host, ushort port, Proto proto = TCP) {
 	set(host, port, proto);
@@ -95,12 +95,12 @@ public:
     Sockaddr(const tchar *host, const tchar *service, Proto proto = TCP) {
 	set(host, service, proto);
     }
-    Sockaddr(const hostent *h) { set(h); }
-    Sockaddr(Proto proto = TCP) {
+    explicit Sockaddr(const hostent *h) { set(h); }
+    explicit Sockaddr(Proto proto = TCP) {
 	ZERO(addr);
 	addr.sa.sa_family = families[(uint)proto];
     }
-    Sockaddr(const sockaddr &sa) { set(sa); }
+    explicit Sockaddr(const sockaddr &sa) { set(sa); }
     Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
 
     bool operator ==(const Sockaddr &sa) const { 
@@ -182,7 +182,7 @@ inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
  */
 class CIDR {
 public:
-    CIDR(const tchar *addrs = NULL) { add(addrs); }
+    explicit CIDR(const tchar *addrs = NULL) { add(addrs); }
 
     bool add(const tchar *addrs);
     void clear(void) { ranges.clear(); }
@@ -219,6 +219,7 @@ class Socket {
 public:
     Socket(int type = SOCK_STREAM, socket_t sock = SOCK_INVALID):
 	sbuf(new SocketBuf(type, sock, sock == SOCK_INVALID)) {}
+    // cppcheck-suppress copyCtorPointerCopying
     Socket(const Socket &r) { r.sbuf->count++; sbuf = r.sbuf; }
     ~Socket() { if (--sbuf->count == 0) delete sbuf; }
 
@@ -377,7 +378,7 @@ protected:
  */
 class SocketSet {
 public:
-    SocketSet(uint maxfds = 0);
+    explicit SocketSet(uint maxfds = 0);
     SocketSet(const SocketSet &ss): fds(NULL), maxsz(0), sz(0) { *this = ss; }
     ~SocketSet() { delete [] fds; }
     

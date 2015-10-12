@@ -1305,10 +1305,9 @@ static int tmcomp(const tm *const atmp, const tm *const btmp) {
 
 time_t mkgmtime(const tm *const tmp) {
     int bits;
-    int dir;
     int seconds;
     time_t t;
-    tm *newtm, orgtm, tmbuf;
+    tm orgtm, tmbuf;
     
     orgtm = *tmp;
     seconds = orgtm.tm_sec;
@@ -1322,7 +1321,9 @@ time_t mkgmtime(const tm *const tmp) {
 	;
     t = (t < 0) ? 0 : ((time_t) 1 << bits);
     while (true) {
-	newtm = gmtime_r(&t, &tmbuf);
+	int dir;
+	tm *newtm = gmtime_r(&t, &tmbuf);
+
 	if (newtm == NULL)
 	    return 0;
 	dir = tmcomp(newtm, &orgtm);

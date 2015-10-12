@@ -101,9 +101,9 @@ private:
 };
 
 // handle objects with timeouts
-#define DSP_NEVER	static_cast<ulong>(-1)
-#define DSP_PREVIOUS	static_cast<ulong>(-2)
-#define DSP_NEVER_DUE	static_cast<msec_t>(-1)
+#define DSP_NEVER	(ulong)-1
+#define DSP_PREVIOUS	(ulong)-2
+#define DSP_NEVER_DUE	(msec_t)-1
 
 class DispatchTimer: public DispatchObj {
 public:
@@ -238,7 +238,7 @@ protected:
 
 class Dispatcher: public ThreadGroup {
 public:
-    Dispatcher(const Config &config);
+    explicit Dispatcher(const Config &config);
     virtual ~Dispatcher() { stop(); }
 
     const Config &config(void) const { return cfg; }

@@ -223,7 +223,7 @@ int Dispatcher::onStart() {
 
 	    lock.lock();
 	    if ((it = smap.find(msg.wParam)) != smap.end()) {
-		ds = (DispatchSocket *)it->second;
+		ds = static_cast<DispatchSocket *>(it->second);
 		if (ds->flags & DSP_Scheduled) {
 		    // uint err = WSAGETSELECTERROR(msg.lParam);
 		    if (evt & FD_READ)
@@ -305,14 +305,7 @@ int Dispatcher::onStart() {
 #else
 
 int Dispatcher::onStart() {
-    uint count = 0;
-    DispatchSocket *ds = NULL;
-    DispatchTimer *dt = NULL;
-    socket_t fd;
-    SocketSet irset, iwset, orset, owset, oeset;
-    uint msec;
     msec_t now;
-    socketmap::const_iterator sit;
     uint u = 0;
 
 #ifdef DSP_POLL
@@ -401,6 +394,13 @@ cout<<"tfr wfd "<<wfd<<endl;
     workers = 0;
     now = milliticks();
     while (!shutdown) {
+	uint count = 0;
+	DispatchSocket *ds = NULL;
+	DispatchTimer *dt = NULL;
+	SocketSet irset, iwset, orset, owset, oeset;
+	uint msec;
+	socketmap::const_iterator sit;
+
 	if (evtfd == -1) {
 	    irset = rset;
 	    iwset = wset;
@@ -453,6 +453,8 @@ cout<<"tfr wfd "<<wfd<<endl;
 	if (shutdown)
 	    break;
 	if (evtfd == -1) {
+	    socket_t fd;
+
 	    for (u = 0; u < orset.size(); u++) {
 		fd = orset[u];
 		if ((sit = smap.find(fd)) == smap.end()) {
@@ -466,13 +468,13 @@ cout<<"tfr wfd "<<wfd<<endl;
 		    wset.unset(fd);
 		ds->flags &= ~DSP_SelectAll;
 		if (ds->flags & DSP_Scheduled) {
-		    ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
+		    ds->msg = (ds->flags & DSP_SelectAccept) ? DispatchAccept :
 			DispatchRead;
 		    if (ready(*ds, ds->msg == DispatchAccept))
 			count++;
 		} else {
-		    ds->flags |= ds->flags & DSP_SelectAccept ? DSP_Acceptable :
-			DSP_Readable;
+		    ds->flags |= (ds->flags & DSP_SelectAccept) ?
+			DSP_Acceptable : DSP_Readable;
 		}
 		removeTimer(*ds);
 	    }
@@ -609,14 +611,14 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 #define DSP_EVENT_READ(evt)	evt->events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)
 #define DSP_EVENT_WRITE(evt)	evt->events & EPOLLOUT
 
-	ds = (DispatchSocket *)evt->data.ptr;
+	ds = static_cast<DispatchSocket *>(evt->data.ptr);
 
 #elif defined(DSP_KQUEUE)
 #define DSP_EVENT_ERR(evt)	evt->flags & (EV_EOF | EV_ERROR)
 #define DSP_EVENT_READ(evt)	evt->filter == EVFILT_READ && evt->data > 0
 #define DSP_EVENT_WRITE(evt)	evt->filter == EVFILT_WRITE && evt->data > 0
 
-	ds = (DispatchSocket *)evt->udata;
+	ds = static_cast<DispatchSocket *>(evt->udata);
 #endif
 	if (!ds) {
 	    reset();
@@ -626,7 +628,7 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 	}
 	if (DSP_EVENT_READ(evt)) {
 	    if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
-		ds->msg = ds->flags & DSP_SelectAccept ? DispatchAccept :
+		ds->msg = (ds->flags & DSP_SelectAccept) ? DispatchAccept :
 		    DispatchRead;
 	    else
 		ds->flags |= DSP_Readable;
@@ -712,8 +714,6 @@ void Dispatcher::wake(uint tasks, bool master) {
 	    tasks = wake >= tasks ? 0 : tasks - wake;
 	} else {
 	    bool b = workers == 0;
-	    Thread *t;
-
 	    lock.unlock();
 	    if (b || lifo.set()) {
 		lock.lock();
@@ -721,7 +721,9 @@ void Dispatcher::wake(uint tasks, bool master) {
 		    break;
 		workers++;
 		lock.unlock();
-		t = new Thread();
+
+		Thread *t = new Thread();
+
 		t->start(worker, this, stacksz, this);
 		while ((t = wait(0)) != NULL)
 		    delete t;
@@ -952,7 +954,9 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	    smap[ds.fd()] = &ds;
 	ds.mapped = true;
     }
+#ifdef DSP_KQUEUE
     flags = ds.flags;
+#endif
     ds.flags &= ~(DSP_SelectAll | DSP_IO);
     ds.flags |= sarray[m];
 #ifdef DSP_WIN32_ASYNC

@@ -171,7 +171,6 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
 
 void Config::setv(const tchar *attr1, const tchar *val1, ...) {
     const tchar *arg, *attr = NULL, *sect = NULL;
-    attrmap::iterator it;
     Locker lkr(lck, !THREAD_ISSELF(locker));
     va_list vl;
 
@@ -211,7 +210,6 @@ void Config::trim(tstring &s) {
 
 bool Config::parse(tistream &is) {
     tstring attr, s, sect, val;
-    attrmap::iterator it;
     uint line = 0;
     const tchar *p;
 

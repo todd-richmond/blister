@@ -24,7 +24,7 @@
 class URL {
 public:
     URL() { set(NULL); }
-    URL(const tchar *url) { set(url); }
+    explicit URL(const tchar *url) { set(url); }
     URL(const URL &url) { operator =(url); }
 
     tstring host, path, prot, query;

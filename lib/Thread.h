@@ -204,7 +204,7 @@ private:
 template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
 class FastLockerTemplate: nocopy {
 public:
-    FastLockerTemplate(C &lock): lck(lock) { (lck.*LOCK)(); }
+    explicit FastLockerTemplate(C &lock): lck(lock) { (lck.*LOCK)(); }
     ~FastLockerTemplate() { (lck.*UNLOCK)(); }
 
     void relock(void) { (lck.*UNLOCK)(); THREAD_YIELD(); (lck.*LOCK)(); }
@@ -219,7 +219,7 @@ private:
  */
 class DLLibrary: nocopy {
 public:
-    DLLibrary(const tchar *dll = NULL): hdl(0) { open(dll); }
+    explicit DLLibrary(const tchar *dll = NULL): hdl(0) { open(dll); }
     ~DLLibrary() { close(); }
 
     operator void *(void) const { return hdl; }
@@ -369,7 +369,7 @@ protected:
 
 class Mutex: nocopy {
 public:
-    Mutex(const tchar *name = NULL);
+    explicit Mutex(const tchar *name = NULL);
     ~Mutex() { if (hdl) CloseHandle(hdl); }
 
     void lock(void) { WaitForSingleObject(hdl, INFINITE); }
@@ -449,7 +449,7 @@ protected:
 
 class Semaphore: public _Semaphore, private nocopy {
 public:
-    Semaphore(uint init = 0): _Semaphore(NULL, init) {}
+    explicit Semaphore(uint init = 0): _Semaphore(NULL, init) {}
 
     bool open(uint init = 0) { return _open(NULL, init); }
 };
@@ -465,7 +465,7 @@ public:
 
 class Condvar: nocopy {
 public:
-    Condvar(Lock &lock): lck(lock), pending(0), waiting(0) {}
+    explicit Condvar(Lock &lock): lck(lock), pending(0), waiting(0) {}
 
     void broadcast(void) { set((uint)-1); }
     void set(uint count = 1) {
@@ -515,7 +515,7 @@ private:
 
 class Process {
 public:
-    Process(HANDLE hproc): hdl(hproc) {}
+    explicit Process(HANDLE hproc): hdl(hproc) {}
     ~Process() { if (hdl) CloseHandle(hdl); }
 
     static int argc;
@@ -567,7 +567,10 @@ typedef Lock Mutex;
 
 class Semaphore: nocopy {
 public:
-    Semaphore(uint init = 0): hdl(0) { if (init != (uint)-1) open(init); }
+    explicit Semaphore(uint init = 0): hdl(0) {
+	if (init != (uint)-1)
+	    open(init);
+    }
     ~Semaphore() { close(); }
 
     operator semaphore_t(void) const { return hdl; }
@@ -619,7 +622,10 @@ protected:
 
 class Semaphore: nocopy {
 public:
-    Semaphore(uint init = 0): valid(false) { if (init != (uint)-1) open(init); }
+    explicit Semaphore(uint init = 0): valid(false) {
+	if (init != (uint)-1)
+	    open(init);
+    }
     ~Semaphore() { close(); }
 
     operator sem_t(void) const { return hdl; }
@@ -750,7 +756,7 @@ protected:
 
 class Condvar: nocopy {
 public:
-    Condvar(Lock &lck): lock(lck) {
+    explicit Condvar(Lock &lck): lock(lck) {
 #ifdef __APPLE__
 	pthread_cond_init(&cv, NULL);
 #elif !defined(__ANDROID__)
@@ -878,7 +884,7 @@ typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker
 #ifdef NO_ATOMIC_ADD
 class RefCount: nocopy {
 public:
-    RefCount(uint init = 1): cnt(init) {}
+    explicit RefCount(uint init = 1): cnt(init) {}
 
     operator bool(void) const { return referenced(); }
     bool referenced(void) const { FastSpinLocker lkr(lck); return cnt != 0; }
@@ -895,7 +901,7 @@ private:
 
 class RefCount: nocopy {
 public:
-    RefCount(uint init = 1): cnt(init) {}
+    explicit RefCount(uint init = 1): cnt(init) {}
 
     operator bool(void) const { return referenced(); }
     bool referenced(void) const { return atomic_get(cnt) != 0; }
@@ -912,7 +918,7 @@ private:
 template<class C>
 class TSNumber: nocopy {
 public:
-    TSNumber(C init = 0) { c = init; }
+    explicit TSNumber(C init = 0) { c = init; }
 
     operator C() const { TSLocker lkr(lck); return c; }
     template<class N> bool operator ==(N n) const { TSLocker lkr(lck); return c == n; }
@@ -922,7 +928,11 @@ public:
     C operator --(void) { TSLocker lkr(lck); return --c; }
     C operator --(int) { TSLocker lkr(lck); return c--; }
     template<class N> C operator =(N n) { TSLocker lkr(lck); return c = n; }
-    template<class N> C operator =(const TSNumber<N> &n) { TSLocker lkr(lck); return c = n; }
+    template<class N> C operator =(const TSNumber<N> &n) {
+	TSLocker lkr(lck);
+
+	return c = n;
+    }
     template<class N> C operator +=(N n) { TSLocker lkr(lck); return c += n; }
     template<class N> C operator -=(N n) { TSLocker lkr(lck); return c -= n; }
     template<class N> C operator *=(N n) { TSLocker lkr(lck); return c *= n; }
@@ -1114,7 +1124,7 @@ typedef void (ThreadGroup::*ThreadGroupControlRoutine)(bool);
 
 class ThreadGroup: nocopy {
 public:
-    ThreadGroup(bool autoterm = true);
+    explicit ThreadGroup(bool autoterm = true);
     virtual ~ThreadGroup();
 
     static ThreadGroup MainThreadGroup;
