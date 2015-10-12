@@ -1,5 +1,5 @@
 AC_PREREQ([2.63])
-AC_INIT([Blister],[1.2])
+AC_INIT([Blister],[1.3])
 AC_CONFIG_SRCDIR([lib/stdapi.h])
 AM_INIT_AUTOMAKE([-Wall -Werror dist-zip foreign no-define no-installinfo no-installman ])
 
@@ -14,7 +14,7 @@ AM_CONDITIONAL(Intel64, test "`uname -p`" = x86_64)
 
 AC_C_BIGENDIAN
 AC_PROG_MAKE_SET
-AM_PROG_AR
+m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_INSTALL
