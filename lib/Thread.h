@@ -73,9 +73,11 @@ typedef pthread_t thread_id_t;
 #define THREAD_HDL()		pthread_self()
 #define THREAD_ID()		pthread_self()
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+#define THREAD_BARRIER()	asm volatile("" ::: "memory")
 #define THREAD_PAUSE()		asm volatile("pause" ::: "memory")
 #else
-#define THREAD_PAUSE()
+#define NO_THREAD_BARRIER
+#define NO_THREAD_PAUSE
 #endif
 #define THREAD_YIELD()		sched_yield()
 
@@ -323,6 +325,7 @@ public:
 
     void lock(void) {
 	while (atomic_lck(lck)) {
+#ifdef THREAD_PAUSE
 	    ushort pause = init;
 
 	    do {
@@ -335,13 +338,16 @@ public:
 		    pause <<= 1;
 		}
 	    } while (lck);
+#else
+	    THREAD_YIELD();
+#endif
 	}
     }
     bool trylock(void) { return atomic_lck(lck) == 0; }
     void unlock(void) { atomic_clr(lck); }
 
 private:
-    ushort init;
+    uint init;
     atomic_t lck;
 };
 

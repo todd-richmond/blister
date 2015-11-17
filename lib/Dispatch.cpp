@@ -324,7 +324,7 @@ int Dispatcher::onStart() {
 #ifdef DSP_DEVPOLL
     evtfd = open("/dev/poll", O_RDWR);
 #elif defined(DSP_EPOLL)
-    evtfd = epoll_create(10000);
+    evtfd = epoll_create(1024);
 #elif defined(DSP_KQUEUE)
     timespec ts;
 
@@ -381,7 +381,6 @@ int Dispatcher::onStart() {
 	RETRY(pwrite(evtfd, &evts[0], sizeof (evts[0]), 0));
 #elif defined(DSP_EPOLL)
 	wfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-cout<<"tfr wfd "<<wfd<<endl;
 	evts[0].events = EPOLLIN;
 	RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, wfd, evts));
 #endif
