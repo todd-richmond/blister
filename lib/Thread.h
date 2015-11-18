@@ -769,7 +769,7 @@ public:
 	pthread_condattr_t attr;
 
 	pthread_condattr_init(&attr);
-	pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+	pthread_condattr_setclock(&attr, CLOCK_BOOTTIME);
 	pthread_cond_init(&cv, &attr);
 	pthread_condattr_destroy(&attr);
 #endif
@@ -784,7 +784,7 @@ public:
 	} else {
 	    timespec ts;
 
-	    clock_gettime(CLOCK_MONOTONIC, &ts);
+	    clock_gettime(CLOCK_BOOTTIME, &ts);
 	    ts.tv_sec += (uint)(msec / 1000);
 	    ts.tv_nsec += (msec % 1000) * 1000000;
 #ifdef __APPLE__

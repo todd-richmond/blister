@@ -55,10 +55,10 @@ usec_t microticks(void) {
 	mti.denom *= 1000;
     }
     return mach_absolute_time() * mti.numer / mti.denom;
-#elif defined(CLOCK_MONOTONIC)
+#elif defined(CLOCK_BOOTTIME)
     struct timespec ts;
 
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    clock_gettime(CLOCK_BOOTTIME, &ts);
     return (usec_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 #else
     usec_t diff, now, save;
@@ -96,10 +96,10 @@ usec_t microticks(void) {
 }
 
 msec_t milliticks(void) {
-#ifdef CLOCK_MONOTONIC_COARSE
+#ifdef CLOCK_BOOTTIME_COARSE
     struct timespec ts;
 
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    clock_gettime(CLOCK_BOOTTIME_COARSE, &ts);
     return (msec_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 #else
     return (msec_t)(microticks() / 1000);
