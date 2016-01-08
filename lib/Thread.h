@@ -326,7 +326,7 @@ public:
     void lock(void) {
 	while (atomic_lck(lck)) {
 #ifdef THREAD_PAUSE
-	    ushort pause = init;
+	    uint pause = init;
 
 	    do {
 		if (pause == SPINLOCK_YIELD) {
@@ -1109,8 +1109,8 @@ protected:
 private:
     mutable Lock lck;
     Condvar cv;
+    void *argument;
     bool autoterm;
-    void *data;
     ThreadGroup *group;
     thread_t hdl;
     thread_id_t id;

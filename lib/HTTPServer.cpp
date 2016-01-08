@@ -497,7 +497,7 @@ void HTTPServerSocket::reply(int fd, size_t len) {
 #ifdef _WIN32
 	HANDLE hdl;
 
-	if ((hdl = CreateFileMapping((HANDLE)fd, NULL, PAGE_READONLY,
+	if ((hdl = CreateFileMapping((HANDLE)(ullong)fd, NULL, PAGE_READONLY,
 	    0, (DWORD)len, NULL)) == NULL) {
 	    error(404);
 	    return;
@@ -604,7 +604,7 @@ void HTTPServerSocket::error(uint sts) {
 void HTTPServerSocket::get(bool head) {
     const char *type = "application";
     const char *subtype = "octet-stream";
-    struct stat sbuf;
+    struct stat statbuf;
     const char *p;
     int fd;
     uint sts = 200;
@@ -621,6 +621,10 @@ void HTTPServerSocket::get(bool head) {
 	s += "/default.html";		    // deal w/ language later
     if ((p = strrchr(s.c_str(), '.')) != NULL) {
 	p++;
+	if (!stricmp(p, "./")) {
+	    error(403);
+	    return;
+	}
 	for (int i = 0; mime[i].ext; i++) {
 	    if (!stricmp(p, mime[i].ext)) {
 		type = mime[i].type;
@@ -633,25 +637,25 @@ void HTTPServerSocket::get(bool head) {
 	error(404);
 	return;
     }
-    if (fstat(fd, &sbuf)) {
+    if (fstat(fd, &statbuf)) {
 	::close(fd);
 	error(404);
 	return;
     }
     if ((val = attr("if-modified-since")) != NULL) {
-	if (parse_date(achartotchar(val)) >= sbuf.st_mtime)
+	if (parse_date(achartotchar(val)) >= statbuf.st_mtime)
 	    sts = 304;
     } else if ((val = attr("if-unmodified-since")) != NULL) {
-	if (parse_date(achartotchar(val)) < sbuf.st_mtime)
+	if (parse_date(achartotchar(val)) < statbuf.st_mtime)
 	    sts = 304;
     }
     if (val != NULL && (val = strchr(val, ';')) != NULL &&
 	!strnicmp(val + 1, "length=", 7) &&
-	(ulong)atol(val + 8) != (ulong)sbuf.st_size)
+	(ulong)atol(val + 8) != (ulong)statbuf.st_size)
 	sts = 200;
-    status(sts, type, subtype, sbuf.st_mtime);
+    status(sts, type, subtype, statbuf.st_mtime);
     if (sts == 200 && !head)
-	reply(fd, (size_t)sbuf.st_size);
+	reply(fd, (size_t)statbuf.st_size);
     else
 	reply((const char *)NULL);
     ::close(fd);

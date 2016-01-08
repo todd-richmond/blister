@@ -1256,10 +1256,10 @@ const tchar *Service::status(Status s) {
 }
 
 
-Daemon::Daemon(const tchar *service, const tchar *dname, bool pauseable):
-    Service(service, pauseable), qflag(None), child(0), lckfd(-1),
+Daemon::Daemon(const tchar *name, const tchar *display, bool pauseable):
+    Service(name, pauseable), qflag(None), child(0), lckfd(-1),
     refreshed(false), start(0), watch(false) {
-    (void)dname;
+    (void)display;
 }
 
 Daemon::~Daemon() {

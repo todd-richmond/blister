@@ -201,7 +201,7 @@ void Log::LogFile::roll(void) {
 			    oldext = ext;
 		    }
 		    oldfile = s3;
-		    oldtime = (time_t)sbuf.st_mtime;
+		    oldtime = (ulong)sbuf.st_mtime;
 		}
 	    }
 	    if (oldtime == (ulong)-1) {
@@ -304,7 +304,7 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
 }
 
 bool Log::LogFile::unlockfd(void) {
-    return fd >= 0 ? lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0) : true;
+    return fd >= 0 ? lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0) == 0 : true;
 }
 
 Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true),

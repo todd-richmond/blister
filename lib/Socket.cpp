@@ -684,7 +684,7 @@ long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
 
 bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
 #ifdef _WIN32
-    struct timeval tv = { msec / 1000, (msec % 1000) * 1000 };
+    struct timeval tv = { (long)(msec / 1000), long((msec % 1000) * 1000) };
 
     fds->fd_count = sz;
     eset = iset = *this;
@@ -717,7 +717,7 @@ bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
 
 bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
 #ifdef _WIN32
-    struct timeval tv = { msec / 1000, (msec % 1000) * 1000 };
+    struct timeval tv = { (long)(msec / 1000), (long)((msec % 1000) * 1000) };
 
     fds->fd_count = sz;
     eset = oset = *this;
@@ -751,7 +751,7 @@ bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
 bool SocketSet::iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
     uint msec) {
 #ifdef _WIN32
-    struct timeval tv = { msec / 1000, (msec % 1000) * 1000 };
+    struct timeval tv = { (long)(msec / 1000), (long)((msec % 1000) * 1000) };
 
     fds->fd_count = sz;
     eset = iset = oset = *this;
@@ -790,7 +790,7 @@ bool SocketSet::iopoll(const SocketSet &rset, SocketSet &iset,
     const SocketSet &wset, SocketSet &oset, SocketSet &eset, uint msec) {
     uint u;
 #ifdef _WIN32
-    struct timeval tv = { msec / 1000, (msec % 1000) * 1000 };
+    struct timeval tv = { (long)(msec / 1000), (long)((msec % 1000) * 1000) };
 
     rset.fds->fd_count = rset.sz;
     wset.fds->fd_count = wset.sz;

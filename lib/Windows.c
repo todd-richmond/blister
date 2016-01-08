@@ -33,6 +33,8 @@
 
 #define HASH_SIZE	    769
 #define rename_unlock(lck)  if (locks) InterlockedExchange(locks + lck, 0)
+#define to_fd(hdl)	    ((int)(ullong)hdl)
+#define to_handle(fd)	    ((HANDLE)(ullong)(fd))
 
 static HANDLE lockhdl;
 static long *locks;
@@ -194,7 +196,7 @@ void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
 int close(int fd) {
     if (fd == -1)
 	errno = EINVAL;
-    else if (CloseHandle((HANDLE)fd))
+    else if (CloseHandle(to_handle(fd)))
 	return 0;
     else
 	_dosmaperr(GetLastError());
@@ -226,12 +228,12 @@ int wcopy_file(const wchar *from, const wchar *to, int check) {
 int dup(int fd) {
     HANDLE hdl;
 
-    if (!DuplicateHandle(GetCurrentProcess(), (HANDLE)fd,
+    if (!DuplicateHandle(GetCurrentProcess(), to_handle(fd),
 	GetCurrentProcess(), &hdl, 0L, TRUE, DUPLICATE_SAME_ACCESS)) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
-    return (int)hdl;
+    return to_fd(hdl);
 }
 
 FILE *fdopen(int fd, const char *how) {
@@ -246,7 +248,7 @@ FILE *fdopen(int fd, const char *how) {
 
 int flock(int fd, int op) {
     if (op == LOCK_UN) {
-	if (!UnlockFile((HANDLE)fd, 0, (uint)-2, 1, 0)) {
+	if (!UnlockFile(to_handle(fd), 0, (uint)-2, 1, 0)) {
 	    _dosmaperr(GetLastError());
 	    return -1;
 	}
@@ -260,7 +262,7 @@ int flock(int fd, int op) {
 	    flag |= LOCKFILE_EXCLUSIVE_LOCK;
 	if (op & LOCK_NB)
 	    flag |= LOCKFILE_FAIL_IMMEDIATELY;
-	if (!LockFileEx((HANDLE)fd, flag, 0, 1, 0, &ov)) {
+	if (!LockFileEx(to_handle(fd), flag, 0, 1, 0, &ov)) {
 	    _dosmaperr(GetLastError());
 	    return -1;
 	}
@@ -270,8 +272,8 @@ int flock(int fd, int op) {
 
 /* fsync emulation - don't fail on console output */
 int fsync(int fd) {
-    if (!FlushFileBuffers((HANDLE)fd)) {
-	if (GetFileType((HANDLE)fd) != FILE_TYPE_CHAR) {
+    if (!FlushFileBuffers(to_handle(fd))) {
+	if (GetFileType(to_handle(fd)) != FILE_TYPE_CHAR) {
 	    _dosmaperr(GetLastError());
 	    return -1;
 	}
@@ -280,8 +282,8 @@ int fsync(int fd) {
 }
 
 int ftruncate(int fd, long len) {
-    if (SetFilePointer((HANDLE)fd, len, 0, SEEK_SET) == -1 ||
-	!SetEndOfFile((HANDLE)fd)) {
+    if (SetFilePointer(to_handle(fd), len, 0, SEEK_SET) == -1 ||
+	!SetEndOfFile(to_handle(fd))) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
@@ -301,17 +303,17 @@ int lockfile(int fd, short op, short whence, ulong start, ulong len,
     if (whence == SEEK_SET) {
 	ov.Offset = start;
     } else if (whence == SEEK_CUR) {
-	ov.Offset = SetFilePointer((HANDLE)fd, 0, 0, FILE_CURRENT) + start;
+	ov.Offset = SetFilePointer(to_handle(fd), 0, 0, FILE_CURRENT) + start;
     } else if (whence == SEEK_END) {
 	LARGE_INTEGER li;
 
-	GetFileSizeEx((HANDLE)fd, &li);
+	GetFileSizeEx(to_handle(fd), &li);
 	li.QuadPart -= start;
 	ov.Offset = li.LowPart;
 	ov.OffsetHigh = li.HighPart;
     }
     if (op == F_UNLCK) {
-	if (!UnlockFileEx((HANDLE)fd, 0, len, 0, &ov)) {
+	if (!UnlockFileEx(to_handle(fd), 0, len, 0, &ov)) {
 	    _dosmaperr(GetLastError());
 	    return -1;
 	}
@@ -322,7 +324,7 @@ int lockfile(int fd, short op, short whence, ulong start, ulong len,
 	    flag |= LOCKFILE_EXCLUSIVE_LOCK;
 	if (test)
 	    flag |= LOCKFILE_FAIL_IMMEDIATELY;
-	if (!LockFileEx((HANDLE)fd, flag, 0, len, 0, &ov)) {
+	if (!LockFileEx(to_handle(fd), flag, 0, len, 0, &ov)) {
 	    _dosmaperr(GetLastError());
 	    return -1;
 	}
@@ -333,7 +335,7 @@ int lockfile(int fd, short op, short whence, ulong start, ulong len,
 long lseek(int fd, long pos, int from) {
     DWORD newpos;
 
-    if ((newpos = SetFilePointer((HANDLE)fd, pos, 0, from)) == -1) {
+    if ((newpos = SetFilePointer(to_handle(fd), pos, 0, from)) == -1) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
@@ -344,7 +346,7 @@ long lseek(int fd, long pos, int from) {
 int read(int fd, void *buf, uint len) {
     DWORD in;
 
-    if (!ReadFile((HANDLE)fd, buf, len, &in, NULL)) {
+    if (!ReadFile(to_handle(fd), buf, len, &in, NULL)) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
@@ -355,7 +357,7 @@ int read(int fd, void *buf, uint len) {
 int write(int fd, const void *buf, uint len) {
     DWORD out = 0;
 
-    if (len && (!WriteFile((HANDLE)fd, buf, len, &out, NULL) || out == 0)) {
+    if (len && (!WriteFile(to_handle(fd), buf, len, &out, NULL) || out == 0)) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
@@ -400,7 +402,7 @@ long writev(int fd, const struct iovec *io , int num) {
 long tell(int fd) {
     DWORD newpos;
 
-    if ((newpos = SetFilePointer((HANDLE)fd, 0, 0, FILE_CURRENT)) == -1) {
+    if ((newpos = SetFilePointer(to_handle(fd), 0, 0, FILE_CURRENT)) == -1) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
@@ -746,11 +748,9 @@ int wopen(const wchar *path, int oflag, ...) {
 	    return -1;
 	}
     }
-    if (!(oflag & O_TEXT && oflag & O_RDWR))
-	return (int)hdl;
-    if ((filetype = GetFileType(hdl)) == FILE_TYPE_UNKNOWN)
-	return (int)hdl;
-    if (filetype != FILE_TYPE_PIPE && filetype != FILE_TYPE_CHAR) {
+    if (oflag & O_TEXT && oflag & O_RDWR && (filetype = GetFileType(hdl)) !=
+	FILE_TYPE_UNKNOWN && filetype != FILE_TYPE_PIPE && filetype !=
+	FILE_TYPE_CHAR) {
 	/* remove CTRL-Z from end of file if present */
 	char ch;
 
@@ -767,7 +767,7 @@ int wopen(const wchar *path, int oflag, ...) {
 	    }
 	}
     }
-    return (int)hdl;
+    return to_fd(hdl);
 }
 
 /* rename that emulates atomic operations expensively */
@@ -827,7 +827,7 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
     }
     buf->st_uid = buf->st_gid = 0;
     buf->st_mode = S_IFREG;
-    buf->st_nlink = bhfi.nNumberOfLinks;
+    buf->st_nlink = (nlink_t)bhfi.nNumberOfLinks;
     buf->st_rdev = buf->st_dev = bhfi.dwVolumeSerialNumber;
     if (bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
 	buf->st_mode |= (S_IREAD + (S_IREAD >> 3) + (S_IREAD >> 6));
@@ -951,7 +951,7 @@ int wstat(const wchar *path, struct stat *buf) {
 }
 
 int fstat(int fd, struct stat *buf) {
-    return file_stat((HANDLE)fd, buf);
+    return file_stat(to_handle(fd), buf);
 }
 
 int statvfs(const char *path, struct statvfs *buf) {

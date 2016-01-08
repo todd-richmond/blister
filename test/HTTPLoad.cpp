@@ -106,8 +106,7 @@ private:
     static int filecnt;
     static uint nextfile;
     static uint startfile;
-    static TSNumber<ulong> usec, tusec, minusec, tminusec, maxusec, tmaxusec,
-	count, tcount;
+    static TSNumber<ulong> usec, tusec,	count, tcount;
     static vector<LoadCmd *> cmds;
 
     int onStart(void);
@@ -137,8 +136,6 @@ int HTTPLoad::filecnt;
 uint HTTPLoad::nextfile;
 uint HTTPLoad::startfile;
 TSNumber<ulong> HTTPLoad::usec, HTTPLoad::tusec;
-TSNumber<ulong> HTTPLoad::minusec, HTTPLoad::tminusec;
-TSNumber<ulong> HTTPLoad::maxusec, HTTPLoad::tmaxusec;
 TSNumber<ulong> HTTPLoad::count, HTTPLoad::tcount;
 vector<HTTPLoad::LoadCmd *> HTTPLoad::cmds;
 
@@ -557,6 +554,7 @@ int HTTPLoad::onStart(void) {
 	tusec += diff - smsec * 1000;
 	++count;
 	++tcount;
+/*
 	if (!minusec || diff < minusec)
 	    minusec = diff;
 	if (diff > maxusec)
@@ -565,6 +563,7 @@ int HTTPLoad::onStart(void) {
 	    tminusec = diff;
 	if (diff > tmaxusec)
 	    tmaxusec = diff;
+*/
 	lock.unlock();
 	dlog << Log::Info << T("cmd=all duration=") << (diff / 1000) << endlog;
     }
@@ -666,10 +665,10 @@ void HTTPLoad::reset(bool all) {
 	    cmd->tusec = cmd->tminusec = cmd->tmaxusec = 0;
 	}
     }
-    usec = minusec = maxusec = 0;
+    usec = 0;
     count = 0;
     if (all) {
-	tusec = tminusec = tmaxusec = 0;
+	tusec = 0;
 	tcount = 0;
     }
 }

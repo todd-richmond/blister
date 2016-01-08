@@ -59,11 +59,11 @@ Process Process::start(tchar *const *args, const int *fds) {
     si.cb = sizeof (si);
     if (fds) {				// only support 3 fds
 	si.dwFlags = STARTF_USESTDHANDLES;
-	si.hStdInput = (HANDLE)fds[0];
+	si.hStdInput = (HANDLE)(ullong)fds[0];
 	if (fds[1] != -1) {
-	    si.hStdOutput = (HANDLE)fds[1];
+	    si.hStdOutput = (HANDLE)(ullong)fds[1];
 	    if (fds[2] != -1)
-		si.hStdError = (HANDLE)fds[2];
+		si.hStdError = (HANDLE)(ullong)fds[2];
 	}
     }
     while (*args)
@@ -181,13 +181,13 @@ bool Processor::affinity(ullong mask) {
 }
 
 Thread::Thread(thread_t handle, ThreadGroup *tg, bool aterm): cv(lck),
-    autoterm(aterm), data(NULL), hdl(handle), id(NOID), main(NULL), retval(0),
-    state(Running) {
+    argument(NULL), autoterm(aterm), hdl(handle), id(NOID), main(NULL),
+    retval(0), state(Running) {
     group = ThreadGroup::add(*this, tg);
 }
 
-Thread::Thread(void): cv(lck), autoterm(false), data(NULL), group(NULL), hdl(0),
-    id(NOID), main(NULL), retval(0), state(Init) {
+Thread::Thread(void): cv(lck), argument(NULL), autoterm(false), group(NULL),
+    hdl(0), id(NOID), main(NULL), retval(0), state(Init) {
 }
 
 Thread::~Thread() {
@@ -302,7 +302,7 @@ THREAD_FUNC Thread::threadInit(void *arg) {
     thread->lck.unlock();
     if (istate == Suspended)
 	thread->suspend();
-    status = thread->retval = (thread->main)(thread->data);
+    status = thread->retval = (thread->main)(thread->argument);
     thread->clear();
 #ifdef _WIN32
     return status;
@@ -327,7 +327,7 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     else if (state != Init)
 	return false;
     autoterm = aterm;
-    data = arg;
+    argument = arg;
     main = func;
     if (suspend)
 	state = Suspended;

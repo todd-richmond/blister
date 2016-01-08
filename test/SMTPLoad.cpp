@@ -109,8 +109,7 @@ private:
     static int filecnt;
     static uint nextfile;
     static uint startfile;
-    static TSNumber<ulong> usec, tusec, minusec, tminusec, maxusec, tmaxusec,
-	count, tcount;
+    static TSNumber<ulong> usec, tusec, count, tcount;
     static vector<LoadCmd *> cmds;
 
     int onStart(void);
@@ -139,8 +138,6 @@ int SMTPLoad::filecnt;
 uint SMTPLoad::nextfile;
 uint SMTPLoad::startfile = 0;
 TSNumber<ulong> SMTPLoad::usec, SMTPLoad::tusec;
-TSNumber<ulong> SMTPLoad::minusec, SMTPLoad::tminusec;
-TSNumber<ulong> SMTPLoad::maxusec, SMTPLoad::tmaxusec;
 TSNumber<ulong> SMTPLoad::count, SMTPLoad::tcount;
 vector<SMTPLoad::LoadCmd *> SMTPLoad::cmds;
 
@@ -521,14 +518,6 @@ int SMTPLoad::onStart(void) {
 	tusec += diff - smsec * 1000;
 	++count;
 	++tcount;
-	if (!minusec || diff < minusec)
-	    minusec = diff;
-	if (diff > maxusec)
-	    maxusec = diff;
-	if (!tminusec || diff < tminusec)
-	    tminusec = diff;
-	if (diff > tmaxusec)
-	    tmaxusec = diff;
 	lock.unlock();
 	dlog << Log::Info << T("cmd=all duration=") << (diff / 1000) << endlog;
     }
@@ -630,10 +619,10 @@ void SMTPLoad::reset(bool all) {
 	    cmd->tusec = cmd->tminusec = cmd->tmaxusec = 0;
 	}
     }
-    usec = minusec = maxusec = 0;
+    usec =  0;
     count = 0;
     if (all) {
-	tusec = tminusec = tmaxusec = 0;
+	tusec = 0;
 	tcount = 0;
     }
 }

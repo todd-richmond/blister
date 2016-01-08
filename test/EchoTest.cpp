@@ -105,7 +105,7 @@ private:
     Config cfg;
 };
 
-static char *data;
+static char *dbuf;
 static uint dsz;
 static TSNumber<uint> errs, ops;
 static TSNumber<long> loops(-1);
@@ -143,7 +143,7 @@ void EchoTest::EchoClientSocket::input() {
 	dtiming.add(T("error"), 0);
 	return;
     }
-    if ((len = read(data + in, dsz - in)) < 0) {
+    if ((len = read(dbuf + in, dsz - in)) < 0) {
 	++errs;
 	dloge(T("client read failed:"), errstr());
 	timeout(start, wait);
@@ -180,7 +180,7 @@ void EchoTest::EchoClientSocket::output() {
 	timeout(start, wait);
 	return;
     }
-    if ((len = write(data + out, dsz - out)) < 0) {
+    if ((len = write(dbuf + out, dsz - out)) < 0) {
 	++errs;
 	loops.test_and_decr();
 	dloge(T("client write failed:"), errstr());
@@ -339,19 +339,20 @@ int tmain(int argc, tchar *argv[]) {
 	    path = argv[i];
 	}
     }
-    if ((fd = open(tchartoachar(path), O_RDONLY)) == -1 || fstat(fd, &sbuf)) {
+    if ((fd = open(tchartoachar(path), O_RDONLY)) == -1) {
 	if (access(tchartoachar(path), 0) == 0) {
 	    tcerr << T("echotest: unable to open ") << path << endl;
 	    return 1;
 	} else {
 	    dsz = (uint)tstrlen(path) * sizeof (tchar);
-	    data = new char[dsz];
-	    memcpy(data, path, dsz);
+	    dbuf = new char[dsz];
+	    memcpy(dbuf, path, dsz);
 	}
     } else {
+	fstat(fd, &sbuf);
 	dsz = (uint)sbuf.st_size;
-	data = new char[dsz];
-	dsz = (uint)read(fd, data, dsz);
+	dbuf = new char[dsz];
+	dsz = (uint)read(fd, dbuf, dsz);
 	close(fd);
     }
     if (!host)
@@ -387,7 +388,7 @@ int tmain(int argc, tchar *argv[]) {
 	    msleep(1000);
     }
     ec.stop();
-    delete [] data;
+    delete [] dbuf;
     tcout << dtiming.data() << endl;
     return qflag ? -1 : 0;
 }

@@ -174,8 +174,8 @@ class Daemon: public Service {
 public:
     enum Quit { None, Slow, Fast };
 
-    Daemon(const tchar *service, const tchar *displayname = NULL,
-	bool pauseable = false);
+    Daemon(const tchar *name, const tchar *display = NULL, bool pauseable =
+	false);
     virtual ~Daemon();
 
     volatile Quit qflag;

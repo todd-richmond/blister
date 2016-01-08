@@ -21,14 +21,14 @@
 // defines and code to make non-UNIX systems support POSIX APIs
 
 #ifdef __cplusplus
-#define EXTERNC extern "C" {
-#define EXTERNC_ }
+#define EXTERNC		extern "C" {
+#define EXTERNC_	}
 #else
 #define EXTERNC
 #define EXTERNC_
 #endif
 
-#define ZERO(x)	    memset((&x), 0, sizeof (x))
+#define ZERO(x)		memset((&x), 0, sizeof (x))
 
 typedef const char cchar;
 typedef unsigned char byte;
@@ -37,8 +37,8 @@ typedef unsigned short word;
 
 #ifdef _WIN32
 
-#pragma warning(disable: 4018 4097 4100 4103 4127 4146 4201 4250 4335 4503)
-#pragma warning(disable: 4511 4512 4530 4663 4710 4711 4786 4996 26135 28125)
+#pragma warning(disable: 4018 4097 4100 4103 4127 4146 4201 4250 4335 4503 4511)
+#pragma warning(disable: 4512 4530 4577 4663 4710 4711 4786 4996 26135 28125)
 
 #ifndef WIN32
 #define WIN32
@@ -49,33 +49,35 @@ typedef unsigned short word;
 #define _WIN32_WINNT	0x502
 #define WIN32_LEAN_AND_MEAN
 
-#define rename _rename
+#define fstat		__fstat
+#define ino_t		__ino_t
+#define stat		__sstat
+#define rename		_rename
+#define _INO_T_DEFINED
+#define _STAT_DEFINED
+#define _WSTAT_DEFINED
+
 #define __STDC__ 1
+#if _MSC_VER >= 1900
+typedef __int64 _ino_t;
+#endif
+
 #include <direct.h>
 #include <io.h>
 #include <stdio.h>
 #undef __STDC__
 #include <stdlib.h>
 #include <string.h>
-
-#define _INO_T_DEFINED
-#define _STAT_DEFINED
-#define _WSTAT_DEFINED
 #include <wchar.h>
+#include <winsock2.h>
+#include <sys/stat.h>
+
 #undef _INO_T_DEFINED
 #undef _STAT_DEFINED
 #undef _WSTAT_DEFINED
-
-#include <winsock2.h>
-
-#undef rename
-
-#define fstat		__fstat
-#define ino_t		__ino_t
-#define stat		__sstat
-#include <sys/stat.h>
 #undef fstat
 #undef ino_t
+#undef rename
 #undef stat
 
 #ifndef __cplusplus
@@ -193,6 +195,7 @@ typedef wchar_t wchar;
 typedef ushort gid_t;
 typedef int id_t;
 typedef llong ino_t;
+typedef short nlink_t;
 typedef long pid_t;
 typedef ushort uid_t;
 
@@ -241,7 +244,7 @@ typedef struct WDIR {
 struct stat {
     ulong st_dev;
     ulong st_rdev;
-    ulong st_nlink;
+    nlink_t st_nlink;
     ulong st_size;
     ino_t st_ino;
     ulong st_atime;

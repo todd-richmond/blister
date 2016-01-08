@@ -243,8 +243,7 @@ public:
 
     const Config &config(void) const { return cfg; }
     
-    bool start(uint maxthreads = 100, uint stacksz = 0, bool suspend = false,
-	bool autoterm = false);
+    bool start(uint maxthreads = 100, uint stacksz = 0);
     void stop(void);
 
 protected:

@@ -672,10 +672,10 @@ void Dispatcher::reset(void) {
 }
 #endif
 
-bool Dispatcher::start(uint mthreads, uint stack, bool suspend, bool autoterm) {
+bool Dispatcher::start(uint mthreads, uint stack) {
     maxthreads = mthreads;
     stacksz = stack ? stack : 128 * 1024;
-    if (ThreadGroup::start(mthreads ? 8 * 1024 : stacksz, suspend, autoterm)) {
+    if (ThreadGroup::start(mthreads ? 8 * 1024 : stacksz, false, false)) {
 	while (shutdown && getMainThread().getState() == Running) {
 	    msleep(20);
 	    lock.lock();
@@ -695,9 +695,9 @@ void Dispatcher::stop() {
     waitForMain();
 }
 
-void Dispatcher::wake(uint tasks, bool master) {
+void Dispatcher::wake(uint tasks, bool main) {
     if (maxthreads == 0) {
-	if (master)
+	if (main)
 	    exec();
 	return;
     }

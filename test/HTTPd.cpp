@@ -38,8 +38,8 @@ protected:
 
 class HTTPDaemon: public Daemon {
 public:
-    HTTPDaemon(const tchar *service, const tchar *name):
-	Daemon(service, name), dspr(cfg) {}
+    HTTPDaemon(const tchar *name, const tchar *display):
+	Daemon(name, display), dspr(cfg) {}
 
 protected:
     Dispatcher dspr;
