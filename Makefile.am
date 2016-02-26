@@ -10,3 +10,5 @@ EXTRA_DIST=.autotools .cproject .project .settings LICENSE NOTICE \
 
 SUBDIRS = lib test
 
+cppcheck:
+	cppcheck --enable=all --force --inline-suppr */*.h */*.c */*.cpp

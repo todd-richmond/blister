@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 Todd Richmond
+ * Copyright 2001-2016 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -70,6 +70,7 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     setids();
     running();
     dspr.waitForMain();
+    delete hsock;
     return 0;
 }
 

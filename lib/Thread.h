@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 Todd Richmond
+ * Copyright 2001-2016 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -77,7 +77,7 @@ typedef pthread_t thread_id_t;
 #define THREAD_PAUSE()		asm volatile("pause" ::: "memory")
 #else
 #define NO_THREAD_BARRIER
-#define NO_THREAD_PAUSE
+#define THREAD_PAUSE()
 #endif
 #define THREAD_YIELD()		sched_yield()
 
@@ -934,11 +934,6 @@ public:
     C operator --(void) { TSLocker lkr(lck); return --c; }
     C operator --(int) { TSLocker lkr(lck); return c--; }
     template<class N> C operator =(N n) { TSLocker lkr(lck); return c = n; }
-    template<class N> C operator =(const TSNumber<N> &n) {
-	TSLocker lkr(lck);
-
-	return c = n;
-    }
     template<class N> C operator +=(N n) { TSLocker lkr(lck); return c += n; }
     template<class N> C operator -=(N n) { TSLocker lkr(lck); return c -= n; }
     template<class N> C operator *=(N n) { TSLocker lkr(lck); return c *= n; }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 Todd Richmond
+ * Copyright 2001-2016 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -394,7 +394,6 @@ int Dispatcher::onStart() {
     now = milliticks();
     while (!shutdown) {
 	uint count = 0;
-	DispatchSocket *ds = NULL;
 	DispatchTimer *dt = NULL;
 	SocketSet irset, iwset, orset, owset, oeset;
 	uint msec;
@@ -452,6 +451,7 @@ int Dispatcher::onStart() {
 	if (shutdown)
 	    break;
 	if (evtfd == -1) {
+	    DispatchSocket *ds = NULL;
 	    socket_t fd;
 
 	    for (u = 0; u < orset.size(); u++) {
@@ -713,6 +713,7 @@ void Dispatcher::wake(uint tasks, bool main) {
 	    tasks = wake >= tasks ? 0 : tasks - wake;
 	} else {
 	    bool b = workers == 0;
+
 	    lock.unlock();
 	    if (b || lifo.set()) {
 		lock.lock();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 Todd Richmond
+ * Copyright 2001-2016 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -138,9 +138,11 @@ usec_t microticks(void) {
 
 static uint rename_lock(const wchar *path) {
     uint hash = 0;
-    static volatile int init, init1;
+    static volatile int init;
 
     if (!init) {
+	static volatile int init1;
+
 	if (init1) {
 	    while (!init)
 		usleep(1);
@@ -608,10 +610,8 @@ int wlink(const wchar *from, const wchar *to) {
 	return ret;
     }
     rename_unlock(lck);
+    ZERO(sid);
     sid.dwStreamId = BACKUP_LINK;
-    sid.dwStreamAttributes = 0;
-    sid.dwStreamNameSize = 0;
-    sid.Size.HighPart = 0;
     sid.Size.LowPart = (sz + 1) * sizeof (wchar);
     out = (DWORD)((LPBYTE)&sid.cStreamName - (LPBYTE)&sid);
     if (!BackupWrite(hdl, (LPBYTE)&sid, out, &out, FALSE, FALSE, &lpContext)) {
@@ -663,8 +663,8 @@ int wopen(const wchar *path, int oflag, ...) {
 	va_end(ap);
     }
     (void)mode;
+    ZERO(sa);
     sa.nLength = sizeof (sa);
-    sa.lpSecurityDescriptor = NULL;
     sa.bInheritHandle = (oflag & O_NOINHERIT) ? FALSE : TRUE;
     if ((oflag & O_BINARY) == 0) {
 	if (oflag & O_TEXT || _fmode == O_TEXT)
@@ -884,13 +884,13 @@ static int dir_stat(const wchar *path, struct stat *buf) {
     buf->st_ino = buf->st_uid = buf->st_gid = 0;
     buf->st_nlink = 1;
     buf->st_rdev = buf->st_dev = 0;
-    buf->st_mode = (ushort)(fad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ?
-    S_IFDIR : S_IFREG);
+    buf->st_mode = (ushort)((fad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ?
+	S_IFDIR : S_IFREG);
     if (fad.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
 	buf->st_mode |= (S_IREAD + (S_IREAD >> 3) + (S_IREAD >> 6));
     else
-	buf->st_mode |= ((S_IREAD | S_IWRITE) + ((S_IREAD | S_IWRITE) >> 3)
-	+ ((S_IREAD | S_IWRITE) >> 6));
+	buf->st_mode |= ((S_IREAD | S_IWRITE) + ((S_IREAD | S_IWRITE) >> 3) +
+	    ((S_IREAD | S_IWRITE) >> 6));
 
     if (!FileTimeToLocalFileTime(&fad.ftLastWriteTime, &LocalFTime) ||
 	!FileTimeToSystemTime(&LocalFTime, &SystemTime))
@@ -961,10 +961,7 @@ int statvfs(const char *path, struct statvfs *buf) {
 }
 
 int wstatvfs(const wchar *path, struct statvfs *buf) {
-    ulong bytesPerSector;
-    ulong freeClusters;
-    ulong sectorsPerCluster;
-    ulong totalClusters;
+    ulong bytesPerSector, freeClusters, sectorsPerCluster, totalClusters;
     wchar *cp;
     int rc;
 
@@ -1050,13 +1047,13 @@ typedef struct {
 static transitiondate dststart = { -1, 0, 0L };
 static transitiondate dstend   = { -1, 0, 0L };
 
-
 static void cvtdate(int trantype, int datetype, int year, int month,
     int week, int dayofweek, int date, int hour, int min, int sec, int msec) {
     int yearday;
-    int monthdow;
     
     if (datetype == 1) {
+	int monthdow;
+
 	yearday = 1 + (IS_LEAP_YEAR(year) ? _lpdays[month - 1] :
 	    _days[month - 1]);
 	monthdow = (yearday + ((year - 70) * 365) + ((year - 1) >> 2) -
@@ -1065,10 +1062,9 @@ static void cvtdate(int trantype, int datetype, int year, int month,
 	    yearday += (dayofweek - monthdow) + (week - 1) * 7;
 	else
 	    yearday += (dayofweek - monthdow) + week * 7;
-	if ((week == 5) &&
-	    (yearday > (IS_LEAP_YEAR(year) ? _lpdays[month] : _days[month]))) {
-		yearday -= 7;
-	}
+	if ((week == 5) && (yearday > (IS_LEAP_YEAR(year) ? _lpdays[month] :
+	    _days[month])))
+	    yearday -= 7;
     } else {
 	yearday = IS_LEAP_YEAR(year) ? _lpdays[month - 1] : _days[month - 1];
 	yearday += date;
@@ -1177,7 +1173,7 @@ static ulong local_to_time_t(const SYSTEMTIME *stm) {
 	24 + stm->wHour;
     tmptim = (tmptim * 60UL + stm->wMinute) * 60UL + stm->wSecond;
     tmptim += _timezone;
-    /* Fill in enough fields of tb for _isindst() */
+    ZERO(tb);
     tb.tm_yday = tmpdays;
     tb.tm_year = year;
     tb.tm_mon  = stm->wMonth - 1;
@@ -1188,12 +1184,12 @@ static ulong local_to_time_t(const SYSTEMTIME *stm) {
     return tmptim;
 }
 
+#ifdef _DLL
+
 struct errentry {
     ulong oscode;			/* OS return value */
     int errnocode;			/* System V error code */
 };
-
-#ifdef _DLL
 
 static struct errentry errtable[] = {
     {  ERROR_INVALID_FUNCTION,       EINVAL    },  /* 1 */
@@ -1259,12 +1255,12 @@ static struct errentry errtable[] = {
 void __dosmaperr(ulong oserrno) {
     int i;
 
-    _doserrno = oserrno;        /* set _doserrno */
+    _doserrno = oserrno;
     /* check the table for the OS error code */
     for (i = 0; i < ERRTABLESIZE; ++i) {
 	if (oserrno == errtable[i].oscode) {
-		errno = errtable[i].errnocode;
-		return;
+	    errno = errtable[i].errnocode;
+	    return;
 	}
     }
     /* The error code wasn't in the table.  We check for a range of */

@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 Todd Richmond
+ * Copyright 2001-2016 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -153,7 +153,7 @@ void HTTPServerSocket::readpost() {
 	erase();
 	return;
     }
-    if (msg != DispatchClose && room < left && (!delpost || postsz ==
+    if (room < left && (!delpost || postsz ==
 	(uint)-1)) {
 	char *old = postdata;
 
@@ -164,14 +164,13 @@ void HTTPServerSocket::readpost() {
 	    in = (uint)postsz;
 	}
 	postdata = new char[in + 1];
-	memcpy(postdata, old, postin);
+	memcpy(postdata, old, postin + 1);
 	if (delpost)
 	    delete [] old;
 	else
 	    delpost = true;
     }
-    if (msg == DispatchClose || (in = (uint)read(postdata + postin, left)) ==
-	(uint)-1) {
+    if ((in = (uint)read(postdata + postin, left)) == (uint)-1) {
 	if (postsz == (uint)-1) {
 	    left = in = 0;
 	    postsz = postin;
@@ -180,6 +179,8 @@ void HTTPServerSocket::readpost() {
 	    erase();
 	    return;
 	}
+    } else {
+	postdata[postin + in] = '\0';
     }
     if (!delpost)
 	datasz += in;

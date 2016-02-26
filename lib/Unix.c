@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 Todd Richmond
+ * Copyright 2001-2016 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -110,6 +110,7 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test) {
     struct flock fl;
 
+    ZERO(fl);
     fl.l_type = type;
     fl.l_whence = whence;
     fl.l_start = start;

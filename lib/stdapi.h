@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 Todd Richmond
+ * Copyright 2001-2016 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -604,20 +604,20 @@ typedef wchar tuchar;
 #define texecvp		execvp
 #define tgetcwd		getcwd
 #define tgetenv		getenv
-#define istalnum	isalnum
-#define istalpha	isalpha
-#define istblank	isblank
-#define istcntrl	iscntrl
-#define istdigit	isdigit
-#define istgraph	isgraph
-#define istlower	islower
-#define istprint	isprint
-#define istpunct	ispunct
-#define istspace	isspace
-#define istupper	isupper
-#define istxdigit	isxdigit
-#define totupper	toupper
-#define totlower	tolower
+#define istalnum(c)	isalnum((uchar)c)
+#define istalpha(c)	isalpha((uchar)c)
+#define istblank(c)	isblank((uchar)c)
+#define istcntrl(c)	iscntrl((uchar)c)
+#define istdigit(c)	isdigit((uchar)c)
+#define istgraph(c)	isgraph((uchar)c)
+#define istlower(c)	islower((uchar)c)
+#define istprint(c)	isprint((uchar)c)
+#define istpunct(c)	ispunct((uchar)c)
+#define istspace(c)	isspace((uchar)c)
+#define istupper(c)	isupper((uchar)c)
+#define istxdigit(c)	isxdigit((uchar)c)
+#define totupper(c)	toupper((uchar)c)
+#define totlower(c)	tolower((uchar)c)
 #define tmain		main
 
 #define tfprintf	fprintf

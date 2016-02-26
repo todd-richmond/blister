@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 Todd Richmond
+ * Copyright 2001-2016 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -76,7 +76,8 @@ protected:
     void scan(char *buf, int len, bool append = false);
     const char *find(const attrmap &amap, const char *name) const {
 	attrmap::const_iterator it = amap.find(name);
-	return it == amap.end() ? NULL : (*it).second;
+
+	return it == amap.end() ? (const char *)NULL : it->second;
     }
     virtual void exec(void);
     DSP_DECLARE(HTTPServerSocket, parse);

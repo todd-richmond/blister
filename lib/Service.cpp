@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 Todd Richmond
+ * Copyright 2001-2016 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -385,7 +385,7 @@ bool Service::install(const tchar *file, const tchar *desc,
     const tchar * const * depend, bool manual) {
     tchar buf[PATH_MAX];
     size_t i;
-    tchar *p = NULL, *pp;
+    tchar *p = NULL;
     tstring root, prog;
 
     if (uninstall())
@@ -407,6 +407,8 @@ bool Service::install(const tchar *file, const tchar *desc,
 	for (i = 0; depend[i]; i++)
 	    sz += tstrlen(depend[i]) + 1;
 	if ((p = new tchar[sz + 1]) != NULL) {
+	    tchar *pp;
+
 	    for (i = 0, pp = p; depend[i]; i++) {
 		tstrcpy(pp, depend[i]);
 		pp += tstrlen(pp);
