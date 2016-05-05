@@ -74,7 +74,7 @@ typedef pthread_t thread_id_t;
 #define THREAD_ID()		pthread_self()
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 #define THREAD_BARRIER()	asm volatile("" ::: "memory")
-#define THREAD_PAUSE()		asm volatile("pause" ::: "memory")
+#define THREAD_PAUSE()  	asm volatile("pause" ::: "memory")
 #else
 #define NO_THREAD_BARRIER
 #define THREAD_PAUSE()
@@ -108,8 +108,8 @@ typedef volatile _Atomic_word atomic_t;
 inline void atomic_clr(atomic_t &lck) {
     atomic_t r;
 
-    __asm__ __volatile__
-	("xchgl %0, %1"
+    asm volatile(
+	"xchgl %0, %1"
 	: "=r" (r), "=m" (lck)
 	: "0" (0), "m" (lck)
 	: "memory");
@@ -118,8 +118,8 @@ inline void atomic_clr(atomic_t &lck) {
 inline atomic_t atomic_lck(atomic_t &lck) {
     atomic_t r;
 
-    __asm__ __volatile__
-	("xchgl %0, %1"
+    asm volatile(
+	"xchgl %0, %1"
 	: "=r" (r), "=m" (lck)
 	: "0" (1), "m" (lck)
 	: "memory");
@@ -143,7 +143,7 @@ typedef volatile int atomic_t;
 #define atomic_bar()		__sync_synchronize()
 // sync_lock_release() supposedly fails on some older x64 procs?
 #define atomic_clr(i)		__sync_lock_release(&i)
-//#define atomic_clr(i)		__sync_lock_test_and_set(&i, 0)
+// #define atomic_clr(i)	__sync_lock_test_and_set(&i, 0)
 #define atomic_dec(i)		__sync_fetch_and_add(&i, -1)
 #define atomic_exc(i, j)	__sync_fetch_exchange_not_implemented(&i, j)
 #define atomic_inc(i)		__sync_fetch_and_add(&i, 1)
@@ -182,8 +182,10 @@ template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
     &C::unlock>
 class LockerTemplate: nocopy {
 public:
-    LockerTemplate(C &lock, bool lockit = true):
-	lck(lock), locked(lockit) { if (lockit) (lck.*LOCK)(); }
+    LockerTemplate(C &lock, bool lockit = true): lck(lock), locked(lockit) {
+	if (lockit)
+	    (lck.*LOCK)();
+    }
     ~LockerTemplate() { if (locked) (lck.*UNLOCK)(); }
 
     void lock(void) { if (!locked) { locked = true; (lck.*LOCK)(); } }
@@ -253,7 +255,7 @@ public:
     ThreadLocal() { tls_init(key); }
     ~ThreadLocal() { tls_free(key); }
 
-    C operator =(C c) const { set(c); return c;  }
+    C operator =(C c) const { set(c); return c; }
     operator bool() const { return tls_get(key) != NULL; }
 
     C get(void) const { return (C)tls_get(key); }
@@ -317,7 +319,7 @@ protected:
 
 #else
 
-#define SPINLOCK_YIELD    1 << 6
+#define SPINLOCK_YIELD	1 << 6
 
 class SpinLock: nocopy {
 public:
@@ -357,7 +359,7 @@ typedef FastLockerTemplate<SpinLock> FastSpinLocker;
 typedef LockerTemplate<SpinLock> SpinLocker;
 
 #ifdef _WIN32
-#define msleep(msec)   Sleep(msec)
+#define msleep(msec)	Sleep(msec)
 
 class Lock: nocopy {
 public:
@@ -779,7 +781,7 @@ public:
     void broadcast(void) { pthread_cond_broadcast(&cv); }
     void set(uint count = 1) { while (count--) pthread_cond_signal(&cv); }
     bool wait(ulong msec = INFINITE) {
-    	if (msec == INFINITE) {
+	if (msec == INFINITE) {
 	    return pthread_cond_wait(&cv, lock) == 0;
 	} else {
 	    timespec ts;
