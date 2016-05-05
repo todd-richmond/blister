@@ -26,9 +26,9 @@
 template<class C>
 class faststreambuf: public streambuf {
 public:
-    faststreambuf(uint sz = 4096, char *p = NULL): alloced(false), buf(NULL),
-	bufsz(0), fd(-1) { setbuf(p, sz); }
-    faststreambuf(C &c, uint sz = 4096, char *p = NULL): alloced(false),
+    faststreambuf(streamsize sz = 4096, char *p = NULL): alloced(false),
+	buf(NULL), bufsz(0), fd(-1) { setbuf(p, sz); }
+    faststreambuf(C &c, streamsize sz = 4096, char *p = NULL): alloced(false),
 	buf(NULL), bufsz(0), fd(c) { setbuf(p, sz); }
     ~faststreambuf() { if (alloced) delete [] buf; }
 
@@ -187,7 +187,7 @@ public:
 		if ((in = fd.read(buf, (uint)bufsz)) <= 0) {
 		    return size - sz;
 		} else if (in < sz) {
-		    memcpy(p, buf, in);
+		    memcpy(p, buf, (size_t)in);
 		    p += in;
 		    sz -= in;
 		} else {

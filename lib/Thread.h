@@ -323,7 +323,7 @@ protected:
 
 class SpinLock: nocopy {
 public:
-    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1), lck(0) {}
+    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U), lck(0) {}
 
     void lock(void) {
 	while (atomic_lck(lck)) {
@@ -437,7 +437,7 @@ public:
 	hdl = NULL;
 	return h == NULL || CloseHandle(h) != 0;
     }
-    bool set(uint cnt = 1) { return ReleaseSemaphore(hdl, cnt, NULL) != 0; }
+    bool set(uint cnt = 1) { return ReleaseSemaphore(hdl, (LONG)cnt, NULL) != 0; }
     bool trywait(void) { return WaitForSingleObject(hdl, 0) == WAIT_OBJECT_0; }
     bool wait(ulong msec = INFINITE) {
 	return WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0;
@@ -448,7 +448,7 @@ protected:
 
     bool _open(const tchar *name, uint init, bool exclusive = false) {
 	close();
-	hdl = CreateSemaphore(NULL, init, LONG_MAX, name);
+	hdl = CreateSemaphore(NULL, (LONG)init, LONG_MAX, name);
 	if (hdl == NULL && !exclusive)
 	    hdl = OpenSemaphore(SEMAPHORE_ALL_ACCESS, 0, name);
 	return hdl != NULL;
@@ -909,7 +909,7 @@ private:
 
 class RefCount: nocopy {
 public:
-    explicit RefCount(uint init = 1): cnt(init) {}
+    explicit RefCount(uint init = 1): cnt((int)init) {}
 
     operator bool(void) const { return referenced(); }
     bool referenced(void) const { return atomic_get(cnt) != 0; }

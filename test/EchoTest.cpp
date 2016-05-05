@@ -222,7 +222,7 @@ void EchoTest::EchoServerSocket::input() {
 	readable(input);
     } else if (in == 1 && tmp[0] == '\0') {
 	erase();
-    } else if ((out = write(tmp, in)) < 0) {
+    } else if ((out = write(tmp, (uint)in)) < 0) {
 	dloge(T("server write failed:"), errstr());
 	erase();
     } else if (in == out) {
@@ -231,8 +231,8 @@ void EchoTest::EchoServerSocket::input() {
     } else {
 	dlogd(T("server partial write"), out);
 	delete [] buf;
-	buf = new char[in - out];
-	memcpy(buf, tmp + out, in - out);
+	buf = new char[(size_t)(in - out)];
+	memcpy(buf, tmp + out, (size_t)(in - out));
 	out = 0;
 	writeable(output);
     }
@@ -247,7 +247,7 @@ void EchoTest::EchoServerSocket::output() {
 	erase();
 	return;
     }
-    if ((len = write((char *)buf + out, in - out)) < 0) {
+    if ((len = write((char *)buf + out, (uint)(in - out))) < 0) {
 	dloge(T("server write failed:"), errstr());
 	erase();
 	return;
@@ -374,8 +374,8 @@ int tmain(int argc, tchar *argv[]) {
 	Thread::MainThread.priority(10);
 	last = microticks();
 	do {
-	    ops = errs = 0;
-	    usecs = 0;
+	    ops = errs = 0U;
+	    usecs = 0U;
 	    msleep(1000);
 	    now = microticks();
 	    tcout << ((uint64)(ops + errs) * 1000000 / (now - last)) <<

@@ -19,9 +19,9 @@
 #define Socket_h
 
 #ifdef _WIN32
-#include <winsock2.h>
 #pragma warning(push)
-#pragma warning(disable: 6386)
+#pragma warning(disable: 4365 6386)
+#include <winsock2.h>
 #include <ws2tcpip.h>
 #pragma warning(pop)
 #pragma warning(disable: 4097)
@@ -488,9 +488,9 @@ typedef faststreambuf<Socket> socketbuf;
 
 class isockstream : public istream {
 public:
-    isockstream(int sz = SOCK_BUFSZ, char *p = NULL):
+    isockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	istream(NULL), sb(sz, p) { ios::init(&sb); }
-    isockstream(Socket &s, int sz = SOCK_BUFSZ, char *p = NULL):
+    isockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	istream(NULL), sb(s, sz, p) { ios::init(&sb); }
     virtual ~isockstream() {}
 
@@ -506,9 +506,9 @@ private:
 
 class osockstream: public ostream {
 public:
-    osockstream(int sz = SOCK_BUFSZ, char *p = NULL):
+    osockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	ostream(NULL), sb(sz, p) { ios::init(&sb); }
-    osockstream(Socket & s, int sz = SOCK_BUFSZ, char *p = NULL):
+    osockstream(Socket & s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	ostream(NULL), sb(s, sz, p) { ios::init(&sb); }
     virtual ~osockstream() {}
 
@@ -528,9 +528,9 @@ private:
 
 class sockstream: public iostream {
 public:
-    sockstream(int sz = SOCK_BUFSZ, char *p = NULL):
+    sockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	iostream(NULL), sb(sz, p) { ios::init(&sb); }
-    sockstream(Socket &s, int sz = SOCK_BUFSZ, char *p = NULL):
+    sockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	iostream(NULL), sb(s, sz, p) { ios::init(&sb); }
     virtual ~sockstream() {}
 
