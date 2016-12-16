@@ -332,7 +332,7 @@ int Dispatcher::onStart() {
     // ensure kqueue functions properly 
     EV_SET(&evts[0], -1, EVFILT_READ, EV_ADD, 0, 0, NULL);
     if (kevent(evtfd, &evts[0], 1, &evts[0], 1, NULL) != 1 || evts[0].ident !=
-	(uintptr_t)-1 || evts[0].flags != EV_ERROR) {
+	(uintptr_t)-1 || !(evts[0].flags & EV_ERROR)) {
 	close(evtfd);
 	evtfd = -1;
     }
