@@ -23,6 +23,7 @@
 #ifdef __APPLE__
 #include <mach/mach_time.h>
 
+#ifdef APPLE_NO_CLOCK_GETTIME
 int clock_gettime(int id, struct timespec *ts) {
     if (id == CLOCK_MONOTONIC) {
 	uint64_t t = mach_absolute_time();
@@ -45,9 +46,15 @@ int clock_gettime(int id, struct timespec *ts) {
     return -1;
 }
 #endif
+#endif
 
 usec_t microticks(void) {
-#ifdef __APPLE__
+#ifdef CLOCK_BOOTTIME
+    struct timespec ts;
+
+    clock_gettime(CLOCK_BOOTTIME, &ts);
+    return (usec_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+#elif defined(__APPLE__)
     static struct mach_timebase_info mti;
 
     if (!mti.denom) {
@@ -55,11 +62,6 @@ usec_t microticks(void) {
 	mti.denom *= 1000;
     }
     return mach_absolute_time() * mti.numer / mti.denom;
-#elif defined(CLOCK_BOOTTIME)
-    struct timespec ts;
-
-    clock_gettime(CLOCK_BOOTTIME, &ts);
-    return (usec_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 #else
     usec_t diff, now, save;
     struct timeval tv;

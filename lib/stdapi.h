@@ -412,15 +412,18 @@ typedef unsigned long ulong;
 #endif
 
 #ifdef __APPLE__
-#ifndef PATH_MAX
-#define PATH_MAX	1024
-#endif
+#ifndef CLOCK_REALTIME
+#define APPLE_NO_CLOCK_GETTIME
 #define CLOCK_REALTIME	0
 #define CLOCK_MONOTONIC	1
 
 EXTERNC
 int clock_gettime(int, struct timespec *ts);
 EXTERNC_
+#endif
+#ifndef PATH_MAX
+#define PATH_MAX	1024
+#endif
 #endif
 
 #ifdef CLOCK_MONOTONIC_FAST
