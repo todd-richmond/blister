@@ -1153,15 +1153,14 @@ DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &sa,
 
 void DispatchListenSocket::connection() {
     Socket s;
-
-    if (msg != DispatchClose && accept(s)) {
-	relisten();
+    bool b = accept(s);
+ 
+    relisten();
+    if (b) {
 #ifdef __linux__
-    	s.blocking(false);
+	s.blocking(false);
 #endif
 	s.movehigh();
 	onAccept(s);
-    } else {
-	relisten();
     }
 }
