@@ -188,7 +188,7 @@ public:
 	return *this;
     }
     void flush(void) { Locker lkr(lck); _flush(); }
-    void logv(Level l, ...);
+    void logv(int l, ...);
     void roll(void) { Locker lkr(lck); ffd.roll(); }
     void set(const Config &cfg, const tchar *sect = T("log"));
     bool setids(uid_t uid, gid_t gid) const;

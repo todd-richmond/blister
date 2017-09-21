@@ -550,16 +550,16 @@ void Log::format(const tchar *s) {
 #endif
 }
 
-void Log::logv(Level l, ...) {
-    if (l > lvl)
-	return;
-
+void Log::logv(int il, ...) {
+    Level l((Level)il);
     const tchar *p;
     bool space;
     Tlsdata &tlsd(*tls);
     va_list vl;
 
-    va_start(vl, l);
+    if (l > lvl)
+	return;
+    va_start(vl, il);
     space = tlsd.space;
     tlsd.space = false;
     while ((p = va_arg(vl, const tchar *)) != NULL) {
