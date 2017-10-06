@@ -130,7 +130,9 @@ bool Dispatcher::exec() {
 	DispatchObj::Group *group;
 	DispatchObj *obj = rlist.pop_front();
 
-	if (obj->flags & DSP_Freed) {
+	if (!obj) {
+	    continue;
+	} if (obj->flags & DSP_Freed) {
 	    lock.unlock();
 	    delete obj;
 	    lock.lock();

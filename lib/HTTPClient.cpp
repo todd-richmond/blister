@@ -283,7 +283,8 @@ loop:
 	    !tstrnicmp(resp, keep_alive, sizeof (keep_alive) - 1))
 	    keep = true;
     }
-    if ((resp = response(contentlen)) == NULL)
+    resp = response(contentlen);
+    if (resp == NULL)
 	ressz = (ulong)-1;
     else
 	ressz = tstrtoul(resp, NULL, 10);

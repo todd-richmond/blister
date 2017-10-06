@@ -1,5 +1,5 @@
 AC_PREREQ([2.63])
-AC_INIT([Blister],[1.3])
+AC_INIT([Blister],[1.4])
 AC_CONFIG_SRCDIR([lib/stdapi.h])
 AM_INIT_AUTOMAKE([-Wall -Werror dist-zip foreign no-define no-installinfo no-installman ])
 
