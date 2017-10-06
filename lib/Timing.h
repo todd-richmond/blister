@@ -82,7 +82,7 @@ public:
 
     void add(const tchar *key, timing_t diff);
     void clear(void);
-    const tstring data(bool byname = false, uint columns = TIMINGCOLUMNS) const;
+    const tstring data(bool sort_key = false, uint columns = TIMINGCOLUMNS) const;
     void erase(const tchar *key);
     void record(const tchar *key = NULL);
     timing_t record(const tchar *key, timing_t start) {
@@ -99,11 +99,11 @@ public:
 
 private:
     struct Stats {
-	explicit Stats(const tchar *n): cnt(0), name(n), tot(0) { ZERO(cnts); }
+	explicit Stats(const tchar *k): cnt(0), key(k), tot(0) { ZERO(cnts); }
 
 	ulong cnt;
 	ulong cnts[TIMINGSLOTS];
-	const tchar *name;
+	const tchar *key;
 	timing_t tot;
     };
 
@@ -120,11 +120,11 @@ private:
     timingmap tmap;
 
     static const tchar *format(timing_t tot, tchar *buf);
-    static bool less_name(const Stats *a, const Stats *b) {
-	return stringless(a->name, b->name);
+    static bool less_key(const Stats *a, const Stats *b) {
+	return stringless(a->key, b->key);
     }
     static bool greater_time(const Stats *a, const Stats *b) {
-	return a->tot == b->tot ? stringless(a->name, b->name) : a->tot >
+	return a->tot == b->tot ? stringless(a->key, b->key) : a->tot >
 	    b->tot;
     }
 };

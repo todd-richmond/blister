@@ -29,7 +29,9 @@ static Timing &_dtiming(void) {
 Timing &dtiming(_dtiming());
 
 void Timing::add(const tchar *key, timing_t diff) {
+    timingmap::const_iterator it;
     uint slot;
+    Stats *stats;
     static timing_t limits[TIMINGSLOTS - 1] = {
 	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
     };
@@ -38,22 +40,26 @@ void Timing::add(const tchar *key, timing_t diff) {
 	if (diff <= limits[slot])
 	    break;
     }
-
-#ifndef __clang_analyzer__
-    FastSpinLocker lkr(lck);
-    timingmap::const_iterator it = tmap.find(key);
-    Stats *stats;
-
-    if (it == tmap.end()) {
+    lck.lock();
+    if ((it = tmap.find(key)) == tmap.end()) {
+	lck.unlock();
 	key = tstrdup(key);
-	stats = tmap[key] = new Stats(key);
+	stats = new Stats(key);
+	lck.lock();
+	if ((it = tmap.find(key)) == tmap.end()) {
+	    tmap[key] = stats;
+	} else {
+	    delete stats;
+	    free((char *)key);
+	    stats = it->second;
+	}
     } else {
 	stats = it->second;
     }
-    stats->cnt++;
-    stats->cnts[slot]++;
+    ++stats->cnt;
+    ++stats->cnts[slot];
     stats->tot += diff;
-#endif
+    lck.unlock();
 }
 
 void Timing::clear() {
@@ -61,15 +67,15 @@ void Timing::clear() {
     FastSpinLocker lkr(lck);
 
     while ((it = tmap.begin()) != tmap.end()) {
-	const tchar *p = it->first;
+	const tchar *key = it->first;
 
 	delete it->second;
 	tmap.erase(it);
-	free((tchar *)p);
+	free((tchar *)key);
     }
 }
 
-const tstring Timing::data(bool sortbyname, uint columns) const {
+const tstring Timing::data(bool sort_key, uint columns) const {
     timingmap::const_iterator it;
     uint last = 0, start = 0;
     SpinLocker lkr(lck);
@@ -81,7 +87,7 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 
     for (it = tmap.begin(); it != tmap.end(); ++it)
 	sorted.push_back(it->second);
-    sort(sorted.begin(), sorted.end(), sortbyname ? less_name : greater_time);
+    sort(sorted.begin(), sorted.end(), sort_key ? less_key : greater_time);
     for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
 	stats = *sit;
 	for (u = TIMINGSLOTS - 1; u > last; u--) {
@@ -128,15 +134,15 @@ const tstring Timing::data(bool sortbyname, uint columns) const {
 	    if (tot) {
 		tchar abuf[16];
 
-		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->name, format(tot,
+		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key, format(tot,
 		    sbuf), cbuf, format(tot / stats->cnt, abuf));
 	    } else {
-		tsprintf(buf, T("%-35s%6s"), stats->name, cbuf);
+		tsprintf(buf, T("%-35s%6s"), stats->key, cbuf);
 	    }
 	} else {
 	    if (!s.empty())
 		s += (tchar)',';
-	    tsprintf(buf, T("%s,%s,%lu"), stats->name, format(tot, sbuf),
+	    tsprintf(buf, T("%s,%s,%lu"), stats->key, format(tot, sbuf),
 		stats->cnt);
 	}
 	s += buf;
@@ -169,11 +175,10 @@ void Timing::erase(const tchar *key) {
     timingmap::iterator it = tmap.find(key);
 
     if (it != tmap.end()) {
-	const tchar *p = it->first;
-
+	key = it->first;
 	delete it->second;
 	tmap.erase(it);
-	free((tchar *)p);
+	free((tchar *)key);
     }
 }
 
@@ -256,4 +261,3 @@ void Timing::stop(uint lvl) {
 	tlsd.starts.pop_back();
     }
 }
-
