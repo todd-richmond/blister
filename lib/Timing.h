@@ -99,8 +99,11 @@ public:
 
 private:
     struct Stats {
-	explicit Stats(const tchar *k): cnt(0), key(k), tot(0) { ZERO(cnts); }
-
+	explicit Stats(const tchar *k): cnt(0), key(tstrdup(k)), tot(0) {
+	    ZERO(cnts);
+	}
+	~Stats() { free((char *)key); }
+	
 	ulong cnt;
 	ulong cnts[TIMINGSLOTS];
 	const tchar *key;

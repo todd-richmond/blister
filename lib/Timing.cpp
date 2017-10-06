@@ -43,14 +43,12 @@ void Timing::add(const tchar *key, timing_t diff) {
     lck.lock();
     if ((it = tmap.find(key)) == tmap.end()) {
 	lck.unlock();
-	key = tstrdup(key);
 	stats = new Stats(key);
 	lck.lock();
 	if ((it = tmap.find(key)) == tmap.end()) {
 	    tmap[key] = stats;
 	} else {
 	    delete stats;
-	    free((char *)key);
 	    stats = it->second;
 	}
     } else {
@@ -67,11 +65,10 @@ void Timing::clear() {
     FastSpinLocker lkr(lck);
 
     while ((it = tmap.begin()) != tmap.end()) {
-	const tchar *key = it->first;
+	Stats *stats = it->second;
 
-	delete it->second;
 	tmap.erase(it);
-	free((tchar *)key);
+	delete stats;
     }
 }
 
@@ -175,10 +172,10 @@ void Timing::erase(const tchar *key) {
     timingmap::iterator it = tmap.find(key);
 
     if (it != tmap.end()) {
-	key = it->first;
-	delete it->second;
+	Stats *stats = it->second;
+
 	tmap.erase(it);
-	free((tchar *)key);
+	delete stats;
     }
 }
 
