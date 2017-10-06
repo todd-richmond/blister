@@ -46,7 +46,7 @@ void Timing::add(const tchar *key, timing_t diff) {
 	stats = new Stats(key);
 	lck.lock();
 	if ((it = tmap.find(key)) == tmap.end()) {
-	    tmap[key] = stats;
+	    tmap[stats->key] = stats;
 	} else {
 	    delete stats;
 	    stats = it->second;
