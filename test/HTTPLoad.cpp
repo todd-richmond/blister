@@ -575,14 +575,14 @@ int HTTPLoad::onStart(void) {
 }
 
 inline tstring format(ulong u) {
-    tchar buf[16];
+    tchar buf[20];
 
     tsprintf(buf, T(" %7lu"), u);
     return buf;
 }
 
 inline tstring format(float f) {
-    tchar buf[16];
+    tchar buf[20];
 
     if (f - 0.0 < FLT_EPSILON)
 	tstrcpy(buf, T("       0"));

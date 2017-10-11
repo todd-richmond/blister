@@ -380,7 +380,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	last_sec = now_sec;
 	if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
 	    int diff;
-	    tchar gmtoff[8];
+	    tchar gmtoff[16];
 	    struct tm tmbuf2, *tm2;
 
 	    memcpy(&tmbuf, tm, sizeof (tmbuf));
