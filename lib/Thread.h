@@ -27,7 +27,7 @@
 typedef HANDLE thread_t;
 typedef DWORD thread_id_t;
 
-#define THREAD_EQUAL(x, y)	(x == y)
+#define THREAD_EQUAL(x, y)	((x) == (y))
 #define THREAD_FUNC		uint __stdcall
 #define THREAD_HDL()		GetCurrentThread()
 #define THREAD_ID()		GetCurrentThreadId()
@@ -170,7 +170,7 @@ typedef pthread_key_t tlskey_t;
 #endif
 
 #define THREAD_SELF()		THREAD_ID()
-#define THREAD_ISSELF(x)	(x && THREAD_EQUAL(x, THREAD_SELF()))
+#define THREAD_ISSELF(x)	((x) && THREAD_EQUAL(x, THREAD_SELF()))
 
 #define atomic_get(i)		atomic_add(i, 0)
 

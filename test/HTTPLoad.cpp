@@ -33,7 +33,6 @@
 
 typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
-static const tchar *default_host = T("localhost:80");
 static volatile bool qflag = false, rflag = false;
 
 class HTTPLoad: public Thread {
@@ -230,7 +229,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	remain *= (bodycnt - startfile);
 	lock.unlock();
     }
-    vars[T("host")] = host ? host : default_host;
+    vars[T("host")] = host;
     while (is.getline(buf, sizeof (buf) / sizeof (tchar))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
@@ -242,6 +241,8 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	}
 	len = (int)tstrlen(buf);
 	cmd = tstrtok(buf, T(" \t"));
+	if (!cmd)
+	    continue;
 	if (!tstricmp(cmd, T("hdr")) || !tstricmp(cmd, T("var"))) {
 	    tchar *attr, *val;
 
@@ -285,14 +286,11 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	} else if (!tstricmp(cmd, T("sleep"))) {
 	    arg = tstrtok(NULL, T(" \t"));
 	} else {
-	    tcerr << T("invalid sleep: line ") << line << endl;
+	    tcerr << T("invalid cmd: line ") << line << endl;
 	    return false;
 	}
-	arg = cmd + tstrlen(cmd);
-	if (arg - buf == len)
+	if (arg && arg - buf == len)
 	    arg = NULL;
-	else
-	    arg++;
 	if (!arg && !bodycnt &&
 	    (!tstricmp(cmd, T("body")) || !tstricmp(cmd, T("data")))) {
 	    tcerr << T("missing text for ") << cmd << endl;
@@ -462,6 +460,7 @@ int HTTPLoad::onStart(void) {
 		    hc.header((*ait).first, (*ait).second);
 	    }
 	    if (!ret) {
+		tstrcpy(buf, cmd->url.fullpath().c_str());
 	    } else if (!tstricmp(cmd->cmd.c_str(), T("get"))) {
 		tstrcpy(buf, cmd->url.relpath().c_str());
 		expand(buf, lvars);
@@ -704,7 +703,7 @@ int tmain(int argc, tchar *argv[]) {
     bool debug = false;
     int filecnt = 0;
     tofstream fs;
-    const tchar *host = NULL;
+    const tchar *host = T("localhost:80");
     int i;
     bool ka = false;
     usec_t last;
@@ -779,10 +778,9 @@ int tmain(int argc, tchar *argv[]) {
     if (!HTTPLoad::init(host, threads, maxuser, ruser, debug, ka, timeout,
 	loops, wld, bodyfile, cachesz * 1024 * 1024, allfiles, filecnt))
 	return -1;
-    dlog << Log::Info << T("test ") << (host ? host : default_host) << ' ' <<
-	wld << T(" (") << threads << T(" thread") << (threads == 1 ? T("") :
-	T("s")) << T(", ") << loops << T(" loop") << (loops == 1 ? T("") :
-	T("s")) << T(")") << endlog;
+    dlog << Log::Info << T("test ") << host << ' ' << wld << T(" (") <<
+	threads << T(" thread") << (threads == 1 ? T("") : T("s")) << T(", ") <<
+	loops << T(" loop") << (loops == 1 ? T("") : T("s")) << ')' << endlog;
     for (i = 0; i < threads; i++) {
 	thread = new HTTPLoad;
 	thread->start(32 * 1024);

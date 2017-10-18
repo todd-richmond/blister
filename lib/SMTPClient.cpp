@@ -82,7 +82,7 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	if (ret && (ret = base64encode(pass, passlen, uubuf, uusz)) == true) {
 	    while (isspace(uubuf[uusz - 1]))
 		uubuf[--uusz] = '\0';
-	    ret = ret && cmd(achartotchar(uubuf), NULL, 235);
+	    ret = cmd(achartotchar(uubuf), NULL, 235);
 	    delete [] uubuf;
 	}
     }

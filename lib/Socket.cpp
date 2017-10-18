@@ -48,7 +48,7 @@ const void *Sockaddr::address(void) const {
     else if (family() == AF_INET6)
 	return &addr.sa6.sin6_addr;
     else
-	return NULL;
+	return &addr.sa;
 }
 
 const tstring &Sockaddr::host(void) const {
@@ -193,8 +193,8 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 
 bool Sockaddr::set(const hostent *h) {
     ZERO(addr);
-    memcpy((void *)address(), h->h_addr, h->h_length);
     family(h->h_addrtype);
+    memcpy((void *)address(), h->h_addr, h->h_length);
     name = achartotstring(h->h_name);
     return true;
 }
@@ -205,7 +205,7 @@ bool Sockaddr::set(const sockaddr &sa) {
     else if (sa.sa_family == AF_INET6)
 	addr.sa6 = (const sockaddr_in6 &)sa;
     else
-	return false;
+	addr.sa = sa;
     return true;
 }
 

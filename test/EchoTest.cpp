@@ -275,13 +275,15 @@ void EchoTest::connect(const Sockaddr &addr, uint count, ulong delay, ulong tmt,
 bool EchoTest::listen(const tchar *host, ulong timeout) {
     EchoListenSocket *els = new EchoListenSocket(*this, timeout);
 
-    if (!els->listen(host)) {
+    if (els->listen(host)) {
+	els->detach();
+	return true;
+    } else {
 	dlog << Log::Err << T("mod=") << NAME << T(" cmd=listen addr=") <<
 	    els->address().str() << ' ' << tstrerror(els->err()) << endlog;
 	delete els;
 	return false;
     }
-    return true;
 }
 
 static void signal_handler(int) { qflag = true; }

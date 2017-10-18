@@ -132,7 +132,7 @@ int tmain(int argc, tchar *argv[]) {
 		ifs.open(tchartoachar(argv[i]));
 		if (!ifs.good()) {
 		    tcerr<< T("unable to open ") << argv[i] << endl;
-		    break;
+		    return 1;
 		}
 	    }
 	} else if (!tstricmp(argv[i], T("-k")) || !tstricmp(argv[i],

@@ -242,6 +242,8 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 	}
 	len = (int)tstrlen(buf);
 	cmt = tstrtok(buf, T(" \t"));
+	if (!cmt)
+	    continue;
 	if (*cmt == '*') {
 	    cmt++;
 	    if ((cmd = tstrtok(NULL, T(" \t"))) == NULL) {
@@ -440,8 +442,12 @@ int SMTPLoad::onStart(void) {
 		tstring auth;
 
 		p = tstrchr(buf, ' ');
-		auth.assign(buf, p - buf);
-		ret = sc.auth(auth.c_str(), p + 1);
+		if (p) {
+		    auth.assign(buf, p - buf);
+		    ret = sc.auth(auth.c_str(), p + 1);
+		} else {
+		    ret = false;
+		}
 	    } else if (cmd->cmd == T("ehlo")) {
 		ret = sc.ehlo(buf);
 	    } else if (cmd->cmd == T("helo")) {
@@ -655,7 +661,7 @@ int tmain(int argc, tchar *argv[]) {
     bool allfiles = false;
     const tchar *bodyfile = NULL;
     ulong cachesz = 64;
-    const tchar *host = NULL;
+    const tchar *host = default_host;
     int filecnt = 0;
     tofstream fs;
     int i;
@@ -726,10 +732,9 @@ int tmain(int argc, tchar *argv[]) {
     if (!SMTPLoad::init(host, threads, maxuser, ruser, timeout,
 	loops, wld, bodyfile, cachesz * 1024 * 1024, allfiles, filecnt))
 	return -1;
-    dlog << Log::Info << T("test ") << (host ? host : default_host) << ' ' <<
-	wld << T(" (") << threads << T(" thread") << (threads == 1 ? T("") :
-	T("s")) << T(", ") << loops << T(" loop") << (loops == 1 ? T("") :
-	T("s")) << T(")") << endlog;
+    dlog << Log::Info << T("test ") << host << ' ' << wld << T(" (") <<
+	threads << T(" thread") << (threads == 1 ? T("") : T("s")) << T(", ") <<
+	loops << T(" loop") << (loops == 1 ? T("") : T("s")) << ')' << endlog;
     for (i = 0; i < threads; i++) {
 	thread = new SMTPLoad;
 	thread->start(32 * 1024);

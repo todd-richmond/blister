@@ -110,13 +110,15 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 
 #pragma comment(lib, "advapi32.lib")
 
-#define DWORD_MULTIPLE(x) (((x + sizeof (DWORD) - 1 ) / sizeof (DWORD)) * sizeof (DWORD))
+#define DWORD_MULTIPLE(x) ((((x) + sizeof (DWORD) - 1 ) / sizeof (DWORD)) * \
+    sizeof (DWORD))
 #define PREFIX T("service_")
 
 Service::Service(const tchar *servicename, const tchar *h): name(servicename),
     bPause(false), errnum(0), ctrlfunc(NULL), gid(0), hStatus(0), hSCManager(0),
-    hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0),
-    pid(0), stStatus(Stopped), uid(0) {
+    hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0), pid(0),
+    stStatus(Stopped), uid(0) {
+    ZERO(ssStatus);
     if (h)
 	host = h;
 }
@@ -126,6 +128,7 @@ Service::Service(const tchar *servicename, bool pauseable): name(servicename),
     hSCManager(0), hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0),
     pid(0), stStatus(Stopped), uid(0) {
     service = this;
+    ZERO(ssStatus);
 }
 
 Service::~Service() {
@@ -607,7 +610,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	pot->NumInstances = 1;
 	pot->ObjectNameTitleIndex = counter;
 	pot->ObjectHelpTitleIndex = help;
-	pid = (PERF_INSTANCE_DEFINITION *)((char *)data + size);
+	pid = (PERF_INSTANCE_DEFINITION *)(data + size);
 	pid->ByteLength = sizeof (PERF_INSTANCE_DEFINITION) +
 	    DWORD_MULTIPLE(namesz) + 4;
 	pid->ParentObjectTitleIndex = 0;
@@ -671,7 +674,7 @@ DWORD ServiceData::collect(LPCWSTR value, LPVOID *datap, LPDWORD total, LPDWORD
 
 void ServiceData::add(uint size, uint type, uint level) {
     PERF_COUNTER_DEFINITION *pcd = (PERF_COUNTER_DEFINITION *)
-	((char *)data + sizeof (PERF_OBJECT_TYPE)) + last;
+	(data + sizeof (PERF_OBJECT_TYPE)) + last;
 
     pcd->ByteLength = sizeof (PERF_COUNTER_DEFINITION);
     pcd->CounterNameTitleIndex = (last + 1) * 2 + counter;

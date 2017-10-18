@@ -44,21 +44,21 @@ typedef unsigned short word;
 #ifndef WIN32
 #define WIN32
 #endif
-#define NOSERVICE
-#define NOMCX
 #define NOIME
-#define _WIN32_WINNT	0x502
+#define NOMCX
+#define NOSERVICE
 #define WIN32_LEAN_AND_MEAN
 
 #define fstat		__fstat
 #define ino_t		__ino_t
-#define stat		__sstat
 #define rename		_rename
+#define stat		__sstat
 #define _INO_T_DEFINED
 #define _STAT_DEFINED
 #define _WSTAT_DEFINED
 
 #define __STDC__ 1
+#define _WIN32_WINNT	0x601
 #if _MSC_VER >= 1900
 typedef __int64 _ino_t;
 #endif
@@ -99,7 +99,6 @@ typedef __int64 _ino_t;
 #define EWOULDBLOCK	WSAEWOULDBLOCK
 #endif
 
-#define O_SHORT_LIVED	_O_SHORT_LIVED
 #define O_CLOEXEC	0
 #define O_COMPRESSED	0x010000
 #define O_POSIX		0x020000
@@ -109,6 +108,7 @@ typedef __int64 _ino_t;
 #define O_BACKUP	0x200000
 #define O_NONBLOCK	0x400000
 #define O_DSYNC		O_SYNC
+#define O_SHORT_LIVED	_O_SHORT_LIVED
 #define O_TMPFILE	O_TEMPORARY
 
 #define SIGHUP		SIGBREAK
@@ -183,8 +183,8 @@ typedef __int64 _ino_t;
 #define	wexecvp		_wexecvp
 #define waitpid(pid, status, opt)	cwait(status, pid, opt)
 
-#define sleep(x)	Sleep(x * 1000)
-#define usleep(x)	Sleep(x / 1000)
+#define sleep(x)	Sleep((x) * 1000)
+#define usleep(x)	Sleep((x) / 1000)
 
 typedef __int64 llong;
 typedef unsigned short ushort;

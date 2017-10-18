@@ -104,7 +104,7 @@ msec_t milliticks(void) {
 	if (++cnt) {
 	    ulong tmp = now;
 
-	    now += now - last;
+	    now += tmp - last;
 	    last = tmp;
 	} else {
 	    last = now;
@@ -1022,7 +1022,7 @@ int _strcmp(const char *a, const char *b) {
 #define _MAX_YEAR	    138
 #define _BASE_DOW	    4
 #define DAY_MILLISEC	    (24L * 60L * 60L * 1000L)
-#define IS_LEAP_YEAR(year)  ((year & 3) == 0)
+#define IS_LEAP_YEAR(year)  (((year) & 3) == 0)
 
 
 #ifdef _DLL

@@ -132,7 +132,7 @@ bool Dispatcher::exec() {
 
 	if (!obj) {
 	    continue;
-	} if (obj->flags & DSP_Freed) {
+	} else if (obj->flags & DSP_Freed) {
 	    lock.unlock();
 	    delete obj;
 	    lock.lock();

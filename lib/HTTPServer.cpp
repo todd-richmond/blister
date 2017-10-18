@@ -221,13 +221,13 @@ void HTTPServerSocket::scan(char *buf, int len, bool append) {
 	    if (len < 2) {
 		readable(readhdrs, rto);
 		return;
-	    } else if (len && buf[1] == '\n') {
+	    } else if (buf[1] == '\n') {
 		postdata = buf + 2;
 		buf[0] = '\r';
 		buf[1] = '\0';
 		parse();
 		return;
-	    } else if (len >= 2 && (buf[1] == '\r' && buf[2] == '\n')) {
+	    } else if (buf[1] == '\r' && buf[2] == '\n') {
 		postdata = buf + 3;
 		buf[0] = '\r';
 		buf[1] = '\0';
@@ -292,13 +292,15 @@ void HTTPServerSocket::parse(void) {
     buf = p;
     attrs.clear();
     while (*buf) {
-	end = strchr(buf, '\r');
+	if ((end = strchr(buf, '\r')) == NULL)
+	    end = buf + strlen(buf);
 	while (end[2] == ' ' || end[2] == '\t') {   // unfold hdrs
 	    end += 2;
 	    for (start = end + 2; *start == ' ' || *start == '\t'; start++)
 		continue;
 	    p = strchr(start, '\r');
-	    memmove(end, start, p - start);
+	    if (p)
+		memmove(end, start, p - start);
 	    end = p;
 	}
 	while (*buf == ' ' || *buf == '\t')

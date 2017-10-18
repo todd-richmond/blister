@@ -160,7 +160,7 @@ public:
 private:
     volatile int count;
     uint counter;
-    void *data;
+    char *data;
     uint ctrs, datasz, mapsz;
     uint help;
     bool init;
