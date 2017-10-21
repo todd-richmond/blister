@@ -20,6 +20,11 @@
 #include <time.h>
 #include "Dispatch.h"
 
+#ifdef _WIN32
+#define CLOEXEC(fd)
+#else
+#define CLOEXEC(fd) (void)fcntl((fd), F_SETFD, FD_CLOEXEC)
+#endif
 #define RETRY(call) while ((call) == -1 && interrupted(errno))
 
 static const uint MAX_WAIT_TIME = 1 * 60 * 1000;
@@ -371,11 +376,11 @@ int Dispatcher::onStart() {
     }
 #endif
     if (evtfd == -1) {
+	CLOEXEC(isock.fd());
+	CLOEXEC(wsock.fd());
 	rset.set(isock);
     } else {
-#ifndef _WIN32
-	(void)fcntl(evtfd, F_SETFD, FD_CLOEXEC);
-#endif
+	CLOEXEC(evtfd);
 #ifdef DSP_DEVPOLL
 	evts[0].fd = isock.fd();
 	evts[0].events = POLLIN;
@@ -1142,6 +1147,7 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
     if (!Socket::listen(addr, reuse, queue))
 	return false;
     blocking(false);
+    CLOEXEC(fd());
     msleep(1);
     poll(cb, DSP_NEVER, DispatchAccept);
     return true;
