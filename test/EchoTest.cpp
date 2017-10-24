@@ -302,9 +302,18 @@ int tmain(int argc, tchar *argv[]) {
     uint sockets = 20, threads = 20;
 
     if (argc == 1 || !tstrcmp(argv[1], T("-?"))) {
-	tcerr << T("Usage: echotest [-c] [-d delay] [-h host[:port]] [-e sockets]\n")
-	    T("\t[-l loops] [-p threads] [-s] [-v*] [-t timeout] [-w wait] data | datafile") <<
-	    endl;
+	tcerr << T("Usage: echotest\n")
+            T("\t[-c]\n")
+            T("\t[-d delay]\n")
+            T("\t[-h host[:port]]\n")
+            T("\t[-e sockets]\n")
+            T("\t[-l loops]\n")
+	    T("\t[-p threads]\n")
+            T("\t[-s]\n")
+            T("\t[-v*]\n")
+            T("\t[-t timeout]\n")
+            T("\t[-w wait]\n")
+            T("\tdatafile | datastr") << endl;
 	return 1;
     }
     signal(SIGINT, signal_handler);

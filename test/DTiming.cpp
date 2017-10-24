@@ -74,13 +74,13 @@ int tmain(int argc, tchar *argv[]) {
 	}
     }
     if (i < argc) {
-	tcerr << T("Usage: dlog\n")
+	tcerr << T("Usage: dtiming\n")
 	    T("\t[-i|--input file]\n")
 	    T("\t[-m|--msec]\n")
 	    T("\t[-n|--sortbyname]\n")
 	    T("\t[-s|--sec]\n")
 	    T("\t[-u|--usec]\n")
-	    T("\t[key duration]*\n") << endl;
+	    T("\t<key duration>*\n") << endl;
 	    return 1;
     }
     if (!out) {

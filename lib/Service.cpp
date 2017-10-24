@@ -1143,10 +1143,10 @@ int Service::execute(int argc, const tchar * const *argv) {
     } else if (tstreq(cmd, T("abort")) || tstreq(cmd, T("kill"))) {
 	ret = !abort();
     } else if (tstreq(cmd, T("help")) || tstreq(cmd, T("?"))) {
-	tcout << name << T("\t[--installdir dir] [--pidfile file]:") << endl <<
-	    T("\t[--console|--daemon] [--logfile file] [--outfile file]") <<
-	    T(" condrestart|") << endl <<
-	    T("\t\trestart|start [args]") << endl <<
+	tcout << T("usage:\t") << name << endl <<
+            T("\t[--console|--daemon] [--installdir dir] [--logfile file]") <<
+            endl << T("\t[--outfile file] --pidfile file]") << endl <<
+	    T("\tcondrestart|restart|start [args]") << endl <<
 	    T("\thelp") << endl <<
 	    T("\tinstall [description [dependencies]]") << endl <<
 	    T("\tkill") << endl << T("\tpause") << endl <<
@@ -1652,9 +1652,8 @@ void Daemon::watch_handler(int sig) {
 }
 
 
-WatchDaemon::WatchDaemon(int argc, const tchar * const *argv,
-    const tchar *dname): Daemon(dname ? dname : T("")), interval(60),
-    maxmem(0) {
+WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
+    *dname): Daemon(dname ? dname : T("")), interval(60), maxmem(0) {
     int ac;
 
     for (ac = 2; ac < argc; ac++) {
@@ -1680,10 +1679,10 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv,
 	    prog = argv[0];
 	else
 	    prog++;
-	cout << "usage:" << endl << T("\t") << prog <<
-	    T(" start [--check seconds] [--maxmem kb] [--name str] cmd ...") <<
-	    endl << T("\t") << prog <<
-	    T(" continue|exit|pause|refresh|status|stop [--name str] cmd") <<
+	cout << "usage:\t" << prog << endl <<
+	    T("\tstart [--check seconds] [--maxmem kb] [--name str] cmd ...") <<
+	    endl <<
+	    T("\tcontinue|exit|pause|refresh|status|stop [--name str] cmd") <<
 	    endl;
 	exit(1);
     }
