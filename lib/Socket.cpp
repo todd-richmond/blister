@@ -247,7 +247,7 @@ const tstring Sockaddr::str(void) const {
 	int i;
 	struct { int base, len; } best, cur;
 	char tmp[INET6_ADDRSTRLEN + 1], *tp = tmp;
-	const uchar *src = (const uchar *)&addr.sa6.sin6_addr;
+	const uchar *src = (const uchar *)&addr.sa;
 	const int NS_IN6ADDRSZ = 16;
 	const int NS_INT16SZ = 2;
 	const int WORDS = NS_IN6ADDRSZ / NS_INT16SZ;
@@ -291,7 +291,7 @@ const tstring Sockaddr::str(void) const {
 	    if (i == 6 && best.base == 0 && (best.len == 6 ||
 		(best.len == 7 && words[7] != 0x0001) ||
 		(best.len == 5 && words[5] == 0xffff))) {
-		src = (const uchar *)&addr.sa6.sin6_addr + 12;
+		src = (const uchar *)&addr.sa + 12;
 		tp += sprintf(tp, "%u.%u.%u.%u", src[0], src[1], src[2], src[3]);
 		break;
 	    }
