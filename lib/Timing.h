@@ -73,7 +73,7 @@
 
 typedef usec_t timing_t;
 
-class Timing {
+class Timing: nocopy {
 public:
     Timing() {}
     ~Timing() { clear(); }
