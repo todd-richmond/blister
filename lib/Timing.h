@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2016 Todd Richmond
+ * Copyright 2001-2017 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -73,7 +73,7 @@
 
 typedef usec_t timing_t;
 
-class Timing {
+class Timing: nocopy {
 public:
     Timing() {}
     ~Timing() { clear(); }

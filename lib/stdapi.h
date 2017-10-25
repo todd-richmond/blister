@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2016 Todd Richmond
+ * Copyright 2001-2017 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -981,6 +981,8 @@ public:
 		if (p->next == &obj) {
 		    if ((p->next = obj.next) == NULL)
 			back = p;
+                    else
+                        obj.next = NULL;
 		    --sz;
 		    break;
 		}
@@ -1008,15 +1010,17 @@ public:
 	
 	if ((front = front->next) == NULL)
 	    back = NULL;
+        else
+            obj->next = NULL;
 	--sz;
 	return obj;
     }
     void push_back(C &obj) {
-	obj.next = NULL;
 	if (back)
-	    back = back->next = &obj;
+	    back->next = &obj;
 	else
-	    back = front = &obj;
+	    front = &obj;
+        back = &obj;
 	++sz;
     }
     void push_back(ObjectList &lst) {

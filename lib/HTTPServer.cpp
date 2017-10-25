@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2016 Todd Richmond
+ * Copyright 2001-2017 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -636,6 +636,9 @@ void HTTPServerSocket::get(bool head) {
 	    }
 	}
     }
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0
+#endif
     if ((fd = ::open(s.c_str(), O_RDONLY|O_CLOEXEC|O_SEQUENTIAL, 0666)) == -1) {
 	error(404);
 	return;
