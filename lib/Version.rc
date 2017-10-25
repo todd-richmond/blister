@@ -39,7 +39,7 @@ BEGIN
             VALUE "FileDescription",	NAME
             VALUE "FileVersion",	VERSIONSTR
             VALUE "InternalName",	NAME
-            VALUE "LegalCopyright",	"Copyright Todd Richmond © 2009-2016"
+            VALUE "LegalCopyright",	"Copyright Todd Richmond © 2009-2017"
             VALUE "PrivateBuild",	BUILD
             VALUE "ProductName",	PRODUCT
             VALUE "ProductVersion",	VERSIONSTR
