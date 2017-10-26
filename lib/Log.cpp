@@ -112,8 +112,7 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 #endif
 	}
     } else {
-	write(fd, buf, (int)(chars * sizeof (tchar)));
-	if (file[0] != '>')
+        if (!write(fd, buf, (int)(chars * sizeof (tchar))) && file[0] != '>')
 	    len += chars * sizeof (tchar);
     }
 }
@@ -130,13 +129,17 @@ bool Log::LogFile::reopen(void) {
     } else {
 	lock();
 	if (!len && path != file) {
-	    char buf[1024];
+	    char buf[PATH_MAX];
 	    time_t now = ::time(NULL);
-	    struct tm tmbuf, *tm = gmt ? gmtime_r(&now, &tmbuf) :
-		localtime_r(&now, &tmbuf);
+	    struct tm tmbuf, *tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(
+                &now, &tmbuf);
 
 	    strftime(buf, sizeof (buf) / sizeof (tchar), tstringtoachar(file), tm);
-	    link(tstringtoachar(path), buf);
+	    if (link(tstringtoachar(path), buf)) {
+                ::close(fd);
+                fd = -3;
+                ret = false;
+            }
 	}
     }
     return ret;
