@@ -2,7 +2,7 @@ include $(top_srcdir)/build/Makefile.inc
 
 EXTRA_DIST=Version.rc Windows.c WindowsCPP.cpp
 
-pkginclude_HEADERS = Config.h Dispatch.h HTTPServer.h HTTPClient.h Log.h MD5.h \
+pkginclude_HEADERS = Config.h Dispatch.h HTTPClient.h HTTPServer.h Log.h MD5.h \
 	stdapi.h Service.h SMTPClient.h Socket.h Streams.h Thread.h Timing.h
 
 lib_LTLIBRARIES = libblister.la
