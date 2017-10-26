@@ -347,6 +347,9 @@ EXTERNC_
 
 #else // _WIN32
 
+#ifndef _FORTIFY_SOURCE
+#define _FORTIFY_SOURCE 2
+#endif
 #ifndef _POSIX_PTHREAD_SEMANTICS
 #define _POSIX_PTHREAD_SEMANTICS
 #endif

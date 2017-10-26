@@ -40,7 +40,7 @@ AC_ARG_ENABLE(optimize,
     [AS_HELP_STRING([--enable-optimize@<:@=CFLAGS@:>@],[C++ compiler optimizations @<:@default=-O3@:>@])],
     [
 	if test "$enable_optimize" = no -o "$enable_optimize" = debug; then
-	    optimize="-O1 -g3 -D_DEBUG"
+	    optimize="-O1 -fno-omit-frame-pointer -g3 -D_DEBUG"
 	elif test "$enable_optimize" = yes; then
 	    optimize="$OPTIMIZE"
 	else
