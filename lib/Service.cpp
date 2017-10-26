@@ -60,7 +60,8 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	if (full[0] == '/' || full[1] == ':') {
 	    root = full;
 	} else {
-	    (void)tgetcwd(buf, sizeof(buf) / sizeof(tchar));
+	    if (tgetcwd(buf, sizeof(buf) / sizeof(tchar)))
+		;
 	    root = buf;
 	    root += '/';
 	    root += full;
@@ -946,8 +947,8 @@ bool Service::install(const char *file, const char *desc,
     (void)desc; (void)depend; (void)manual;
     if (!file)
     	file = path.c_str();
-    chown(file, getuid(), getgid());
-    return chmod(file, S_ISUID|S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) != -1;
+    return chown(file, getuid(), getgid()) == -1 &&
+	chmod(file, S_ISUID|S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) != -1;
 }
 
 bool Service::uninstall() {
@@ -1082,7 +1083,8 @@ int Service::execute(int argc, const tchar * const *argv) {
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];
 
-	(void)tgetcwd(buf, sizeof(buf) / sizeof(tchar));
+	if (tgetcwd(buf, sizeof(buf) / sizeof(tchar)))
+	    ;
 	path = buf;
 	path += '/';
 	path += argv[0];
@@ -1289,9 +1291,8 @@ bool Daemon::update(Status status) {
 
 bool Daemon::setids() {
     if (uid != (uid_t)-1) {
-	(void)fchown(lckfd, uid, gid);
 	dlog.setids(uid, gid);
-	if (setgid(gid) || setuid(uid)) {
+	if (fchown(lckfd, uid, gid) || setgid(gid) || setuid(uid)) {
 	    dlog << Log::Err << Log::mod(name) << Log::kv(T("err"),
 		T("unable to set uid")) << endlog;
 	    return false;
@@ -1331,9 +1332,9 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    lckfd = -1;
 	}
     } while (lckfd == -1);
-    ftruncate(lckfd, 0);
     sprintf(buf, "%ld", (long)getpid());
-    write(lckfd, buf, (uint)strlen(buf));
+    if (ftruncate(lckfd, 0) || write(lckfd, buf, (uint)strlen(buf)))
+	return 2;
     for (int i = 1; i < argc; i++) {
 	const tchar *p = argv[i];
 
@@ -1360,14 +1361,14 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	cfgfile = s;
     }
     if (!onRefresh())
-	return 2;
+	return 3;
     buffer = cfg.get(T("log.file.buffer.enable"), false);
     watch = !console && cfg.get(T("watch.enable"), true);
     dlog.setmp(false);
     if (!cfg.get(T("enable"), true)) {
 	dlog << Log::Note << Log::mod(name) << Log::cmd(T("start")) <<
 	    Log::kv(T("sts"), T("disabled")) << endlog;
-	return 3;
+	return 4;
     }
     if (sbuf.st_size)
 	dlog << Log::Warn << Log::mod(name) <<
@@ -1394,7 +1395,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    uid = pwd->pw_uid;
 	    uidname = pwd->pw_name;
 	    dlog.setids(uid, gid);
-	    fchown(lckfd, uid, gid);
+	    if (fchown(lckfd, uid, gid))
+		;
 	} else {
 	    dlog << Log::Err << Log::mod(name) << T(" unknown uid ") <<
 		uidname << endlog;
@@ -1438,18 +1440,19 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		sigaction(SIGALRM, &sa, NULL);
 		dlog << Log::Debug << Log::mod(name) << Log::cmd(T("watch")) <<
 		    Log::kv(T("pid"), child) << endlog;
-		dlog.close();
-		dlog.level(Log::None);
 		first = false;
-		lseek(lckfd, 0, SEEK_SET);
 		sprintf(buf, "%ld %ld", (long)getpid(), (long)child);
-		write(lckfd, buf, strlen(buf));
+		if (lseek(lckfd, 0, SEEK_SET) || write(lckfd, buf, strlen(buf)))
+		    dlog << Log::Debug << Log::mod(name) << Log::cmd(T("reg")) <<
+			Log::kv(T("pid"), child) << endlog;
 		lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 		ZERO(fl);
 		fl.l_type = F_WRLCK;
 		fl.l_whence = SEEK_SET;
 		while (fcntl(lckfd, F_GETLK, &fl) != -1 && !fl.l_pid)
-		    msleep(0);
+		    msleep(100);
+		dlog.close();
+		dlog.level(Log::None);
 		while (true) {
 		    int flg = 0;
 		    string info;
@@ -1556,10 +1559,10 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 #endif
     } else {
 	ret = Service::onStart(argc, argv);
-	ftruncate(lckfd, 0);
 	sprintf(buf, "%lu", (ulong)sigpid);
-	lseek(lckfd, 0, SEEK_SET);
-	write(lckfd, buf, (uint)strlen(buf));
+	if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) || write(lckfd,
+	    buf, (uint)strlen(buf)))
+	    ret = false;
 	dlog.buffer(buffer);
     }
     return ret;
