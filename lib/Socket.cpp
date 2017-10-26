@@ -476,10 +476,10 @@ bool Socket::movehigh(void) {
 	    ) {
 	    return false;
 	} else if (fd == sbuf->sock) {
-            fcntl(fd, F_SETFD, FD_CLOEXEC);
+            (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
 	} else {
 #ifndef F_DUPFD_CLOEXEC
-            fcntl(fd, F_SETFD, FD_CLOEXEC);
+            (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
 #endif
 	    ::closesocket(sbuf->sock);
 	    sbuf->sock = fd;

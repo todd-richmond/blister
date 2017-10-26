@@ -360,7 +360,7 @@ int tmain(int argc, tchar *argv[]) {
 	    memcpy(dbuf, path, dsz);
 	}
     } else {
-	fstat(fd, &sbuf);
+	(void)fstat(fd, &sbuf);
 	dsz = (uint)sbuf.st_size;
 	dbuf = new char[dsz];
 	dsz = (uint)read(fd, dbuf, dsz);
