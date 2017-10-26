@@ -18,7 +18,9 @@ dtiming_SOURCES = DTiming.cpp
 echotest_SOURCES = EchoTest.cpp
 httpd_SOURCES = HTTPd.cpp
 httpload_SOURCES = HTTPLoad.cpp
+httpload_CXXFLAGS = $(AM_CXXFLAGS) -Wno-format-nonliteral
 httpload_LDFLAGS = $(AM_LDFLAGS) -static
 smtpload_SOURCES = SMTPLoad.cpp
+smtpload_CXXFLAGS = $(AM_CXXFLAGS) -Wno-format-nonliteral
 smtpload_LDFLAGS = $(AM_LDFLAGS) -static
 

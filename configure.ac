@@ -8,9 +8,14 @@ AM_CONDITIONAL(Linux, test "`uname -s`" = Linux)
 AM_CONDITIONAL(SunOS, test "`uname -s`" = SunOS)
 AM_CONDITIONAL(Intel32, test "`uname -p`" = i686 -o "`uname -p`" = i386)
 AM_CONDITIONAL(Intel64, test "`uname -p`" = x86_64)
+AM_CONDITIONAL(StackProtector, test "`echo '$(gcc -dumpversion) >= 4.9' | bc`" = 1)
 
 : ${CFLAGS=""}
 : ${CXXFLAGS=""}
+: ${GCCREL="`gcc -dumpversion`"}
+: ${OPTIMIZE="-O3 -g -DNDEBUG"}
+: ${OSREL="`uname -r | cut -d. -f1-2`"}
+: ${STACKPROTECTOR="-fstack-protector-strong"}
 
 AC_C_BIGENDIAN
 AC_PROG_MAKE_SET
@@ -32,24 +37,24 @@ AC_SEARCH_LIBS([gethostbyname],[nsl])
 
 AC_MSG_CHECKING(for compiler optimizations)
 AC_ARG_ENABLE(optimize,
-    [AS_HELP_STRING([--enable-optimize@<:@=CFLAGS@:>@],[C++ compiler optimizations @<:@default=-O3 -g -DNDEBUG@:>@])],
+    [AS_HELP_STRING([--enable-optimize@<:@=CFLAGS@:>@],[C++ compiler optimizations @<:@default=-O3@:>@])],
     [
 	if test "$enable_optimize" = no -o "$enable_optimize" = debug; then
-	    optimize="-g -D_DEBUG"
+	    optimize="-O1 -g3 -D_DEBUG"
 	elif test "$enable_optimize" = yes; then
-	    optimize="-O3 -g -DNDEBUG"
+	    optimize="$OPTIMIZE"
 	else
 	    optimize="$enable_optimize"
 	fi
     ],
-    [optimize="-O3 -g -DNDEBUG"]
+    [optimize="$OPTIMIZE"]
 )
 AC_MSG_RESULT("$optimize")
 AC_SUBST(optimize)
 
-COMMON_CFLAGS="-pipe -Wall -Werror $optimize"
+COMMON_CFLAGS="-pipe -Wall -Werror -Wformat=2 -Wno-format-y2k -Wshadow -Wstrict-aliasing=2 -Wwrite-strings $optimize -DOSREL=$OSREL"
 AM_CFLAGS="$AM_CFLAGS $COMMON_CFLAGS"
-AM_CXXFLAGS="$AM_CXXFLAGS -fno-rtti -fno-exceptions -Wno-deprecated $COMMON_CFLAGS"
+AM_CXXFLAGS="$AM_CXXFLAGS -fno-exceptions -fno-rtti -Wno-deprecated $COMMON_CFLAGS"
 
 AC_SUBST([AM_CFLAGS])
 AC_SUBST([AM_CXXFLAGS])
