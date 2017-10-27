@@ -686,7 +686,8 @@ using namespace stdext;
 #endif
 
 // cross-compiler support for unordered maps and sets
-#if defined(__GNUC__) && (!defined(__clang_major__) || __clang_major__ < 5)
+#if defined(__GNUC__) && (!defined(__clang_major__) || __clang_major__ < 5) && \
+    __cplusplus < 201103L
 #if GNUC_VERSION < 40300
 #define STL_UNORDERED_MAP_H	<ext/hash_map>
 #define STL_UNORDERED_SET_H	<ext/hash_set>	
