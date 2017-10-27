@@ -30,6 +30,8 @@
 
 #ifdef _WIN32
 #pragma comment(lib, "user32.lib")
+#else
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #endif
 
 static const tchar *USubst = T("\001\001");
