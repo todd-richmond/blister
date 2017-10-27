@@ -95,7 +95,7 @@ public:
     timing_t start(void) const { return now(); }
     void start(const tchar *key);
     void stop(uint lvl = (uint)-1);
-    static timing_t now(void) { return microticks(); }
+    static timing_t now(void) { return uticks(); }
 
 private:
     struct Stats {

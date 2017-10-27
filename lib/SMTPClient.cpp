@@ -248,13 +248,13 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
 }
 
 bool SMTPClient::data(bool m, const tchar *txt) {
-    static TSNumber<uint64> nextmid((time(NULL) << 18) & microticks());
+    static TSNumber<uint64_t> nextmid((time(NULL) << 18) & uticks());
     char buf[64], gmtoff[16];
     int diff;
     char *encbuf;
     size_t encbufsz;
     vector<tstring>::const_iterator it;
-    uint64 mid = nextmid++;
+    uint64_t mid = nextmid++;
     time_t now;
     uint pid = getpid();
     tm *tm, tmbuf, *tm2, tm2buf;

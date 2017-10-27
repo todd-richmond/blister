@@ -48,7 +48,7 @@ int clock_gettime(int id, struct timespec *ts) {
 #endif
 #endif
 
-usec_t microticks(void) {
+usec_t uticks(void) {
 #ifdef CLOCK_BOOTTIME
     struct timespec ts;
 
@@ -97,14 +97,14 @@ usec_t microticks(void) {
 #endif
 }
 
-msec_t milliticks(void) {
+msec_t mticks(void) {
 #ifdef CLOCK_BOOTTIME_COARSE
     struct timespec ts;
 
     clock_gettime(CLOCK_BOOTTIME_COARSE, &ts);
     return (msec_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 #else
-    return (msec_t)(microticks() / 1000);
+    return (msec_t)(uticks() / 1000);
 #endif
 }
 

@@ -66,7 +66,7 @@ static void __cdecl stdapi_cleanup(void) {
 
 int gettimeofday(struct timeval *tv, struct timezone *tz) {
     union {
-	uint64 u64;
+	uint64_t u64;
 	FILETIME ft;
     } ft;
     usec_t usec;
@@ -91,7 +91,7 @@ int gettimeofday(struct timeval *tv, struct timezone *tz) {
     return 0;
 }
 
-msec_t milliticks(void) {
+msec_t mticks(void) {
     ulong now;
     msec_t ret;
     static ulong cnt = (ulong)-1, last = (ulong)-1;
@@ -115,11 +115,11 @@ msec_t milliticks(void) {
     return ret;
 }
 
-usec_t microticks(void) {
-    static uint64 tps;
+usec_t uticks(void) {
+    static uint64_t tps;
 
     if (tps) {
-	uint64 now;
+	uint64_t now;
 
 	if (QueryPerformanceCounter((LARGE_INTEGER *)&now))
 	    return now * 1000000 / tps;
@@ -131,9 +131,9 @@ usec_t microticks(void) {
 	    lck = 1;
 	}
 	if (tps)
-	    return microticks();
+	    return uticks();
     }
-    return milliticks() * 1000;
+    return mticks() * 1000;
 }
 
 static uint rename_lock(const wchar *path) {
@@ -788,7 +788,7 @@ int wrename(const wchar *from, const wchar *to) {
 	return ret;
     wcscpy(oldbuf, to);
     p = wcsrchr(oldbuf, '/');
-    wsprintfW(p ? p + 1 : oldbuf, L"%u", (uint)microticks() ^ rand());
+    wsprintfW(p ? p + 1 : oldbuf, L"%u", (uint)uticks() ^ rand());
     lck = rename_lock(to);
     old = oldbuf;
     if (!MoveFileExW(to, old, MOVEFILE_REPLACE_EXISTING)) {
@@ -862,13 +862,13 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
 	buf->st_ctime = buf->st_mtime;
     }
 #ifdef _USE_INT64
-    buf->st_size = ((__int64)(bhfi.nFileSizeHigh)) * (0x100000000i64) +
-	(__int64)(bhfi.nFileSizeLow);
+    buf->st_size = ((__int64_t)(bhfi.nFileSizeHigh)) * (0x100000000i64) +
+	(__int64_t)(bhfi.nFileSizeLow);
 #else
     buf->st_size = bhfi.nFileSizeLow;
 #endif
-    buf->st_ino = ((__int64)(bhfi.nFileIndexHigh)) * (0x100000000i64) +
-	(__int64)(bhfi.nFileIndexLow);
+    buf->st_ino = ((__int64_t)(bhfi.nFileIndexHigh)) * (0x100000000i64) +
+	(__int64_t)(bhfi.nFileIndexLow);
     return 0;
 }
 
@@ -919,8 +919,8 @@ static int dir_stat(const wchar *path, struct stat *buf) {
 	buf->st_ctime = buf->st_mtime;
     }
 #ifdef _USE_INT64
-    buf->st_size = ((__int64)(fad.nFileSizeHigh)) * (0x100000000i64) +
-	(__int64)(fad.nFileSizeLow);
+    buf->st_size = ((__int64_t)(fad.nFileSizeHigh)) * (0x100000000i64) +
+	(__int64_t)(fad.nFileSizeLow);
 #else
     buf->st_size = fad.nFileSizeLow;
 #endif
