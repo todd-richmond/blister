@@ -39,6 +39,8 @@ tstring Service::ver(T(__DATE__) T(" ") T(__TIME__));
 typedef void (*KillFunc)(void);
 DLLibrary pthread(T("libpthread"));
 KillFunc killfunc = (KillFunc)pthread.get(T("pthread_kill_other_threads_np"));
+#elif defined(_WIN32)
+#pragma warning(disable: 4390)
 #endif
 
 #ifndef OPEN_MAX

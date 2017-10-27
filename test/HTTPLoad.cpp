@@ -31,6 +31,8 @@
 #include "HTTPClient.h"
 #include "Log.h"
 
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+
 typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
 static volatile bool qflag = false, rflag = false;

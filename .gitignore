@@ -38,3 +38,10 @@ Makefile*
 *.exe
 *.out
 *.app
+
+# Misc
+*.gch
+*.swp
+.ruby-version
+cov-int
+xcuserdata

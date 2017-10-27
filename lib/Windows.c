@@ -144,6 +144,7 @@ static uint rename_lock(const wchar *path) {
 	static volatile int init1;
 
 	if (init1) {
+            // cppcheck-suppress knownConditionTrueFalse
 	    while (!init)
 		usleep(1);
 	} else {
@@ -177,16 +178,17 @@ static uint rename_lock(const wchar *path) {
 void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
     int (*cfunc)(const void *, const void *)) {
     const char *cbase = (char *)base;
-    int cmp;
     size_t lim;
     const char *p;
 
     for (lim = nmemb; lim != 0; lim >>= 1) {
+        int cmp;
+
 	p = cbase + (lim >> 1) * size;
 	cmp = (*cfunc)(key, p);
 	if (cmp == 0)
 	    return (void *)p;
-	if (cmp > 0) {
+        else if (cmp > 0) {
 	    cbase = p + size;
 	    lim--;
 	}

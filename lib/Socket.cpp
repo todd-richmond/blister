@@ -516,21 +516,23 @@ bool Socket::cloexec(void) {
 #endif
 }
 
-bool Socket::cork(void) const {
-#ifdef TCP_CORK
-    return getsockopt(IPPROTO_TCP, TCP_CORK) != 0;
+#if defined(TCP_CORK)
+#define CORK_VAL TCP_CORK
 #elif defined(TCP_NOPUSH)
-    return getsockopt(IPPROTO_TCP, TCP_NOPUSH) != 0;
+#define CORK_VAL TCP_NOPUSH
+#endif
+
+bool Socket::cork(void) const {
+#ifdef CORK_VAL
+    return getsockopt(IPPROTO_TCP, CORK_VAL) != 0;
 #else
     return true;
 #endif
 }
 
 bool Socket::cork(bool on) {
-#ifdef TCP_CORK
-    return setsockopt(IPPROTO_TCP, TCP_CORK, on) != 0;
-#elif defined(TCP_NOPUSH)
-    return setsockopt(IPPROTO_TCP, TCP_NOPUSH, on) != 0;
+#ifdef CORK_VAL
+    return setsockopt(IPPROTO_TCP, CORK_VAL, on) != 0;
 #else
     return true;
 #endif

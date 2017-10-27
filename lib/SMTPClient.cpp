@@ -257,7 +257,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     uint64_t mid = nextmid++;
     time_t now;
     uint pid = getpid();
-    tm *tm, tmbuf, *tm2, tm2buf;
+    tm *tm = NULL, tmbuf, *tm2, tm2buf;
 
     mime = m;
     if (!cmd(T("DATA"), NULL, 354))
