@@ -264,7 +264,7 @@ int Dispatcher::onStart() {
 		removeTimer(*ds);
 	    }
 	} else if (msg.message == WM_TIMER) {
-	    now = milliticks();
+	    now = mticks();
 	    lock.lock();
 	    while ((dt = timers.get(now)) != NULL) {
 		dt->msg = DispatchTimeout;
@@ -398,7 +398,7 @@ int Dispatcher::onStart() {
     running = 0;
     shutdown = false;
     workers = 0;
-    now = milliticks();
+    now = mticks();
     while (!shutdown) {
 	uint count = 0;
 	DispatchTimer *dt = NULL;
@@ -453,7 +453,7 @@ int Dispatcher::onStart() {
 	}
 	polling = false;
 	count = 0;
-	now = milliticks();
+	now = mticks();
 	lock.lock();
 	if (shutdown)
 	    break;
@@ -788,7 +788,7 @@ void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
 }
 
 void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
-    msec_t now = tm ? milliticks() : 0;
+    msec_t now = tm ? mticks() : 0;
     msec_t tmt = tm == DSP_NEVER ? DSP_NEVER_DUE : now + tm;
 
     lock.lock();
@@ -885,7 +885,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 
 void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
     uint flags;
-    msec_t now = milliticks();
+    msec_t now = mticks();
     bool resched = false;
     msec_t tmt = tm == DSP_NEVER ? DSP_NEVER_DUE : now + tm;
     static uint ioarray[] = {

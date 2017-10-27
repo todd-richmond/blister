@@ -120,7 +120,7 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 	erase();
     } else {
 	nodelay(true);
-	begin = microticks();
+	begin = uticks();
 	output();
     }
 }
@@ -151,7 +151,7 @@ void EchoTest::EchoClientSocket::input() {
     }
     in += len;
     if (in == dsz) {
-	usec_t usec = microticks() - begin;
+	usec_t usec = uticks() - begin;
 
 	++ops;
 	usecs += usec;
@@ -202,7 +202,7 @@ void EchoTest::EchoClientSocket::output() {
 void EchoTest::EchoClientSocket::repeat() {
     msg = DispatchNone;
     out = 0;
-    begin = microticks();
+    begin = uticks();
     output();
 }
 
@@ -383,13 +383,13 @@ int tmain(int argc, tchar *argv[]) {
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	ec.connect(addr, sockets, delay, tmt, wait);
 	Thread::MainThread.priority(10);
-	last = microticks();
+	last = uticks();
 	do {
 	    ops = errs = 0U;
 	    usecs = 0U;
 	    msleep(1000);
-	    now = microticks();
-	    tcout << ((uint64)(ops + errs) * 1000000 / (now - last)) <<
+	    now = uticks();
+	    tcout << ((uint64_t)(ops + errs) * 1000000 / (now - last)) <<
 		T("\t\t") << (ulong)(usecs / (ops ? (uint)ops : (uint)errs +
 		1)) << '\t' << errs << endl;
 	    last = now;

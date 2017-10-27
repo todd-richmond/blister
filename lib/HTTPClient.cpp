@@ -227,7 +227,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 loop:
     if (!connect(addr, ka))
 	goto done;
-    start = milliticks();
+    start = mticks();
     if ((sent = ((ulong)sock.writev(iov, 2) == (ulong)(req.size() + datasz))) ==
 	false ||
 	// shutdown causes huge cpu spikes on NT - not sure why
@@ -236,7 +236,7 @@ loop:
 #endif
 	!getline(sstrm, s)) {
 	sock.close();
-	if (first && ka && (!sent || rto - (milliticks() - start) > 200)) {
+	if (first && ka && (!sent || rto - (mticks() - start) > 200)) {
 	    dlog << Log::Debug << T("mod=http cmd=reconnect") << endlog;
 	    sstrm.seekp(0, ios::beg);
 	    first = false;

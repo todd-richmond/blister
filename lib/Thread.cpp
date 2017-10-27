@@ -164,7 +164,7 @@ ullong Processor::affinity(void) {
 
 bool Processor::affinity(ullong mask) {
 #ifdef _WIN32
-    return SetProcessAffinityMask(GetCurrentProcess(), (uint32)mask) != 0;
+    return SetProcessAffinityMask(GetCurrentProcess(), (uint32_t)mask) != 0;
 #elif defined(__linux__)
     cpu_set_t cset;
 
@@ -527,7 +527,7 @@ bool ThreadGroup::start(uint stacksz, bool suspend, bool aterm) {
 Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
     set<Thread *>::iterator it;
     bool signaled = false;
-    msec_t start = milliticks();
+    msec_t start = mticks();
     Locker lkr(cvlck);
 
     do {
@@ -567,7 +567,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
 	    return NULL;
 	signaled = true;
 	if (msec != INFINITE) {
-	    msec_t now = milliticks();
+	    msec_t now = mticks();
 
 	    msec -= now - start < msec ? (ulong)(now - start) : msec;
 	    start = now;

@@ -18,7 +18,7 @@
 #ifndef stdapi_h
 #define stdapi_h
 
-// defines and code to make non-UNIX systems support POSIX APIs
+// defines, typedefs  and code to make non-UNIX systems support POSIX APIs
 
 #ifdef __cplusplus
 #define EXTERNC		extern "C" {
@@ -30,7 +30,6 @@
 
 #define ZERO(x)		memset((&x), 0, sizeof (x))
 
-typedef const char cchar;
 typedef unsigned char byte;
 typedef unsigned char uchar;
 typedef unsigned short word;
@@ -404,15 +403,21 @@ EXTERNC_
 #define strnicmp	strncasecmp
 #define wcsicmp		wcscasecmp
 
-typedef long long llong;
-typedef unsigned long long ullong;
-typedef wchar_t wchar;
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun__)
+EXTERNC
+int wcscasecmp(const wchar_t *, const wchar_t *);
+EXTERNC_
+#endif
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 typedef unsigned short ushort;
 typedef unsigned int uint;
 typedef unsigned long ulong;
 #endif
+
+typedef long long llong;
+typedef unsigned long long ullong;
+typedef wchar_t wchar;
 
 #ifdef __APPLE__
 #ifndef CLOCK_REALTIME
@@ -440,14 +445,9 @@ EXTERNC_
 #define CLOCK_BOOTTIME_COURSE	CLOCK_MONOTONIC_COURSE
 #endif
 
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun__)
-EXTERNC
-int wcscasecmp(const wchar *, const wchar *);
-EXTERNC_
-#endif
-
 #endif // _WIN32
 
+// primitive type value limits
 #define MAXUCHAR	~(uchar)0
 #ifndef MAXCHAR
 #define MAXCHAR		(char)(MAXUCHAR >> 1)
@@ -488,15 +488,6 @@ EXTERNC_
 #ifndef O_NOATIME
 #define O_NOATIME	0
 #endif
-
-typedef char int8;
-typedef uchar uint8;
-typedef short int16;
-typedef ushort uint16;
-typedef long int32;
-typedef ulong uint32;
-typedef llong int64;
-typedef ullong uint64;
 
 #ifdef _UNICODE
 #ifndef UNICODE
@@ -659,11 +650,9 @@ typedef uchar tuchar;
 #define tstreq(a, b)	!tstrcmp(a, b)
 #define tstrieq(a, b)	!tstricmp(a, b)
 
-typedef const tchar ctchar;
-
-/* routines for linear and current time */
-typedef uint64 msec_t;
-typedef uint64 usec_t;
+// current and linear time routines
+typedef uint64_t msec_t;
+typedef uint64_t usec_t;
 
 inline usec_t microtime(void) {
     struct timeval tv;
@@ -672,16 +661,16 @@ inline usec_t microtime(void) {
     return (usec_t)tv.tv_sec * (usec_t)1000000 + tv.tv_usec;
 }
 
-EXTERNC
-extern usec_t microticks(void);
-extern msec_t milliticks(void);
-extern int lockfile(int fd, short type, short whence, ulong start, ulong len,
-    short test);
-EXTERNC_
-
 #define millitime()	((msec_t)(microtime() / 1000))
 
-// common includes, defines and code for C/C++ software
+EXTERNC
+extern int lockfile(int fd, short type, short whence, ulong start, ulong len,
+    short test);
+extern msec_t mticks(void);
+extern usec_t uticks(void);
+EXTERNC_
+
+// common includes, defines and code for C++ software
 #ifdef __cplusplus
 
 #include <functional>
@@ -694,6 +683,30 @@ using namespace std;
 using namespace stdext;
 #endif
 
+// cross-compiler support for unordered maps and sets
+#if defined(__GNUC__) && (!defined(__clang_major__) || __clang_major__ < 5)
+#if GNUC_VERSION < 40300
+#define STL_UNORDERED_MAP_H	<ext/hash_map>
+#define STL_UNORDERED_SET_H	<ext/hash_set>	
+#define unordered_map		hash_map
+#define unordered_multimap	hash_multimap
+#define unordered_set		hash_set
+#define unordered_multiset	hash_multiset
+using namespace __gnu_cxx;
+#else
+#define STL_UNORDERED_MAP_H	<tr1/unordered_map>
+#define STL_UNORDERED_SET_H	<tr1/unordered_set>	
+namespace std { namespace tr1 {} }
+using namespace std::tr1;
+#endif
+
+#else
+
+#define STL_UNORDERED_MAP_H	<unordered_map>
+#define STL_UNORDERED_SET_H	<unordered_set>	
+#endif
+
+// narrow / wide sring routines
 extern const wstring _achartowstring(const char *s, int len);
 extern const string _wchartoastring(const wchar *s, int len);
 
@@ -786,16 +799,6 @@ inline const string wstringtoastring(const wstring &s) {
 #define tstringbuf	    stringbuf
 #endif
 
-// Derive from this to prohibit copying
-class nocopy {
-protected:
-    nocopy() {}
-
-private:
-    nocopy(const nocopy &);
-    const nocopy & operator =(const nocopy &);
-};
-
 // useful string utils
 inline int to_lower(int c) { return _tolower((uchar)(c)); }
 inline int to_upper(int c) { return _toupper((uchar)(c)); }
@@ -833,29 +836,6 @@ template<class C>
 inline bool stringless(const C &a, const C &b) {
     return stringless(a.c_str(), b.c_str());
 }
-
-// cross-compiler support for unordered maps and sets
-#if defined(__GNUC__) && (!defined(__clang_major__) || __clang_major__ < 5)
-#if GNUC_VERSION < 40300
-#define STL_UNORDERED_MAP_H	<ext/hash_map>
-#define STL_UNORDERED_SET_H	<ext/hash_set>	
-#define unordered_map		hash_map
-#define unordered_multimap	hash_multimap
-#define unordered_set		hash_set
-#define unordered_multiset	hash_multiset
-using namespace __gnu_cxx;
-#else
-#define STL_UNORDERED_MAP_H	<tr1/unordered_map>
-#define STL_UNORDERED_SET_H	<tr1/unordered_set>	
-namespace std { namespace tr1 {} }
-using namespace std::tr1;
-#endif
-
-#else
-
-#define STL_UNORDERED_MAP_H	<unordered_map>
-#define STL_UNORDERED_SET_H	<unordered_set>	
-#endif
 
 template<class C>
 inline size_t stringhash(const C *s) {
@@ -963,6 +943,17 @@ struct striless {
     }
 };
 
+// prohibit object copies by subclassing this
+class nocopy {
+protected:
+    nocopy() {}
+
+private:
+    nocopy(const nocopy &);
+    const nocopy & operator =(const nocopy &);
+};
+
+// fast single linked object list
 template <class C>
 class ObjectList: nocopy {
 public:
@@ -1061,4 +1052,4 @@ private:
 
 #endif
 
-#endif /* stdapi_h */
+#endif // stdapi_h
