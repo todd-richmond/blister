@@ -64,6 +64,7 @@ typedef __int64 _ino_t;
 
 #include <direct.h>
 #include <io.h>
+#include <stdint.h>
 #include <stdio.h>
 #undef __STDC__
 #include <stdlib.h>
@@ -360,6 +361,7 @@ EXTERNC_
 #include <fcntl.h>
 #include <float.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
