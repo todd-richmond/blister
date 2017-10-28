@@ -27,8 +27,6 @@
 #include "Log.h"
 #include "Timing.h"
 
-static const tchar *NAME = T("echo");
-
 const int TIMEOUT = 10 * 1000;
 const int MAXREAD = 12 * 1024;
 
@@ -40,14 +38,14 @@ public:
     class EchoClientSocket: public DispatchClientSocket {
     public:
 	EchoClientSocket(EchoTest &es, const Sockaddr &a, ulong t, ulong w):
-	    DispatchClientSocket(es), addr(a), begin(0), in(0), out(0), tmt(t),
+	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0), tmt(t),
 	    wait(w) {}
 	virtual ~EchoClientSocket() {}
 
 	virtual void start(ulong msec) { timeout(start, msec); }
 
     protected:
-	const Sockaddr &addr;
+	const Sockaddr &sa;
 	usec_t begin;
 	uint in, out;
 	ulong tmt, wait;
@@ -68,7 +66,7 @@ public:
 	virtual ~EchoServerSocket() { delete [] buf; }
 
 	void timeout(ulong timeout) { tmt = timeout; }
-	static const tchar *section(void) { return NAME; }
+	static const tchar *section(void) { return T("echo"); }
 
 	virtual void start(void) {
 	    nodelay(true);
@@ -97,8 +95,8 @@ public:
 	ulong tmt;
     };
 
-    bool listen(const tchar *host, ulong timeout);
-    void connect(const Sockaddr &a, uint count, ulong delay, ulong timeout,
+    bool listen(const Sockaddr &sa, ulong timeout);
+    void connect(const Sockaddr &sa, uint count, ulong delay, ulong timeout,
 	ulong wait);
 
 private:
@@ -115,9 +113,14 @@ static TSNumber<usec_t> usecs;
 void EchoTest::EchoClientSocket::onConnect(void) {
     if (msg == DispatchTimeout || msg == DispatchClose) {
 	++errs;
+	loops.test_and_decr();
 	dloge(T("client connect"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
-	erase();
+	if (!loops || qflag) {
+	    erase();
+	    return;
+	}
+	timeout(start, wait);
     } else {
 	nodelay(true);
 	begin = uticks();
@@ -129,7 +132,7 @@ void EchoTest::EchoClientSocket::start() {
     close();
     out = 0;
     dlogd(T("connecting"));
-    connect(addr, tmt);
+    connect(sa, tmt);
 }
 
 void EchoTest::EchoClientSocket::input() {
@@ -137,6 +140,7 @@ void EchoTest::EchoClientSocket::input() {
 
     if (msg == DispatchTimeout || msg == DispatchClose) {
 	++errs;
+	loops.test_and_decr();
 	dloge(T("client read"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	timeout(start, wait);
@@ -145,6 +149,7 @@ void EchoTest::EchoClientSocket::input() {
     }
     if ((len = read(dbuf + in, dsz - in)) < 0) {
 	++errs;
+	loops.test_and_decr();
 	dloge(T("client read failed:"), errstr());
 	timeout(start, wait);
 	return;
@@ -262,25 +267,23 @@ void EchoTest::EchoServerSocket::output() {
     }
 }
 
-void EchoTest::connect(const Sockaddr &addr, uint count, ulong delay, ulong tmt,
+void EchoTest::connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
     ulong wait) {
     for (uint u = 0; u < count; u++) {
-	EchoClientSocket *ecs = new EchoClientSocket(*this, addr, tmt, wait);
+	EchoClientSocket *ecs = new EchoClientSocket(*this, sa, tmt, wait);
 
 	ecs->detach();
 	ecs->start(u * (count < wait / delay ? wait / count : delay));
     }
 }
 
-bool EchoTest::listen(const tchar *host, ulong timeout) {
+bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
     EchoListenSocket *els = new EchoListenSocket(*this, timeout);
 
-    if (els->listen(host)) {
+    if (els->listen(sa)) {
 	els->detach();
 	return true;
     } else {
-	dlog << Log::Err << T("mod=") << NAME << T(" cmd=listen addr=") <<
-	    els->address().str() << ' ' << tstrerror(els->err()) << endlog;
 	delete els;
 	return false;
     }
@@ -289,7 +292,7 @@ bool EchoTest::listen(const tchar *host, ulong timeout) {
 static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, tchar *argv[]) {
-    Sockaddr addr;
+    Sockaddr sa;
     bool client = true, server = true;
     EchoTest ec;
     int fd;
@@ -319,11 +322,15 @@ int tmain(int argc, tchar *argv[]) {
     signal(SIGINT, signal_handler);
 #ifndef _WIN32
     struct rlimit rl;
+    struct sigaction sig;
 
     if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
 	rl.rlim_cur = rl.rlim_max;
 	setrlimit(RLIMIT_NOFILE, &rl);
     }
+    ZERO(sig);
+    sig.sa_handler = SIG_IGN;
+    sigaction(SIGPIPE, &sig, NULL);
 #endif
     for (i = 1; i < argc; i++) {
 	if (!tstricmp(argv[i], T("-c"))) {
@@ -368,20 +375,22 @@ int tmain(int argc, tchar *argv[]) {
     }
     if (!host)
 	host = T("localhost:8888");
-    if (!addr.set(host)) {
+    if (!sa.set(host)) {
 	tcerr << T("echo: unknown host ") << host << endl;
 	return 1;
     }
+    if (!sa.port())
+	sa.port(8888);
     if (!ec.start(threads, 32 * 1024)) {
 	tcerr << T("echo: unable to start ") << host << endl;
 	return 1;
     }
-    if (server && !ec.listen(host, tmt))
+    if (server && !ec.listen(sa, tmt))
 	return 1;
     if (client) {
-	dlog << Log::Info << T("echo ") << host << T(" ") << path << endlog;
+	dlogi(T("echo"), sa.str(), path);
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
-	ec.connect(addr, sockets, delay, tmt, wait);
+	ec.connect(sa, sockets, delay, tmt, wait);
 	Thread::MainThread.priority(10);
 	last = uticks();
 	do {

@@ -39,7 +39,7 @@ Sockaddr::SockInit Sockaddr::init;
 #endif
 
 ushort Sockaddr::families[] = {
-    AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6
+    AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6, AF_UNSPEC
 };
 
 const void *Sockaddr::address(void) const {
@@ -57,18 +57,11 @@ const tstring &Sockaddr::host(void) const {
 
 	if (getnameinfo(&addr.sa, sizeof(addr), buf, sizeof (buf), NULL, 0,
 	    NI_NAMEREQD))
-	    name = str();
+	    name = ipstr();
 	else
 	    name = achartotstring(buf);
     }
     return name;
-}
-
-const tstring Sockaddr::host_port(void) const {
-    tchar buf[12];
-
-    tsprintf(buf, T("%c%u"), ipv4() ? ':' : ';', (uint)port());
-    return host() + buf;
 }
 
 const tstring &Sockaddr::hostname() {
@@ -94,6 +87,24 @@ const tstring &Sockaddr::hostname() {
 	}
     }
     return hname;
+}
+
+const tstring Sockaddr::ip(void) const {
+    ushort fam = family();
+
+    if (fam  == AF_INET) {
+	char buf[INET_ADDRSTRLEN];
+
+	return achartotstring(inet_ntop(fam, &addr.sa4.sin_addr, buf, sizeof
+	    (buf)));
+    } else if (fam  == AF_INET6) {
+	char buf[INET6_ADDRSTRLEN];
+	const char *s = inet_ntop(fam, &addr.sa6.sin6_addr, buf, sizeof (buf));
+
+	return achartotstring(is_v4mapped() ? s + 7 : s);
+    } else {
+	return T("");
+    }
 }
 
 ushort Sockaddr::port(void) const {
@@ -170,11 +181,10 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
     struct addrinfo *ai, hints;
 
     ZERO(addr);
-    name.erase();
     ZERO(hints);
     hints.ai_family = families[proto];
     hints.ai_socktype = dgram(proto) ? SOCK_DGRAM : SOCK_STREAM;
-    if (!host || !*host || *host == '*') {
+    if (!host || !*host || *host == '*' || !tstricmp(host, T("INADDR_ANY"))) {
 	host = NULL;
 	hints.ai_flags = AI_PASSIVE;
     } else if (istdigit(*host)) {
@@ -183,6 +193,7 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 	hints.ai_flags = AI_CANONNAME;
     }
     hints.ai_flags |= AI_ADDRCONFIG | AI_V4MAPPED;
+    name.erase();
     if (getaddrinfo(host ? tchartoachar(host) : NULL, service ?
 	tchartoachar(service) : NULL, &hints, &ai))
 	return false;
@@ -238,73 +249,17 @@ ushort Sockaddr::size(ushort family) {
 	return sizeof (sockaddr_any);
 }
 
-const tstring Sockaddr::str(void) const {
-    // XP does not implement inet_ntop so implment for all cases
-    // inet_ntop(family(), address(), buf, sizeof (buf));
-    if (family() == AF_INET) {
-	return achartotstring(inet_ntoa(addr.sa4.sin_addr));
-    } else if (family() == AF_INET6) {
-	int i;
-	struct { int base, len; } best, cur;
-	char tmp[INET6_ADDRSTRLEN + 1], *tp = tmp;
-	const uchar *src = (const uchar *)&addr.sa;
-	const int NS_IN6ADDRSZ = 16;
-	const int NS_INT16SZ = 2;
-	const int WORDS = NS_IN6ADDRSZ / NS_INT16SZ;
-	uint words[WORDS];
+const tstring Sockaddr::str(const tstring &val) const {
+    ushort p = port();
 
-	ZERO(words);
-	for (i = 0; i < NS_IN6ADDRSZ; i++)
-	    words[i / 2] |= (src[i] << ((1 - (i % 2)) << 3));
-	best.base = -1;
-	best.len = 0;
-	cur.base = -1;
-	cur.len = 0;
-	for (i = 0; i < WORDS; i++) {
-	    if (words[i] == 0) {
-		if (cur.base == -1) {
-		    cur.base = i;
-		    cur.len = 1;
-		} else {
-		    cur.len++;
-		}
-	    } else {
-		if (cur.base != -1) {
-		    if (best.base == -1 || cur.len > best.len)
-			best = cur;
-		    cur.base = -1;
-		}
-	    }
-	}
-	if (cur.base != -1 && (best.base == -1 || cur.len > best.len))
-	    best = cur;
-	if (best.base != -1 && best.len < 2)
-	    best.base = -1;
-	for (i = 0; i < WORDS; i++) {
-	    if (best.base != -1 && i >= best.base && i < best.base + best.len) {
-		if (i == best.base)
-		    *tp++ = ':';
-		continue;
-	    }
-	    if (i != 0)
-		*tp++ = ':';
-	    if (i == 6 && best.base == 0 && (best.len == 6 ||
-		(best.len == 7 && words[7] != 0x0001) ||
-		(best.len == 5 && words[5] == 0xffff))) {
-		src = (const uchar *)&addr.sa + 12;
-		tp += sprintf(tp, "%u.%u.%u.%u", src[0], src[1], src[2], src[3]);
-		break;
-	    }
-	    tp += sprintf(tp, "%x", words[i]);
-	}
-	if (best.base != -1 && (best.base + best.len) == WORDS)
-	    *tp++ = ':';
-	*tp++ = '\0';
-	return achartotstring(tmp);
+    if (p) {
+	tchar buf[12];
+
+	tsprintf(buf, T("%c%u"), ipv4() ? ':' : ';', (uint)p);
+	return val + buf;
     }
-    return T("");
+    return val;
 }
-
 
 #define BUILD_IP(ip) ((ip[0] << 24) | (ip[1] << 16) | (ip[2] << 8) | ip[3])
 #define VALID_IP(ip) (ip[0] < 256 && ip[1] < 256 && ip[2] < 256 && ip[3] < 256)
@@ -665,6 +620,7 @@ long Socket::writev(const iovec *iov, int count) const {
     long out;
 
 #ifdef _WIN32
+    out = -1;
     check(WSASend(sbuf->sock, (WSABUF *)iov, count, (ulong *)&out, 0, NULL,
 	NULL));
 #else
@@ -673,16 +629,17 @@ long Socket::writev(const iovec *iov, int count) const {
 	    break;
     } while (interrupted());
 #endif
-    return blocked() ? 0 : out;
+    return out <= 0 && blocked() ? 0 : out;
 }
 
 long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
     long out;
 
 #ifdef _WIN32
+    out = -1;
     check(WSASendTo(sbuf->sock, (WSABUF *)iov, count, (ulong *)&out, 0, sa,
 	sa.size(), NULL, NULL));
-    return blocked() ? 0 : out;
+    return out <= 0 && blocked() ? 0 : out;
 #else
     out = 0;
     for (int i = 0; i < count; i++) {

@@ -75,12 +75,12 @@ void Timing::clear() {
 const tstring Timing::data(bool sort_key, uint columns) const {
     timingmap::const_iterator it;
     uint last = 0, start = 0;
-    SpinLocker lkr(lck);
     tstring s;
     vector<const Stats *>::const_iterator sit;
     vector<const Stats *> sorted;
     const Stats *stats;
     uint u;
+    SpinLocker lkr(lck);
 
     for (it = tmap.begin(); it != tmap.end(); ++it)
 	sorted.push_back(it->second);

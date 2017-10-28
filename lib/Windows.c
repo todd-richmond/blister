@@ -864,13 +864,13 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
 	buf->st_ctime = buf->st_mtime;
     }
 #ifdef _USE_INT64
-    buf->st_size = ((__int64_t)(bhfi.nFileSizeHigh)) * (0x100000000i64) +
-	(__int64_t)(bhfi.nFileSizeLow);
+    buf->st_size = ((int64_t)(bhfi.nFileSizeHigh)) * (0x100000000i64) +
+	(fint64_t)(bhfi.nFileSizeLow);
 #else
     buf->st_size = bhfi.nFileSizeLow;
 #endif
-    buf->st_ino = ((__int64_t)(bhfi.nFileIndexHigh)) * (0x100000000i64) +
-	(__int64_t)(bhfi.nFileIndexLow);
+    buf->st_ino = ((int64_t)(bhfi.nFileIndexHigh)) * (0x100000000i64) +
+	(int64_t)(bhfi.nFileIndexLow);
     return 0;
 }
 
@@ -921,8 +921,8 @@ static int dir_stat(const wchar *path, struct stat *buf) {
 	buf->st_ctime = buf->st_mtime;
     }
 #ifdef _USE_INT64
-    buf->st_size = ((__int64_t)(fad.nFileSizeHigh)) * (0x100000000i64) +
-	(__int64_t)(fad.nFileSizeLow);
+    buf->st_size = ((int64_t)(fad.nFileSizeHigh)) * (0x100000000i64) +
+	(int64_t)(fad.nFileSizeLow);
 #else
     buf->st_size = fad.nFileSizeLow;
 #endif

@@ -672,6 +672,10 @@ public:
 	    clock_gettime(CLOCK_REALTIME, &ts);
 	    ts.tv_sec += msec / 1000;
 	    ts.tv_nsec += (msec % 1000) * 1000000;
+	    if (ts.tv_nsec > 1000000000) {
+		ts.tv_nsec -= 1000000000;
+		++ts.tv_sec;
+            }
 	    return sem_timedwait(&hdl, &ts) == 0;
 	}
     }
@@ -789,6 +793,10 @@ public:
 	    clock_gettime(CLOCK_BOOTTIME, &ts);
 	    ts.tv_sec += (uint)(msec / 1000);
 	    ts.tv_nsec += (msec % 1000) * 1000000;
+	    if (ts.tv_nsec > 1000000000) {
+		ts.tv_nsec -= 1000000000;
+		++ts.tv_sec;
+	    }
 #ifdef __APPLE__
 	    return pthread_cond_timedwait_relative_np(&cv, lock, &ts) == 0;
 #elif defined(__ANDROID__)
@@ -811,43 +819,49 @@ typedef FastLockerTemplate<Lock> FastLocker;
 
 class RWLock: nocopy {
 public:
-    RWLock(): cv(lck), readers(0), wwaiting(0), writing(false) {}
+    RWLock(): rcv(lck), wcv(lck), readers(0), wwaiting(0), writing(false) {}
 
     void rlock(void) {
 	FastLocker lckr(lck);
 
-	while (writing || wwaiting) {
-	    cv.wait();
-	    if (writing || wwaiting)
-		cv.set();
+	while (writing || wwaiting)
+	    rcv.wait();
+	readers++;
+    }
+    bool rtrylock(ulong msec = 0) {
+	FastLocker lckr(lck);
+
+	if (writing || wwaiting) {
+	    if (!msec || !rcv.wait(msec))
+		return false;
 	}
 	readers++;
+	return true;
     }
     void runlock(void) {
 	FastLocker lckr(lck);
 
 	if (!--readers && wwaiting)
-	    cv.set();
+	    wcv.set();
     }
-    bool tryrlock(ulong msec = 0) {
+    void wlock(void) {
 	FastLocker lckr(lck);
 
-	if (writing || wwaiting) {
-	    if (!msec || !cv.wait(msec))
-		return false;
-	    // can return early
-	    if (writing || wwaiting)
-		cv.set();
+	while (readers || writing) {
+	    wwaiting++;
+	    wcv.wait();
+	    wwaiting--;
 	}
-	readers++;
-	return true;
+	writing = true;
     }
-    bool trywlock(ulong msec = 0) {
+    bool wtrylock(ulong msec = 0) {
 	FastLocker lckr(lck);
 
 	if (readers || writing) {
+	    if (!msec)
+		return false;
 	    wwaiting++;
-	    if (!msec || !cv.wait(msec)) {
+	    if (!wcv.wait(msec)) {
 		wwaiting--;
 		return false;
 	    }
@@ -856,29 +870,19 @@ public:
 	writing = true;
 	return true;
     }
-    void wlock(void) {
-	FastLocker lckr(lck);
-
-	while (readers || writing) {
-	    wwaiting++;
-	    cv.wait(INFINITE);
-	    wwaiting--;
-	}
-	writing = true;
-    }
     void wunlock(void) {
 	FastLocker lckr(lck);
 
 	writing = false;
 	if (wwaiting)
-	    cv.set();
+	    wcv.set();
 	else
-	    cv.broadcast();
+	    rcv.broadcast();
     }
 
 private:
     Lock lck;
-    Condvar cv;
+    Condvar rcv, wcv;
     volatile ulong readers, wwaiting;
     volatile bool writing;
 };

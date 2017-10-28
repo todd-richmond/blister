@@ -207,6 +207,8 @@ int tmain(int argc, tchar *argv[]) {
 		dlog.type(Log::KeyVal);
 	    else if (!tstricmp(argv[i], T("nolevel")))
 		dlog.type(Log::NoLevel);
+	    else if (!tstricmp(argv[i], T("notime")))
+		dlog.type(Log::NoTime);
 	    else if (!tstricmp(argv[i], T("syslog")))
 		dlog.type(Log::Syslog);
 	} else if (!tstricmp(argv[i], T("-u")) || !tstricmp(argv[i],
@@ -232,14 +234,14 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[-f|--file file [level [count [size [time]]]]]\n")
 	    T("\t[-i|--input file]\n")
 	    T("\t[-k|--keepalive [polltime]]\n")
-	    T("\t[-l|--level emerg|alert|crit|err|warn|report|note|info|debug|trace]\n")
+	    T("\t[-l|--level emerg|alert|crit|err|warn|note|info|debug|trace]\n")
 	    T("\t[-m|--mail to [level [from [host]]]]\n")
 	    T("\t[-n|--name sourcename]\n")
 	    T("\t[-o|--output logstr ...]\n")
 	    T("\t[-p|--prefix logstr]\n")
 	    T("\t[-r|--roll]\n")
 	    T("\t[-s|--syslog [level [host [facility]]]]\n")
-	    T("\t[-t|--type keyval|nolevel|simple|syslog]\n")
+	    T("\t[-t|--type keyval|nolevel|notime|simple|syslog]\n")
 	    T("\t[-u|--unlocked]\n")
 	    T("\t[[-w|--write] logstr]*\n") << endl;
 	    return 1;

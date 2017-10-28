@@ -36,9 +36,13 @@ public:
     const char *str(void) const { return buf; }
     void str(char *p, streamsize sz) { setbuf(p, sz); }
     streamsize read(void *in, streamsize sz) { return xsgetn((char *)in, sz); }
-    streamsize write(const void *in, streamsize sz) { return xsputn((const char *)in, sz); }
     template<class T> streamsize read(T &t) { return read(t, sizeof (t)); }
-    template<class T> streamsize write(const T &t) { return write(&t, sizeof (t)); }
+    streamsize write(const void *in, streamsize sz) {
+	return xsputn((const char *)in, sz);
+    }
+    template<class T> streamsize write(const T &t) {
+	return write(&t, sizeof (t));
+    }
 
     virtual int doallocate(void) {
 	if (!buf) {
@@ -240,7 +244,6 @@ private:
  * works around broken MSVC sstream::seekp() that leaks memory. Use this as a
  * replacement for strstream / sstream
  */
-#if !defined(_STLP_NO_OWN_IOSTREAMS) || defined(_WIN32)
 #include <sstream>
 
 template <class C>
@@ -268,21 +271,6 @@ private:
 
     bufferbuf sb;
 };
-
-#else
-
-#include <strstream>
-
-template <class C>
-class bufferstream: public basic_ostrstream<C> {
-public:
-    bufferstream() {}
-    virtual ~bufferstream() { freeze(false); }
-
-    void reset(void) { if (pcount()) { freeze(false); seekp(0, ios::beg); } }
-    streamsize size(void) const { return ((basic_ostrstream<C> *)this)->pcount(); }
-};
-#endif
 
 typedef bufferstream<tchar> tbufferstream;
 

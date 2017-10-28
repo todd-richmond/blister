@@ -71,6 +71,7 @@ public:
     template<class C> void header(const tstring &hdr, const C &val) {
 	hstrm << hdr << T(": ") << val << T("\r\n");
     }
+    void headers(const tstring &headers) { hstrm << headers; }
     bool cmd(const tchar *cmd, const tchar *path) { return send(cmd, path); }
     bool del(const tchar *path) { return send(T("DELETE"), path); }
     bool get(const tchar *path) { return send(T("GET"), path); }

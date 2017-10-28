@@ -34,6 +34,7 @@ static const uint MAX_EVENTS = 128;
 
 static const uint DSP_Socket = 0x0001;
 static const uint DSP_Detached = 0x0002;
+static const uint DSP_Connecting = 0x0004;
 static const uint DSP_Scheduled = 0x0008;
 static const uint DSP_Ready = 0x0010;
 static const uint DSP_ReadyGroup = 0x0020;
@@ -640,7 +641,9 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 		ds->flags |= DSP_Readable;
 	}
 	if (DSP_EVENT_WRITE(evt)) {
-	    if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
+	    if (ds->flags & DSP_Connecting)
+		ds->msg = DispatchConnect;
+	    else if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
 		ds->msg = DispatchWrite;
 	    else
 		ds->flags |= DSP_Writeable;
@@ -895,7 +898,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
     };
     static uint sarray[] = {
 	DSP_SelectRead, DSP_SelectWrite, DSP_SelectRead | DSP_SelectWrite,
-	DSP_SelectAccept, DSP_SelectWrite, DSP_SelectClose, 0, 0
+	DSP_SelectAccept, DSP_Connecting | DSP_SelectWrite, DSP_SelectClose, 0,
+	0
     };
 
 #ifdef DSP_WIN32_ASYNC
@@ -1124,18 +1128,16 @@ void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB
     cb) {
     if (!cb)
 	cb = connected;
-    if (open(sa.family()) && blocking(false) && Socket::connect(sa)) {
-	msg = DispatchConnect;
-	ready(cb);
-    } else if (!blocked()) {
-	msg = DispatchClose;
-	ready(cb);
-    } else {
+    if (open(sa.family()) && blocking(false) && Socket::connect(sa))
+	ready(cb, false, DispatchConnect);
+    else if (!blocked())
+	ready(cb, false, DispatchClose);
+    else
 	poll(cb, msec, DispatchConnect);
-    }
 }
 
 void DispatchClientSocket::connected() {
+    msg = DispatchConnect;
     onConnect();
 }
 
