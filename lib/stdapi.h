@@ -36,9 +36,9 @@ typedef unsigned short word;
 
 #ifdef _WIN32
 
-#pragma warning(disable: 4018 4097 4100 4103 4127 4146 4201 4250 4335 4503 4511)
-#pragma warning(disable: 4512 4530 4577 4619 4625 4626 4668 4710 4711 4786 4820)
-#pragma warning(disable: 4996 5026 5027 26135 28125)
+#pragma warning(disable: 4018 4068 4097 4100 4103 4127 4146 4201 4250 4335 4503)
+#pragma warning(disable: 4511 4512 4530 4577 4619 4625 4626 4668 4710 4711 4786)
+#pragma warning(disable: 4820 4996 5026 5027 26135 28125)
 
 #ifndef WIN32
 #define WIN32
