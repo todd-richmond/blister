@@ -77,24 +77,13 @@ bool Log::LogFile::close(void) {
 void Log::LogFile::lock() {
     if (fd == -1)
 	reopen();
-    if (fd >= 0 && !locked) {
-	if (!lockfd()) {
-	    close();
-	    fd = -3;
-	    tcerr << T("unable to lock log ") << path << endl;
-	} else {
-	    locked = true;
-	}
+    if (fd >= 0 && (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
+	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1)) {
+	tcerr << T("unable to lock log ") << path << T(": ") <<
+	    tstrerror(errno) << endl;
+	close();
+	fd = -3;
     }
-}
-
-bool Log::LogFile::lockfd(void) {
-    if (fd < 0)
-	return 0;
-    if (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
-	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1)
-	return false;
-    return true;
 }
 
 void Log::LogFile::print(const tchar *buf, uint chars) {
@@ -125,7 +114,8 @@ bool Log::LogFile::reopen(void) {
     close();
     if ((fd = ::open(tstringtoachar(path), O_WRONLY | O_CREAT | O_BINARY |
 	O_SEQUENTIAL, 0640)) == -1) {
-	tcerr << T("unable to open log ") << path << endl;
+	tcerr << T("unable to open log ") << path << T(": ") <<
+	    tstrerror(errno) << endl;
 	fd = -3;
 	ret = false;
     } else {
@@ -136,7 +126,7 @@ bool Log::LogFile::reopen(void) {
 	    struct tm tmbuf, *tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(
                 &now, &tmbuf);
 
-	    strftime(buf, sizeof (buf) / sizeof (tchar), tstringtoachar(file), tm);
+	    strftime(buf, sizeof (buf), tstringtoachar(file), tm);
 	    if (link(tstringtoachar(path), buf)) {
                 ::close(fd);
                 fd = -3;
@@ -151,6 +141,7 @@ void Log::LogFile::roll(void) {
     tDIR *dir;
     struct tdirent *ent;
     uint files = 0;
+    ino_t inode = 0;
     time_t now;
     tstring oldfile;
     tstring::size_type pos;
@@ -158,12 +149,15 @@ void Log::LogFile::roll(void) {
     struct stat sbuf;
     tchar sep;
 
+    if (!fstat(fd, &sbuf)) 
+	inode = sbuf.st_ino;
     close();
     if (!enable)
 	return;
     lock();
-    now = cnt && !sec && fstat(fd, &sbuf) == 0 ? (time_t)sbuf.st_ctime :
-	::time(NULL);
+    if (!fstat(fd, &sbuf) && mp && sbuf.st_ino != inode)
+	return;
+    now = cnt && !sec ? (time_t)sbuf.st_ctime : ::time(NULL);
     s1 = path;
     if ((pos = s1.rfind('/')) == s1.npos && (pos = s1.rfind('\\')) == s1.npos) {
 	sep = '/';
@@ -308,8 +302,10 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
     len = 0;
 }
 
-bool Log::LogFile::unlockfd(void) {
-    return fd >= 0 ? lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0) == 0 : true;
+void Log::LogFile::unlock(void) {
+    if (fd >= 0)
+	lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
+
 }
 
 Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true),
@@ -361,10 +357,8 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     if (ffd.enable && clvl <= ffd.lvl) {
 	ffd.lock();
 	if (ffd.len + bufstrm.size() >= ffd.sz) {
-	    if (!ffd.mp || (ffd.reopen() && ffd.len + bufstrm.size() >= ffd.sz)) {
-		_flush();
-		ffd.roll();
-	    }
+	    _flush();
+	    ffd.roll();
 	}
     }
     if (afd.enable && clvl <= afd.lvl) {
@@ -374,6 +368,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     }
     now_usec = microtime();
     now_sec = (uint)(now_usec / 1000000);
+    now_usec %= 1000000;
     if (now_sec != last_sec) {
 	tchar tbuf[128];
 	struct tm tmbuf, *tm;
@@ -404,19 +399,23 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	}
 	upos = last_format.find(USubst);
     }
-    strbuf = last_format;
-    if (upos != last_format.npos) {
-	tsprintf(tmp, T("%06u"), (uint)(now_usec % 1000000));
-	strbuf.replace(upos, 2, tmp);
+    if (_type == NoTime) {
+	strbuf.erase();
+    } else {
+	strbuf = last_format;
+	if (upos != last_format.npos) {
+	    tsprintf(tmp, T("%06u"), (uint)now_usec);
+	    strbuf.replace(upos, 2, tmp);
+	}
+	if (!strbuf.empty())
+	    strbuf += ' ';
     }
-    if (!strbuf.empty())
-	strbuf += ' ';
     tmlen = strbuf.size();
     if (_type == KeyVal) {
 	strbuf += T("ll=");
 	strbuf += LevelStr[clvl];
 	strbuf += ' ';
-    } else if (_type != NoLevel) {
+    } else if (_type != NoLevel && _type != NoTime) {
 	strbuf += LevelStr[clvl];
 	if (_type == Syslog)
 	    strbuf += ':';
@@ -437,7 +436,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	strbuf += '"';
     } else {
 	for (const tchar *p = tlsd.strm.str(); sz--; p++) {
-	    if (*p < ' ' && *p != '\t') {
+	    if ((uchar)*p < ' ' && *p != '\t') {
 		if (*p == '\n') {
 		    strbuf += T("\\n");
 		} else if (*p == '\r') {
@@ -468,7 +467,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     }
     if (ffd.enable && clvl <= ffd.lvl) {
 	if (ft.getState() == Running) {
-	    bufstrm.write(strbuf.c_str(), strbuf.size());
+	    bufstrm.write(strbuf.data(), strbuf.size());
 	    if ((uint)bufstrm.size() > bufsz)
 		_flush();
 	} else {
@@ -486,11 +485,13 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     if (syslogenable && clvl <= sysloglvl) {
 	string ss;
 	string::size_type pos;
-	char buf[40], cbuf[32];
-	int i = (syslogfac << 3) | (clvl - (clvl < Note ? 1 : 2));
+	char buf[64], cbuf[32];
+	int i = (syslogfac << 3) | (clvl - (clvl < Debug ? 1 : 2));
 
-	sprintf(buf, "<%d>%.15s", i, ctime_r(&now_sec, cbuf) + 4);
+	sprintf(buf, "<%d>%.15s.%06u ", i, ctime_r(&now_sec, cbuf) + 4,
+	    (uint)now_usec);
 	ss = buf;
+	ss += hostname;
 	if (!mailfrom.empty()) {
 	    ss += ' ';
 	    if (_type == KeyVal)
@@ -500,11 +501,10 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    else
 		ss += tstringtoastring(mailfrom.substr(0, pos));
 	}
-	if (_type == Syslog)
-	    ss += ':';
-	ss += ' ';
+	sprintf(buf, "[%d]: ", getpid());
+	ss += buf;
 	ss += tstringtoastring(strbuf.substr(tmlen));
-	syslogsock.write(ss.c_str(), (uint)ss.size(), syslogaddr);
+	syslogsock.write(ss.data(), (uint)ss.size(), syslogaddr);
     }
     if (mailenable && clvl <= maillvl && !mailto.empty()) {
 	SMTPClient smtp;
@@ -517,8 +517,8 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    	ss += '@';
 		ss += Sockaddr::hostname();
 	    }
-	    smtp.from(ss.c_str());
-	    smtp.to(mailto.c_str());
+	    smtp.from(RFC822Addr(ss));
+	    smtp.to(RFC822Addr(mailto));
 	    smtp.subject(strbuf.substr(tmlen, tmlen + 69).c_str());
 	    smtp.data(false, strbuf.c_str());
 	    smtp.enddata();
@@ -589,6 +589,7 @@ void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {
 }
 
 void Log::set(const Config &cfg, const tchar *sect) {
+    tstring::size_type pos;
     tstring s;
 
     lck.lock();
@@ -597,14 +598,17 @@ void Log::set(const Config &cfg, const tchar *sect) {
     buftm = cfg.get(T("file.buffer.msec"), 1000, sect);
     bufenable = cfg.get(T("file.buffer.enable"), false, sect);
     gmt = cfg.get(T("gmt"), false, sect);
+    s = Sockaddr::hostname();
+    if ((pos = s.find_first_of('.')) == s.npos)
+	hostname = s;
+    else
+	hostname = s.substr(0, pos);
     mail(str2enum(cfg.get(T("mail.level"), T("err"), sect).c_str()),
 	cfg.get(T("mail.to"), T("logger"), sect).c_str(),
 	cfg.get(T("mail.from"), T("<>"), sect).c_str(),
 	cfg.get(T("mail.host"), T("mail:25"), sect).c_str());
     mailenable = cfg.get(T("mail.enable"), false, sect);
     if (src.empty()) {
-	tstring::size_type pos;
-
 	src = cfg.prefix();
 	if ((pos = src.find_last_of(T("."))) != src.npos)
 	    src.erase(0, pos + 1);
@@ -615,9 +619,9 @@ void Log::set(const Config &cfg, const tchar *sect) {
     syslogenable = cfg.get(T("syslog.enable"), false, sect);
     format(cfg.get(T("format"), T("[%Y-%m-%d %H:%M:%S.%# %z]"), sect).c_str());
     s = cfg.get(T("type"), T("simple"), sect);
-    _type = s == T("nolevel") ? NoLevel : s == T("syslog") ? Syslog :
-	s == T("keyval") ? KeyVal : Simple;
-    afd.set(cfg, sect, T("alert"), false, T("err"), T("stderr"));
+    _type = s == T("nolevel") ? NoLevel : s == T("notime") ? NoTime :
+	s == T("syslog") ? Syslog : s == T("keyval") ? KeyVal : Simple;
+    afd.set(cfg, sect, T("alert"), false, T("warn"), T("stderr"));
     ffd.set(cfg, sect, T("file"), true, T("info"), T("stdout"));
     lvl = afd.lvl > ffd.lvl ? afd.lvl : ffd.lvl;
     lck.unlock();

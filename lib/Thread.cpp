@@ -296,7 +296,7 @@ THREAD_FUNC Thread::threadInit(void *arg) {
     
     thread->lck.lock();
     thread->id = THREAD_ID();
-    srand((uint)(ulong)thread->id);
+    srand((uint)((ulong)microtime() ^ (ulong)thread->id));
     thread->state = Running;
     thread->cv.set();
     thread->lck.unlock();

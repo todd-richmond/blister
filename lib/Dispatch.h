@@ -33,7 +33,6 @@
  */
 #endif
 
-
 class Dispatcher;
 class DispatchObj;
 
@@ -405,20 +404,27 @@ public:
 	    detach();
     }
 
-    bool listen(const tchar *host = NULL, bool enable = true,
-	int backlog = SOCK_BACKLOG) {
+    bool listen(const Sockaddr &sa, bool enable = true, int backlog =
+	SOCK_BACKLOG) {
 	const Config &cfg = dspr.config();
-	tstring s(cfg.get(T("host"), host, S::section()));
 
 	if (!cfg.get(T("enable"), enable, S::section()))
 	    return true;
 	backlog = cfg.get(T("backlog"), backlog, S::section());
-	if (DispatchListenSocket::listen(Sockaddr(s.c_str()), true, backlog)) {
+	if (DispatchListenSocket::listen(sa, true, backlog)) {
 	    dlog << Log::Info << T("mod=") << S::section() <<
-		T(" cmd=listen addr=") << s << endlog;
+		T(" cmd=listen addr=") << sa.str() << endlog;
 	    return true;
 	}
+	dlog << Log::Err << T("mod=") << S::section() <<
+	    T(" cmd=listen addr=") << sa.str() << ' ' << errstr() << endlog;
 	return false;
+    }
+    bool listen(const tchar *host = NULL, bool enable = true, int backlog =
+	SOCK_BACKLOG) {
+	tstring s(dspr.config().get(T("host"), host, S::section()));
+
+	return listen(Sockaddr(s.c_str()), enable, backlog);
     }
 
 protected:

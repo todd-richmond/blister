@@ -167,7 +167,8 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     ka = keepalive;
     if (!sock.connect(addr, to)) {
 	dlog << Log::Info << T("mod=http cmd=connect addr=") << addr.host() <<
-	    T(":") << (uint)addr.port() << T(" errno=") << sock.err() << endlog;
+	    T(":") << (uint)addr.port() << Log::kv(T("err"), sock.errstr()) <<
+	    endlog;
 	sock.close();
 	return false;
     }
@@ -193,10 +194,10 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     string req, s, ss, sss;
     bool sent;
     msec_t start;
-    static tchar connection[] = T("Connection");
-    static tchar contentlen[] = T("Content-Length");
-    static tchar keep_alive[] = T("Keep-Alive");
-    static tchar pragma[] = T("Pragma");
+    static const tchar connection[] = T("Connection");
+    static const tchar contentlen[] = T("Content-Length");
+    static const tchar keep_alive[] = T("Keep-Alive");
+    static const tchar pragma[] = T("Pragma");
 
     sts = 0;
     s.reserve(128);
@@ -236,7 +237,7 @@ loop:
 #endif
 	!getline(sstrm, s)) {
 	sock.close();
-	if (first && ka && (!sent || rto - (mticks() - start) > 200)) {
+	if (first && ka && (!sent || rto > (mticks() - start) + 200)) {
 	    dlog << Log::Debug << T("mod=http cmd=reconnect") << endlog;
 	    sstrm.seekp(0, ios::beg);
 	    first = false;
@@ -249,7 +250,7 @@ loop:
     }
     iov[0].iov_base = (char *)NULL;
     p = s.c_str();
-    while (*p != ' ' && *p != '\t')
+    while (*p && *p != ' ' && *p != '\t')
 	p++;
     while (*p == ' ' || *p == '\t')
 	p++;
@@ -283,8 +284,9 @@ loop:
 	    !tstrnicmp(resp, keep_alive, sizeof (keep_alive) - 1))
 	    keep = true;
     }
-    resp = response(contentlen);
-    if (resp == NULL)
+    if (sts == 204 || sts == 304)
+	ressz = 0;
+    else if ((resp = response(contentlen)) == NULL)
 	ressz = (ulong)-1;
     else
 	ressz = tstrtoul(resp, NULL, 10);

@@ -52,6 +52,10 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #define WSAEINPROGRESS	EINPROGRESS
 #define WSAEINTR	EINTR
 #define WSAEWOULDBLOCK	EWOULDBLOCK
+#ifdef __APPLE__
+#define s6_addr16	__u6_addr.__u6_addr16
+#define s6_addr32	__u6_addr.__u6_addr32
+#endif
 
 typedef int socket_t;
 
@@ -85,7 +89,7 @@ inline bool interrupted(int e) { return e == WSAEINTR; }
  */
 class Sockaddr {
 public:
-    enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6  };
+    enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNSPEC };
 
     explicit Sockaddr(const addrinfo *ai) { set(ai); }
     Sockaddr(const tchar *host, Proto proto = TCP) { set(host, proto); }
@@ -98,7 +102,7 @@ public:
     explicit Sockaddr(const hostent *h) { set(h); }
     explicit Sockaddr(Proto proto = TCP) {
 	ZERO(addr);
-	addr.sa.sa_family = families[(uint)proto];
+        family(proto);
     }
     explicit Sockaddr(const sockaddr &sa) { set(sa); }
     Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
@@ -121,13 +125,21 @@ public:
     sockaddr *data(void) { name.clear(); return &addr.sa; }
     ushort family(void) const { return addr.sa.sa_family; }
     void family(ushort fam) { addr.sa.sa_family = fam; }
+    void family(Proto proto) { addr.sa.sa_family = families[(uint)proto]; }
     const tstring &host(void) const;
     bool host(const tchar *host, Proto proto = TCP) {
 	return port() ? set(host, port(), proto) : set(host, proto);
     }
-    const tstring host_port(void) const;
-    bool ipv4() const { return addr.sa.sa_family == AF_INET; }
-    bool ipv6() const { return addr.sa.sa_family == AF_INET6; }
+    bool is_v4mapped() const {
+	const in6_addr &sa6 = addr.sa6.sin6_addr;
+
+	return ipv6() && sa6.s6_addr32[0] == 0 && sa6.s6_addr32[1] == 0 &&
+	    sa6.s6_addr16[4] == 0 && sa6.s6_addr16[5] == 0xFFFF;
+    }
+    const tstring ip(void) const;
+    const tstring ipstr(void) const { return str(ip()); }
+    bool ipv4() const { return family() == AF_INET; }
+    bool ipv6() const { return family() == AF_INET6; }
     ushort port(void) const;
     void port(ushort port);
     bool service(const tchar *service, Proto proto = TCP);
@@ -138,7 +150,7 @@ public:
     bool set(const hostent *h);
     bool set(const sockaddr &sa);
     ushort size(void) const { return size(family()); }
-    const tstring str(void) const;
+    const tstring str(void) const { return str(host()); }
 
     static ushort families[];
     static bool dgram(Proto proto) {
@@ -171,6 +183,8 @@ private:
 
     sockaddr_any addr;
     mutable tstring name;
+
+    const tstring str(const tstring &val) const;
 };
 
 inline tostream &operator <<(tostream &os, const Sockaddr &addr) {

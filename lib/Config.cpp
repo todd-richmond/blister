@@ -44,32 +44,6 @@ Config::Config(const tchar *file, const tchar *str): ini(false), locker(0) {
 	read(file, str);
 }
 
-const tstring &Config::expand(const Value *value) const {
-    tstring::size_type epos, spos;
-
-    if (!value->expand)
-	return value->value;
-    _buf = value->value;
-    while ((spos = _buf.rfind(T("$("))) != _buf.npos ||
-	(spos = _buf.rfind(T("${"))) != _buf.npos) {
-	if ((epos = _buf.find(_buf[spos + 1] == '(' ? ')' : '}', spos + 2)) ==
-	    _buf.npos)
-	    break;
-
-	attrmap::const_iterator it;
-	tstring s(_buf, spos + 2, epos - spos - 2);
-
-	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 &&
-	    s.size() > pre.size() + 1 && s[pre.size()] == '.')
-	    s.erase(0, pre.size() + 1);
-	it = amap.find(s.c_str());
-	if (it == amap.end())
-	    break;
-	_buf.replace(spos, epos - spos + 1, it->second->value);
-    }
-    return _buf;
-}
-
 void Config::clear(void) {
     attrmap::iterator it;
     Locker lkr(lck, !THREAD_ISSELF(locker));
@@ -94,6 +68,32 @@ void Config::erase(const tchar *attr, const tchar *sect) {
 	amap.erase(it);
 	free((tchar *)p);
     }
+}
+
+const tstring &Config::expand(const Value *value) const {
+    tstring::size_type epos, spos;
+
+    if (!value->expand)
+	return value->value;
+    _buf = value->value;
+    while ((spos = _buf.rfind(T("$("))) != _buf.npos ||
+	(spos = _buf.rfind(T("${"))) != _buf.npos) {
+	if ((epos = _buf.find(_buf[spos + 1] == '(' ? ')' : '}', spos + 2)) ==
+	    _buf.npos)
+	    break;
+
+	attrmap::const_iterator it;
+	tstring s(_buf, spos + 2, epos - spos - 2);
+
+	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 &&
+	    s.size() > pre.size() + 1 && s[pre.size()] == '.')
+	    s.erase(0, pre.size() + 1);
+	it = amap.find(s.c_str());
+	if (it == amap.end())
+	    break;
+	_buf.replace(spos, epos - spos + 1, it->second->value);
+    }
+    return _buf;
 }
 
 const tstring Config::get(const tchar *attr, const tchar *def,

@@ -70,7 +70,6 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     setids();
     running();
     dspr.waitForMain();
-    delete hsock;
     return 0;
 }
 

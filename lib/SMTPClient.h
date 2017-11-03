@@ -21,6 +21,73 @@
 #include <time.h>
 #include "Socket.h"
 
+class RFC821Addr: nocopy {
+public:
+    explicit RFC821Addr(const tchar *address = NULL) {
+	if (address)
+	    parse(address);
+    }
+    RFC821Addr(const tchar *&address, tstring &reterr) {
+	parseaddr(address);
+	reterr = err;
+    }
+
+    const tstring &address(void) const { return addr; }
+    const tstring &domain(void) const { return domain_buf; }
+    const tstring &error(void) const { return err; }
+    const tstring &local(void) const { return local_part; }
+
+    bool parse(const tchar *address) { parseaddr(address); return err.empty(); }
+    void setDomain(const tchar *domain);
+    void setLocal(const tchar *local);
+
+private:
+    tstring addr, domain_buf, local_part;
+    tstring err;
+
+    void parseaddr(const tchar *&addr);
+    void parsedomain(tstring::size_type &pos);
+    void make_address(void);
+};
+
+class RFC822Addr: nocopy {
+public:
+    explicit RFC822Addr(const tchar *addrs = NULL): buf(NULL) {
+	if (addrs)
+	    parse(addrs);
+    }
+    RFC822Addr(const tstring &addrs): buf(NULL) { parse(addrs.c_str()); }
+    ~RFC822Addr() { delete [] buf; }
+
+    const tstring address(uint u = 0, bool name = false, bool brkt = true) const;
+    const tstring domain(uint u = 0) const {
+	return domains.empty() ? T("") : domains[u];
+    }
+    const tstring local(uint u = 0) const {
+	return locals.empty() ? T("") : locals[u];
+    }
+    const tstring phrase(uint u = 0) const {
+	return phrases.empty() ? T("") : phrases[u];
+    }
+    const tstring route(uint u = 0) const {
+	return routes.empty() ? T("") : routes[u];
+    }
+    size_t size(void) const { return locals.size(); }
+
+    uint parse(const tchar *addrs);
+
+private:
+    tchar *buf;
+    vector<const tchar *> domains, locals, phrases, routes;
+
+    void parse_append(const tchar *name, const tchar *route,
+	const tchar *mailbox, const tchar *domain);
+    int parse_domain(tchar *&in, tchar *&domain, tchar *&commment);
+    int parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials);
+    int parse_route(tchar *&in, tchar *&route);
+    static bool skip_whitespace(tchar *&in);
+};
+
 class SMTPClient: nocopy {
 public:
     SMTPClient();
@@ -44,11 +111,16 @@ public:
     bool helo(const tchar *domain = NULL);
     bool lhlo(const tchar *domain = NULL);
     bool auth(const tchar *id, const tchar *passwd);
+    bool xclient(const tchar *xclient_cmd);
     bool from(const tchar *id);
+    bool from(const RFC822Addr &addrs);
     bool rcpt(const tchar *id);
     bool bcc(const tchar *id) { return add(bccv, id); }
+    bool bcc(const RFC822Addr &addrs) { return add(bccv, addrs); }
     bool cc(const tchar *id) { return add(ccv, id); }
+    bool cc(const RFC822Addr &addrs) { return add(ccv, addrs); }
     bool to(const tchar *id) { return add(tov, id); }
+    bool to(const RFC822Addr &addrs) { return add(tov, addrs); }
     void attribute(const tchar *attr, const tchar *val);
     void header(const tchar *hdr) { hdrv.push_back(hdr); }
     void subject(const tchar *s) { sub = s; }
@@ -90,72 +162,19 @@ private:
     vector<tstring> tov, ccv, bccv, hdrv;
 
     bool add(vector<tstring> &v, const tchar *id);
+    bool add(vector<string> &v, const RFC822Addr &addrs);
     void recip(const tchar *hdr, const vector<tstring> &v);
-    bool stuff(const void *p, size_t sz);    
-};
-
-class RFC821Addr: nocopy {
-public:
-    explicit RFC821Addr(const tchar *address = NULL) {
-	if (address)
-	    parse(address);
-    }
-    RFC821Addr(const tchar *&address, tstring &reterr) {
-	parseaddr(address);
-	reterr = err;
-    }
-
-    const tstring &address(void) const { return addr; }
-    const tstring &domain(void) const { return domain_buf; }
-    const tstring &error(void) const { return err; }
-    const tstring &local(void) const { return local_part; }
-
-    bool parse(const tchar *address) { parseaddr(address); return err.empty(); }
-    void setDomain(const tchar *domain);
-
-private:
-    tstring addr, domain_buf, local_part;
-    tstring err;
-
-    void parseaddr(const tchar *&addr);
-    void parsedomain(tstring::size_type &pos);
-    void make_address(void);
-};
-
-class RFC822Addr: nocopy {
-public:
-    explicit RFC822Addr(const tchar *addrs = NULL): buf(NULL) {
-	if (addrs)
-	    parse(addrs);
-    }
-    ~RFC822Addr() { delete [] buf; }
-
-    vector<const tchar *> domain, mbox, name, route;
-
-    const tstring address(uint u = 0, bool name = false, bool brkt = true) const;
-    size_t size(void) const { return mbox.size(); }
-
-    uint parse(const tchar *addrs);
-
-private:
-    tchar *buf;
-
-    void parse_append(const tchar *name, const tchar *route,
-	const tchar *mailbox, const tchar *domain);
-    int parse_domain(tchar *&in, tchar *&domain, tchar *&commment);
-    int parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials);
-    int parse_route(tchar *&in, tchar *&route);
+    bool stuff(const void *p, size_t sz);
 };
 
 bool base64encode(const void *in, size_t len, char *&out, size_t &outsz);
-bool base64decode(const void *in, size_t sz, char *&out, size_t &outsz);
+bool base64decode(const char *in, size_t sz, void *&out, size_t &outsz);
 bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
     size_t &outsz);
-bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
-    void *&out, size_t &outsz);
+bool uudecode(const char *in, size_t sz, uint &perm, tstring &file, void
+    *&out, size_t &outsz);
 
-time_t mkgmtime(const struct tm *const tmp);
+time_t mkgmtime(const struct tm * const tmp);
 time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);
-void rfc822whitespace(tchar *&s);
 
 #endif // SMTPClient_h

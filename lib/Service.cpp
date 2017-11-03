@@ -1335,7 +1335,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	}
     } while (lckfd == -1);
     sprintf(buf, "%ld", (long)getpid());
-    if (ftruncate(lckfd, 0) || write(lckfd, buf, (uint)strlen(buf)))
+    if (ftruncate(lckfd, 0) || write(lckfd, buf, (uint)strlen(buf)) < 1)
 	return 2;
     for (int i = 1; i < argc; i++) {
 	const tchar *p = argv[i];

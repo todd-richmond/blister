@@ -40,10 +40,11 @@ class Config;
  * Each line in the log starts with a configurable string which defaults to
  * a date/time string with millisecond resolution. The following data can be
  * set to one of 4 styles
- *   Simple(default): standard log string prefixed with the log level
+ *   Simple(default): standard log string prefixed with the log time and level
  *   Syslog: syslog file format with level and prefix strings followed by ':'
  *   KeyVal: all log components are written as attr=val pairs
  *   NoLevel: same as "Simple", but the log level is omitted
+ *   NoTime: same as "Simple", but the log time is omitted
  *
  * Log files can be configured for age, count and size limits. The class will
  * automatically rollover files based on extension number or timestamp. File
@@ -65,7 +66,7 @@ public:
     enum Level {
 	None, Emerg, Alert, Crit, Err, Warn, Note, Info, Debug, Trace
     };
-    enum Type { Simple, Syslog, KeyVal, NoLevel };
+    enum Type { Simple, Syslog, KeyVal, NoLevel, NoTime };
 
     template<class C>
     class KV {
@@ -118,8 +119,8 @@ public:
 			    os << '\\' << 'n';
 			} else if (c == '\r') {
 			    os << '\\' << 'r';
-			} else if (c < ' ' && c != '\t') {
-			    tchar tmp[5];
+			} else if ((uchar)c < ' ' && c != '\t') {
+			    tchar tmp[8];
 
 			    tsprintf(tmp, T("\\%03o"), (uint)c);
 			    os << tmp;
@@ -348,19 +349,11 @@ private:
 	void set(const Config &cfg, const tchar *sect, const tchar *sub,
 	    bool enable, const tchar *level, const tchar *file);
 	void set(Level lvl, const tchar *file, uint cnt, ulong sz, ulong sec);
-	void unlock(void) {
-	    if (locked) {
-		(void)unlockfd();
-		locked = false;
-	    }
-	}
+	void unlock(void);
 
     private:
 	int fd;
 	tstring path;
-
-	bool lockfd(void);
-	bool unlockfd(void);
     };
 
     struct Tlsdata {
@@ -388,7 +381,7 @@ private:
     tstring last_format;
     time_t last_sec;
     Level lvl, maillvl, sysloglvl;
-    tstring mailfrom, mailhost, mailto;
+    tstring hostname, mailfrom, mailhost, mailto;
     tstring src;
     Sockaddr syslogaddr;
     uint syslogfac;

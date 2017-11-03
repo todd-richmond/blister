@@ -31,7 +31,7 @@ typedef struct mimemap {
     const char *subtype;
 } mimemap;
 
-static mimemap mime[] = {
+static const mimemap mime[] = {
     { "html", "text", "html" },
     { "js", "application", "x-javascript" },
     { "htm", "text", "html" },
@@ -86,13 +86,32 @@ static mimemap mime[] = {
 
 static string CRLF("\r\n");
 
+static const signed char chunkmap[256] = {
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -1, -1, -2, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -2, -1, -1, -1, -1,
+    -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+};
+
+
 bool HTTPServerSocket::date;
 
 HTTPServerSocket::HTTPServerSocket(Dispatcher &dspr, Socket &sock):
-    DispatchServerSocket(dspr, sock), cmd(NULL), path(NULL), prot(NULL),
-    data(NULL), postdata(NULL), datasz(0), postsz(0), postin(0), sz(0),
-    delpost(false), ka(false), nagleon(true), fmap(NULL), rto(RTimeout),
-    wto(WTimeout), savechar(0), _status(0)  {
+    DispatchServerSocket(dspr, sock), path(NULL), prot(NULL), postdata(NULL),
+    postsz(0), cmd(NULL), data(NULL), datasz(0), postin(0), sz(0),
+    fmap(NULL), ka(false), nagleon(true), rto(RTimeout), wto(WTimeout),
+    savechar(0), _status(0)  {
     ZERO(iov);
 }
 
@@ -104,17 +123,31 @@ HTTPServerSocket::~HTTPServerSocket(void) {
 #else
     delete [] fmap;
 #endif
-    if (delpost)
+    if (postdatasz)
 	delete [] postdata;
-    eos();
+}
+
+void HTTPServerSocket::postdata_grow(DispatchObjCB cb, uint keepsize, uint
+    newsize) {
+    char *old = postdata;
+
+    postdata = new char[newsize];
+    memcpy(postdata, old, keepsize);
+    if (postdatasz)
+	delete [] old;
+    ready(cb);
+}
+
+void HTTPServerSocket::postdata_free() {
+    delete [] postdata;
 }
 
 void HTTPServerSocket::readhdrs() {
-    uint room = (uint)(sz - datasz);
     int in;
+    uint room = (uint)(sz - datasz);
 
     if (msg == DispatchTimeout || msg == DispatchClose) {
-	erase();
+	disconnect();
 	return;
     }
     if (!room) {
@@ -128,13 +161,13 @@ void HTTPServerSocket::readhdrs() {
     }
     in = read(data + datasz, room);
     if (in == -1) {
-	erase();
+	disconnect();
 	return;
     }
     if (datasz + in > 3) {
 	ulong oldsz = datasz;
 
-	room = datasz < 3 ? (int)datasz : 3;
+	room = datasz < 3 ? (uint)datasz : 3;
 	datasz += in;
 	scan(data + oldsz - room, in + room);
     } else {
@@ -145,61 +178,92 @@ void HTTPServerSocket::readhdrs() {
 
 void HTTPServerSocket::readpost() {
     uint in = 0;
-    uint room = (uint)(sz - datasz);
+    uint room = (uint)(postdatasz ? postdatasz - postin : sz - datasz);
     uint left = room > 100 && postsz == (uint)-1 ? room : (uint)(postsz -
 	postin);
 
     if (msg == DispatchTimeout || msg == DispatchClose) {
-	erase();
+	disconnect();
 	return;
     }
-    if (room < left && (!delpost || postsz ==
-	(uint)-1)) {
-	char *old = postdata;
-
+    if (room < left && (!postdatasz || postsz == (uint)-1)) {
 	if (postsz == (uint)-1) {
-	    in = postin < 16 * 1024 ? 16 * 1024 : (uint)(postin * 2);
+	    in = postin < 8 * 1024 ? 16 * 1024 : (uint)(postin * 2);
 	    left = (uint)(in - postin);
 	} else {
 	    in = (uint)postsz;
 	}
-	postdata = new char[in + 1];
-	memcpy(postdata, old, postin + 1);
-	if (delpost)
-	    delete [] old;
-	else
-	    delpost = true;
+	postdata_grow(readpost, postin, in + 1);
+	postdatasz = in;
+	return;
     }
     if ((in = (uint)read(postdata + postin, left)) == (uint)-1) {
-	if (postsz == (uint)-1) {
+	if (postsz == (uint)-1 && !postchunking) {
 	    left = in = 0;
 	    postsz = postin;
-	    postdata[postsz] = '\0';
 	} else {
-	    erase();
+	    disconnect();
 	    return;
 	}
-    } else {
-	postdata[postin + in] = '\0';
     }
-    if (!delpost)
+    if (!postdatasz)
 	datasz += in;
     postin += in;
     left -= in;
+    if (postchunking) {
+	while (chunkin < postin) {
+	    // skip over terminating CRLF of previous chunk
+	    uint pos = chunkin + (chunkin && !chunktrailer ? 2 : 0);
+
+	    if (postin <= pos) 
+	        break;
+
+	    int c;
+	    uint chunksize = 0;
+	    const char *lf = (const char *)memchr(postdata + pos, '\n',
+                postin - pos);
+
+	    if (!lf)
+		break;
+	    if (chunktrailer) {
+		if (postdata[pos] == '\r' || postdata[pos] == '\n') {
+		    // final CRLF
+		    postsz = chunkin;
+		    left = 0;
+		}
+	    } else {
+		while ((c = chunkmap[(uchar)postdata[pos]]) >= 0) {
+		    chunksize = chunksize * 16 + c;
+		    ++pos;
+		}
+		if (c != -2 || pos == chunkin) {
+		    error(400);
+		    return;
+		}
+	    }
+            ++lf;
+	    memmove(postdata + chunkin, lf, postdata + postin - lf);
+	    postin -= lf - (postdata + chunkin);
+	    if (!postdatasz)
+		datasz -= lf - (postdata + chunkin);
+	    if (postsz != (uint)-1)
+		break;
+	    else if (chunksize == 0)
+		chunktrailer = true;
+	    else
+		chunkin += chunksize;
+	}
+    }
     if (left || postsz == (uint)-1) {
-	readable(readpost, rto);
+	postpre(readpost);
     } else {
-	savechar = postdata[postin];
+	savechar = postdata[postsz];
 	postdata[postsz] = '\0';
 	exec();
     }
 }
 
 void HTTPServerSocket::scan(char *buf, int len, bool append) {
-    if (delpost) {
-	delete [] postdata;
-	delpost = false;
-    }
     while (len-- > 0) {
 	if (buf[0] == '\r') {
 	    if (len < 3) {
@@ -247,7 +311,6 @@ void HTTPServerSocket::parse(void) {
     const char *val;
     bool noprot;
 
-    delpost = false;
     path = "/";
     prot = "HTTP/1.0";
     while (*buf == ' ' || *buf == '\t')
@@ -270,6 +333,7 @@ void HTTPServerSocket::parse(void) {
 	args.clear();
     } else {
 	*pp++ = '\0';
+        argdata = pp;
 	urldecode(pp, args);
     }
     if (!noprot) {
@@ -292,21 +356,26 @@ void HTTPServerSocket::parse(void) {
     buf = p;
     attrs.clear();
     while (*buf) {
-	if ((end = strchr(buf, '\r')) == NULL)
+	bool crlf = true;
+
+	if ((end = strchr(buf, '\r')) == NULL) {
 	    end = buf + strlen(buf);
-	while (end[2] == ' ' || end[2] == '\t') {   // unfold hdrs
-	    end += 2;
+	    crlf = false;
+	} else if (end[1] != '\n') {
+	    crlf = false;
+	}
+	while (end[0] && end[1] && (end[2] == ' ' || end[2] == '\t')) {
 	    for (start = end + 2; *start == ' ' || *start == '\t'; start++)
 		continue;
-	    p = strchr(start, '\r');
-	    if (p)
-		memmove(end, start, p - start);
+	    if ((p = strchr(start, '\r')) == NULL)
+		p = start + strlen(start);
+	    memmove(end, start, p - start);
 	    end = p;
 	}
 	while (*buf == ' ' || *buf == '\t')
 	    buf++;
 	p = end;
-	while (*p == ' ' || *p == '\t')
+	while (p > buf && (p[-1] == ' ' || p[-1] == '\t'))
 	    p--;
 	*p = '\0';
 	if (p == buf)
@@ -321,18 +390,26 @@ void HTTPServerSocket::parse(void) {
 		p++;
 	    attrs[buf] = p;
 	}
-	if (end[1])
-	    buf = end + 2;
-	else
+	if (!crlf || !end[1])
 	    break;
+	buf = end + 2;
     }
-    val = attr("content-length");
-    if (val)
-	postsz = (uint)atol(val);
-    else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT"))
+    val = attr("transfer-encoding");
+    if (val && !strncasecmp(val, "chunked", 7)) {
+	postchunking = true;
+	chunktrailer = false;
+	chunkin = 0;
 	postsz = (uint)-1;
-    else
-	postsz = 0;
+    } else {
+	postchunking = false;
+        val = attr("content-length");
+        if (val)
+            postsz = (uint)atol(val);
+        else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT"))
+            postsz = (uint)-1;
+        else
+            postsz = 0;
+    }
     if (postsz) {
 	postin = datasz - (ulong)(postdata - data);
 	if (postin > postsz)
@@ -342,7 +419,7 @@ void HTTPServerSocket::parse(void) {
 	    postdata[postsz] = '\0';
 	    exec();
 	} else {
-	    readable(readpost, rto);
+	    postpre(readpost);
 	}
     } else {
 	exec();
@@ -395,7 +472,7 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 #endif
 }
 
-inline void HTTPServerSocket::keepalive(void) {
+void HTTPServerSocket::keepalive(void) {
     const char *p = "Pragma";
     const char *val = attr(p);
     static const char *keep = "keep-alive";
@@ -420,7 +497,7 @@ void HTTPServerSocket::send(void) {
     ulong out;
 
     if (msg == DispatchTimeout || msg == DispatchClose) {
-	erase();
+	disconnect();
 	return;
     }
     if (ka && nagleon) {
@@ -453,17 +530,24 @@ void HTTPServerSocket::send(void) {
 	fmap = NULL;
     }
     if (ka && out != (ulong)-1) {
-	eos();
-	datasz -= delpost ? datasz : postsz + (ulong)(postdata - data);
-	if (datasz) {
-	    postdata[postsz] = savechar;
-	    memmove(data, postdata + postsz, datasz);
-	    scan(data, (uint)datasz, true);
-	} else {
-	    readable(readhdrs, rto);
-	}
+	datasz -= postdatasz ? datasz : postsz + (ulong)(postdata - data);
+	replydone(senddone);
     } else {
-	erase();
+	disconnect();
+    }
+}
+
+void HTTPServerSocket::senddone() {
+    if (postdatasz) {
+	postdata_free();
+	postdatasz = 0;
+    }
+    if (datasz) {
+	postdata[postsz] = savechar;
+	memmove(data, postdata + postsz, datasz);
+	scan(data, (uint)datasz, true);
+    } else {
+	readable(readhdrs, rto);
     }
 }
 
@@ -471,8 +555,8 @@ void HTTPServerSocket::reply(const char *p, size_t len) {
     char buf[64];
     int i;
 
-    if (!len && p)
-	len = strlen(p);
+    if (len == (ulong)-1)
+	len = p ? strlen(p) : 0;
     i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)(ss.size() + len));
     hdrs.write(buf, i);
     iov[0].iov_base = (char *)hdrs.str();
@@ -522,15 +606,16 @@ void HTTPServerSocket::reply(int fd, size_t len) {
     reply(fmap, len);
 }
 
-void HTTPServerSocket::status(uint sts, const char *type,
-    const char *subtype, time_t mtime) {
+void HTTPServerSocket::status(uint sts, const char *type, const char *subtype,
+    time_t mtime, const char *errstr) {
     struct tm tmbuf, *tmptr;
-    char buf[64];
+    char buf[128];
     size_t i;
 
     hdrs.reset();
     ss.reset();
-    i = sprintf(buf, "%s %u OK\r\n", prot, sts);
+    i = snprintf(buf, sizeof (buf), "%s %u %s\r\n", prot, sts, errstr);
+    i = min(i, sizeof (buf) - 1);
     hdrs.write(buf, i);
     if (date) {
 	time_t now = time(NULL);
@@ -602,6 +687,17 @@ void HTTPServerSocket::error(uint sts) {
     ss << sts << ' ' << p << CRLF;
     _status = sts;
     reply();
+}
+
+void HTTPServerSocket::error(int sts, const char *errstr) {
+    status(sts, "text", "plain", 0, errstr);
+    ss << sts << ' ' << errstr << CRLF;
+    _status = sts;
+    reply();
+}
+
+void HTTPServerSocket::done() {
+    erase();
 }
 
 void HTTPServerSocket::get(bool head) {

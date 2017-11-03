@@ -18,6 +18,7 @@
 #ifndef HTTPServer_h
 #define HTTPServer_h
 
+#include STL_UNORDERED_MAP_H
 #include "Dispatch.h"
 #include "Service.h"
 
@@ -42,48 +43,69 @@ public:
     virtual void start(void) { readable(readhdrs, rto); }
 
 protected:
+    string argdata;
+    const char *path, *prot;
+    char *postdata;
+    ulong postsz;
+
+    const char *arg(const char *name) const { return find(args, name); }
+    const char *attr(const char *name) const { return find(attrs, name); }
+    const char *postarg(const char *name) const { return find(postargs, name); }
     void header(const char *attr, const char *val);
     void error(uint errnum);
-    void reply(const char *data = NULL, size_t len = 0);
+    void error(int errnum, const char *errstr);
+    void keepalive(void);
+    void reply(const char *data = NULL, size_t len = -1);
     void reply(int fd, size_t sz);
     void reply(uint sts) { status(sts, NULL); reply(); }
-    void status(uint sts, const char *type = "text",
-	const char *subtype = "plain", time_t mtime = 0);
+    void status(uint sts, const char *type = "text", const char *subtype =
+	"plain", time_t mtime = 0, const char *errstr = "OK");
     template<class C> ostream &operator <<(const C &c) { return ss << c; }
     virtual void del(void) { error(501); }
-    virtual void eos(void) {}
+    virtual void disconnect(DispatchObjCB cb = done) { ready(cb); }
+    virtual void exec(void);
     virtual void get(bool head = false);
     virtual void post(void) { error(501); }
+    // call at beginning of PUT or POST unless all body data read
+    virtual void postpre(DispatchObjCB cb) { ready(cb, rto); }
+    // allow subclasses to allocate their own postdata buffers. subclasses
+    // must set postdata to NULL in their destructor to prevent ~HTTPServer
+    // from freeing this buffer incorrectly
+    virtual void postdata_free(void);
+    virtual void postdata_grow(DispatchObjCB cb, uint keepsize, uint newsize);
     virtual void put(void) { error(501); }
+    // Called when reply() no longer needs its data
+    virtual void replydone(DispatchObjCB cb) { ready(cb); }
+    DSP_DECLARE(HTTPServerSocket, done);
+    DSP_DECLARE(HTTPServerSocket, send);
 
+private:
     attrmap attrs, args, postargs;
-    const char *cmd, *path, *prot;
-    char *data, *postdata;
-    ulong datasz, postsz, postin, sz;
-    bool delpost, ka, nagleon;
+    uint chunkin;
+    bool chunktrailer, postchunking;
+    const char *cmd;
+    char *data;
+    ulong datasz, postin, sz;
     char *fmap;
     bufferstream<char> hdrs, ss;
     iovec iov[3];
+    bool ka, nagleon;
+    ulong postdatasz;
     uint rto, wto;
     char savechar;
     uint _status;
     static bool date;
 
-    const char *arg(const char *name) const { return find(args, name); }
-    const char *attr(const char *name) const { return find(attrs, name); }
-    const char *postarg(const char *name) const { return find(postargs, name); }
-    void keepalive(void);
     void scan(char *buf, int len, bool append = false);
     const char *find(const attrmap &amap, const char *name) const {
 	attrmap::const_iterator it = amap.find(name);
 
 	return it == amap.end() ? (const char *)NULL : it->second;
     }
-    virtual void exec(void);
     DSP_DECLARE(HTTPServerSocket, parse);
     DSP_DECLARE(HTTPServerSocket, readhdrs);
     DSP_DECLARE(HTTPServerSocket, readpost);
-    DSP_DECLARE(HTTPServerSocket, send);
+    DSP_DECLARE(HTTPServerSocket, senddone);
 };
 
 #endif // HTTPServer_h
