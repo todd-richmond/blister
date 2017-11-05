@@ -52,10 +52,6 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #define WSAEINPROGRESS	EINPROGRESS
 #define WSAEINTR	EINTR
 #define WSAEWOULDBLOCK	EWOULDBLOCK
-#ifdef __APPLE__
-#define s6_addr16	__u6_addr.__u6_addr16
-#define s6_addr32	__u6_addr.__u6_addr32
-#endif
 
 typedef int socket_t;
 
@@ -66,6 +62,11 @@ inline int sockerrno(void) { return errno; }
 #include <errno.h>
 #include <vector>
 #include "Streams.h"
+
+#if defined(__APPLE__) || defined(_WIN32)
+#define s6_addr16	__u6_addr.__u6_addr16
+#define s6_addr32	__u6_addr.__u6_addr32
+#endif
 
 const int SOCK_BACKLOG = 128;
 const int SOCK_BUFSZ = 3 * 1024;
@@ -85,20 +86,13 @@ inline bool interrupted(int e) { return e == WSAEINTR; }
 
 /*
  * Socket address class to wrap sockaddr structures and deal with Win32 startup
- * requirements. Currently restricted to IPV4 UDP or TCP addresses
+ * requirements. Currently limited to IPV4/6 TCP or UDP addresses
  */
 class Sockaddr {
 public:
     enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNSPEC };
 
     explicit Sockaddr(const addrinfo *ai) { set(ai); }
-    Sockaddr(const tchar *host, Proto proto = TCP) { set(host, proto); }
-    Sockaddr(const tchar *host, ushort port, Proto proto = TCP) {
-	set(host, port, proto);
-    }
-    Sockaddr(const tchar *host, const tchar *service, Proto proto = TCP) {
-	set(host, service, proto);
-    }
     explicit Sockaddr(const hostent *h) { set(h); }
     explicit Sockaddr(Proto proto = TCP) {
 	ZERO(addr);
@@ -106,9 +100,16 @@ public:
     }
     explicit Sockaddr(const sockaddr &sa) { set(sa); }
     Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
+    Sockaddr(const tchar *host, Proto proto = TCP) { set(host, proto); }
+    Sockaddr(const tchar *host, ushort port, Proto proto = TCP) {
+	set(host, port, proto);
+    }
+    Sockaddr(const tchar *host, const tchar *service, Proto proto = TCP) {
+	set(host, service, proto);
+    }
 
     bool operator ==(const Sockaddr &sa) const { 
-	return !memcmp(&addr, &sa.addr, sizeof (addr));
+	return !memcmp(&addr, &sa.addr, size());
     }
     bool operator !=(const Sockaddr &sa) const { return !operator ==(sa); }
     Sockaddr &operator =(const Sockaddr &sa) {
@@ -165,6 +166,12 @@ public:
     }
 
 private:
+    typedef union {
+	sockaddr sa;
+	sockaddr_in sa4;
+	sockaddr_in6 sa6;
+    } sockaddr_any;
+
 #ifdef _WIN32
     class SockInit {
     public:
@@ -174,12 +181,6 @@ private:
 
     static SockInit init;
 #endif
-
-    typedef union {
-	sockaddr sa;
-	sockaddr_in sa4;
-	sockaddr_in6 sa6;
-    } sockaddr_any;
 
     sockaddr_any addr;
     mutable tstring name;

@@ -57,15 +57,14 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     if (ret)
 	return ret;
     if (!dspr.start()) {
-	dlog << Log::Err << name << T(" unable to start") << endlog;
+	dloge(name, Log::error( T("unable to start")));
 	return -1;
     }
     hsock = new SimpleDispatchListenSocket<Dispatcher, HTTPDaemonSocket>(dspr);
     if (!hsock->listen(T("*:8080"))) {
 	dspr.stop();
-	dlog << Log::Info << T("mod=") << HTTPDaemonSocket::section() <<
-	    T(" cmd=listen addr=") << hsock->address().str() << ' ' <<
-	    strerror(hsock->err()) << endlog;
+        dspr.waitForMain();
+        return -1;
     }
     setids();
     running();

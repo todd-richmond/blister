@@ -296,6 +296,12 @@ public:
     template<class C> static const KV<C> cmd(const C &c) {
 	return KV<C>(T("cmd"), c);
     }
+    static const KV<const tchar *> error(void) {
+	return KV<const tchar *>(T("err"), tstrerror(errno));
+    }
+    template<class C> static const KV<C> error(const C &c) {
+	return KV<C>(T("err"), c);
+    }
     template<class C> static const KV<C> mod(const C &c) {
 	return KV<C>(T("mod"), c);
     }
@@ -432,36 +438,36 @@ inline Log &endlog(Log &l) { return l.endlog(); }
 extern Log &dlog;
 
 #define DLOGL(l, args)	{ if (l <= dlog.level()) dlog << l << args << endlog; }
-#define DLOGM(args)	DLOGL(Log::Emerg, args);
-#define DLOGA(args)	DLOGL(Log::Alert, args);
-#define DLOGC(args)	DLOGL(Log::Crit, args);
-#define DLOGE(args)	DLOGL(Log::Err, args);
-#define DLOGW(args)	DLOGL(Log::Warn, args);
-#define DLOGN(args)	DLOGL(Log::Note, args);
-#define DLOGI(args)	DLOGL(Log::Info, args);
-#define DLOGD(args)	DLOGL(Log::Debug, args);
-#define DLOGT(args)	DLOGL(Log::Trace, args);
+#define DLOGM(args)	DLOGL(Log::Emerg, args)
+#define DLOGA(args)	DLOGL(Log::Alert, args)
+#define DLOGC(args)	DLOGL(Log::Crit, args)
+#define DLOGE(args)	DLOGL(Log::Err, args)
+#define DLOGW(args)	DLOGL(Log::Warn, args)
+#define DLOGN(args)	DLOGL(Log::Note, args)
+#define DLOGI(args)	DLOGL(Log::Info, args)
+#define DLOGD(args)	DLOGL(Log::Debug, args)
+#define DLOGT(args)	DLOGL(Log::Trace, args)
 
 #define dlogl(l, ...)	{ if (l <= dlog.level()) dlog.log(l, __VA_ARGS__); }
-#define dlogm(...)	dlogl(Log::Emerg, __VA_ARGS__);
-#define dloga(...)	dlogl(Log::Alert, __VA_ARGS__);
-#define dlogc(...)	dlogl(Log::Crit, __VA_ARGS__);
-#define dloge(...)	dlogl(Log::Err, __VA_ARGS__);
-#define dlogw(...)	dlogl(Log::Warn, __VA_ARGS__);
-#define dlogn(...)	dlogl(Log::Note, __VA_ARGS__);
-#define dlogi(...)	dlogl(Log::Info, __VA_ARGS__);
-#define dlogd(...)	dlogl(Log::Debug, __VA_ARGS__);
-#define dlogt(...)	dlogl(Log::Trace, __VA_ARGS__);
+#define dlogm(...)	dlogl(Log::Emerg, __VA_ARGS__)
+#define dloga(...)	dlogl(Log::Alert, __VA_ARGS__)
+#define dlogc(...)	dlogl(Log::Crit, __VA_ARGS__)
+#define dloge(...)	dlogl(Log::Err, __VA_ARGS__)
+#define dlogw(...)	dlogl(Log::Warn, __VA_ARGS__)
+#define dlogn(...)	dlogl(Log::Note, __VA_ARGS__)
+#define dlogi(...)	dlogl(Log::Info, __VA_ARGS__)
+#define dlogd(...)	dlogl(Log::Debug, __VA_ARGS__)
+#define dlogt(...)	dlogl(Log::Trace, __VA_ARGS__)
 
 #define dlogvl(l, ...)	{ if (l <= dlog.level()) dlog.logv(l, __VA_ARGS__, NULL); }
-#define dlogvm(...)	dlogvl(Log::Emerg, __VA_ARGS__);
-#define dlogva(...)	dlogvl(Log::Alert, __VA_ARGS__);
-#define dlogvc(...)	dlogvl(Log::Crit, __VA_ARGS__);
-#define dlogve(...)	dlogvl(Log::Err, __VA_ARGS__);
-#define dlogvw(...)	dlogvl(Log::Warn, __VA_ARGS__);
-#define dlogvn(...)	dlogvl(Log::Note, __VA_ARGS__);
-#define dlogvi(...)	dlogvl(Log::Info, __VA_ARGS__);
-#define dlogvd(...)	dlogvl(Log::Debug, __VA_ARGS__);
-#define dlogvt(...)	dlogvl(Log::Trace, __VA_ARGS__);
+#define dlogvm(...)	dlogvl(Log::Emerg, __VA_ARGS__)
+#define dlogva(...)	dlogvl(Log::Alert, __VA_ARGS__)
+#define dlogvc(...)	dlogvl(Log::Crit, __VA_ARGS__)
+#define dlogve(...)	dlogvl(Log::Err, __VA_ARGS__)
+#define dlogvw(...)	dlogvl(Log::Warn, __VA_ARGS__)
+#define dlogvn(...)	dlogvl(Log::Note, __VA_ARGS__)
+#define dlogvi(...)	dlogvl(Log::Info, __VA_ARGS__)
+#define dlogvd(...)	dlogvl(Log::Debug, __VA_ARGS__)
+#define dlogvt(...)	dlogvl(Log::Trace, __VA_ARGS__)
 
 #endif // _Log_h
