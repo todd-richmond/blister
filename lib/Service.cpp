@@ -89,8 +89,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	    size = sizeof (buf);
 	    if (RegQueryValueEx(key, T("Install Directory"), 0L, &type,
 		(LPBYTE)&buf, &size)) {
-		dlog << Log::Warn << Log::mod(id) <<
-		    Log::kv(T("err"), T("install key missing")) << endlog;
+		dlogw(Log::mod(id), Log::error(T("install key missing")));
 	    } else {
 		full = buf;
 	    }
@@ -566,8 +565,8 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 
 	if ((status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
 	    s.c_str(), 0L, KEY_ALL_ACCESS, &key)) != ERROR_SUCCESS) {
-	    dlog << Log::Err << Log::mod(name) << Log::kv(T("err"),
-		T("unable to open performance registry key")) << endlog;
+	    dloge(Log::mod(name), Log::error(
+		T("unable to open performance registry")));
 	    return 1;
 	}
 	size = sizeof (counter);
@@ -578,8 +577,8 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    status = RegQueryValueEx(key, T("First Help"), 0L,
 		&type, (LPBYTE)&help, &size);
 	if (status) {
-	    dlog << Log::Err << Log::mod(name) <<  Log::kv(T("err"),
-		T("unable to determine counter info")) << endlog;
+	    dloge(Log::mod(name), Log::error(
+		T("unable to read performance counters")));
 	    RegCloseKey(key);
 	    return 1;
 	}
@@ -859,13 +858,13 @@ int Service::ctrl_handler(void *) {
 	    str = T("refresh");
 	    break;
 	case SIGINT:
-	    str = T("shutdown");
+	    str = T("stop");
 	    break;
 	case SIGPIPE:
 	    str = T("pipe");
 	    break;
 	case SIGTERM:
-	    str = T("termination");
+	    str = T("term");
 	    break;
 	case SIGTSTP:
 	    str = T("pause");
@@ -884,8 +883,7 @@ int Service::ctrl_handler(void *) {
 	    str = buf;
 	    break;
 	};
-	dlog << Log::Info << Log::mod(service->name) << Log::kv(T("sig"),
-	    str) << endlog;
+	dlogi(Log::mod(service->name), Log::kv(T("sig"), str));
 	signal_handler(sig);
     } while (sig && sig != SIGABRT && sig != SIGINT && sig != SIGTERM &&
 	sig != SIGBUS && sig != SIGFPE && sig != SIGILL && sig != SIGSEGV);
@@ -910,8 +908,7 @@ int Service::run(int argc, const tchar * const *argv) {
 	if (fpid > 0) {
 	    ::exit(0);
 	} else if (fpid == -1) {
-	    dlog << Log::Err << Log::mod(argv[0]) << Log::kv(T("err"),
-		T("unable to fork")) << endlog;
+	    dloge(Log::mod(argv[0]), Log::error(T("unable to fork")));
 	    ::exit(1);
 	}
 	if ((fd = ::open(T("/dev/null"), O_RDONLY)) != -1) {
@@ -968,9 +965,10 @@ bool Service::start(int argc, const tchar * const *argv) {
     if (sts != Error && sts != Stopped)
 	return false;
     if (console) {
-	run(argc, argv);
+	exit(run(argc, argv));
     } else if ((fpid = fork()) == -1) {
 	errnum = errno;
+        dloge(Log::mod(argv[0]), Log::error(T("unable to fork")));
 	return false;
     } else if (fpid == 0) {
 	exit(run(argc, argv));
@@ -1273,8 +1271,7 @@ Daemon::Daemon(const tchar *name, const tchar *display, bool pauseable):
 
 Daemon::~Daemon() {
     if (qflag != None)
-	dlog << Log::Note << Log::mod(name) << Log::kv(T("sts"),
-	    T("stopped")) << endlog;
+	dlog.note(Log::mod(name), Log::kv(T("sts"), T("stopped")));
     if (lckfd != -1) {
 	if (!watch || child)
 	    (void)tunlink(lckfile.c_str());
@@ -1295,8 +1292,7 @@ bool Daemon::setids() {
     if (uid != (uid_t)-1) {
 	dlog.setids(uid, gid);
 	if (fchown(lckfd, uid, gid) || setgid(gid) || setuid(uid)) {
-	    dlog << Log::Err << Log::mod(name) << Log::kv(T("err"),
-		T("unable to set uid")) << endlog;
+	    dloge(Log::mod(name), Log::error(T("unable to set uid")));
 	    return false;
 	} else {
 	    gid = (gid_t)-1;
@@ -1321,7 +1317,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	lckfd = ::open(tstringtoachar(lckfile), O_CREAT | O_WRONLY, S_IREAD |
 	    S_IWRITE);
 	if (lckfd == -1 || lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 1)) {
-	    dlog << Log::Warn << Log::mod(name) << T("sts=running") << endlog;
+	    dlogw(Log::mod(name), T("sts=running"));
 	    if (lckfd != -1)
 		::close(lckfd);
 	    lckfd = -1;
@@ -1368,18 +1364,15 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     watch = !console && cfg.get(T("watch.enable"), true);
     dlog.setmp(false);
     if (!cfg.get(T("enable"), true)) {
-	dlog << Log::Note << Log::mod(name) << Log::cmd(T("start")) <<
-	    Log::kv(T("sts"), T("disabled")) << endlog;
+	dlogn(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
+            T("disabled")));
 	return 4;
     }
     if (sbuf.st_size)
-	dlog << Log::Warn << Log::mod(name) <<
-	    Log::kv(T("err"), T("restarting after abort")) << endlog;
-    dlog << Log::Note << Log::mod(name) << Log::cmd(T("start")) <<
-	Log::kv(T("host"), Sockaddr::hostname()) <<
-	Log::kv(T("dir"), installdir.c_str()) <<
-	Log::kv(T("instance"), instance) <<
-	Log::kv(T("release"), ver) << endlog;
+	dlogw(Log::mod(name), Log::error(T("restarting after abort")));
+    dlogn(Log::mod(name), Log::cmd(T("start")), Log::kv(T("host"),
+        Sockaddr::hostname()), Log::kv(T("dir"), installdir.c_str()),
+        Log::kv(T("instance"), instance), Log::kv(T("release"), ver));
 #ifndef _WIN32
     struct rlimit rl;
     struct passwd *pwd;
@@ -1400,15 +1393,13 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    if (fchown(lckfd, uid, gid))
 		;
 	} else {
-	    dlog << Log::Err << Log::mod(name) << T(" unknown uid ") <<
-		uidname << endlog;
+	    dloge(Log::mod(name), T(" unknown uid "), uidname);
 	}
     }
-    dlog << Log::Debug << Log::mod(name) <<
-	Log::kv(T("uid"), uid == (uid_t)-1 ? getuid() : (uid_t)uid) <<
-	Log::kv(T("gid"), gid <= 0 ? getgid() : (uid_t)gid) <<
+    dlogd(Log::mod(name), Log::kv(T("uid"), uid == (uid_t)-1 ? getuid() :
+        (uid_t)uid), Log::kv(T("gid"), gid <= 0 ? getgid() : (uid_t)gid),
 	Log::kv(T("maxfd"), getrlimit(RLIMIT_NOFILE, &rl) ? OPEN_MAX :
-	rl.rlim_cur) << endlog;
+        rl.rlim_cur));
 #endif
     if (watch) {
 #ifndef _WIN32
@@ -1430,8 +1421,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    time(&start);
 	    child = fork();
 	    if (child == -1) {
-		dlog << Log::Err << Log::mod(name) << Log::kv(T("err"),
-		    strerror(errno)) << endlog;
+		dloge(Log::mod(name), Log::cmd(T("fork")), Log::error());
 		sleep(cfg.get(T("watch.interval"), 60U) / 4);
 	    } else if (child) {
 		struct flock fl;
@@ -1440,13 +1430,16 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		ZERO(sa);
 		sa.sa_handler = null_handler;
 		sigaction(SIGALRM, &sa, NULL);
-		dlog << Log::Debug << Log::mod(name) << Log::cmd(T("watch")) <<
-		    Log::kv(T("pid"), child) << endlog;
 		first = false;
 		sprintf(buf, "%ld %ld", (long)getpid(), (long)child);
-		if (lseek(lckfd, 0, SEEK_SET) || write(lckfd, buf, strlen(buf)))
-		    dlog << Log::Debug << Log::mod(name) << Log::cmd(T("reg")) <<
-			Log::kv(T("pid"), child) << endlog;
+		if (lseek(lckfd, 0, SEEK_SET) || write(lckfd, buf, strlen(
+		    buf)) < 1) {
+		    dlogw(Log::mod(name), Log::cmd(T("watch")),
+			Log::kv(T("pid"), child), Log::error());
+		} else {
+		    dlogd(Log::mod(name), Log::cmd(T("watch")),
+			Log::kv(T("pid"), child));
+		}
 		lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 		ZERO(fl);
 		fl.l_type = F_WRLCK;
@@ -1464,7 +1457,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		    int sts;
 
 		    alarm(intvl);
-		    if (lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Running, 0) == -1) {
+		    if (lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Running, 0) ==
+                        -1) {
 			alarm(0);
 			flg = WNOHANG;
 		    } else {
@@ -1476,13 +1470,10 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			ret = WIFEXITED(sts) ? WEXITSTATUS(sts) :
 			    WIFSIGNALED(sts) ? WTERMSIG(sts) : 0;
 			if (!qflag)
-			    dlog << Log::Warn << Log::mod(name) <<
-				Log::cmd(T("watch")) <<
-				Log::kv(T("pid"), child) <<
-				Log::kv(T("sts"), ret) <<
-				Log::kv(T("err"), T("unexpected exit")) <<
-				Log::kv(T("duration"), time(NULL) - start) <<
-				endlog;
+			    dlogw(Log::mod(name), Log::cmd(T("watch")),
+				Log::kv(T("pid"), child), Log::kv(T("sts"), ret),
+				Log::error(T("unexpected exit")),
+				Log::kv(T("duration"), time(NULL) - start));
 			break;
 		    }
 		    alarm(0);
@@ -1513,24 +1504,26 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			    kill(child, SIGINT);
 			alarm(waitlmt);
 			if (waitpid(child, &sts, 0) == -1) {
-			    kill(child, SIGKILL);
+			    dlog.level(lvl);
+			    dlogn(Log::mod(name), Log::cmd(T("watch")),
+				T("killing hung child"));
+			    if (kill(child * -1, SIGKILL))
+				kill(child, SIGKILL);
 			    alarm(waitlmt);
 			    waitpid(child, &sts, 0);
 			}
 			alarm(0);
 			dlog.level(lvl);
-			if (!qflag)
-			    dlog << Log::Warn << Log::mod(name) <<
-				Log::cmd(T("watch")) <<
-				Log::kv(T("pid"), child) <<
-				Log::kv(T("mem"), kb) <<
-				Log::kv(T("max"), maxmem) << info <<
-				T(" restarted") << endlog;
-			else if (!flg)
-			    dlog << Log::Note << Log::mod(name) <<
-				Log::cmd(qflag == Fast ? T("exit") :
-				T("stop")) << Log::kv(T("duration"),
-				time(NULL) - start) << endlog;
+			if (!qflag) {
+			    dlogvw(Log::mod(name), Log::cmd(T("watch")),
+				Log::kv(T("pid"), child), Log::kv(T("mem"), kb),
+				Log::kv(T("max"), maxmem), info.c_str(),
+                                T(" restarted"));
+                        } else if (!flg) {
+			    dlogn(Log::mod(name), Log::cmd(qflag == Fast ?
+                                T("exit") : T("stop")), Log::kv(T("duration"),
+                                time(NULL) - start));
+                        }
 			ret = 0;
 			break;
 		    }
@@ -1541,13 +1534,13 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    } else {
 		lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 0);
 		if (!first) {
-		    dlog << Log::Note << Log::mod(name) <<
-			Log::cmd(T("start")) <<
-			Log::kv(T("host"), Sockaddr::hostname()) <<
-			Log::kv(T("dir"), installdir.c_str()) <<
-			Log::kv(T("instance"), instance) <<
-			Log::kv(T("release"), ver) << endlog;
+		    dlogn(Log::mod(name), Log::cmd(T("start")),
+                        Log::kv(T("host"), Sockaddr::hostname()),
+                        Log::kv(T("dir"), installdir.c_str()),
+			Log::kv(T("instance"), instance),
+                        Log::kv(T("release"), ver));
 		}
+		setpgid(0, getpid());
 		ret = Service::onStart(argc, argv);
 		dlog.buffer(buffer);
 	    }
@@ -1562,8 +1555,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     } else {
 	ret = Service::onStart(argc, argv);
 	sprintf(buf, "%lu", (ulong)sigpid);
-	if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) || write(lckfd,
-	    buf, (uint)strlen(buf)))
+	if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) < 0 || write(lckfd,
+	    buf, (uint)strlen(buf)) < 1)
 	    ret = false;
 	dlog.buffer(buffer);
     }
@@ -1589,29 +1582,27 @@ void Daemon::onAbort() {
 	if (execl("/bin/bash", "/bin/bash", "-c", s.c_str(), (char *)0) < 0)
 #endif
 	{
-	    dlog << Log::Emerg << Log::mod(name) << Log::kv(T("err"),
-	    T("restart failed ")) << endlog;
+	    dloge(Log::mod(name), Log::error(T("restart failed ")));
 	    _exit(1);
 	}
     }
     if (console)
-	dlog << Log::Alert << Log::mod(name) << T("aborting") << endlog;
+	dloga(Log::mod(name), T("aborting"));
 }
 
 void Daemon::onPause(void) {
-    dlog << Log::Note << Log::mod(name) << Log::cmd(T("pause")) << endlog;
+    dlogn(Log::mod(name), Log::cmd(T("pause")));
 }
 
 void Daemon::onResume(void) {
-    dlog << Log::Note << Log::mod(name) << Log::cmd(T("resume")) << endlog;
+    dlogn(Log::mod(name), Log::cmd(T("resume")));
 }
 
 bool Daemon::onRefresh() {
     cfg.lock();
     if (!cfgfile.empty() && !cfg.read(cfgfile.c_str())) {
-	dlog << Log::Alert << Log::mod(name) <<
-	    T("mod=config file=") << cfgfile <<
-	    Log::kv(T("err"), T("unable to read")) << endlog;
+	dloga(Log::mod(name), T("mod=config file="), cfgfile, Log::error(
+            T("unable to read")));
 	cfg.unlock();
 	return false;
     }
@@ -1624,20 +1615,20 @@ bool Daemon::onRefresh() {
 	dlog.set(cfg);
     cfg.unlock();
     if (!child && refreshed)
-	dlog << Log::Note << Log::mod(name) << Log::cmd(T("reload")) << endlog;
+	dlog.note(Log::mod(name), Log::cmd(T("reload")));
     else
 	refreshed = true;
     return true;
 }
 
 void Daemon::onStop(bool fast) {
-    dlog << Log::Note << Log::mod(name) << Log::cmd(fast ?  T("exit") :
-	T("stop")) << Log::kv(T("duration"), time(NULL) - start) << endlog;
+    dlogn(Log::mod(name), Log::cmd(fast ? T("exit") : T("stop")),
+        Log::kv(T("duration"), time(NULL) - start));
     qflag = fast ? Fast : Slow;
 }
 
 void Daemon::onSigusr1() {
-    dlog << Log::Note << Log::mod(name) << Log::cmd(T("rollover")) << endlog;
+    dlogn(Log::mod(name), Log::cmd(T("rollover")));
     dlog.roll();
 }
 
@@ -1737,14 +1728,12 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
 #endif
     running();
-    dlog << Log::Info << Log::mod(name) << Log::cmd(T("exec")) <<
-	Log::kv(T("file"), argv[ac]) <<
-	Log::kv(T("args"), args) << endlog;
+    dlogi(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[ac]),
+	Log::kv(T("args"), args));
     dlog.close();
     texecvp(argv[ac], (tchar **)&argv[ac]);
-    dlog << Log::Err << Log::mod(name) << Log::cmd(T("exec")) <<
-	Log::kv(T("file"), argv[ac]) <<
-	Log::kv(T("err"), strerror(errno)) << endlog;
+    dloge(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[ac]),
+	Log::error());
     return (uint)-1;
 }
 

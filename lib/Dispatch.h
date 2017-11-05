@@ -412,12 +412,12 @@ public:
 	    return true;
 	backlog = cfg.get(T("backlog"), backlog, S::section());
 	if (DispatchListenSocket::listen(sa, true, backlog)) {
-	    dlog << Log::Info << T("mod=") << S::section() <<
-		T(" cmd=listen addr=") << sa.str() << endlog;
+	    dlogi(Log::mod(S::section()), Log::cmd(T("listen")),
+                Log::kv(T("addr"), sa.str()));
 	    return true;
 	}
-	dlog << Log::Err << T("mod=") << S::section() <<
-	    T(" cmd=listen addr=") << sa.str() << ' ' << errstr() << endlog;
+	dloge(Log::mod(S::section()), Log::cmd(T("listen")),
+            Log::kv(T("addr"), sa.str()), Log::error(errstr()));
 	return false;
     }
     bool listen(const tchar *host = NULL, bool enable = true, int backlog =

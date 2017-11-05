@@ -56,7 +56,7 @@ public:
 	if (addrs)
 	    parse(addrs);
     }
-    RFC822Addr(const tstring &addrs): buf(NULL) { parse(addrs.c_str()); }
+    explicit RFC822Addr(const tstring &addrs): buf(NULL) { parse(addrs.c_str()); }
     ~RFC822Addr() { delete [] buf; }
 
     const tstring address(uint u = 0, bool name = false, bool brkt = true) const;
