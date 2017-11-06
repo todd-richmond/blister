@@ -34,8 +34,6 @@
 #define CLIENT SMTPClient
 #endif
 
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-
 typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
 static const tchar *default_host = T("localhost:25");

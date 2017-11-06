@@ -1515,10 +1515,9 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			alarm(0);
 			dlog.level(lvl);
 			if (!qflag) {
-			    dlogvw(Log::mod(name), Log::cmd(T("watch")),
+			    dlogw(Log::mod(name), Log::cmd(T("watch")),
 				Log::kv(T("pid"), child), Log::kv(T("mem"), kb),
-				Log::kv(T("max"), maxmem), info.c_str(),
-                                T(" restarted"));
+				Log::kv(T("max"), maxmem), T("restarted"));
                         } else if (!flg) {
 			    dlogn(Log::mod(name), Log::cmd(qflag == Fast ?
                                 T("exit") : T("stop")), Log::kv(T("duration"),

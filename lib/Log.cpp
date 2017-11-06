@@ -30,8 +30,6 @@
 
 #ifdef _WIN32
 #pragma comment(lib, "user32.lib")
-#else
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #endif
 
 static const tchar *USubst = T("\001\001");
@@ -517,8 +515,11 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    	ss += '@';
 		ss += Sockaddr::hostname();
 	    }
-	    smtp.from(RFC822Addr(ss));
-	    smtp.to(RFC822Addr(mailto));
+
+	    RFC822Addr ssaddr(ss), mailtoaddr(mailto);
+
+	    smtp.from(ssaddr);
+	    smtp.to(mailtoaddr);
 	    smtp.subject(strbuf.substr(tmlen, tmlen + 69).c_str());
 	    smtp.data(false, strbuf.c_str());
 	    smtp.enddata();

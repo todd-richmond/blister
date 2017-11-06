@@ -52,9 +52,10 @@ AC_ARG_ENABLE(optimize,
 AC_MSG_RESULT("$optimize")
 AC_SUBST(optimize)
 
-COMMON_CFLAGS="-pipe -Wall -Werror -Wformat=2 -Wno-format-y2k -Wstrict-aliasing=2 -Wwrite-strings $optimize -DOSREL=$OSREL"
+COMMON_CFLAGS="-pipe -Wall -Werror -Wformat=2 -Wno-format-nonliteral \
+-Wno-format-y2k -Wstrict-aliasing=2 -Wwrite-strings $optimize -DOSREL=$OSREL"
 AM_CFLAGS="$AM_CFLAGS $COMMON_CFLAGS"
-AM_CXXFLAGS="$AM_CXXFLAGS -fno-exceptions -fno-rtti -std=c++11 -Wno-deprecated $COMMON_CFLAGS"
+AM_CXXFLAGS="$AM_CXXFLAGS -fno-exceptions -fno-rtti -Wno-deprecated $COMMON_CFLAGS"
 
 AC_SUBST([AM_CFLAGS])
 AC_SUBST([AM_CXXFLAGS])
