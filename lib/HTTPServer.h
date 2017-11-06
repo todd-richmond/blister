@@ -48,6 +48,7 @@ protected:
     char *postdata;
     ulong postsz;
 
+    template<class C> ostream &operator <<(const C &c) const { return ss << c; }
     const char *arg(const char *name) const { return find(args, name); }
     const char *attr(const char *name) const { return find(attrs, name); }
     const char *postarg(const char *name) const { return find(postargs, name); }
@@ -60,7 +61,6 @@ protected:
     void reply(uint sts) { status(sts, NULL); reply(); }
     void status(uint sts, const char *type = "text", const char *subtype =
 	"plain", time_t mtime = 0, const char *errstr = "OK");
-    template<class C> ostream &operator <<(const C &c) { return ss << c; }
     virtual void del(void) { error(501); }
     virtual void disconnect(DispatchObjCB cb = done) { ready(cb); }
     virtual void exec(void);

@@ -1421,7 +1421,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    time(&start);
 	    child = fork();
 	    if (child == -1) {
-		dloge(Log::mod(name), Log::cmd(T("fork")), Log::error());
+		dloge(Log::mod(name), Log::cmd(T("fork")), Log::error(errno));
 		sleep(cfg.get(T("watch.interval"), 60U) / 4);
 	    } else if (child) {
 		struct flock fl;
@@ -1435,7 +1435,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		if (lseek(lckfd, 0, SEEK_SET) || write(lckfd, buf, strlen(
 		    buf)) < 1) {
 		    dlogw(Log::mod(name), Log::cmd(T("watch")),
-			Log::kv(T("pid"), child), Log::error());
+			Log::kv(T("pid"), child), Log::error(errno));
 		} else {
 		    dlogd(Log::mod(name), Log::cmd(T("watch")),
 			Log::kv(T("pid"), child));
@@ -1733,7 +1733,7 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     dlog.close();
     texecvp(argv[ac], (tchar **)&argv[ac]);
     dloge(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[ac]),
-	Log::error());
+	Log::error(errno));
     return (uint)-1;
 }
 

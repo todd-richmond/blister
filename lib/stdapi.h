@@ -344,6 +344,7 @@ EXTERNC_
 #define ctime_r(clock, buf)	((void)(buf), ctime(clock))
 #define gmtime_r(clock, buf)	((void)(buf), gmtime(clock))
 #define localtime_r(clock, buf)	((void)(buf), localtime(clock))
+#define strerror_r(e, buf, sz)	strncpy(buf, strerror(e), sz)
 
 #else // _WIN32
 
@@ -518,6 +519,7 @@ EXTERNC_
 #define tstrtok		wcstok
 #define tstrdup		wcsdup
 #define tstrerror	wcserror
+#define tstrerror_r(e, buf, sz)	wcsncpy(buf, wcserror(e), sz)
 #define tstrftime	wcsftime
 #define ttof		wtof
 #define ttoi		wtoi
@@ -594,6 +596,7 @@ typedef wchar tuchar;
 #define tstrtok		strtok
 #define tstrdup		strdup
 #define tstrerror	strerror
+#define tstrerror_r	strerror_r
 #define tstrftime	strftime
 #define ttof		atof
 #define ttoi		atoi

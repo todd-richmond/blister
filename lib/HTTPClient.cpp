@@ -334,7 +334,7 @@ done:
     return ret;
 }
 
-tostream &HTTPClient::operator <<(tostream &os) {
+tostream &HTTPClient::operator <<(tostream &os) const {
     attrmap::const_iterator it;
 
     os << sts << endl;

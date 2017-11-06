@@ -57,7 +57,7 @@ public:
     uint status(void) const { return sts; }
     uint wtimeout(void) const { return wto; }
 
-    tostream &operator <<(tostream &os);
+    tostream &operator <<(tostream &os) const;
     bool close(void) { return sock.close(); }
     bool connect(const Sockaddr &addr, bool keepalive = false, 
 	uint timeout = SOCK_INFINITE);

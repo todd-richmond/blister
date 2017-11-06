@@ -76,21 +76,20 @@ public:
 
 	tostream &print(tostream &os) const {
 	    os << key << '=';
-	    value(os);
-	    return os;
+	    return value(os);
 	}
 
     private:
 	const tchar *key;
 	const C &val;
 
-	void value(tostream &os) const {
+	tostream &value(tostream &os) const {
 	    bufferstream<tchar> buf;
 
 	    buf << val << '\0';
-	    quote(os, buf.str());
+	    return quote(os, buf.str());
 	}
-	static void quote(tostream &os, const tchar *s) {
+	static tostream &quote(tostream &os, const tchar *s) {
 	    const tchar *p;
 	    static const uchar needquote[128] = {
 		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
@@ -103,8 +102,6 @@ public:
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
 	    };
 
-	    if (!s)
-		return;
 	    for (p = s; *p; p++) {
 		if ((ushort)*p > 127 || needquote[(uchar)*p]) {
 		    os << '"';
@@ -129,10 +126,11 @@ public:
 			}
 		    }
 		    os << '"';
-		    return;
+		    return os;
 		}
 	    }
 	    os.write(s, p - s);
+	    return os;
 	}
     };
 
@@ -296,8 +294,8 @@ public:
     template<class C> static const KV<C> cmd(const C &c) {
 	return KV<C>(T("cmd"), c);
     }
-    static const KV<const tchar *> error(void) {
-	return KV<const tchar *>(T("err"), tstrerror(errno));
+    template<class C> static const KV<C> error(int num) {
+	return KV<C>(T("err"), tstrerror(num));
     }
     template<class C> static const KV<C> error(const C &c) {
 	return KV<C>(T("err"), c);
@@ -402,33 +400,60 @@ private:
     void _flush(void);
 };
 
-template<> inline void Log::KV<bool>::value(tostream &os) const {
-    os << (val ? 't' : 'f');
+template<> inline tostream &Log::KV<bool>::value(tostream &os) const {
+    return os << (val ? 't' : 'f');
 }
-template<> inline void Log::KV<const tchar *>::value(tostream &os) const {
-    quote(os, val);
+template<> inline tostream &Log::KV<const tchar *>::value(tostream &os) const {
+    return quote(os, val);
 }
-template<> inline void Log::KV<tchar *>::value(tostream &os) const {
-    quote(os, val);
+template<> inline tostream &Log::KV<tchar *>::value(tostream &os) const {
+    return quote(os, val);
 }
-template<> inline void Log::KV<tstring>::value(tostream &os) const {
-    quote(os, val.c_str());
+template<> inline tostream &Log::KV<tstring>::value(tostream &os) const {
+    return quote(os, val.c_str());
 }
-template<> inline void Log::KV<char>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<double>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<float>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<int>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<long>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<llong>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<short>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<uchar>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<uint>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<ulong>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<ullong>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<ushort>::value(tostream &os) const { os << val; }
-template<> inline void Log::KV<wchar>::value(tostream &os) const { os << val; }
+template<> inline tostream &Log::KV<char>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<double>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<float>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<int>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<long>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<llong>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<short>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<uchar>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<uint>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<ulong>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<ullong>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<ushort>::value(tostream &os) const {
+    return os << val;
+}
+template<> inline tostream &Log::KV<wchar>::value(tostream &os) const {
+    return os << val;
+}
 
-template<class C> inline tostream &operator <<(tostream &os, const Log::KV<C> &kv) {
+template<class C> inline tostream &operator <<(tostream &os, const Log::KV<C>
+    &kv) {
     return kv.print(os);
 }
 
