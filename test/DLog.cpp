@@ -60,7 +60,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("--alert"))) {
 	    ulong cnt = 3, sz = 10 * 1024 * 1024, tm = 0;
 	    const tchar *file;
-	    Log::Level alvl = Log::Err;
+	    Log::Level alvl = Log::Warn;
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;

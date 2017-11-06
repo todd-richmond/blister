@@ -55,7 +55,7 @@ private:
 	LoadCmd(const tchar *c, const tchar *a, const URL &u, const tchar *d =
 	    NULL, const tchar *s = NULL, const tchar *v = NULL): cmd(c), arg(a ?
 	    a : T("")), data(d ? d : T("")), value(v ? v : T("")),
-	    status(s ? (ushort)ttoi(s) : 200), url(u), usec(0), tusec(0),
+	    status(s ? (ushort)ttoi(s) : 0), url(u), usec(0), tusec(0),
 	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0),
 	    count(0), tcount(0), err(0), terr(0) {}
 
@@ -169,7 +169,8 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     int fcnt) {
     Sockaddr addr;
     tchar buf[1024];
-    tchar *cmd, *req, *arg, *data = NULL, *value = NULL, *status = NULL, *p;
+    const tchar *cmd, *req, *arg, *data = NULL, *value = NULL, *status = NULL;
+    tchar *p;
     tifstream is(file);
     int len;
     LoadCmd *lcmd;
@@ -278,6 +279,8 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	    if (!tstricmp(cmd, T("post")))
 		data = tstrtok(NULL, T(" \t"));
 	    status = tstrtok(NULL, T(" \t"));
+	    if (!status) 
+		status = T("200");
 	    value = tstrtok(NULL, T(""));
 	    if (!url.set(req)) {
 		tcerr << T("invalid url: line ") << line << endl;
@@ -653,6 +656,7 @@ void HTTPLoad::reset(bool all) {
     vector<LoadCmd *>::const_iterator it;
     LoadCmd *cmd;
 
+    lock.lock();
     for (it = cmds.begin(); it != cmds.end(); ++it) {
 	cmd = *it;
 	cmd->count = 0;
@@ -670,6 +674,7 @@ void HTTPLoad::reset(bool all) {
 	tusec = 0;
 	tcount = 0;
     }
+    lock.unlock();
 }
 
 void HTTPLoad::uninit(void) {

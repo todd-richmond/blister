@@ -172,7 +172,8 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
     int fcnt) {
     Sockaddr addr;
     tchar buf[1024];
-    tchar *cmt, *cmd, *arg = NULL, *status = NULL, *p;
+    const tchar *cmt, *cmd, *arg = NULL, *status = NULL;
+    tchar *p;
     tifstream is(file);
     LoadCmd *lcmd;
     int len;
@@ -443,6 +444,8 @@ int SMTPLoad::onStart(void) {
 
 		p = tstrchr(buf, ' ');
 		if (p) {
+		    while (istspace(*p))
+			p++;
 		    auth.assign(buf, p - buf);
 		    ret = sc.auth(auth.c_str(), p + 1);
 		} else {
@@ -452,6 +455,10 @@ int SMTPLoad::onStart(void) {
 		ret = sc.ehlo(buf);
 	    } else if (cmd->cmd == T("helo")) {
 		ret = sc.helo(buf);
+	    } else if (cmd->cmd == T("lhlo")) {
+		ret = sc.lhlo(buf);
+	    } else if (cmd->cmd == "xclient") {
+		ret = sc.xclient(buf);
 	    } else if (cmd->cmd == T("from")) {
 		ret = sc.from(buf);
 	    } else if (cmd->cmd == T("rcpt") || cmd->cmd == T("to")) {
@@ -507,15 +514,17 @@ int SMTPLoad::onStart(void) {
 	    cmd->complete(ret, diff);
 	    lock.unlock();
 	    if (!ret) {
-		dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") <<
-		    buf << T(" status=") << sc.code() << T(" duration=") <<
-		    (diff / 1000) << T(" result=\"") << sc.result() << '"' <<
-		    endlog;
+		dlog << Log::Err << Log::cmd(cmd->cmd) << Log::kv("arg", buf) <<
+		    Log::kv("status", sc.code()) << Log::kv("message",
+		    sc.message()) << Log::kv("duration", (diff / 1000)) <<
+		    Log::kv("result", sc.result()) << endlog;
 		break;
-	    } else if (dlog.level() >= Log::Info)
-		dlog << Log::Info << T("cmd=") << cmd->cmd << T(" arg=") <<
-		    buf << T(" status=") << sc.code() << T(" duration=") <<
-		    (diff / 1000) << endlog;
+	    } else if (dlog.level() >= Log::Info) {
+		dlog << Log::Info << Log::cmd(cmd->cmd) << Log::kv("arg",
+		    buf) << Log::kv("status", sc.code()) << Log::kv("message",
+		    sc.message()) << Log::kv("duration", (diff / 1000)) <<
+		    endlog;
+	    }
 	}
 	sc.close();
 	end = uticks();
