@@ -2,9 +2,6 @@ include_directories(${blister_SOURCE_DIR})
 
 find_package(Threads)
 
-set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS} ${COMMON_C_FLAGS})
-set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} ${COMMON_CXX_FLAGS})
-
 set(COMMON_LIBS ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
 if(UNIX AND NOT APPLE)
     set(COMMON_LIBS ${COMMON_LIBS} rt)
