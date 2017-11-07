@@ -46,7 +46,7 @@ add_library(objlib OBJECT ${blister_LIB_SRCS})
 add_library(blister_shared SHARED $<TARGET_OBJECTS:objlib>)
 add_library(blister_static STATIC $<TARGET_OBJECTS:objlib>)
 
-set_property(TARGET ${objlib} PROPERTY POSITION_INDEPENDENT_CODE 1)
+set_property(TARGET objlib PROPERTY POSITION_INDEPENDENT_CODE 1)
 
 set_target_properties(blister_shared PROPERTIES OUTPUT_NAME blister)
 
