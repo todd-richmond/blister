@@ -2,27 +2,38 @@
 TOOLDIR=/usr/local
 
 #export PATH=${TOOLDIR}/bin:$PATH
-#export LD_LIBRARY_PATH=${TOOLDIR}/lib
+#export LD_LIBRARY_PATH=${TOOLDIR}/lib:${LD_LIBRARY_PATH}
 
 if [ "$1" = "-?" -o "$1" = "-h" ]; then
+    echo "usage:	$0
+	[CMAKE_BUILD_TYPE ...]
+	automake [configure_args ...]"
     echo "usage: $0 [configure_args]"
     exit 1
 fi
 
-if [ $(uname) = "Darwin" ]; then
-    LIBTOOLIZE=glibtoolize
+if [ "$1" == automake -o -z "$(which cmake 2> /dev/null)" ]; then
+    if [ $(uname) = "Darwin" ]; then
+	LIBTOOLIZE=glibtoolize
+    else
+	LIBTOOLIZE=libtoolize
+    fi
+
+    shift
+    set -x
+    make distclean > /dev/null 2>&1
+    aclocal || exit 1
+    #aclocal -I ${TOOLDIR}/share/aclocal || exit 1
+    autoconf || exit 1
+    $LIBTOOLIZE --automake || exit 1
+    automake -a || exit 1
+    ./configure $* || exit 1
 else
-    LIBTOOLIZE=libtoolize
+    CMAKE_BUILD_TYPE=${1:-Release}
+    shift
+    set -x
+    cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release} $* . || exit 1
 fi
 
-set -x
-
-make distclean > /dev/null 2>&1
-aclocal || exit 1
-#aclocal -I ${TOOLDIR}/share/aclocal || exit 1
-autoconf || exit 1
-$LIBTOOLIZE --automake || exit 1
-automake -a || exit 1
-./configure $* || exit 1
-make
+make -j 4
 
