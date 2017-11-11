@@ -396,7 +396,7 @@ int tmain(int argc, tchar *argv[]) {
 	do {
 	    ops = errs = 0U;
 	    usecs = 0U;
-	    msleep(1000);
+	    ec.waitForMain(1000);
 	    now = uticks();
 	    tcout << ((uint64_t)(ops + errs) * 1000000 / (now - last)) <<
 		T("\t\t") << (ulong)(usecs / (ops ? (uint)ops : (uint)errs +
@@ -405,7 +405,7 @@ int tmain(int argc, tchar *argv[]) {
 	} while (!qflag && loops);
     } else {
 	while (!qflag)
-	    msleep(1000);
+	    ec.waitForMain(1000);
     }
     ec.stop();
     delete [] dbuf;

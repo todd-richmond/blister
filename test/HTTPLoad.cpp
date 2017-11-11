@@ -779,7 +779,7 @@ int tmain(int argc, tchar *argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGHUP, signal_handler);
     if (!wld)
-	wld = T("http.wld";)
+	wld = T("http.wld");
     if (!HTTPLoad::init(host, threads, maxuser, ruser, debug, ka, timeout,
 	loops, wld, bodyfile, cachesz * 1024 * 1024, allfiles, filecnt))
 	return -1;

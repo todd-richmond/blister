@@ -203,10 +203,8 @@ void Log::LogFile::roll(void) {
 	    }
 	    if (oldtime == (ulong)-1) {
 		break;
-	    } else if (((cnt && files >= cnt &&
-		(!sec || oldtime < (ulong)(now - sec))) ||
-		(sec && oldtime < (ulong)(now - sec))) &&
-		(!cnt || files >= cnt)) {
+            } else if ((cnt || sec) && (!sec || oldtime < (ulong)(now - sec)) &&
+                (!cnt || files >= cnt)) {
 		tunlink(oldfile.c_str());
 		files--;
 		trewinddir(dir);

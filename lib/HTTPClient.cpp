@@ -166,9 +166,8 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     sock.close();
     ka = keepalive;
     if (!sock.connect(addr, to)) {
-	dlog << Log::Info << T("mod=http cmd=connect addr=") << addr.host() <<
-	    T(":") << (uint)addr.port() << Log::kv(T("err"), sock.errstr()) <<
-	    endlog;
+	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
+            addr.str()), Log::error(sock.errstr()));
 	sock.close();
 	return false;
     }
@@ -177,7 +176,8 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     sstrm.rdbuf()->attach(sock);
     sstrm.rdbuf()->reset();
     sstrm.clear(sstrm.rdstate() & ~(ios::badbit | ios::eofbit | ios::failbit));
-    DLOGD(T("mod=http cmd=connect addr=") << addr.host() << ':' << addr.port());
+    dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
+        addr.ipstr()));
     return true;
 }
 
@@ -238,12 +238,12 @@ loop:
 	!getline(sstrm, s)) {
 	sock.close();
 	if (first && ka && (!sent || rto > (mticks() - start) + 200)) {
-	    dlog << Log::Debug << T("mod=http cmd=reconnect") << endlog;
+	    dlogd(Log::mod(T("http")), Log::cmd(T("reconnect")));
 	    sstrm.seekp(0, ios::beg);
 	    first = false;
 	    goto loop;
 	} else {
-	    dlog << Log::Note << T("mod=http cmd=disconnect") << endlog;
+	    dlogn(Log::mod(T("http")), Log::cmd(T("disconnect")));
 	    iov[0].iov_base = (char *)NULL;
 	    goto done;
 	}
@@ -255,7 +255,7 @@ loop:
     while (*p == ' ' || *p == '\t')
 	p++;
     sts = atoi(p);
-    dlog << Log::Debug << T("mod=http status=") << sts << endlog;
+    dlogd(Log::mod(T("http")), Log::kv(T("status"), sts));
     while (getline(sstrm, s)) {		    // does not support folded hdrs
 	p = s.c_str();
 	while (*p == ' ' || *p == '\t')

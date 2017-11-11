@@ -250,15 +250,14 @@ ushort Sockaddr::size(ushort family) {
 }
 
 const tstring Sockaddr::str(const tstring &val) const {
+    tchar buf[12];
     ushort p = port();
 
-    if (p) {
-	tchar buf[12];
+    if (!p)
+	return val;
 
-	tsprintf(buf, T("%c%u"), ipv4() ? ':' : ';', (uint)p);
-	return val + buf;
-    }
-    return val;
+    tsprintf(buf, T("%c%u"), ipv4() ? ':' : ';', (uint)p);
+    return val + buf;
 }
 
 #define BUILD_IP(ip) ((ip[0] << 24) | (ip[1] << 16) | (ip[2] << 8) | ip[3])
@@ -339,7 +338,7 @@ Socket &Socket::operator =(socket_t sock) {
 }
 
 Socket &Socket::operator =(const Socket &r) {
-    if (sbuf == r.sbuf || &r == this)
+    if (sbuf == r.sbuf)
 	return *this;
     if (--sbuf->count == 0)
 	delete sbuf;
