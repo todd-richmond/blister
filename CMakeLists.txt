@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 2.8.12)
-project (Blister)
+project (Blister C CXX)
+
+find_package(Threads)
 
 set(CMAKE_MACOSX_RPATH 1)
 

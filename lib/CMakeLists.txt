@@ -1,6 +1,6 @@
 project(blister)
 
-set(blister_INCLUDE_SRCS
+set(blister_INC_SRCS
     Config.h
     Dispatch.h
     HTTPClient.h
@@ -34,22 +34,23 @@ else()
     set(blister_LIB_SRCS ${blister_LIB_SRCS} Unix.c)
 endif()
 
-add_library(objlib OBJECT ${blister_LIB_SRCS})
-add_library(blister_shared SHARED $<TARGET_OBJECTS:objlib>)
-add_library(blister_static STATIC $<TARGET_OBJECTS:objlib>)
+add_library(blister_lib OBJECT ${blister_LIB_SRCS})
+set_target_properties(blister_lib PROPERTIES POSITION_INDEPENDENT_CODE 1)
+target_include_directories(blister_lib PUBLIC .)
 
-set_property(TARGET objlib PROPERTY POSITION_INDEPENDENT_CODE 1)
+add_library(blister SHARED $<TARGET_OBJECTS:blister_lib>)
+target_include_directories(blister PUBLIC $<TARGET_PROPERTY:blister_lib,INCLUDE_DIRECTORIES>)
 
-set_target_properties(blister_shared PROPERTIES OUTPUT_NAME blister)
+add_library(blister_static STATIC $<TARGET_OBJECTS:blister_lib>)
+# set_target_properties(blister_static PROPERTIES OUTPUT_NAME stdapi)
+target_include_directories(blister_static PUBLIC $<TARGET_PROPERTY:blister_lib,INCLUDE_DIRECTORIES>)
 
-target_include_directories(objlib PUBLIC include)
-
-install(FILES ${blister_INCLUDE_SRCS} DESTINATION include)
+install(FILES ${blister_INC_SRCS} DESTINATION include)
 
 if(WIN32)
-    install(TARGETS ${NAME} RUNTIME DESTINATION bin)
+    install(TARGETS blister RUNTIME DESTINATION bin)
 else()
-    set_target_properties(blister_shared PROPERTIES VERSION 1.4.0 SOVERSION 1)
-    install(TARGETS blister_shared ${INSTALL_TARGETS_DEFAULT_ARGS} LIBRARY DESTINATION lib)
+    install(TARGETS blister LIBRARY DESTINATION lib)
+    install(TARGETS blister_static ARCHIVE DESTINATION lib)
 endif()
 
