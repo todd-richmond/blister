@@ -214,9 +214,9 @@ void Thread::clear(void) {
     }
     hdl = 0;
     state = Terminated;
-    group->notify(*this);
     cv.set();
     lck.unlock();
+    group->notify(*this);
 }
 
 // exit thread cleanly - called by itself

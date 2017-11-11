@@ -789,7 +789,11 @@ public:
 	    return pthread_cond_wait(&cv, lock) == 0;
 	} else {
 	    timespec ts;
-
+#ifdef __APPLE__
+	    ts.tv_sec = (uint)(msec / 1000);
+	    ts.tv_nsec = (msec % 1000) * 1000000;
+	    return !pthread_cond_timedwait_relative_np(&cv, lock, &ts);
+#else
 	    clock_gettime(CLOCK_BOOTTIME, &ts);
 	    ts.tv_sec += (uint)(msec / 1000);
 	    ts.tv_nsec += (msec % 1000) * 1000000;
@@ -797,12 +801,11 @@ public:
 		ts.tv_nsec -= 1000000000;
 		++ts.tv_sec;
 	    }
-#ifdef __APPLE__
-	    return pthread_cond_timedwait_relative_np(&cv, lock, &ts) == 0;
-#elif defined(__ANDROID__)
-	    return pthread_cond_timedwait_monotonic_np(cond, lock, &ts) == 0;
+#ifdef __ANDROID__
+	    return !pthread_cond_timedwait_monotonic_np(cond, lock, &ts);
 #else
-	    return pthread_cond_timedwait(&cv, lock, &ts) == 0;
+	    return !pthread_cond_timedwait(&cv, lock, &ts);
+#endif
 #endif
 	}
     }
@@ -1085,7 +1088,7 @@ public:
     thread_t handle(void) const { return hdl; }
     bool running(void) const { return getState() == Running; }
     bool suspended(void) const { return getState() == Suspended; }
-    bool terminated(void) const { return state == Terminated; }
+    bool terminated(void) const { return getState() == Terminated; }
 
     operator thread_t(void) const { return hdl; }
     bool operator ==(const Thread &t) const { return THREAD_EQUAL(id, t.id); }
