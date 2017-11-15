@@ -531,8 +531,8 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
     Locker lkr(cvlck);
 
     do {
-	// wait for one thread at a time to save having to deal with
-	// threads restarting other threads
+	// wait for one thread at a time to avoid dealing with threads
+	// restarting other threads. Only the caller will delete returned object
 	bool found = false;
 
 	for (it = threads.begin(); it != threads.end(); ++it) {

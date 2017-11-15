@@ -670,12 +670,7 @@ public:
 	    timespec ts;
 
 	    clock_gettime(CLOCK_REALTIME, &ts);
-	    ts.tv_sec += msec / 1000;
-	    ts.tv_nsec += (msec % 1000) * 1000000;
-	    if (ts.tv_nsec > 1000000000) {
-		ts.tv_nsec -= 1000000000;
-		++ts.tv_sec;
-            }
+            time_adjust_msec(&ts, msec);
 	    return sem_timedwait(&hdl, &ts) == 0;
 	}
     }
@@ -755,8 +750,7 @@ public:
 	    timespec ts;
 
 	    clock_gettime(CLOCK_REALTIME, &ts);
-	    ts.tv_sec += msec / 1000;
-	    ts.tv_nsec += (msec % 1000) * 1000000;
+            time_adjust_msec(&ts, msec);
 	    return semtimedop(hdl, &op, 1, &ts) == 0;
 	}
 #endif
@@ -769,13 +763,13 @@ protected:
 class Condvar: nocopy {
 public:
     explicit Condvar(Lock &lck): lock(lck) {
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__ANDROID__)
 	pthread_cond_init(&cv, NULL);
-#elif !defined(__ANDROID__)
+#else
 	pthread_condattr_t attr;
 
 	pthread_condattr_init(&attr);
-	pthread_condattr_setclock(&attr, CLOCK_BOOTTIME);
+	pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
 	pthread_cond_init(&cv, &attr);
 	pthread_condattr_destroy(&attr);
 #endif
@@ -794,13 +788,8 @@ public:
 	    ts.tv_nsec = (msec % 1000) * 1000000;
 	    return !pthread_cond_timedwait_relative_np(&cv, lock, &ts);
 #else
-	    clock_gettime(CLOCK_BOOTTIME, &ts);
-	    ts.tv_sec += (uint)(msec / 1000);
-	    ts.tv_nsec += (msec % 1000) * 1000000;
-	    if (ts.tv_nsec > 1000000000) {
-		ts.tv_nsec -= 1000000000;
-		++ts.tv_sec;
-	    }
+	    clock_gettime(CLOCK_MONOTONIC, &ts);
+            time_adjust_msec(&ts, msec);
 #ifdef __ANDROID__
 	    return !pthread_cond_timedwait_monotonic_np(cond, lock, &ts);
 #else

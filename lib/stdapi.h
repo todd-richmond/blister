@@ -666,6 +666,15 @@ inline usec_t microtime(void) {
     return (usec_t)tv.tv_sec * (usec_t)1000000 + tv.tv_usec;
 }
 
+inline void time_adjust_msec(struct timespec *ts, ulong msec) {
+    ts->tv_sec += msec / 1000;
+    ts->tv_nsec += (msec % 1000) * 1000000;
+    if (ts->tv_nsec > 1000000000) {
+	ts->tv_nsec -= 1000000000;
+	++ts->tv_sec;
+    }
+}
+
 #define millitime()	((msec_t)(microtime() / 1000))
 
 EXTERNC
