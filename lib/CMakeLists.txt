@@ -40,6 +40,10 @@ target_include_directories(blister_lib PUBLIC .)
 
 add_library(blister SHARED $<TARGET_OBJECTS:blister_lib>)
 target_include_directories(blister PUBLIC $<TARGET_PROPERTY:blister_lib,INCLUDE_DIRECTORIES>)
+target_link_libraries(blister ${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
+if(UNIX AND NOT APPLE)
+    target_link_libraries(blister rt)
+endif()
 
 add_library(blister_static STATIC $<TARGET_OBJECTS:blister_lib>)
 # set_target_properties(blister_static PROPERTIES OUTPUT_NAME stdapi)

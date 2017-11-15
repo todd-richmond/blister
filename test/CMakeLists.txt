@@ -1,8 +1,3 @@
-link_libraries(${CMAKE_DL_LIBS} ${CMAKE_THREAD_LIBS_INIT})
-if(UNIX AND NOT APPLE)
-    link_libraries(rt)
-endif()
-
 add_executable(cfg Cfg.cpp)
 target_link_libraries(cfg blister_static)
 

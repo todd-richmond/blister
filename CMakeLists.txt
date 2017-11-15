@@ -3,6 +3,9 @@ project (Blister C CXX)
 
 find_package(Threads)
 
+if(CMAKE_BUILD_TYPE STREQUAL "")
+    set(CMAKE_BUILD_TYPE Debug)
+endif()
 set(CMAKE_MACOSX_RPATH 1)
 
 # set(CMAKE_CXX_STANDARD 11)
