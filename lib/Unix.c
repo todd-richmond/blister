@@ -20,7 +20,7 @@
 #include <time.h>
 #include <sys/times.h>
 
-#ifdef __APPLE__
+#if defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <mach/task.h>
 #include <mach/mach_init.h>
@@ -49,8 +49,8 @@ int clock_gettime(int id, struct timespec *ts) {
     return -1;
 }
 #endif
-#else
-#include <asm-generic/param.h>
+#elif defined(__linux__)
+#include <linux/param.h>
 #endif
 
 usec_t uticks(void) {
