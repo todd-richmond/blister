@@ -21,6 +21,9 @@
 #include <sys/times.h>
 
 #ifdef __APPLE__
+#include <sys/sysctl.h>
+#include <mach/task.h>
+#include <mach/mach_init.h>
 #include <mach/mach_time.h>
 
 #ifdef APPLE_NO_CLOCK_GETTIME
@@ -46,6 +49,8 @@ int clock_gettime(int id, struct timespec *ts) {
     return -1;
 }
 #endif
+#else
+#include <asm-generic/param.h>
 #endif
 
 usec_t uticks(void) {
@@ -118,4 +123,78 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
     fl.l_start = start;
     fl.l_len = len;
     return fcntl(fd, test ? F_SETLK : F_SETLKW, &fl);
+}
+
+int pidstat(pid_t pid, struct pidstat *psbuf) {
+    ZERO(*psbuf);
+    if (!pid)
+	pid = getpid();
+#if defined(__APPLE__)
+    mach_msg_type_number_t msg_type = TASK_BASIC_INFO_COUNT;
+    task_t task = MACH_PORT_NULL;
+    struct task_basic_info tinfo;
+
+    if (task_for_pid(current_task(), pid, &task) != KERN_SUCCESS)
+	return -1;
+    task_info(task, TASK_BASIC_INFO, (task_info_t)&tinfo, &msg_type);
+    psbuf->pss = psbuf->rss = tinfo.resident_size / 1024;
+    psbuf->sz = tinfo.virtual_size / 1024;
+    psbuf->stime = tinfo.system_time.seconds * 1000 +
+	tinfo.system_time.microseconds / 1000;;
+    psbuf->utime = tinfo.user_time.seconds * 1000 +
+	tinfo.user_time.microseconds / 1000;;
+    return 0;
+#elif defined(sun)
+    // TODO incomplete
+    char buf[PATH_MAX];
+    struct stat sbuf;
+
+    sprintf(buf, "/proc/%ld/as", (long)child);
+    if (stat(buf, &sbuf) = -1)
+	return -1;
+	psbuf->sz = sbuf.st_size / 1024;
+#else
+    char buf[PATH_MAX * 2];
+    FILE *f;
+
+    sprintf(buf, "/proc/%u/smaps", pid);
+    if ((f = fopen(buf, "r")) == NULL)
+	return -1;
+    while (fgets(buf, sizeof (buf), f) != NULL) {
+	char *end;
+	ulong val;
+
+	if (!strncmp(buf, "Pss:", 4)) {
+	    val = strtoul(buf + 4, &end, 10);
+	    if (!strncmp(end, " kB", 3))
+		psbuf->pss += val;
+	} else if (!strncmp(buf, "Rss:", 4)) {
+	    val = strtoul(buf + 4, &end, 10);
+	    if (!strncmp(end, " kB", 3))
+		psbuf->rss += val;
+	} else if (!strncmp(buf, "Size:", 5)) {
+	    val = strtoul(buf + 5, &end, 10);
+	    if (!strncmp(end, " kB", 3))
+		psbuf->sz += val;
+	}
+    }
+    fclose(f);
+    sprintf(buf, "/proc/%u/stat", pid);
+    if ((f = fopen(buf, "r")) == NULL)
+	return -1;
+    if (fgets(buf, sizeof (buf), f) != NULL) {
+	char c;
+	long d;
+	const char *p = strchr(buf, ')');
+	ulong u;
+	ulong stime, utime;
+
+	sscanf (p + 2, "%c %ld %ld %ld %ld %ld %lu %lu %lu %lu %lu %lu %lu", 
+	    &c, &d, &d, &d, &d, &d, &u, &u, &u, &u, &u, &utime, &stime);
+	psbuf->stime = stime / HZ * 1000 + (stime % HZ) * (1000L / HZ);
+	psbuf->utime = utime / HZ * 1000 + (utime % HZ) * (1000L / HZ);
+    }
+    fclose(f);
+    return 0;
+#endif
 }

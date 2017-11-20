@@ -1425,7 +1425,6 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		sleep(cfg.get(T("watch.interval"), 60U) / 4);
 	    } else if (child) {
 		struct flock fl;
-		Log::Level lvl = dlog.level();
 
 		ZERO(sa);
 		sa.sa_handler = null_handler;
@@ -1446,27 +1445,24 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		fl.l_whence = SEEK_SET;
 		while (fcntl(lckfd, F_GETLK, &fl) != -1 && !fl.l_pid)
 		    msleep(100);
-		dlog.close();
-		dlog.level(Log::None);
 		while (true) {
 		    int flg = 0;
 		    string info;
 		    uint intvl = cfg.get(T("watch.interval"), 60U);
 		    ulong kb = 0;
 		    ulong maxmem = cfg.get(T("watch.maxmem"), 0U);
+		    struct pidstat psbuf;
 		    int sts;
 
+		    dlog.close();
 		    alarm(intvl);
 		    if (lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Running, 0) ==
                         -1) {
 			alarm(0);
 			flg = WNOHANG;
-		    } else {
-			dlog.level(lvl);
 		    }
 		    if (waitpid(child, &sts, flg) > 0) {
 			alarm(0);
-			dlog.level(lvl);
 			ret = WIFEXITED(sts) ? WEXITSTATUS(sts) :
 			    WIFSIGNALED(sts) ? WTERMSIG(sts) : 0;
 			if (!qflag)
@@ -1477,26 +1473,9 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			break;
 		    }
 		    alarm(0);
-		    if (maxmem) {
-#ifdef linux
-			int fd;
-			char path[64];
-
-			sprintf(path, "/proc/%u/statm", child);
-			if ((fd = ::open(path, O_RDONLY)) != -1) {
-			    if (read(fd, buf, sizeof (buf)) > 0)
-				kb = strtoul(buf, NULL, 10);
-			    ::close(fd);
-			}
-#elif defined(sun)
-			char path[64];
-
-			sprintf(path, "/proc/%ld/as", (long)child);
-			if (stat(path, &sbuf) != -1)
-			    kb = sbuf.st_size / 1024;
-#endif
-		    }
-		    if (qflag || kb > maxmem ||
+		    if (!pidstat(child, &psbuf))
+			kb = psbuf.sz;
+		    if (qflag || (maxmem && kb > maxmem) ||
 			(status() != Starting && !check(info))) {
 			uint waitlmt = cfg.get(T("watch.wait"), 30U);
 
@@ -1504,7 +1483,6 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			    kill(child, SIGINT);
 			alarm(waitlmt);
 			if (waitpid(child, &sts, 0) == -1) {
-			    dlog.level(lvl);
 			    dlogn(Log::mod(name), Log::cmd(T("watch")),
 				T("killing hung child"));
 			    if (kill(child * -1, SIGKILL))
@@ -1513,7 +1491,6 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			    waitpid(child, &sts, 0);
 			}
 			alarm(0);
-			dlog.level(lvl);
 			if (!qflag) {
 			    dlogw(Log::mod(name), Log::cmd(T("watch")),
 				Log::kv(T("pid"), child), Log::kv(T("mem"), kb),
@@ -1525,9 +1502,12 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
                         }
 			ret = 0;
 			break;
+		    } else if (kb) {
+			dlogd(Log::mod(name), Log::cmd(T("watch")),
+			    Log::kv(T("pss"), psbuf.pss), Log::kv(T("rss"),
+			    psbuf.rss), Log::kv(T("sz"), psbuf.sz));
 		    }
 		}
-		dlog.level(lvl);
 		lockfile(lckfd, F_WRLCK, SEEK_SET, 0, qflag ? Stopping :
 		    Starting, 0);
 	    } else {

@@ -655,6 +655,15 @@ typedef uchar tuchar;
 #define tstreq(a, b)	!tstrcmp(a, b)
 #define tstrieq(a, b)	!tstricmp(a, b)
 
+// process resource usage in kb / msec
+struct pidstat {
+    uint64_t pss;
+    uint64_t rss;
+    uint64_t sz;
+    uint64_t stime;
+    uint64_t utime;
+}; 
+
 // current and linear time routines
 typedef uint64_t msec_t;
 typedef uint64_t usec_t;
@@ -682,6 +691,7 @@ extern int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test);
 extern msec_t mticks(void);
 extern usec_t uticks(void);
+extern int pidstat(pid_t pid, struct pidstat *psbuf);
 EXTERNC_
 
 // common includes, defines and code for C++ software
