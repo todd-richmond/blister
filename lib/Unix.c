@@ -157,7 +157,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     char buf[PATH_MAX * 2];
     FILE *f;
 
-    sprintf(buf, "/proc/%ld/smaps", pid);
+    sprintf(buf, "/proc/%ld/smaps", (long)pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
     while (fgets(buf, sizeof (buf), f) != NULL) {
@@ -179,7 +179,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	}
     }
     fclose(f);
-    sprintf(buf, "/proc/%ld/stat", pid);
+    sprintf(buf, "/proc/%ld/stat", (long)pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
     if (fgets(buf, sizeof (buf), f) != NULL) {

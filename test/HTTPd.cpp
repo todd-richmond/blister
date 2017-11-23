@@ -61,7 +61,10 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
 	return -1;
     }
     hsock = new SimpleDispatchListenSocket<Dispatcher, HTTPDaemonSocket>(dspr);
-    if (!hsock->listen(T("*:8080"))) {
+    if (hsock->listen(T("*:8080"))) {
+	hsock->detach();
+    } else {
+	delete hsock;
 	dspr.stop();
         dspr.waitForMain();
         return -1;
@@ -69,6 +72,7 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     setids();
     running();
     dspr.waitForMain();
+    // cppcheck-suppress memleak
     return 0;
 }
 

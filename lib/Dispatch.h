@@ -398,11 +398,8 @@ private:
 template<class D, class S>
 class SimpleDispatchListenSocket: public DispatchListenSocket {
 public:
-    SimpleDispatchListenSocket(D &dspr, int type = SOCK_STREAM,
-	bool detached = true): DispatchListenSocket(dspr, type) {
-	if (detached)
-	    detach();
-    }
+    SimpleDispatchListenSocket(D &dspr, int type = SOCK_STREAM):
+	DispatchListenSocket(dspr, type) {}
 
     bool listen(const Sockaddr &sa, bool enable = true, int backlog =
 	SOCK_BACKLOG) {
