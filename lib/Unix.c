@@ -126,7 +126,7 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
 }
 
 int pidstat(pid_t pid, struct pidstat *psbuf) {
-    ZERO(*psbuf);
+    memset(psbuf, 0, sizeof (*psbuf));
     if (!pid)
 	pid = getpid();
 #if defined(__APPLE__)
@@ -149,7 +149,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     char buf[PATH_MAX];
     struct stat sbuf;
 
-    sprintf(buf, "/proc/%ld/as", (long)child);
+    sprintf(buf, "/proc/%ld/as", (long)pid);
     if (stat(buf, &sbuf) = -1)
 	return -1;
 	psbuf->sz = sbuf.st_size / 1024;
@@ -157,7 +157,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     char buf[PATH_MAX * 2];
     FILE *f;
 
-    sprintf(buf, "/proc/%u/smaps", pid);
+    sprintf(buf, "/proc/%ld/smaps", pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
     while (fgets(buf, sizeof (buf), f) != NULL) {
@@ -179,7 +179,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	}
     }
     fclose(f);
-    sprintf(buf, "/proc/%u/stat", pid);
+    sprintf(buf, "/proc/%ld/stat", pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
     if (fgets(buf, sizeof (buf), f) != NULL) {

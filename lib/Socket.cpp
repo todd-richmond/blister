@@ -338,7 +338,7 @@ Socket &Socket::operator =(socket_t sock) {
 }
 
 Socket &Socket::operator =(const Socket &r) {
-    if (sbuf == r.sbuf)
+    if (sbuf == r.sbuf || this == &r)
 	return *this;
     if (--sbuf->count == 0)
 	delete sbuf;

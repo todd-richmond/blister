@@ -28,7 +28,7 @@
 #define EXTERNC_
 #endif
 
-#define ZERO(x)		memset((&x), 0, sizeof (x))
+#define ZERO(x)		memset(&(x), 0, sizeof (x))
 
 typedef unsigned char byte;
 typedef unsigned char uchar;
