@@ -139,8 +139,14 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	} else {
 	    if (!s.empty())
 		s += (tchar)',';
-	    tsprintf(buf, T("%s,%s,%lu"), stats->key, format(tot, sbuf),
-		stats->cnt);
+	    s += (tchar)'"';
+	    for (const tchar *p = stats->key; *p; ++p) {
+		if (*p == T('"') || *p == T('\\'))
+		    s += T('\\');
+		s += *p;
+	    }
+	    s += (tchar)'"';
+	    tsprintf(buf, T(",%.3f,%lu"), stats->tot / 1000000.0, stats->cnt);
 	}
 	s += buf;
 	for (u = start; u <= last && tot; u++) {
