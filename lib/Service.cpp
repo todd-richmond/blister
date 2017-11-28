@@ -1498,14 +1498,11 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
                         } else if (!flg) {
 			    dlogn(Log::mod(name), Log::cmd(qflag == Fast ?
                                 T("exit") : T("stop")), Log::kv(T("duration"),
-                                time(NULL) - start));
+                                time(NULL) - start), Log::kv(T("mem"), kb),
+                                Log::kv(T("rss"), psbuf.rss));
                         }
 			ret = 0;
 			break;
-		    } else if (kb) {
-			dlogd(Log::mod(name), Log::cmd(T("watch")),
-			    Log::kv(T("pss"), psbuf.pss), Log::kv(T("rss"),
-			    psbuf.rss), Log::kv(T("sz"), psbuf.sz));
 		    }
 		}
 		lockfile(lckfd, F_WRLCK, SEEK_SET, 0, qflag ? Stopping :
@@ -1558,7 +1555,7 @@ void Daemon::onAbort() {
 #else
 	string s(srvcpath + " restart");
 
-	if (execl("/bin/bash", "/bin/bash", "-c", s.c_str(), (char *)0) < 0)
+	if (execl("/bin/sh", "/bin/sh", "-c", s.c_str(), (char *)0) < 0)
 #endif
 	{
 	    dloge(Log::mod(name), Log::error(T("restart failed ")));

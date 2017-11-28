@@ -292,7 +292,6 @@ bool Thread::resume(void) {
 THREAD_FUNC Thread::threadInit(void *arg) {
     Thread *thread = static_cast<Thread *> (arg);
     ThreadState istate = thread->state;
-    int status;
     
     thread->lck.lock();
     thread->id = THREAD_ID();
@@ -302,14 +301,9 @@ THREAD_FUNC Thread::threadInit(void *arg) {
     thread->lck.unlock();
     if (istate == Suspended)
 	thread->suspend();
-    status = thread->retval = (thread->main)(thread->argument);
+    thread->retval = (thread->main)(thread->argument);
     thread->clear();
-#ifdef _WIN32
-    return status;
-#else
-    (void)status;
     return 0;
-#endif
 }
 
 // create Thread and have it call ThreadMain()

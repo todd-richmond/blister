@@ -1144,7 +1144,9 @@ public:
     void suspend(void) { onSuspend(); control(Suspended, &Thread::suspend); }
     void terminate(void) { control(Terminated, &Thread::terminate); }
     Thread *wait(ulong msec = INFINITE, bool all = false, bool main = false);
-    void waitForMain(ulong msec = INFINITE) { wait(msec, false, true); }
+    bool waitForMain(ulong msec = INFINITE) {
+	return wait(msec, false, true) != NULL;
+    }
     
     static ThreadGroup *add(Thread &thread, ThreadGroup *tg = NULL);
     
