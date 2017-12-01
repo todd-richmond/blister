@@ -535,11 +535,14 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
 	    if (main && thrd != &master) {
 		continue;
 	    } else if (thrd->terminated()) {
-		if (!all) {
-		    threads.erase(it);
-		    lkr.unlock();
-		    thrd->wait();
-		    thrd->group = NULL;
+		threads.erase(it);
+		lkr.unlock();
+		thrd->wait();
+		thrd->group = NULL;
+		if (all) {
+		    lkr.lock();
+		    break;
+		} else {
 		    return thrd;
 		}
 	    } else if (thrd->id != NOID && !THREAD_ISSELF(thrd->id)) {
@@ -553,9 +556,12 @@ Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
 	    lkr.lock();
 	    signaled = false;
 	    continue;
+	} else if (!found || !msec) {
+	    if (all && !threads.empty())
+		continue;
+	    else
+		break;
 	}
-	if (!found || !msec)
-	    break;
 	// Check every 30 seconds in case we missed something
 	if (!cv.wait(min(30000UL, msec)) && msec <= 30000)
 	    return NULL;
