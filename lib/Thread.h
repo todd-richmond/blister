@@ -61,7 +61,6 @@ typedef uint tlskey_t;
 
 #else
 
-#include <dlfcn.h>
 #include <pthread.h>
 
 typedef pthread_t thread_t;

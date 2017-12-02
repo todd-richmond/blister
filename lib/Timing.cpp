@@ -16,7 +16,6 @@
  */
 
 #include "stdapi.h"
-#include <algorithm>
 #include "Timing.h"
 
 // UNIX loaders may try to construct static objects > 1 time

@@ -75,6 +75,9 @@ Process Process::start(tchar *const *args, const int *fds) {
 	errno = EINVAL;
     return Process(proc.hProcess);
 }
+
+#else
+#include <dlfcn.h>
 #endif
 
 bool DLLibrary::open(const tchar *dll) {
