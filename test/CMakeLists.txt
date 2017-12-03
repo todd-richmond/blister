@@ -24,6 +24,5 @@ target_link_libraries(smtpload blister_static)
 
 cppcheck(cfg daemonize dlog dtiming echotest httpd httpload smtpload)
 
-install(FILES *.wld DESTINATION etc)
-install(TARGETS cfg daemonize dlog httpload smtpload RUNTIME DESTINATION bin)
-
+install(FILES http.wld smtp.wld DESTINATION etc)
+install(TARGETS cfg daemonize dlog httpload smtpload DESTINATION bin)

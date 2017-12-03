@@ -29,9 +29,9 @@ set(blister_LIB_SOURCE
     Timing.cpp)
 
 if(WIN32)
-    set(blister_LIB_SOURCE ${blister_LIB_SOURCE} Windows.c WindowsCPP.cpp)
+    list(APPEND blister_LIB_SOURCE Windows.c WindowsCPP.cpp)
 else()
-    set(blister_LIB_SOURCE ${blister_LIB_SOURCE} Unix.c)
+    list(APPEND blister_LIB_SOURCE Unix.c)
 endif()
 
 add_library(blister_lib OBJECT ${blister_LIB_SOURCE})
@@ -47,15 +47,14 @@ if(UNIX AND NOT APPLE)
 endif()
 
 add_library(blister_static STATIC $<TARGET_OBJECTS:blister_lib>)
-# set_target_properties(blister_static PROPERTIES OUTPUT_NAME stdapi)
+set_target_properties(blister_static PROPERTIES OUTPUT_NAME stdapi)
 target_include_directories(blister_static PUBLIC $<TARGET_PROPERTY:blister_lib,INCLUDE_DIRECTORIES>)
 target_link_libraries(blister_static INTERFACE $<TARGET_PROPERTY:blister,INTERFACE_LINK_LIBRARIES>)
 
 install(FILES ${blister_INC_SOURCE} DESTINATION include)
 if(WIN32)
     install(TARGETS blister RUNTIME DESTINATION bin)
-else()
-    install(TARGETS blister LIBRARY DESTINATION lib)
-endif()
     install(TARGETS blister_static ARCHIVE DESTINATION lib)
-
+else()
+    install(TARGETS blister blister_static DESTINATION lib)
+endif()
