@@ -217,7 +217,7 @@ void Thread::clear(void) {
     }
     hdl = 0;
     state = Terminated;
-    cv.set();
+    cv.broadcast();
     lck.unlock();
     group->notify(*this);
 }
@@ -441,6 +441,7 @@ ThreadGroup::~ThreadGroup() {
     if (autoterm)
 	terminate();
     wait(INFINITE, true);
+    waitForMain(INFINITE);
     grouplck.lock();
     groups.erase(this);
     grouplck.unlock();
@@ -469,9 +470,11 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 	if (tg == NULL)
 	    tg = &MainThreadGroup;
     }
-    tg->cvlck.lock();
-    tg->threads.insert(&thread);
-    tg->cvlck.unlock();
+    if (&thread != &tg->master) {
+	tg->cvlck.lock();
+	tg->threads.insert(&thread);
+	tg->cvlck.unlock();
+    }
     return tg;
 }
 
@@ -492,12 +495,11 @@ int ThreadGroup::init(void *thisp) {
 }
 
 void ThreadGroup::notify(const Thread &thread) {
-    Locker lkr(cvlck);
+    if (&thread != &master) {
+	Locker lkr(cvlck);
 
-    if (thread == master)
-	cv.broadcast();
-    else
 	cv.set();
+    }
 }
 
 void ThreadGroup::priority(int pri) {
@@ -521,59 +523,45 @@ bool ThreadGroup::start(uint stacksz, bool suspend, bool aterm) {
     return master.start(init, this, stacksz, this, suspend, autoterm);
 }
 
-Thread *ThreadGroup::wait(ulong msec, bool all, bool main) {
-    set<Thread *>::iterator it;
-    bool signaled = false;
-    msec_t start = mticks();
+Thread *ThreadGroup::wait(ulong msec, bool all) {
     Locker lkr(cvlck);
 
     do {
-	// wait for one thread at a time to avoid dealing with threads
-	// restarting other threads. Only the caller will delete returned object
-	bool found = false;
+	set<Thread *>::iterator it(threads.begin());
+	bool running = false;
 
-	for (it = threads.begin(); it != threads.end(); ++it) {
-	    Thread *thrd = *it;
+	while (it != threads.end()) {
+	    Thread *thread = *it;
 
-	    if (main && thrd != &master) {
-		continue;
-	    } else if (thrd->terminated()) {
+	    if (thread->terminated()) {
 		threads.erase(it);
 		lkr.unlock();
-		thrd->wait();
-		thrd->group = NULL;
+		thread->wait();
+		thread->group = NULL;
 		if (all) {
 		    lkr.lock();
-		    break;
+		    it = threads.begin();
+		    continue;
 		} else {
-		    return thrd;
+		    return thread;
 		}
-	    } else if (thrd->id != NOID && !THREAD_ISSELF(thrd->id)) {
-		found = true;
+	    } else if (thread->id != NOID && !THREAD_ISSELF(thread->id)) {
+		running = true;
 	    }
+	    ++it;
 	}
-	if (signaled && main) {
-	    cv.set();			// pass on to someone else
-	    lkr.unlock();
-	    msleep(1);
-	    lkr.lock();
-	    signaled = false;
-	    continue;
-	} else if (!found || !msec) {
-	    if (all && !threads.empty())
-		continue;
-	    else
-		break;
-	}
-	// Check every 30 seconds in case we missed something
-	if (!cv.wait(min(30000UL, msec)) && msec <= 30000)
-	    return NULL;
-	signaled = true;
-	if (msec != INFINITE) {
-	    msec_t now = mticks();
+	if (!running || !msec) {
+	    break;
+	} else if (msec == INFINITE) {
+	    cv.wait(msec);
+	} else {
+	    ulong diff;
+	    msec_t start = mticks();
 
-	    msec -= now - start < msec ? (ulong)(now - start) : msec;
-	    start = now;
+	    if (!cv.wait(msec))
+		break;
+	    diff = (ulong)(mticks() - start);
+	    msec -= diff < msec ? diff : msec;
 	}
     } while (true);
     return NULL;

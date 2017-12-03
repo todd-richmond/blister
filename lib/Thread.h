@@ -1142,11 +1142,10 @@ public:
     void stop(void) { onStop(); control(Terminated, &Thread::stop); }
     void suspend(void) { onSuspend(); control(Suspended, &Thread::suspend); }
     void terminate(void) { control(Terminated, &Thread::terminate); }
-    Thread *wait(ulong msec = INFINITE, bool all = false, bool main = false);
-    bool waitForMain(ulong msec = INFINITE) {
-	return wait(msec, false, true) != NULL;
-    }
-    
+    // only the caller may delete returned Thread
+    Thread *wait(ulong msec = INFINITE, bool all = false);
+    bool waitForMain(ulong msec = INFINITE) { return master.wait(msec); }
+
     static ThreadGroup *add(Thread &thread, ThreadGroup *tg = NULL);
     
 protected:
