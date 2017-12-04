@@ -24,6 +24,22 @@
 #include "Log.h"
 #include "Service.h"
 
+#ifdef _WIN32
+#include <process.h>
+
+#pragma comment(lib, "advapi32.lib")
+#pragma warning(disable: 4390)
+
+#define DWORD_MULTIPLE(x) ((((x) + sizeof (DWORD) - 1 ) / sizeof (DWORD)) * \
+    sizeof (DWORD))
+#define PREFIX T("service_")
+
+#endif
+
+#ifndef OPEN_MAX
+#define OPEN_MAX 256
+#endif
+
 static const uint STATUS_LOOPS = 400;
 
 bool Service::aborted;
@@ -34,18 +50,6 @@ tstring Service::srvcpath;
 Service *Service::service;
 volatile pid_t Service::sigpid;
 tstring Service::ver(T(__DATE__) T(" ") T(__TIME__));
-
-#ifdef __linux__
-typedef void (*KillFunc)(void);
-DLLibrary pthread(T("libpthread"));
-KillFunc killfunc = (KillFunc)pthread.get(T("pthread_kill_other_threads_np"));
-#elif defined(_WIN32)
-#pragma warning(disable: 4390)
-#endif
-
-#ifndef OPEN_MAX
-#define OPEN_MAX 256
-#endif
 
 void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
     tstring &prog) {
@@ -108,14 +112,6 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 }
 
 #ifdef _WIN32
-#include <process.h>
-
-#pragma comment(lib, "advapi32.lib")
-
-#define DWORD_MULTIPLE(x) ((((x) + sizeof (DWORD) - 1 ) / sizeof (DWORD)) * \
-    sizeof (DWORD))
-#define PREFIX T("service_")
-
 Service::Service(const tchar *servicename, const tchar *h): name(servicename),
     bPause(false), errnum(0), ctrlfunc(NULL), gid(0), hStatus(0), hSCManager(0),
     hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0), pid(0),
@@ -1543,10 +1539,6 @@ void Daemon::onAbort() {
     if (aborted)
 	return;
     aborted = true;
-#ifdef __linux__
-    if (killfunc)
-	killfunc();
-#endif
     update(Stopped);
     if (restart && !exiting) {
 #ifdef _WIN32
