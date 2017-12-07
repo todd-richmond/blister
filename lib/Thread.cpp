@@ -215,11 +215,13 @@ void Thread::clear(void) {
 #endif
 	id = NOID;
     }
-    hdl = 0;
     state = Terminated;
-    cv.broadcast();
     lck.unlock();
     group->notify(*this);
+    lck.lock();
+    hdl = 0;
+    cv.broadcast();
+    lck.unlock();
 }
 
 // exit thread cleanly - called by itself
@@ -413,8 +415,10 @@ bool Thread::terminate(void) {
 bool Thread::wait(ulong timeout) {
     Locker lkr(lck);
 
-    if (state == Init || state == Terminated) {
+    if (state == Init) {
 	return true;
+    } else if (state == Terminated) {
+	return hdl ? cv.wait() : true;
     } else if (id == NOID) {
 	lkr.unlock();
 #ifdef _WIN32

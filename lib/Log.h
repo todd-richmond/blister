@@ -484,7 +484,7 @@ extern Log &dlog;
 #define dlogd(...)	dlogl(Log::Debug, __VA_ARGS__)
 #define dlogt(...)	dlogl(Log::Trace, __VA_ARGS__)
 
-#define dlogvl(l, ...)	{ if (l <= dlog.level()) dlog.logv(l, __VA_ARGS__, NULL); }
+#define dlogvl(l, ...)	{ if (l <= dlog.level()) dlog.logv(l, __VA_ARGS__, (char *)NULL); }
 #define dlogvm(...)	dlogvl(Log::Emerg, __VA_ARGS__)
 #define dlogva(...)	dlogvl(Log::Alert, __VA_ARGS__)
 #define dlogvc(...)	dlogvl(Log::Crit, __VA_ARGS__)
