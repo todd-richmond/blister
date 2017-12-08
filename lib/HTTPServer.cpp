@@ -127,7 +127,7 @@ HTTPServerSocket::~HTTPServerSocket(void) {
 	delete [] postdata;
 }
 
-void HTTPServerSocket::postdata_grow(DispatchObjCB cb, uint keepsize, uint
+void HTTPServerSocket::postdata_grow(DispatchObjCB cb, ulong keepsize, ulong
     newsize) {
     char *old = postdata;
 
@@ -178,9 +178,8 @@ void HTTPServerSocket::readhdrs() {
 
 void HTTPServerSocket::readpost() {
     uint in = 0;
-    uint room = (uint)(postdatasz ? postdatasz - postin : sz - datasz);
-    uint left = room > 100 && postsz == (uint)-1 ? room : (uint)(postsz -
-	postin);
+    ulong room = postdatasz ? postdatasz - postin : sz - datasz;
+    ulong left = room > 100 && postsz == (ulong)-1 ? room : postsz - postin;
 
     if (msg == DispatchTimeout || msg == DispatchClose) {
 	disconnect();
@@ -197,8 +196,9 @@ void HTTPServerSocket::readpost() {
 	postdatasz = in;
 	return;
     }
-    if ((in = (uint)read(postdata + postin, left)) == (uint)-1) {
-	if (postsz == (uint)-1 && !postchunking) {
+    if ((in = (uint)read(postdata + postin, (uint)(left > (uint)-2 ? (uint)-2 :
+	left))) == (uint)-1) {
+	if (postsz == (ulong)-1 && !postchunking) {
 	    left = in = 0;
 	    postsz = postin;
 	} else {
@@ -254,7 +254,7 @@ void HTTPServerSocket::readpost() {
 		chunkin += chunksize;
 	}
     }
-    if (left || postsz == (uint)-1) {
+    if (left || postsz == (ulong)-1) {
 	postpre(readpost);
     } else {
 	savechar = postdata[postsz];

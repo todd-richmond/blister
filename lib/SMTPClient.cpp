@@ -1258,7 +1258,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     return true;
 }
 
-bool base64decode(const void *input, size_t sz, char *&output, size_t &outsz) {
+bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
     const char *in = (const char *)input;
     char *out;
     int out_byte = 0, out_bits = 0;

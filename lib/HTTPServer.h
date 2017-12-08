@@ -72,7 +72,7 @@ protected:
     // must set postdata to NULL in their destructor to prevent ~HTTPServer
     // from freeing this buffer incorrectly
     virtual void postdata_free(void);
-    virtual void postdata_grow(DispatchObjCB cb, uint keepsize, uint newsize);
+    virtual void postdata_grow(DispatchObjCB cb, ulong keepsize, ulong newsize);
     virtual void put(void) { error(501); }
     // Called when reply() no longer needs its data
     virtual void replydone(DispatchObjCB cb) { ready(cb); }
