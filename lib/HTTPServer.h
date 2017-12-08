@@ -56,8 +56,8 @@ protected:
     void error(uint errnum);
     void error(int errnum, const char *errstr);
     void keepalive(void);
-    void reply(const char *data = NULL, size_t len = -1);
-    void reply(int fd, size_t sz);
+    void reply(const char *data = NULL, ulong len = (ulong)-1);
+    void reply(int fd, ulong sz);
     void reply(uint sts) { status(sts, NULL); reply(); }
     void status(uint sts, const char *type = "text", const char *subtype =
 	"plain", time_t mtime = 0, const char *errstr = "OK");
@@ -96,7 +96,7 @@ private:
     uint _status;
     static bool date;
 
-    void scan(char *buf, int len, bool append = false);
+    void scan(char *buf, ulong len, bool append = false);
     const char *find(const attrmap &amap, const char *name) const {
 	attrmap::const_iterator it = amap.find(name);
 

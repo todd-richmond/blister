@@ -177,7 +177,7 @@ void HTTPServerSocket::readhdrs() {
 }
 
 void HTTPServerSocket::readpost() {
-    uint in = 0;
+    ulong in = 0;
     ulong room = postdatasz ? postdatasz - postin : sz - datasz;
     ulong left = room > 100 && postsz == (ulong)-1 ? room : postsz - postin;
 
@@ -185,19 +185,17 @@ void HTTPServerSocket::readpost() {
 	disconnect();
 	return;
     }
-    if (room < left && (!postdatasz || postsz == (uint)-1)) {
-	if (postsz == (uint)-1) {
-	    in = postin < 8 * 1024 ? 16 * 1024 : (uint)(postin * 2);
-	    left = (uint)(in - postin);
-	} else {
-	    in = (uint)postsz;
-	}
+    if (room < left && (!postdatasz || postsz == (ulong)-1)) {
+	if (postsz == (uint)-1)
+	    in = postin < 8 * 1024 ? 16 * 1024 : (postin * 2);
+	else
+	    in = postsz;
 	postdata_grow(readpost, postin, in + 1);
 	postdatasz = in;
 	return;
     }
-    if ((in = (uint)read(postdata + postin, (uint)(left > (uint)-2 ? (uint)-2 :
-	left))) == (uint)-1) {
+    if ((in = (ulong)read(postdata + postin, (uint)(left > (uint)-2 ? (uint)-2 :
+	left))) == (ulong)-1) {
 	if (postsz == (ulong)-1 && !postchunking) {
 	    left = in = 0;
 	    postsz = postin;
@@ -246,7 +244,7 @@ void HTTPServerSocket::readpost() {
 	    postin -= lf - (postdata + chunkin);
 	    if (!postdatasz)
 		datasz -= lf - (postdata + chunkin);
-	    if (postsz != (uint)-1)
+	    if (postsz != (ulong)-1)
 		break;
 	    else if (chunksize == 0)
 		chunktrailer = true;
@@ -263,7 +261,7 @@ void HTTPServerSocket::readpost() {
     }
 }
 
-void HTTPServerSocket::scan(char *buf, int len, bool append) {
+void HTTPServerSocket::scan(char *buf, ulong len, bool append) {
     while (len-- > 0) {
 	if (buf[0] == '\r') {
 	    if (len < 3) {
@@ -538,20 +536,20 @@ void HTTPServerSocket::send(void) {
 }
 
 void HTTPServerSocket::senddone() {
-    if (postdatasz) {
-	postdata_free();
-	postdatasz = 0;
-    }
     if (datasz) {
 	postdata[postsz] = savechar;
 	memmove(data, postdata + postsz, datasz);
-	scan(data, (uint)datasz, true);
+	scan(data, datasz, true);
     } else {
+	if (postdatasz) {
+	    postdata_free();
+	    postdatasz = 0;
+	}
 	readable(readhdrs, rto);
     }
 }
 
-void HTTPServerSocket::reply(const char *p, size_t len) {
+void HTTPServerSocket::reply(const char *p, ulong len) {
     char buf[64];
     int i;
 
@@ -564,17 +562,17 @@ void HTTPServerSocket::reply(const char *p, size_t len) {
     iov[1].iov_base = (char *)ss.str();
     iov[1].iov_len = (size_t)ss.size();
     iov[2].iov_base = (char *)p;
-    iov[2].iov_len = len;
+    iov[2].iov_len = (size_t)len;
     dlog << (_status < 400 ? Log::Info : Log::Note) << cmd << ' ' << path <<
 	T(": ") << _status << endlog;
     send();
 }
 
-void HTTPServerSocket::reply(int fd, size_t len) {
+void HTTPServerSocket::reply(int fd, ulong len) {
     char buf[1024];
 
     if (len < sizeof (buf)) {
-	if ((size_t)::read(fd, buf, (uint)len) != len) {
+	if ((ulong)::read(fd, buf, (uint)len) != len) {
 	    error(404);
 	    return;
 	}
@@ -597,7 +595,7 @@ void HTTPServerSocket::reply(int fd, size_t len) {
 	}
 	CloseHandle(hdl);
 #else
-	if ((fmap = new char[len]) == NULL || (size_t)::read(fd, fmap, len) != len) {
+	if ((fmap = new char[len]) == NULL || (ulong)::read(fd, fmap, len) != len) {
 	    error(404);
 	    return;
 	}
@@ -757,7 +755,7 @@ void HTTPServerSocket::get(bool head) {
 	sts = 200;
     status(sts, type, subtype, statbuf.st_mtime);
     if (sts == 200 && !head)
-	reply(fd, (size_t)statbuf.st_size);
+	reply(fd, (ulong)statbuf.st_size);
     else
 	reply((const char *)NULL);
     ::close(fd);
