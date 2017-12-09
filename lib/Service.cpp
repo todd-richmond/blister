@@ -106,7 +106,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
     else
 	p++;
     if ((sep = tstrrchr(full, '.')) != NULL && !tstrnicmp(sep, T(".exe"), 4))
-	prog.assign(p, sep - p);
+	prog.assign(p, (tstring::size_type)(sep - p));
     else
 	prog = p;
 }
@@ -1702,6 +1702,6 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     texecvp(argv[ac], (tchar **)&argv[ac]);
     dloge(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[ac]),
 	Log::error(errno));
-    return (uint)-1;
+    return -1;
 }
 

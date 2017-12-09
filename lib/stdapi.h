@@ -671,7 +671,7 @@ inline usec_t microtime(void) {
     struct timeval tv;
 
     gettimeofday(&tv, NULL);
-    return (usec_t)tv.tv_sec * (usec_t)1000000 + tv.tv_usec;
+    return (usec_t)tv.tv_sec * (usec_t)1000000 + (usec_t)tv.tv_usec;
 }
 
 inline void time_adjust_msec(struct timespec *ts, ulong msec) {
@@ -866,7 +866,7 @@ inline size_t stringhash(const C *s) {
     size_t ret = 0;
 
     while (*s)
-	ret = ret * 101 + *s++;
+	ret = ret * 101 + (size_t)*s++;
     return ret;
 }
 
@@ -874,7 +874,7 @@ inline size_t stringihash(const char *s) {
     size_t ret = 0;
 
     while (*s)
-	ret = ret * 101 + to_upper(*s++);
+	ret = ret * 101 + (size_t)to_upper(*s++);
     return ret;
 }
 
@@ -882,7 +882,7 @@ inline size_t stringihash(const wchar *s) {
     size_t ret = 0;
 
     while (*s)
-	ret = ret * 101 + towupper(*s++);
+	ret = ret * 101 + (size_t)towupper(*s++);
     return ret;
 }
 

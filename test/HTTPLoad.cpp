@@ -40,11 +40,11 @@ public:
     HTTPLoad(): id(threads++) {}
 
     static bool init(const tchar *host, uint maxthread,
-	ulong maxuser, bool randuser, bool debug, bool keepalive, ulong timeout,
+	ulong maxuser, bool randuser, bool debug, bool keepalive, uint timeout,
 	long loops, const tchar *file, const tchar *bodyfile, ulong cachesz,
 	bool all, int fcnt);
     static void print(tostream &os, usec_t last);
-    static long working(void) { return threads; }
+    static uint working(void) { return threads; }
     static void reset(bool all = false);
     static void uninit(void);
     static void wait(ulong msec) { lock.lock(); cv.wait(msec); lock.unlock(); }
@@ -93,11 +93,12 @@ private:
     static bool dbg, ka, ruser;
     static ulong muser;
     static uint mthread;
-    static ulong to;
+    static uint to;
     static volatile long remain;
-    static ulong threads;
+    static uint threads;
     static attrmap hdrs, vars;
-    static uint bodycnt, *bodysz;
+    static uint bodycnt;
+    static ulong *bodysz;
     static ulong bodycachesz;
     static tchar **body;
     static char **bodycache;
@@ -117,16 +118,16 @@ private:
 
 Lock HTTPLoad::lock;
 Condvar HTTPLoad::cv(lock);
-ulong HTTPLoad::threads;
+uint HTTPLoad::threads;
 ulong HTTPLoad::muser;
 uint HTTPLoad::mthread;
 bool HTTPLoad::dbg, HTTPLoad::ka, HTTPLoad::ruser;
 volatile long HTTPLoad::remain;
-ulong HTTPLoad::to;
+uint HTTPLoad::to;
 attrmap HTTPLoad::hdrs;
 attrmap HTTPLoad::vars;
 uint HTTPLoad::bodycnt;
-uint *HTTPLoad::bodysz;
+ulong *HTTPLoad::bodysz;
 tchar **HTTPLoad::body;
 char **HTTPLoad::bodycache;
 ulong HTTPLoad::bodycachesz;
@@ -164,7 +165,7 @@ bool HTTPLoad::expand(tchar *str, const attrmap &amap) {
 }
 
 bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
-    bool randuser, bool debug, bool keepalive, ulong timeout, long loops,
+    bool randuser, bool debug, bool keepalive, uint timeout, long loops,
     const tchar *file, const tchar *bodyfile, ulong cachesz, bool all,
     int fcnt) {
     Sockaddr addr;
@@ -223,9 +224,9 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     if (allfiles && bodycnt > 0) {
 	lock.lock();
 	if (filecnt > 0 && (uint)filecnt < bodycnt)
-	    bodycnt = filecnt;
+	    bodycnt = (uint)filecnt;
 	else if (filecnt < 0 && uint(-1 * filecnt) < bodycnt)
-	    startfile = bodycnt - uint(-1 * filecnt);
+	    startfile = bodycnt - (uint)(-1 * filecnt);
 	nextfile = startfile;
 	remain *= (bodycnt - startfile);
 	lock.unlock();
@@ -314,7 +315,7 @@ char *HTTPLoad::read(uint idx, usec_t &iousec) {
     int fd;
     char *ret = NULL;
     tchar *file = body[idx];
-    uint filelen = bodysz[idx];
+    ulong filelen = bodysz[idx];
 
     if (bodycache[idx]) {
 	iousec = 0;
@@ -347,7 +348,7 @@ void HTTPLoad::add(const tchar *file) {
     if (!body) {
 	body = new tchar *[bodycnt];
 	bodycache = new char *[bodycnt];
-	bodysz = new uint[bodycnt];
+	bodysz = new ulong[bodycnt];
 	bodycnt = 0;
     }
     ZERO(sbuf);
@@ -357,7 +358,7 @@ void HTTPLoad::add(const tchar *file) {
 	body[bodycnt] = new tchar [tstrlen(file) + 1];
 	tstrcpy(body[bodycnt], file);
 	bodycache[bodycnt] = NULL;
-	bodysz[bodycnt] = sbuf.st_size;
+	bodysz[bodycnt] = (ulong)sbuf.st_size;
 	bodycnt++;
     }
 }
@@ -388,7 +389,7 @@ int HTTPLoad::onStart(void) {
 
     if (dbg)
 	fs.open("debug.out", ios::trunc | ios::out);
-    srand(id ^ ((uint)(uticks() >> 32 ^ time(NULL))));
+    srand((uint)(id ^ ((uticks() >> 32 ^ (msec_t)time(NULL)))));
     if (id > Processor::count())
 	msleep(rand() % 1000 * ((mthread / 20) + 1));
     while (!qflag) {
@@ -433,7 +434,7 @@ int HTTPLoad::onStart(void) {
 		if (*p == '%') {
 		    len = tstrtoul(p + 1, NULL, 10);
 		    if (len)
-			len = rand() % len;
+			len = (ulong)rand() % len;
 		} else {
 		    len = tstrtoul(p, NULL, 10);
 		}
@@ -472,7 +473,7 @@ int HTTPLoad::onStart(void) {
 		tstrcpy(buf, cmd->url.relpath().c_str());
 		expand(buf, lvars);
 		if (cmd->data.empty()) {
-		    uint u = allfiles ? next() : (rand() % bodycnt);
+		    uint u = allfiles ? next() : ((uint)rand() % bodycnt);
 		    char *d = read(u, io);
 
 		    hc.header(T("content-type"), T("application/octet-stream"));
@@ -529,7 +530,7 @@ int HTTPLoad::onStart(void) {
 #ifndef UNICODE	// TODO
 		if (dbg) {
 		    fs << endl;
-		    fs.write(hc.data(), hc.size());
+		    fs.write(hc.data(), (streamsize)hc.size());
 		    fs.flush();
 		}
 		if (!cmd->value.empty() &&
@@ -718,10 +719,10 @@ int tmain(int argc, tchar *argv[]) {
     tstring s;
     ulong stattime = 3000;
     HTTPLoad *thread;
-    int threads = 1;
+    uint threads = 1;
     bool wflag = false;
     const tchar *wld = NULL;
-    ulong timeout = 30000;
+    uint timeout = 30000;
 
     dlog.level(Log::Note);
     for (i = 1; i < argc; i++) {
@@ -751,11 +752,11 @@ int tmain(int argc, tchar *argv[]) {
 	} else if (!tstricmp(argv[i], T("-s"))) {
 	    stattime = tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-t"))) {
-	    threads = ttoi(argv[++i]);
+	    threads = (uint)tstrtoul(argv[++i], NULL, 10);
 	    if (!maxuser)
 		maxuser = threads;
 	} else if (!tstricmp(argv[i], T("-w"))) {
-	    timeout = tstrtoul(argv[++i], NULL, 10);
+	    timeout = (uint)tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-v"))) {
 	    dlog.level(Log::Level(dlog.level() + 1));
 	 } else if (!wld && *argv[i] != '-') {
@@ -786,7 +787,7 @@ int tmain(int argc, tchar *argv[]) {
     dlog << Log::Info << T("test ") << host << ' ' << wld << T(" (") <<
 	threads << T(" thread") << (threads == 1 ? T("") : T("s")) << T(", ") <<
 	loops << T(" loop") << (loops == 1 ? T("") : T("s")) << ')' << endlog;
-    for (i = 0; i < threads; i++) {
+    for (uint u = 0; u < threads; ++u) {
 	thread = new HTTPLoad;
 	thread->start(32 * 1024);
     }

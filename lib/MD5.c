@@ -340,7 +340,7 @@ md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes)
 	return;
 
     /* Update the message length. */
-    pms->count[1] += nbytes >> 29;
+    pms->count[1] += (unsigned)nbytes >> 29;
     pms->count[0] += nbits;
     if (pms->count[0] < nbits)
 	pms->count[1]++;

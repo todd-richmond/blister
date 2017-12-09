@@ -593,7 +593,7 @@ public:
     bool open(uint init = 0, bool fifo = true) {
 	close();
 	return semaphore_create(mach_task_self(), &hdl, fifo ?
-	    SYNC_POLICY_FIFO : SYNC_POLICY_LIFO, init) == KERN_SUCCESS;
+	    SYNC_POLICY_FIFO : SYNC_POLICY_LIFO, (int)init) == KERN_SUCCESS;
     }
     bool set(uint cnt = 1) {
 	while (cnt--) {
@@ -930,15 +930,15 @@ public:
     C operator ++(int) { TSLocker lkr(lck); return c++; }
     C operator --(void) { TSLocker lkr(lck); return --c; }
     C operator --(int) { TSLocker lkr(lck); return c--; }
-    template<class N> C operator =(N n) { TSLocker lkr(lck); return c = n; }
-    template<class N> C operator +=(N n) { TSLocker lkr(lck); return c += n; }
-    template<class N> C operator -=(N n) { TSLocker lkr(lck); return c -= n; }
-    template<class N> C operator *=(N n) { TSLocker lkr(lck); return c *= n; }
-    template<class N> C operator /=(N n) { TSLocker lkr(lck); return c /= n; }
-    template<class N> C operator &=(N n) { TSLocker lkr(lck); return c &= n; }
-    template<class N> C operator |=(N n) { TSLocker lkr(lck); return c |= n; }
-    template<class N> C operator %=(N n) { TSLocker lkr(lck); return c %= n; }
-    template<class N> C operator ^=(N n) { TSLocker lkr(lck); return c ^= n; }
+    template<class N> C operator =(N n) { TSLocker lkr(lck); return c = (C)n; }
+    template<class N> C operator +=(N n) { TSLocker lkr(lck); return c += (C)n; }
+    template<class N> C operator -=(N n) { TSLocker lkr(lck); return c -= (C)n; }
+    template<class N> C operator *=(N n) { TSLocker lkr(lck); return c *= (C)n; }
+    template<class N> C operator /=(N n) { TSLocker lkr(lck); return c /= (C)n; }
+    template<class N> C operator &=(N n) { TSLocker lkr(lck); return c &= (C)n; }
+    template<class N> C operator |=(N n) { TSLocker lkr(lck); return c |= (C)n; }
+    template<class N> C operator %=(N n) { TSLocker lkr(lck); return c %= (C)n; }
+    template<class N> C operator ^=(N n) { TSLocker lkr(lck); return c ^= (C)n; }
     template<class N> C operator >>=(N n) { TSLocker lkr(lck); return c >>= n; }
     template<class N> C operator <<=(N n) { TSLocker lkr(lck); return c <<= n; }
 

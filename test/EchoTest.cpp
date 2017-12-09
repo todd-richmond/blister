@@ -136,7 +136,7 @@ void EchoTest::EchoClientSocket::start() {
 }
 
 void EchoTest::EchoClientSocket::input() {
-    int len;
+    uint len;
 
     if (msg == DispatchTimeout || msg == DispatchClose) {
 	++errs;
@@ -147,7 +147,7 @@ void EchoTest::EchoClientSocket::input() {
 	dtiming.add(T("error"), 0);
 	return;
     }
-    if ((len = read(dbuf + in, dsz - in)) < 0) {
+    if ((len = (uint)read(dbuf + in, dsz - in)) == (uint)-1) {
 	++errs;
 	loops.test_and_decr();
 	dloge(T("client read failed:"), errstr());
@@ -170,7 +170,7 @@ void EchoTest::EchoClientSocket::input() {
 }
 
 void EchoTest::EchoClientSocket::output() {
-    int len;
+    uint len;
 
     if (!loops || qflag) {
 	write("", 1);
@@ -185,7 +185,7 @@ void EchoTest::EchoClientSocket::output() {
 	timeout(start, wait);
 	return;
     }
-    if ((len = write(dbuf + out, dsz - out)) < 0) {
+    if ((len = (uint)write(dbuf + out, dsz - out)) == (uint)-1) {
 	++errs;
 	loops.test_and_decr();
 	dloge(T("client write failed:"), errstr());

@@ -101,7 +101,7 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 #endif
 	}
     } else {
-        if (!write(fd, buf, (int)(chars * sizeof (tchar))) && file[0] != '>')
+        if (!write(fd, buf, (size_t)(chars * sizeof (tchar))) && file[0] != '>')
 	    len += chars * sizeof (tchar);
     }
 }
@@ -191,7 +191,7 @@ void Log::LogFile::roll(void) {
 		    (ulong)oldtime) {
 		    if ((pos = s3.rfind('.')) != s3.npos && pos < s3.size() -
 			1 && isdigit((int)s3[++pos])) {
-			ext = ttoi(s3.c_str() + pos);
+			ext = (uint)ttoi(s3.c_str() + pos);
 			if (ext < oldext)
 			    continue;
 			else
@@ -203,7 +203,7 @@ void Log::LogFile::roll(void) {
 	    }
 	    if (oldtime == (ulong)-1) {
 		break;
-            } else if ((cnt || sec) && (!sec || oldtime < (ulong)(now - sec)) &&
+            } else if ((cnt || sec) && (!sec || oldtime < ((ulong)now - sec)) &&
                 (!cnt || files >= cnt)) {
 		tunlink(oldfile.c_str());
 		files--;
@@ -242,12 +242,12 @@ void Log::LogFile::set(const Config &cfg, const tchar *sect,
     tstring f, s(sub);
 
     s += '.';
-    cnt = cfg.get((s + T("count")).c_str(), 0, sect);
+    cnt = cfg.get((s + T("count")).c_str(), 0U, sect);
     f = cfg.get((s + T("name")).c_str(), dfile, sect);
     gmt = cfg.get(T("gmt"), false, sect);
     lvl = str2enum(cfg.get((s + T("level")).c_str(), dlvl, sect).c_str());
-    sz = cfg.get((s + T("size")).c_str(), 10 * 1024 * 1024L, sect);
-    sec = cfg.get((s + T("time")).c_str(), 0L, sect);
+    sz = cfg.get((s + T("size")).c_str(), 10 * 1024 * 1024UL, sect);
+    sec = cfg.get((s + T("time")).c_str(), 0UL, sect);
     set(lvl, f.c_str(), cnt, sz, sec);
     if (fd == -1 && !tstrchr(file.c_str(), '/') &&
 	!tstrchr(file.c_str(), '\\')) {
@@ -292,7 +292,7 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
 	if ((p = tstrchr(path.c_str(), '%')) != NULL) {
 	    if (p[-1] == '.')
 		p--;
-	    path.erase(p - path.c_str());
+	    path.erase((tstring::size_type)(p - path.c_str()));
 	}
     }
     len = 0;
@@ -352,7 +352,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     lck.lock();
     if (ffd.enable && clvl <= ffd.lvl) {
 	ffd.lock();
-	if (ffd.len + bufstrm.size() >= ffd.sz) {
+	if (ffd.len + (ulong)bufstrm.size() >= ffd.sz) {
 	    _flush();
 	    ffd.roll();
 	}
@@ -463,7 +463,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     }
     if (ffd.enable && clvl <= ffd.lvl) {
 	if (ft.getState() == Running) {
-	    bufstrm.write(strbuf.data(), strbuf.size());
+	    bufstrm.write(strbuf.data(), (streamsize)strbuf.size());
 	    if ((uint)bufstrm.size() > bufsz)
 		_flush();
 	} else {
@@ -482,9 +482,9 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	string ss;
 	string::size_type pos;
 	char buf[64], cbuf[32];
-	int i = (syslogfac << 3) | (clvl - (clvl < Debug ? 1 : 2));
+	uint u = (syslogfac << 3) | (clvl - (clvl < Debug ? 1 : 2));
 
-	sprintf(buf, "<%d>%.15s.%06u ", i, ctime_r(&now_sec, cbuf) + 4,
+	sprintf(buf, "<%u>%.15s.%06u ", u, ctime_r(&now_sec, cbuf) + 4,
 	    (uint)now_usec);
 	ss = buf;
 	ss += hostname;
@@ -593,8 +593,8 @@ void Log::set(const Config &cfg, const tchar *sect) {
 
     lck.lock();
     _flush();
-    bufsz = cfg.get(T("file.buffer.size"), 32 * 1024, sect);
-    buftm = cfg.get(T("file.buffer.msec"), 1000, sect);
+    bufsz = cfg.get(T("file.buffer.size"), 32 * 1024U, sect);
+    buftm = cfg.get(T("file.buffer.msec"), 1000UL, sect);
     bufenable = cfg.get(T("file.buffer.enable"), false, sect);
     gmt = cfg.get(T("gmt"), false, sect);
     s = Sockaddr::hostname();
@@ -614,7 +614,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
     }
     syslog(str2enum(cfg.get(T("syslog.level"), T("err"), sect).c_str()),
 	cfg.get(T("syslog.host"), T("localhost"), sect).c_str(),
-	cfg.get(T("syslog.facility"), 1, sect));
+	cfg.get(T("syslog.facility"), 1U, sect));
     syslogenable = cfg.get(T("syslog.enable"), false, sect);
     format(cfg.get(T("format"), T("[%Y-%m-%d %H:%M:%S.%# %z]"), sect).c_str());
     s = cfg.get(T("type"), T("simple"), sect);

@@ -160,7 +160,7 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
     if (p) {
 	tstring s(host);
 
-	s.erase(p - host);
+	s.erase((tstring::size_type)(p - host));
 	return set(s.c_str(), p + 1, proto);
     }
     return set(host, (tchar *)NULL, proto);
@@ -205,7 +205,7 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 bool Sockaddr::set(const hostent *h) {
     ZERO(addr);
     family(h->h_addrtype);
-    memcpy((void *)address(), h->h_addr, h->h_length);
+    memcpy((void *)address(), h->h_addr, (size_t)h->h_length);
     name = achartotstring(h->h_name);
     return true;
 }
@@ -678,7 +678,7 @@ bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
     	fds[u].events = POLLIN;
     iset.clear();
     eset.clear();
-    ret = poll(fds, sz, msec);
+    ret = poll(fds, sz, (int)msec);
     if (ret <= 0)
 	return ret == 0 || (!msec && errno == EINTR);
     for (u = 0; u < sz; u++) {
@@ -711,7 +711,7 @@ bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
     	fds[u].events = POLLOUT;
     oset.clear();
     eset.clear();
-    ret = poll(fds, sz, msec);
+    ret = poll(fds, sz, (int)msec);
     if (ret <= 0)
 	return ret == 0 || (!msec && errno == EINTR);
     for (u = 0; u < sz; u++) {
@@ -747,7 +747,7 @@ bool SocketSet::iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
     iset.clear();
     oset.clear();
     eset.clear();
-    ret = poll(fds, sz, msec);
+    ret = poll(fds, sz, (int)msec);
     if (ret <= 0)
 	return ret == 0 || (!msec && interrupted(sockerrno()));
     for (u = 0; u < sz; u++) {
@@ -813,7 +813,8 @@ bool SocketSet::iopoll(const SocketSet &rset, SocketSet &iset,
     iset.clear();
     oset.clear();
     eset.clear();
-    ret = ro ? poll(rset.fds, rset.sz, msec) : poll(sset.fds, sset.sz, msec);
+    ret = ro ? poll(rset.fds, rset.sz, (int)msec) : poll(sset.fds, sset.sz,
+	(int)msec);
     if (ret <= 0)
 	return ret == 0 || (!msec && interrupted(sockerrno()));
     if (ro) {

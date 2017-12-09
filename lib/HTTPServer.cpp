@@ -143,7 +143,7 @@ void HTTPServerSocket::postdata_free() {
 }
 
 void HTTPServerSocket::readhdrs() {
-    int in;
+    uint in;
     uint room = (uint)(sz - datasz);
 
     if (msg == DispatchTimeout || msg == DispatchClose) {
@@ -159,8 +159,8 @@ void HTTPServerSocket::readhdrs() {
 	memcpy(data, old, datasz);
 	delete [] old;
     }
-    in = read(data + datasz, room);
-    if (in == -1) {
+    in = (uint)read(data + datasz, room);
+    if (in == (uint)-1) {
 	disconnect();
 	return;
     }
@@ -231,7 +231,7 @@ void HTTPServerSocket::readpost() {
 		}
 	    } else {
 		while ((c = chunkmap[(uchar)postdata[pos]]) >= 0) {
-		    chunksize = chunksize * 16 + c;
+		    chunksize = chunksize * 16 + (uint)c;
 		    ++pos;
 		}
 		if (c != -2 || pos == chunkin) {
@@ -240,10 +240,10 @@ void HTTPServerSocket::readpost() {
 		}
 	    }
             ++lf;
-	    memmove(postdata + chunkin, lf, postdata + postin - lf);
-	    postin -= lf - (postdata + chunkin);
+	    memmove(postdata + chunkin, lf, (ulong)(postdata + postin - lf));
+	    postin -= (ulong)(lf - (postdata + chunkin));
 	    if (!postdatasz)
-		datasz -= lf - (postdata + chunkin);
+		datasz -= (ulong)(lf - (postdata + chunkin));
 	    if (postsz != (ulong)-1)
 		break;
 	    else if (chunksize == 0)
@@ -367,7 +367,7 @@ void HTTPServerSocket::parse(void) {
 		continue;
 	    if ((p = strchr(start, '\r')) == NULL)
 		p = start + strlen(start);
-	    memmove(end, start, p - start);
+	    memmove(end, start, (size_t)(p - start));
 	    end = p;
 	}
 	while (*buf == ' ' || *buf == '\t')
@@ -555,7 +555,7 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
 
     if (len == (ulong)-1)
 	len = p ? strlen(p) : 0;
-    i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)(ss.size() + len));
+    i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)ss.size() + len);
     hdrs.write(buf, i);
     iov[0].iov_base = (char *)hdrs.str();
     iov[0].iov_len = (size_t)hdrs.size();
@@ -576,7 +576,7 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 	    error(404);
 	    return;
 	}
-	ss.write(buf, len);
+	ss.write(buf, (streamsize)len);
 	len = 0;
     } else {
 #ifdef _WIN32
@@ -608,26 +608,26 @@ void HTTPServerSocket::status(uint sts, const char *type, const char *subtype,
     time_t mtime, const char *errstr) {
     struct tm tmbuf, *tmptr;
     char buf[128];
-    size_t i;
+    int i;
 
     hdrs.reset();
     ss.reset();
     i = snprintf(buf, sizeof (buf), "%s %u %s\r\n", prot, sts, errstr);
-    i = min(i, sizeof (buf) - 1);
+    i = min(i, (int)sizeof (buf) - 1);
     hdrs.write(buf, i);
     if (date) {
 	time_t now = time(NULL);
 
 	tmptr = gmtime_r(&now, &tmbuf);
-	i = strftime(buf, sizeof (buf), "Date: %a, %d %b %Y %H:%M:%S UTC\r\n",
-	    tmptr);
+	i = (int)strftime(buf, sizeof (buf),
+	    "Date: %a, %d %b %Y %H:%M:%S UTC\r\n", tmptr);
 	hdrs.write(buf, i);
     }
     if (type)
 	hdrs << "Content-Type: " << type << '/' << subtype << CRLF;
     if (mtime) {
 	tmptr = gmtime_r(&mtime, &tmbuf);
-	i = strftime(buf, sizeof (buf),
+	i = (int)strftime(buf, sizeof (buf),
 	    "Last-Modified: %a, %d %b %Y %H:%M:%S UTC\r\n", tmptr);
 	hdrs.write(buf, i);
     }
@@ -687,7 +687,7 @@ void HTTPServerSocket::error(uint sts) {
     reply();
 }
 
-void HTTPServerSocket::error(int sts, const char *errstr) {
+void HTTPServerSocket::error(uint sts, const char *errstr) {
     status(sts, "text", "plain", 0, errstr);
     ss << sts << ' ' << errstr << CRLF;
     _status = sts;

@@ -275,14 +275,14 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
     } else if (dotstuff) {
 	return stuff(start, sz);
     } else {
-	sstrm.write(start, sz);
+	sstrm.write(start, (streamsize)sz);
 	sstrm << crlf;
 	return sstrm.good();
     }
 }
 
 bool SMTPClient::data(bool m, const tchar *txt) {
-    static TSNumber<uint64_t> nextmid((time(NULL) << 18) & uticks());
+    static TSNumber<uint64_t> nextmid(((ulong)time(NULL) << 18) & uticks());
     char buf[64], gmtoff[16];
     int diff;
     char *encbuf;
@@ -290,7 +290,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     vector<tstring>::const_iterator it;
     uint64_t mid = nextmid++;
     time_t now;
-    uint pid = getpid();
+    pid_t pid = getpid();
     tm *tm = NULL, tmbuf, *tm2, tm2buf;
 
     mime = m;
@@ -454,8 +454,9 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	++input;
     // Pass 1
     for (;;) {
-	tuchar c = *input++;
-	if (c & 0x80) {
+	tchar c = *input++;
+	
+	if ((tuchar)c & 0x80) {
 	    err = NonASCII;
 	    goto fail;
 	}
@@ -463,7 +464,6 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	default:
 	    addr += c;
 	    break;
-
 	case '"':
 	    for (;;) {
 		addr += c;
@@ -475,7 +475,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		    addr += c;
 		    break;
 		}
-		if (c & 0x80) {
+		if ((tuchar)c & 0x80) {
 		    err = NonASCII;
 		    goto fail;
 		}
@@ -485,7 +485,6 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		}
 	    }
 	    break;
-
 	case '(':
 	    addr += ' ';
 	    parendepth = 1;
@@ -498,7 +497,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		} else if (c == '\\') {
 		    c = *input++;
 		}
-		if (c & 0x80) {
+		if ((tuchar)c & 0x80) {
 		    err = NonASCII;
 		    goto fail;
 		}
@@ -508,17 +507,14 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		}
 	    } while (parendepth);
 	    break;
-
 	case ')':
 	    err = T("Unbalanced ')'");
 	    goto fail;
-
 	case '<':
 	    addr.erase();
 	    anglelast = string::npos;
 	    ++angledepth;
 	    break;
-
 	case '>':
 	    if (!angledepth--) {
 		err = T("Unbalanced '>'");
@@ -527,10 +523,9 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	    if (anglelast == string::npos)
 		anglelast = addr.length();
 	    break;
-
 	case '\\':
 	    c = *input++;
-	    if (c & 0x80) {
+	    if ((tuchar)c & 0x80) {
 		err = NonASCII;
 		goto fail;
 	    }
@@ -566,7 +561,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	addr.erase(anglelast);
     // Pass 2
     for (tstring::size_type pos = 0; pos < addr.length();) {
-	tuchar c = addr[pos++];
+	tchar c = addr[pos++];
 
 	switch (c) {
 	case '@':
@@ -606,11 +601,9 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		local_part += c;
 	    }
 	    continue;
-
 	case '\\':
 	    local_part += addr[pos++];
 	    continue;
-
 	case ' ':
 	case '.': {
 		bool saw_dot = (c == '.');
@@ -624,7 +617,6 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		    local_part += '.';
 	    }
 	    continue;
-
 	case ';':
 	    if (saw_colon) {
 		err = T("List:; syntax illegal");
@@ -634,11 +626,9 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	default:
 	    local_part += c;
 	    continue;
-
 	case ',':
 	    err = T("Invalid route address");
 	    goto fail;
-
 	case ':':
 	    saw_colon = true;
 	    local_part.erase();
@@ -665,7 +655,7 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
     bool sawspace = false;
 
     while (pos < addr.length()) {
-	tuchar c = addr[pos++];
+	tchar c = addr[pos++];
 
 	switch (c) {
 	case '.':
@@ -678,14 +668,12 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 	    domain_buf += c;
 	    sawspace = false;
 	    continue;
-
 	case ' ':
 	    if (!domain_buf.empty() && domain_buf[domain_buf.length()-1] != '.') {
 		domain_buf += '.';
 		sawspace = true;
 	    }
 	    continue;
-
 	case '[':
 	    sawspace = false;
 	    domain_buf += c;
@@ -709,14 +697,13 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 			domain_buf += '\\';
 		    }
 		}
-		if (c & 0x80) {
+		if ((tuchar)c & 0x80) {
 		    err = NonASCII;
 		    return;
 		}
 		domain_buf += c;
 	    }
 	    continue;
-
 	case '\\':
 	    sawspace = false;
 	    if (pos == addr.length()) {
@@ -724,23 +711,21 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 		return;
 	    }
 	    c = addr[pos++];
-	    if (c & 0x80) {
+	    if ((tuchar)c & 0x80) {
 		err = NonASCII;
 		return;
 	    }
 	    domain_buf += '\\';
 	    domain_buf += c;
 	    continue;
-
 	default:
 	    sawspace = false;
-	    if (c & 0x80) {
+	    if ((tuchar)c & 0x80) {
 		err = NonASCII;
 		return;
 	    }
 	    domain_buf += c;
 	    continue;
-
 	case ':':
 	case ',':
 	case '@':
@@ -770,7 +755,7 @@ void RFC821Addr::make_address() {
     tstring::size_type pos;
 
     for (pos = 0; pos < local_part.length(); ++pos) {
-	tuchar c = local_part[pos];
+	tchar c = local_part[pos];
 
 	if (c == '.') {
 	    if (pos == 0 || pos == local_part.length()-1 ||
@@ -783,7 +768,7 @@ void RFC821Addr::make_address() {
     if (pos < local_part.length()) {
 	addr = '"';
 	for (pos = 0; pos < local_part.length(); ++pos) {
-	    tuchar c = local_part[pos];
+	    tchar c = local_part[pos];
 
 	    if (c == '"' || c == '\\')
 		addr += '\\';
@@ -1028,7 +1013,7 @@ bool RFC822Addr::skip_whitespace(tchar *&in) {
 }
 
 const tstring RFC822Addr::address(uint u, bool n, bool b) const {
-    uchar c;
+    char c;
     uint pos = 0;
     tstring s;
 
@@ -1079,7 +1064,7 @@ const tstring RFC822Addr::address(uint u, bool n, bool b) const {
 static const uint maxlen = 45;
 
 #define	DEC(c) (((c) - ' ') & 077)
-#define ENC(c) (table[(c) & 077])
+#define ENC(c) (char)(table[(c) & 077])
 
 static inline void encode(const void *input, size_t len, void *output, size_t
     &outsz, const uchar *table, bool base64) {

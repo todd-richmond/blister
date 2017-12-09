@@ -44,10 +44,10 @@ public:
     SMTPLoad(): id(threads++) {}
 
     static bool init(const tchar *host, uint maxthread, ulong maxuser,
-	bool randuser, ulong timeout, long loops, const tchar *file,
+	bool randuser, uint timeout, long loops, const tchar *file,
 	const tchar *bodyfile, ulong bodycachesz, bool all, int fcnt);
     static void print(tostream &os, usec_t last);
-    static long working(void) { return threads; }
+    static ulong working(void) { return threads; }
     static void reset(bool all = false);
     static void uninit(void);
     static void wait(ulong msec) { lock.lock(); cv.wait(msec); lock.unlock(); }
@@ -97,11 +97,12 @@ private:
     static bool ruser;
     static ulong muser;
     static uint mthread;
-    static ulong to;
+    static uint to;
     static volatile long remain;
-    static ulong threads;
+    static uint threads;
     static attrmap vars;
-    static uint bodycnt, *bodysz;
+    static uint bodycnt;
+    static ulong *bodysz;
     static ulong bodycachesz;
     static tchar **body;
     static char **bodycache;
@@ -121,15 +122,15 @@ private:
 
 Lock SMTPLoad::lock;
 Condvar SMTPLoad::cv(lock);
-ulong SMTPLoad::threads;
+uint SMTPLoad::threads;
 ulong SMTPLoad::muser;
 uint SMTPLoad::mthread;
 bool SMTPLoad::ruser;
 volatile long SMTPLoad::remain;
-ulong SMTPLoad::to;
+uint SMTPLoad::to;
 attrmap SMTPLoad::vars;
 uint SMTPLoad::bodycnt;
-uint *SMTPLoad::bodysz;
+ulong *SMTPLoad::bodysz;
 tchar **SMTPLoad::body;
 char **SMTPLoad::bodycache;
 ulong SMTPLoad::bodycachesz;
@@ -167,7 +168,7 @@ bool SMTPLoad::expand(tchar *str, const attrmap &amap) {
 }
 
 bool SMTPLoad::init(const tchar *host, uint maxthread,
-    ulong maxuser, bool randuser, ulong timeout, long loops,
+    ulong maxuser, bool randuser, uint timeout, long loops,
     const tchar *file, const tchar *bodyfile, ulong cachesz, bool all,
     int fcnt) {
     Sockaddr addr;
@@ -224,7 +225,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
     if (allfiles && bodycnt > 0) {
 	lock.lock();
 	if (filecnt > 0 && (uint)filecnt < bodycnt)
-	    bodycnt = filecnt;
+	    bodycnt = (uint)filecnt;
 	else if (filecnt < 0 && uint(-1 * filecnt) < bodycnt)
 	    startfile = bodycnt - uint(-1 * filecnt);
 	nextfile = startfile;
@@ -312,7 +313,7 @@ char *SMTPLoad::read(uint idx, usec_t &iousec) {
     int fd;
     char *ret = NULL;
     tchar *file = body[idx];
-    uint filelen = bodysz[idx];
+    ulong filelen = bodysz[idx];
 
     if (bodycache[idx]) {
 	iousec = 0;
@@ -345,7 +346,7 @@ void SMTPLoad::add(const tchar *file) {
     if (!body) {
 	body = new tchar *[bodycnt];
 	bodycache = new char *[bodycnt];
-	bodysz = new uint[bodycnt];
+	bodysz = new ulong[bodycnt];
 	bodycnt = 0;
     }
     ZERO(sbuf);
@@ -355,7 +356,7 @@ void SMTPLoad::add(const tchar *file) {
 	body[bodycnt] = new tchar [tstrlen(file) + 1];
 	tstrcpy(body[bodycnt], file);
 	bodycache[bodycnt] = NULL;
-	bodysz[bodycnt] = sbuf.st_size;
+	bodysz[bodycnt] = (ulong)sbuf.st_size;
 	bodycnt++;
     }
 }
@@ -380,7 +381,7 @@ int SMTPLoad::onStart(void) {
     vector<LoadCmd *>::const_iterator it;
     attrmap::const_iterator ait;
 
-    srand(id ^ ((uint)(uticks() >> 32 ^ time(NULL))));
+    srand((uint)(id ^ ((uticks() >> 32 ^ (msec_t)time(NULL)))));
     if (id > Processor::count())
 	msleep(rand() % 1000 * ((mthread / 20) + 1));
     while (!qflag) {
@@ -422,7 +423,7 @@ int SMTPLoad::onStart(void) {
 		if (*p == '%') {
 		    len = tstrtoul(p + 1, NULL, 10);
 		    if (len)
-			len = rand() % len;
+			len = (uint)rand() % len;
 		} else {
 		    len = tstrtoul(p, NULL, 10);
 		}
@@ -446,7 +447,7 @@ int SMTPLoad::onStart(void) {
 		if (p) {
 		    while (istspace(*p))
 			p++;
-		    auth.assign(buf, p - buf);
+		    auth.assign(buf, (tstring::size_type)(p - buf));
 		    ret = sc.auth(auth.c_str(), p + 1);
 		} else {
 		    ret = false;
@@ -479,7 +480,7 @@ int SMTPLoad::onStart(void) {
 		if (*buf || !body) {
 		    ret = sc.data(false, buf) && sc.enddata();
 		} else {
-		    uint u = allfiles ? next() : (rand() % bodycnt);
+		    uint u = allfiles ? next() : ((uint)rand() % bodycnt);
 		    char *d = read(u, io);
 		    
 		    if (d) {
@@ -490,7 +491,7 @@ int SMTPLoad::onStart(void) {
 		    }
 		}
 	    } else if (cmd->cmd == T("data")) {
-		uint u = allfiles ? next() : (rand() % bodycnt);
+		uint u = allfiles ? next() : ((uint)rand() % bodycnt);
 		char *d = read(u, io);
 		    
 		if (d) {
@@ -681,8 +682,8 @@ int tmain(int argc, tchar *argv[]) {
     tstring s;
     ulong stattime = 3000;
     SMTPLoad *thread;
-    ulong timeout = 30000;
-    int threads = 1;
+    uint timeout = 30000;
+    uint threads = 1;
     bool wflag = false;
     const tchar *wld = NULL;
 
@@ -709,11 +710,11 @@ int tmain(int argc, tchar *argv[]) {
 	} else if (!tstricmp(argv[i], T("-s"))) {
 	    stattime = tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-t"))) {
-	    threads = ttoi(argv[++i]);
+	   threads = (uint)tstrtoul(argv[++i], NULL, 10);
 	    if (!maxuser)
 		maxuser = threads;
 	} else if (!tstricmp(argv[i], T("-w"))) {
-	    timeout = tstrtoul(argv[++i], NULL, 10);
+	    timeout = (uint)tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-v"))) {
 	    dlog.level(Log::Level(dlog.level() + 1));
 	} else if (!wld && *argv[i] != '-') {
@@ -744,7 +745,7 @@ int tmain(int argc, tchar *argv[]) {
     dlog << Log::Info << T("test ") << host << ' ' << wld << T(" (") <<
 	threads << T(" thread") << (threads == 1 ? T("") : T("s")) << T(", ") <<
 	loops << T(" loop") << (loops == 1 ? T("") : T("s")) << ')' << endlog;
-    for (i = 0; i < threads; i++) {
+    for (uint u = 0; u < threads; u++) {
 	thread = new SMTPLoad;
 	thread->start(32 * 1024);
     }

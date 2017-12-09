@@ -129,14 +129,14 @@ void *DLLibrary::get(const tchar *symbol) const {
 }
 
 uint Processor::count(void) {
-    static int cpus;
+    static uint cpus;
 
     if (!cpus) {
 #ifdef _WIN32
 	SYSTEM_INFO si;
 
 	GetSystemInfo(&si);
-	cpus = si.dwNumberOfProcessors;
+	cpus = (uint)si.dwNumberOfProcessors;
 #else
 	cpus = (uint)sysconf(_SC_NPROCESSORS_ONLN);
 #endif

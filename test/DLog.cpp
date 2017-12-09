@@ -33,7 +33,7 @@ static void log(Log::Level lvl, const tchar *str) {
 	Log::Level l;
 	tstring s;
 
-	s.assign(str, 0, p - str);
+	s.assign(str, (tstring::size_type)0, (tstring::size_type)(p - str));
 	l = Log::str2enum(s.c_str());
 	if (l != Log::None) {
 	    lvl = l;
@@ -70,22 +70,22 @@ int tmain(int argc, tchar *argv[]) {
 		    break;
 	    }
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	cnt = ttol(argv[++i]);
+	    	cnt = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	sz = ttol(argv[++i]);
+	    	sz = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	tm = ttol(argv[++i]);
+	    	tm = tstrtoul(argv[++i], NULL, 10);
 	    dlog.alert(alvl, file, cnt, sz, tm);
 	} else if (!tstricmp(argv[i], T("-b")) || !tstricmp(argv[i],
 	    T("--buffer"))) {
 	    ulong sz = 32 * 1024, msec = 1000;
 
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		sz = (ulong)ttol(argv[++i]);
+		sz = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		msec = (ulong)ttol(argv[++i]);
+		msec = tstrtoul(argv[++i], NULL, 10);
 	    dlog.setmp(false);
-	    dlog.buffer(sz, msec);
+	    dlog.buffer((uint)sz, msec);
 	} else if (!tstricmp(argv[i], T("-c")) || !tstricmp(argv[i],
 	    T("--config"))) {
 	    const tchar *file, *pre = NULL;
@@ -106,7 +106,8 @@ int tmain(int argc, tchar *argv[]) {
 	    dlog.format(argv[i]);
 	} else if (!tstricmp(argv[i], T("-f")) || !tstricmp(argv[i],
 	    T("--file"))) {
-	    ulong cnt = 10, sz = 10 * 1024 * 1024, tm = 0;
+	    uint cnt = 10;
+	    ulong sz = 10 * 1024 * 1024, tm = 0;
 	    const tchar *file;
 	    Log::Level flvl = Log::Info;
 
@@ -118,11 +119,11 @@ int tmain(int argc, tchar *argv[]) {
 		    break;
 	    }
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	cnt = ttol(argv[++i]);
+		cnt = (uint)ttoi(argv[++i]);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	sz = ttol(argv[++i]);
+	    	sz = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	tm = ttol(argv[++i]);
+	    	tm = tstrtoul(argv[++i], NULL, 10);
 	    dlog.file(flvl, file, cnt, sz, tm);
 	} else if (!tstricmp(argv[i], T("-i")) || !tstricmp(argv[i],
 	    T("--input"))) {
@@ -197,7 +198,7 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		host = argv[++i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		fac = ttoi(argv[++i]);
+		fac = (uint)ttoi(argv[++i]);
 	    dlog.syslog(slvl, host, fac);
 	} else if (!tstricmp(argv[i], T("-t")) || !tstricmp(argv[i],
 	    T("--type"))) {

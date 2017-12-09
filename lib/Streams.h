@@ -218,8 +218,8 @@ public:
 	    iov[1].iov_len = (size_t)sz;
 	    out = fd.writev(iov, 2);
 	    setp(pb, pb + bufsz);
-	    return out == -1 || (ulong)out < iov[0].iov_len ? -1 :
-		(streamsize)(out - iov[0].iov_len);
+	    return out == -1 || (ulong)out < (ulong)iov[0].iov_len ? -1 :
+		(streamsize)((ulong)out - (ulong)iov[0].iov_len);
 	} else if (sz) {
 	    memcpy(pp, p, (size_t)sz);
 	    pbump((int)sz);

@@ -59,7 +59,7 @@ bool URL::set(const tchar *url) {
     }
     p = tstrchr(url, ':');
     if (p && p[1] == '/' && p[2] == '/') {
-	prot.assign(url, p - url);
+	prot.assign(url, (tstring::size_type)(p - url));
 	url = p + 3;
 	p = tstrchr(url, ':');
     } else if (p && !istdigit(p[1])) {
@@ -72,12 +72,12 @@ bool URL::set(const tchar *url) {
 	port = (ushort)tstrtoul(p + 1, NULL, 10);
 	if (!port)
 	    return false;
-	host.assign(url, p - url);
+	host.assign(url, (tstring::size_type)(p - url));
 	p = tstrchr(p, '/');
     } else {
 	port = 80;
 	if (pp && pp != url)
-	    host.assign(url, pp - url);
+	    host.assign(url, (tstring::size_type)(pp - url));
 	else if (pp)
 	    host = T("localhost");
 	else
@@ -87,7 +87,7 @@ bool URL::set(const tchar *url) {
     if (p) {
 	pp = tstrchr(p, '?');
 	if (pp) {
-	    path.assign(p, pp - p);
+	    path.assign(p, (tstring::size_type)(pp - p));
 	    query = pp + 1;
 	    unescape(query);
 	} else {
@@ -106,14 +106,14 @@ void URL::unescape(tchar *str, bool plus) {
 	    uint hex;
 
 	    if (*++p <= '9')
-		hex = *p - '0';
+		hex = (uint)(*p - '0');
 	    else
-		hex = *p - 'A' + 10;
+		hex = (uint)(*p - 'A' + 10);
 	    hex <<= 4;
 	    if (*++p <= '9')
-		hex += *p - '0';
+		hex += (uint)(*p - '0');
 	    else
-		hex += *p - 'A' + 10;
+		hex += (uint)(*p - 'A' + 10);
 	    *str++ = (tchar)hex;
 	} else if (*p == '+' && plus) {
 	    *str++ = ' ';
@@ -135,15 +135,15 @@ void URL::unescape(tstring &str, bool plus) {
 
 	    p = str[++j];
 	    if (p <= '9')
-		hex = p - '0';
+		hex = (uint)(p - '0');
 	    else
-		hex = p - 'A' + 10;
+		hex = (uint)(p - 'A' + 10);
 	    hex <<= 4;
 	    p = str[++j];
 	    if (p <= '9')
-		hex += p - '0';
+		hex += (uint)(p - '0');
 	    else
-		hex += p - 'A' + 10;
+		hex += (uint)(p - 'A' + 10);
 	    str[i] = (tchar)hex;
 	} else if (p == '+' && plus) {
 	    str[i] = ' ';
@@ -254,7 +254,7 @@ loop:
 	p++;
     while (*p == ' ' || *p == '\t')
 	p++;
-    sts = atoi(p);
+    sts = (uint)atoi(p);
     dlogd(Log::mod(T("http")), Log::kv(T("status"), sts));
     while (getline(sstrm, s)) {		    // does not support folded hdrs
 	p = s.c_str();
@@ -264,7 +264,8 @@ loop:
 	    break;
 	if ((pp = strchr(p, ':')) == NULL)
 	    continue;
-	ss = s.substr(p - s.c_str(), pp - p);
+	ss = s.substr((string::size_type)(p - s.c_str()), (string::size_type)
+	    (pp - p));
 	do {
 	    pp++;
 	} while (*pp && (*pp == '\r' || *pp == ' ' || *pp == '\t'));
@@ -298,7 +299,7 @@ loop:
 	    sz = ressz;
 	    result = new char[sz + 1];
 	}
-	ret = (ulong)sstrm.read(result, ressz) == ressz;
+	ret = (ulong)sstrm.read(result, (streamsize)ressz) == ressz;
     } else if (ressz) {
 	char *newres;
 	size_t room = sz;
@@ -314,7 +315,8 @@ loop:
 		delete [] result;
 		result = newres;
 	    }
-	    if ((long)(in = (size_t)sstrm.read(result + ressz, room)) > 0) {
+	    if ((long)(in = (size_t)sstrm.read(result + ressz,
+		(streamsize)room)) > 0) {
 		ressz += in;
 		ret = true;
 	    }
@@ -340,7 +342,7 @@ tostream &HTTPClient::operator <<(tostream &os) const {
     os << sts << endl;
     for (it = reshdrs.begin(); it != reshdrs.end(); ++it)
 	os << it->first << ": " << it->second << endl;
-    os.write(achartotchar(result), ressz);
+    os.write(achartotchar(result), (streamsize)ressz);
     os << endl;
     return os;
 }

@@ -54,7 +54,7 @@ protected:
     const char *postarg(const char *name) const { return find(postargs, name); }
     void header(const char *attr, const char *val);
     void error(uint errnum);
-    void error(int errnum, const char *errstr);
+    void error(uint errnum, const char *errstr);
     void keepalive(void);
     void reply(const char *data = NULL, ulong len = (ulong)-1);
     void reply(int fd, ulong sz);

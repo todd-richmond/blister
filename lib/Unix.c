@@ -58,7 +58,7 @@ usec_t uticks(void) {
     struct timespec ts;
 
     clock_gettime(CLOCK_BOOTTIME, &ts);
-    return (usec_t)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+    return (usec_t)ts.tv_sec * 1000000 + (msec_t)ts.tv_nsec / 1000;
 #elif defined(__APPLE__)
     static struct mach_timebase_info mti;
 
@@ -120,8 +120,8 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
     ZERO(fl);
     fl.l_type = type;
     fl.l_whence = whence;
-    fl.l_start = start;
-    fl.l_len = len;
+    fl.l_start = (off_t)start;
+    fl.l_len = (off_t)len;
     return fcntl(fd, test ? F_SETLK : F_SETLKW, &fl);
 }
 
@@ -139,10 +139,10 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     task_info(task, TASK_BASIC_INFO, (task_info_t)&tinfo, &msg_type);
     psbuf->pss = psbuf->rss = tinfo.resident_size / 1024;
     psbuf->sz = tinfo.virtual_size / 1024;
-    psbuf->stime = tinfo.system_time.seconds * 1000 +
-	tinfo.system_time.microseconds / 1000;;
-    psbuf->utime = tinfo.user_time.seconds * 1000 +
-	tinfo.user_time.microseconds / 1000;;
+    psbuf->stime = (ulong)tinfo.system_time.seconds * 1000 +
+	(ulong)tinfo.system_time.microseconds / 1000;;
+    psbuf->utime = (ulong)tinfo.user_time.seconds * 1000 +
+	(ulong)tinfo.user_time.microseconds / 1000;;
     return 0;
 #elif defined(sun)
     // TODO incomplete

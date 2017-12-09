@@ -39,7 +39,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("--columns"))) {
 	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
-	    columns = ttoi(argv[++i]);
+	    columns = (uint)ttoi(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-i")) || !tstricmp(argv[i],
 	    T("--input"))) {
 	    if (++i == argc)
@@ -94,7 +94,7 @@ int tmain(int argc, tchar *argv[]) {
 		pp = p;
 		while (!istspace(*pp))
 		    pp++;
-		key.assign(p, pp - p);
+		key.assign(p, (tstring::size_type)(pp - p));
 		timing(key.c_str(), tstrtoul(pp, NULL, 10) * mult);
 	    }
 	}

@@ -25,7 +25,7 @@
 #else
 #define CLOEXEC(fd) (void)fcntl((fd), F_SETFD, FD_CLOEXEC)
 #endif
-#define RETRY(call) while ((call) == -1 && interrupted(errno))
+#define RETRY(call) while ((int)(call) == -1 && interrupted(errno))
 
 static const uint MAX_WAIT_TIME = 1 * 60 * 1000;
 static const uint MAX_IDLE_TIMER = 10 * 1000;
@@ -856,7 +856,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 	    RETRY(epoll_ctl(evtfd, EPOLL_CTL_DEL, fd, 0));
 #elif defined(DSP_KQUEUE)
 	    event_t chgs[2], evts[MIN_EVENTS];
-	    int nevts = 0;
+	    uint nevts = 0;
 	    static timespec ts = { 0, 0 };
 
 	    if (ds.flags & (DSP_SelectRead | DSP_SelectAccept))
@@ -865,10 +865,10 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 		EV_SET(&chgs[nevts++], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
 	    ds.flags &= ~DSP_SelectAll;
 	    lkr.unlock();
-	    RETRY(nevts = kevent(evtfd, chgs, nevts, evts, MIN_EVENTS, &ts));
+	    RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS, &ts));
 	    if (nevts > 0) {
 		lkr.lock();
-		nevts = handleEvents(evts, (uint)nevts);
+		nevts = handleEvents(evts, nevts);
 		if (nevts > 1)
 		    wake(nevts, false);
 	    }
@@ -1002,7 +1002,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	RETRY(epoll_ctl(evtfd, op, ds.fd(), &evt));
 #elif defined(DSP_KQUEUE)
 	event_t chgs[4], evts[MIN_EVENTS];
-	int nevts = 0;
+	uint nevts = 0;
 	static timespec ts = { 0, 0 };
 
 	if (m == DispatchRead || m == DispatchReadWrite || m ==
@@ -1023,10 +1023,10 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 		    &ds);
 	    }
 	}
-	RETRY(nevts = kevent(evtfd, chgs, nevts, evts, MIN_EVENTS, &ts));
+	RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS, &ts));
 	if (nevts > 0) {
 	    lkr.lock();
-	    nevts = handleEvents(evts, (uint)nevts);
+	    nevts = handleEvents(evts, nevts);
 	    if (nevts > 1)
 		wake(nevts, false);
 	}
