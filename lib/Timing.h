@@ -25,16 +25,19 @@
 /*
  * The Timing class is used to track call durations to enable simple profiling.
  * It maintains buckets of usec intervals to aid in determining calls with
- * randomly dispersed run times and includes a simple pretty-print function to
- * make prioritizing code optimization easier.
+ * randomly dispersed run times. A simple pretty-print function makes evaluating
+ * code optimization priorities easier
+ *
+ * keys are statically hashed when possible for performance which could cause
+ * collisions, but key set will be small and performance hit would be 3x
  *
  * A global "dtiming" object allows for the simplest functionality but other
  * objects can be instantiated as well
  * 
  * Timing can be used in either "direct" or "stack" mode. There are TimingEntry
- * and TimingFrame classes to simplify code even further
+ * and TimingFrame classes to simplify timing code blocks
  *
- * direct: lowest overhead for most profile tasks
+ * direct: lowest overhead for basic or fine grained profile tasks
  *   function_c() {
  *     TimingEntry te(T("function_c"));
  *     code_c();
@@ -73,6 +76,37 @@
 
 typedef usec_t timing_t;
 
+#define TIMING_KEY(i) __forceinline TimingKey(const char (&k)[i]): \
+    StringHash(k), key(k) {}
+
+class TimingKey: public StringHash {
+public:
+    __forceinline TimingKey(const DynamicString &ds): StringHash(ds), key(ds.s)
+	{}
+
+    TIMING_KEY(1) TIMING_KEY(2) TIMING_KEY(3) TIMING_KEY(4)
+    TIMING_KEY(5) TIMING_KEY(6) TIMING_KEY(7) TIMING_KEY(8)
+    TIMING_KEY(9) TIMING_KEY(10) TIMING_KEY(11) TIMING_KEY(12)
+    TIMING_KEY(13) TIMING_KEY(14) TIMING_KEY(15) TIMING_KEY(16)
+    TIMING_KEY(17) TIMING_KEY(18) TIMING_KEY(19) TIMING_KEY(20)
+    TIMING_KEY(21) TIMING_KEY(22) TIMING_KEY(23) TIMING_KEY(24)
+    TIMING_KEY(25) TIMING_KEY(26) TIMING_KEY(27) TIMING_KEY(28)
+    TIMING_KEY(29) TIMING_KEY(30) TIMING_KEY(31) TIMING_KEY(32)
+    TIMING_KEY(33) TIMING_KEY(34) TIMING_KEY(35) TIMING_KEY(36)
+    TIMING_KEY(37) TIMING_KEY(38) TIMING_KEY(39) TIMING_KEY(40)
+    TIMING_KEY(41) TIMING_KEY(42) TIMING_KEY(43) TIMING_KEY(44)
+    TIMING_KEY(45) TIMING_KEY(46) TIMING_KEY(47) TIMING_KEY(48)
+    TIMING_KEY(49) TIMING_KEY(50) TIMING_KEY(51) TIMING_KEY(52)
+    TIMING_KEY(53) TIMING_KEY(54) TIMING_KEY(55) TIMING_KEY(56)
+    TIMING_KEY(57) TIMING_KEY(58) TIMING_KEY(59) TIMING_KEY(60)
+    TIMING_KEY(61) TIMING_KEY(62) TIMING_KEY(63) TIMING_KEY(64)
+
+    __forceinline operator const tchar *(void) const { return key; }
+
+private:
+    const tchar *key;
+};
+
 class Timing: nocopy {
 public:
     Timing() {}
@@ -80,22 +114,36 @@ public:
 
     vector<tstring>::size_type depth(void) const { return tls->callers.size(); }
 
-    void add(const tchar *key, timing_t diff);
+    template<class C> __forceinline void add(const C &key, timing_t diff) {
+	add(TimingKey(key), diff);
+    }
+    void add(const TimingKey &key, timing_t diff);
     void clear(void);
-    const tstring data(bool sort_key = false, uint columns = TIMINGCOLUMNS) const;
-    void erase(const tchar *key);
-    void record(const tchar *key = NULL);
-    timing_t record(const tchar *key, timing_t start) {
+    const tstring data(bool sort_by_key = false, uint columns = TIMINGCOLUMNS)
+	const;
+    template<class C> void erase(const C &key) { erase(TimingKey(key)); }
+    void record(void);
+    template<class C> __forceinline void record(const C &key) {
+	record(TimingKey(key));
+    }
+    template<class C> __forceinline timing_t record(const C &key, timing_t
+	start) {
+	record(TimingKey(key), start);
+    }
+    __forceinline timing_t record(const TimingKey &key, timing_t start) {
 	timing_t n = now();
 
 	add(key, n - start);
 	return n;
     }
     void restart(void);
-    timing_t start(void) const { return now(); }
-    void start(const tchar *key);
+    __forceinline timing_t start(void) const { return now(); }
+    void start(const TimingKey &key);
+    template<class C> __forceinline void start(const C &key) {
+	start(TimingKey(key));
+    }
     void stop(uint lvl = (uint)-1);
-    static timing_t now(void) { return uticks(); }
+    static __forceinline timing_t now(void) { return uticks(); }
 
 private:
     struct Stats {
@@ -115,13 +163,14 @@ private:
 	vector<timing_t> starts;
     };
 
-    typedef unordered_map<const tchar *, Stats *, strhash<tchar>, streq<tchar> >
-	timingmap;
+    typedef unordered_map<size_t, Stats *> timingmap;
 
     mutable SpinLock lck;
     ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
 
+    void erase(const TimingKey &key);
+    void record(const TimingKey &key);
     static const tchar *format(timing_t tot, tchar *buf);
     static bool less_key(const Stats *a, const Stats *b) {
 	return stringless(a->key, b->key);
@@ -134,43 +183,39 @@ private:
 
 extern Timing &dtiming;
 
-/*
- * Simple wrapper to add timing data upon object destruction which reduces
- * timing a function call down to a single line of code and allows it to
- * included destructor overhead
- */
+// time a code block including destructors
 class TimingEntry: nocopy {
 public:
-    TimingEntry(const tchar *k, Timing &t = dtiming): key(k), timing(t) {
-	start = timing.start();
-    }
-    ~TimingEntry() {
+    template<class C> __forceinline TimingEntry(const C &k, Timing &t =
+	dtiming): key(k), start(t.start()), timing(t) {}
+    __forceinline ~TimingEntry() {
 	if (start != (timing_t)-1)
 	    timing.add(key, timing.now() - start);
     }
 
-    void record(void) { start = timing.record(key, start); }
+    __forceinline void record(void) { start = timing.record(key, start); }
     void restart(void) { start = timing.start(); }
     void stop(void) { start = (timing_t)-1; }
 
 private:
-    const tchar *key;
+    const TimingKey key;
     timing_t start;
     Timing &timing;
 };
 
+// time a function block including destructors
 class TimingFrame: nocopy {
 public:
-    TimingFrame(const tchar *k, Timing &t = dtiming): key(k), started(true),
-	timing(t) {
+    template<class C> __forceinline TimingFrame(const C &k, Timing &t =
+	dtiming): key(k), started(true), timing(t) {
 	timing.start(key);
     }
-    ~TimingFrame() {
+    __forceinline ~TimingFrame() {
 	if (started)
 	    timing.record();
     }
 
-    void record(void) { timing.record(); started = false; }
+    __forceinline void record(void) { timing.record(); started = false; }
     void restart(void) {
 	if (started) {
 	    timing.restart();
@@ -182,7 +227,7 @@ public:
     void stop(void) { timing.stop(1); started = false; }
 
 private:
-    const tchar *key;
+    const TimingKey key;
     bool started;
     Timing &timing;
 };

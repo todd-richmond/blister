@@ -30,12 +30,82 @@
 
 #define ZERO(x)		memset(&(x), 0, sizeof (x))
 
+// recursive macros for compile-time optimization
+#define STDAPI_REPEAT(i, m, d)	STDAPI_REPEAT_I(i, m, d)
+#define STDAPI_REPEAT_I(i, m, d)STDAPI_REPEAT_##i(m, d)
+#define STDAPI_REPEAT_0(m, d)
+#define STDAPI_REPEAT_1(m, d)	m(0, d)
+#define STDAPI_REPEAT_2(m, d)	STDAPI_REPEAT_1(m, d)	m(1, d)
+#define STDAPI_REPEAT_3(m, d)	STDAPI_REPEAT_2(m, d)	m(2, d)
+#define STDAPI_REPEAT_4(m, d)	STDAPI_REPEAT_3(m, d)	m(3, d)
+#define STDAPI_REPEAT_5(m, d)	STDAPI_REPEAT_4(m, d)	m(4, d)
+#define STDAPI_REPEAT_6(m, d)	STDAPI_REPEAT_5(m, d)	m(5, d)
+#define STDAPI_REPEAT_7(m, d)	STDAPI_REPEAT_6(m, d)	m(6, d)
+#define STDAPI_REPEAT_8(m, d)	STDAPI_REPEAT_7(m, d)	m(7, d)
+#define STDAPI_REPEAT_9(m, d)	STDAPI_REPEAT_8(m, d)	m(8, d)
+#define STDAPI_REPEAT_10(m, d)	STDAPI_REPEAT_9(m, d)	m(9, d)
+#define STDAPI_REPEAT_11(m, d)	STDAPI_REPEAT_10(m, d)	m(10, d)
+#define STDAPI_REPEAT_12(m, d)	STDAPI_REPEAT_11(m, d)	m(11, d)
+#define STDAPI_REPEAT_13(m, d)	STDAPI_REPEAT_12(m, d)	m(12, d)
+#define STDAPI_REPEAT_14(m, d)	STDAPI_REPEAT_13(m, d)	m(13, d)
+#define STDAPI_REPEAT_15(m, d)	STDAPI_REPEAT_14(m, d)	m(14, d)
+#define STDAPI_REPEAT_16(m, d)	STDAPI_REPEAT_15(m, d)	m(15, d)
+#define STDAPI_REPEAT_17(m, d)	STDAPI_REPEAT_16(m, d)	m(16, d)
+#define STDAPI_REPEAT_18(m, d)	STDAPI_REPEAT_17(m, d)	m(17, d)
+#define STDAPI_REPEAT_19(m, d)	STDAPI_REPEAT_18(m, d)	m(18, d)
+#define STDAPI_REPEAT_20(m, d)	STDAPI_REPEAT_19(m, d)	m(19, d)
+#define STDAPI_REPEAT_21(m, d)	STDAPI_REPEAT_20(m, d)	m(20, d)
+#define STDAPI_REPEAT_22(m, d)	STDAPI_REPEAT_21(m, d)	m(21, d)
+#define STDAPI_REPEAT_23(m, d)	STDAPI_REPEAT_22(m, d)	m(22, d)
+#define STDAPI_REPEAT_24(m, d)	STDAPI_REPEAT_23(m, d)	m(23, d)
+#define STDAPI_REPEAT_25(m, d)	STDAPI_REPEAT_24(m, d)	m(24, d)
+#define STDAPI_REPEAT_26(m, d)	STDAPI_REPEAT_25(m, d)	m(25, d)
+#define STDAPI_REPEAT_27(m, d)	STDAPI_REPEAT_26(m, d)	m(26, d)
+#define STDAPI_REPEAT_28(m, d)	STDAPI_REPEAT_27(m, d)	m(27, d)
+#define STDAPI_REPEAT_29(m, d)	STDAPI_REPEAT_28(m, d)	m(28, d)
+#define STDAPI_REPEAT_30(m, d)	STDAPI_REPEAT_29(m, d)	m(29, d)
+#define STDAPI_REPEAT_31(m, d)	STDAPI_REPEAT_30(m, d)	m(30, d)
+#define STDAPI_REPEAT_32(m, d)	STDAPI_REPEAT_31(m, d)	m(31, d)
+#define STDAPI_REPEAT_33(m, d)	STDAPI_REPEAT_32(m, d)	m(32, d)
+#define STDAPI_REPEAT_34(m, d)	STDAPI_REPEAT_33(m, d)	m(33, d)
+#define STDAPI_REPEAT_35(m, d)	STDAPI_REPEAT_34(m, d)	m(34, d)
+#define STDAPI_REPEAT_36(m, d)	STDAPI_REPEAT_35(m, d)	m(35, d)
+#define STDAPI_REPEAT_37(m, d)	STDAPI_REPEAT_36(m, d)	m(36, d)
+#define STDAPI_REPEAT_38(m, d)	STDAPI_REPEAT_37(m, d)	m(37, d)
+#define STDAPI_REPEAT_39(m, d)	STDAPI_REPEAT_38(m, d)	m(38, d)
+#define STDAPI_REPEAT_40(m, d)	STDAPI_REPEAT_39(m, d)	m(39, d)
+#define STDAPI_REPEAT_41(m, d)	STDAPI_REPEAT_40(m, d)	m(40, d)
+#define STDAPI_REPEAT_42(m, d)	STDAPI_REPEAT_41(m, d)	m(41, d)
+#define STDAPI_REPEAT_43(m, d)	STDAPI_REPEAT_42(m, d)	m(42, d)
+#define STDAPI_REPEAT_44(m, d)	STDAPI_REPEAT_43(m, d)	m(43, d)
+#define STDAPI_REPEAT_45(m, d)	STDAPI_REPEAT_44(m, d)	m(44, d)
+#define STDAPI_REPEAT_46(m, d)	STDAPI_REPEAT_45(m, d)	m(45, d)
+#define STDAPI_REPEAT_47(m, d)	STDAPI_REPEAT_46(m, d)	m(46, d)
+#define STDAPI_REPEAT_48(m, d)	STDAPI_REPEAT_47(m, d)	m(47, d)
+#define STDAPI_REPEAT_49(m, d)	STDAPI_REPEAT_48(m, d)	m(48, d)
+#define STDAPI_REPEAT_50(m, d)	STDAPI_REPEAT_49(m, d)	m(49, d)
+#define STDAPI_REPEAT_51(m, d)	STDAPI_REPEAT_50(m, d)	m(50, d)
+#define STDAPI_REPEAT_52(m, d)	STDAPI_REPEAT_51(m, d)	m(51, d)
+#define STDAPI_REPEAT_53(m, d)	STDAPI_REPEAT_52(m, d)	m(52, d)
+#define STDAPI_REPEAT_54(m, d)	STDAPI_REPEAT_53(m, d)	m(53, d)
+#define STDAPI_REPEAT_55(m, d)	STDAPI_REPEAT_54(m, d)	m(54, d)
+#define STDAPI_REPEAT_56(m, d)	STDAPI_REPEAT_55(m, d)	m(55, d)
+#define STDAPI_REPEAT_57(m, d)	STDAPI_REPEAT_56(m, d)	m(56, d)
+#define STDAPI_REPEAT_58(m, d)	STDAPI_REPEAT_57(m, d)	m(57, d)
+#define STDAPI_REPEAT_59(m, d)	STDAPI_REPEAT_58(m, d)	m(58, d)
+#define STDAPI_REPEAT_60(m, d)	STDAPI_REPEAT_59(m, d)	m(59, d)
+#define STDAPI_REPEAT_61(m, d)	STDAPI_REPEAT_60(m, d)	m(60, d)
+#define STDAPI_REPEAT_62(m, d)	STDAPI_REPEAT_61(m, d)	m(61, d)
+#define STDAPI_REPEAT_63(m, d)	STDAPI_REPEAT_62(m, d)	m(62, d)
+#define STDAPI_REPEAT_64(m, d)	STDAPI_REPEAT_63(m, d)	m(63, d)
+
 typedef unsigned char byte;
 typedef unsigned char uchar;
 typedef unsigned short word;
 
 #ifdef _WIN32
 
+#pragma inline_depth(69)
 #pragma warning(disable: 4018 4068 4097 4100 4103 4127 4146 4201 4250 4335 4503)
 #pragma warning(disable: 4511 4512 4530 4577 4619 4625 4626 4668 4710 4711 4786)
 #pragma warning(disable: 4820 4996 5026 5027 26135 28125)
@@ -112,7 +182,7 @@ typedef __int64 _ino_t;
 #define O_TMPFILE	O_TEMPORARY
 
 #define SIGHUP		SIGBREAK
-#define SIGCHLD		80	/* out of range */
+#define SIGCHLD		80	// out of range
 #define SIGPIPE		81
 
 #define S_IRUSR		_S_IREAD
@@ -204,13 +274,7 @@ typedef enum idtype {
     P_PID, P_PPID, P_PGID, P_SID, P_CID, P_UID, P_GID, P_ALL
 } idtype_t;
 
-/*
- * replacement CLib calls support automic rename, deleting open files
- * and using sockets as fds
- */
-#define fileno(stream)	(_get_osfhandle((stream)->_file))
-
-/* UNIX directory emulation */
+// UNIX directory emulation
 typedef struct dirent {
     char *d_ino;
     long d_off;
@@ -241,7 +305,7 @@ typedef struct WDIR {
 #define rewinddir(dirp)	    seekdir(dirp, 0L)
 #define wrewinddir(dirp)    wseekdir(dirp, 0L)
 
-/* stat routines that support inodes and devices properly */
+// stat routines that support inodes and devices properly
 struct stat {
     ulong st_dev;
     ulong st_rdev;
@@ -256,25 +320,25 @@ struct stat {
     ushort st_gid;
 };
 
-/* statvfs emulation */
+// statvfs emulation
 #define FSTYPSZ 16
 
 typedef struct statvfs {
-    ulong f_bsize;			/* preferred file system block size */
-    ulong f_frsize;			/* fundamental file system block size */
-    ulong f_blocks;			/* total # of blocks of f_frsize */
-    ulong f_bfree;			/* total # of free blocks of f_frsize */
-    ulong f_bavail;			/* # of free blocks for non-superuser */
-    ulong f_files;			/* total # of file nodes (inodes) */
-    ulong f_ffree;			/* total # of free file nodes */
-    ulong f_favail;			/* # of free nodes for non-superuser */
-    ulong f_fsid;			/* file system id (dev for now) */
-    char f_basetype[FSTYPSZ];		/* target fs type name */
-    ulong f_flag;			/* bit-mask of flags */
-    ulong f_namemax;			/* maximum file name length */
+    ulong f_bsize;			// preferred file system block size
+    ulong f_frsize;			// fundamental file system block size
+    ulong f_blocks;			// total # of blocks of f_frsize
+    ulong f_bfree;			// total # of free blocks of f_frsize
+    ulong f_bavail;			// # of free blocks for non-superuser
+    ulong f_files;			// total # of file nodes (inodes)
+    ulong f_ffree;			// total # of free file nodes
+    ulong f_favail;			// # of free nodes for non-superuser
+    ulong f_fsid;			// file system id (dev for now)
+    char f_basetype[FSTYPSZ];		// target fs type name
+    ulong f_flag;			// bit-mask of flags
+    ulong f_namemax;			// maximum file name length
 } statvfs_t;
 
-/* writev emulation */
+// writev emulation
 typedef struct iovec {
     size_t iov_len;
     char *iov_base;
@@ -284,6 +348,9 @@ struct timezone {
     int tz_minuteswest;
     int tz_dsttime;
 };
+
+// replacement CLib supports atomic rename, deleting open files and socket fds
+#define fileno(stream)	(_get_osfhandle((stream)->_file))
 
 EXTERNC
 extern int access(const char *path, int mode);
@@ -344,7 +411,7 @@ EXTERNC_
 #define ctime_r(clock, buf)	((void)(buf), ctime(clock))
 #define gmtime_r(clock, buf)	((void)(buf), gmtime(clock))
 #define localtime_r(clock, buf)	((void)(buf), localtime(clock))
-#define strerror_r(e, buf, sz)	strncpy(buf, strerror(e), sz)
+#define strerror_r(e, buf, sz)	strlcpy(buf, strerror(e), sz)
 
 #else // _WIN32
 
@@ -377,6 +444,7 @@ EXTERNC_
 #if defined(__GNUC__)
 #define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
     __GNUC_PATCHLEVEL__)
+#define __forceinline	__attribute__((always_inline))
 #endif
 
 #ifndef __DBL_EPSILON__
@@ -505,8 +573,10 @@ EXTERNC_
 #define tstrncmp	wcsncmp
 #define tstrnicmp	wcsnicmp
 #define tstrcat		wcscat
+#define tstrlcat	wcslcat
 #define tstrncat	wcsncat
 #define tstrcpy		wcscpy
+#define tstlncpy	wcslcpy
 #define tstrncpy	wcsncpy
 #define tstrlen		wcslen
 #define	tstrchr		wcschr
@@ -582,8 +652,10 @@ typedef wchar tuchar;
 #define tstrncmp	strncmp
 #define tstrnicmp	strnicmp
 #define tstrcat		strcat
+#define tstrlcat	strlcat
 #define tstrncat	strncat
 #define tstrcpy		strcpy
+#define tstrlcpy	strlcpy
 #define tstrncpy	strncpy
 #define tstrlen		strlen
 #define	tstrchr		strchr
@@ -661,7 +733,7 @@ struct pidstat {
     uint64_t sz;
     uint64_t stime;
     uint64_t utime;
-}; 
+};
 
 // current and linear time routines
 typedef uint64_t msec_t;
@@ -965,6 +1037,46 @@ struct striless {
     static bool less(const basic_string<C> &a, const basic_string<C> &b) {
 	return stringicmp(a, b) < 0;
     }
+};
+
+// compile time string hashing
+#define STRING_HASH_PRE(i, d)	((
+#define STRING_HASH_POST(i, d)	* 101) + s[i])
+#define STRING_HASH(i) __forceinline StringHash(const tchar (&s)[i]): \
+    hash(STDAPI_REPEAT(i, STRING_HASH_PRE, ~) 0 STDAPI_REPEAT(i, \
+	STRING_HASH_POST, ~)) {}
+
+class StringHash {
+public:
+    struct DynamicString {
+        __forceinline DynamicString(const tchar *str): s(str) {}
+
+        const tchar *s;
+    };
+
+    __forceinline StringHash(const DynamicString &ds): hash(stringhash(ds.s)) {}
+
+    STRING_HASH(1) STRING_HASH(2) STRING_HASH(3) STRING_HASH(4)
+    STRING_HASH(5) STRING_HASH(6) STRING_HASH(7) STRING_HASH(8)
+    STRING_HASH(9) STRING_HASH(10) STRING_HASH(11) STRING_HASH(12)
+    STRING_HASH(13) STRING_HASH(14) STRING_HASH(15) STRING_HASH(16)
+    STRING_HASH(17) STRING_HASH(18) STRING_HASH(19) STRING_HASH(20)
+    STRING_HASH(21) STRING_HASH(22) STRING_HASH(23) STRING_HASH(24)
+    STRING_HASH(25) STRING_HASH(26) STRING_HASH(27) STRING_HASH(28)
+    STRING_HASH(29) STRING_HASH(30) STRING_HASH(31) STRING_HASH(32)
+    STRING_HASH(33) STRING_HASH(34) STRING_HASH(35) STRING_HASH(36)
+    STRING_HASH(37) STRING_HASH(38) STRING_HASH(39) STRING_HASH(40)
+    STRING_HASH(41) STRING_HASH(42) STRING_HASH(43) STRING_HASH(44)
+    STRING_HASH(45) STRING_HASH(46) STRING_HASH(47) STRING_HASH(48)
+    STRING_HASH(49) STRING_HASH(50) STRING_HASH(51) STRING_HASH(52)
+    STRING_HASH(53) STRING_HASH(54) STRING_HASH(55) STRING_HASH(56)
+    STRING_HASH(57) STRING_HASH(58) STRING_HASH(59) STRING_HASH(60)
+    STRING_HASH(61) STRING_HASH(62) STRING_HASH(63) STRING_HASH(64)
+
+    __forceinline operator size_t(void) const { return hash; }
+
+private:
+    size_t hash;
 };
 
 // prohibit object copies by subclassing this

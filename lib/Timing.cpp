@@ -16,6 +16,7 @@
  */
 
 #include "stdapi.h"
+#include <assert.h>
 #include <algorithm>
 #include "Timing.h"
 
@@ -28,7 +29,7 @@ static Timing &_dtiming(void) {
 
 Timing &dtiming(_dtiming());
 
-void Timing::add(const tchar *key, timing_t diff) {
+void Timing::add(const TimingKey &key, timing_t diff) {
     timingmap::const_iterator it;
     uint slot;
     Stats *stats;
@@ -46,7 +47,7 @@ void Timing::add(const tchar *key, timing_t diff) {
 	stats = new Stats(key);
 	lck.lock();
 	if ((it = tmap.find(key)) == tmap.end()) {
-	    tmap[stats->key] = stats;
+	    tmap[key] = stats;
 	} else {
 	    delete stats;
 	    stats = it->second;
@@ -54,6 +55,7 @@ void Timing::add(const tchar *key, timing_t diff) {
     } else {
 	stats = it->second;
     }
+    assert(tstreq(key, stats->key));
     ++stats->cnt;
     ++stats->cnts[slot];
     stats->tot += diff;
@@ -122,10 +124,12 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 
 	    for (u = 0; u <= start; u++)
 		sum += stats->cnts[u];
-	    if (stats->cnt >= 100000000)
-		tsprintf(cbuf, T("%5lum"), stats->cnt / 1000000);
-	    else if (stats->cnt >= 100000)
-		tsprintf(cbuf, T("%5luk"), stats->cnt / 1000);
+	    if (stats->cnt >= 10000000000UL)
+		tsprintf(cbuf, T("%4lug"), stats->cnt / 1000000000UL);
+            else if (stats->cnt >= 10000000UL)
+		tsprintf(cbuf, T("%4lum"), stats->cnt / 1000000UL);
+	    else if (stats->cnt >= 10000UL)
+		tsprintf(cbuf, T("%4luk"), stats->cnt / 1000UL);
 	    else
 		tsprintf(cbuf, T("%5lu"), stats->cnt);
 	    if (tot) {
@@ -173,7 +177,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     return s;
 }
 
-void Timing::erase(const tchar *key) {
+void Timing::erase(const TimingKey &key) {
     FastSpinLocker lkr(lck);
     timingmap::iterator it = tmap.find(key);
 
@@ -201,29 +205,23 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
     return buf;
 }
 
-void Timing::record(const tchar *key) {
+void Timing::record(void) {
     timing_t n = now();
     tstring caller;
     timing_t diff;
+    const tchar *key;
     Tlsdata &tlsd(*tls);
+    vector<tstring>::reverse_iterator it = tlsd.callers.rbegin();
 
-    do {
-	vector<tstring>::reverse_iterator it = tlsd.callers.rbegin();
-
-	if (it == tlsd.callers.rend()) {
-	    tcerr << T("timing mismatch for ") << (key ? key : T("stack")) <<
-		endl;
-	    return;
-	}
-	caller = *it;
-	tlsd.callers.pop_back();
-	diff = n - *(tlsd.starts.rbegin());
-	tlsd.starts.pop_back();
-	if (!key) {
-	    key = caller.c_str();
-	    break;
-	}
-    } while (!caller.empty() && caller != key);
+    if (it == tlsd.callers.rend()) {
+	tcerr << T("timing mismatch for stack") << endl;
+	return;
+    }
+    caller = *it;
+    tlsd.callers.pop_back();
+    diff = n - *(tlsd.starts.rbegin());
+    tlsd.starts.pop_back();
+    key = caller.c_str();
     if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
@@ -240,6 +238,40 @@ void Timing::record(const tchar *key) {
     add(key, diff);
 }
 
+void Timing::record(const TimingKey &key) {
+    timing_t n = now();
+    tstring caller;
+    timing_t diff;
+    Tlsdata &tlsd(*tls);
+
+    do {
+	vector<tstring>::reverse_iterator it = tlsd.callers.rbegin();
+
+	if (it == tlsd.callers.rend()) {
+	    tcerr << T("timing mismatch for ") << (const tchar *)key << endl;
+	    return;
+	}
+	caller = *it;
+	tlsd.callers.pop_back();
+	diff = n - *(tlsd.starts.rbegin());
+	tlsd.starts.pop_back();
+    } while (!caller.empty() && caller != (const tchar *)key);
+    if (!caller.empty() && !tlsd.callers.empty()) {
+	tstring s;
+
+	for (vector<tstring>::const_iterator it = tlsd.callers.begin();
+	    it != tlsd.callers.end(); ++it) {
+	    if (!s.empty())
+		s += T("->");
+	    s += *it;
+	}
+	s += T("->");
+	s += (const tchar *)key;
+	add(s.c_str(), diff);
+    }
+    add(key, diff);
+}
+
 void Timing::restart() {
     Tlsdata &tlsd(*tls);
 
@@ -249,10 +281,10 @@ void Timing::restart() {
     }
 }
 
-void Timing::start(const tchar *key) {
+void Timing::start(const TimingKey &key) {
     Tlsdata &tlsd(*tls);
 
-    tlsd.callers.push_back(key ? key : T(""));
+    tlsd.callers.push_back((const tchar *)key);
     tlsd.starts.push_back(now());
 }
 
