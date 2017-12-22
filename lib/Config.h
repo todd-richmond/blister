@@ -105,8 +105,11 @@ public:
 	{ tchar buf[24]; tsprintf(buf, T("%ld"), val); set(attr, buf, sect); }
     void set(const tchar *attr, ulong val, const tchar *sect = NULL)
 	{ tchar buf[24]; tsprintf(buf, T("%lu"), val); set(attr, buf, sect); }
-    void set(const tchar *attr, float val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%f"), val); set(attr, buf, sect); }
+    void set(const tchar *attr, float val, const tchar *sect = NULL) {
+	tchar buf[24];
+	tsprintf(buf, T("%f"), (double)val);
+	set(attr, buf, sect);
+    }
     void set(const tchar *attr, double val, const tchar *sect = NULL)
 	{ tchar buf[24]; tsprintf(buf, T("%g"), val); set(attr, buf, sect); }
     void setv(const tchar *attr, const tchar *val, ... /* , const tchar

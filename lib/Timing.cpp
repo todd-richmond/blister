@@ -190,18 +190,18 @@ void Timing::erase(const TimingKey &key) {
 }
 
 const tchar *Timing::format(timing_t t, tchar *buf) {
-    float f(t / 1000.0f);
+    double d(t / 1000.0);
 
-    if (f < 10)
-	tsprintf(buf, T("%.3f"), f);
-    else if (f < 100)
-        tsprintf(buf, T("%.2f"), f);
-    else if (f < 10000)
-        tsprintf(buf, T("%.0f"), f);
-    else if (f < 1000000)
-        tsprintf(buf, T("%.0fk"), f / 1000);
+    if (d < 10)
+	tsprintf(buf, T("%.3f"), d);
+    else if (d < 100)
+        tsprintf(buf, T("%.2f"), d);
+    else if (d < 10000)
+        tsprintf(buf, T("%.0f"), d);
+    else if (d < 1000000)
+        tsprintf(buf, T("%.0fk"), d / 1000);
     else
-        tsprintf(buf, T("%.0fm"), f / 1000000);
+        tsprintf(buf, T("%.0fm"), d / 1000000);
     return buf;
 }
 
@@ -211,13 +211,13 @@ void Timing::record(void) {
     timing_t diff;
     const tchar *key;
     Tlsdata &tlsd(*tls);
-    vector<tstring>::reverse_iterator it = tlsd.callers.rbegin();
+    vector<tstring>::reverse_iterator rit = tlsd.callers.rbegin();
 
-    if (it == tlsd.callers.rend()) {
+    if (rit == tlsd.callers.rend()) {
 	tcerr << T("timing mismatch for stack") << endl;
 	return;
     }
-    caller = *it;
+    caller = *rit;
     tlsd.callers.pop_back();
     diff = n - *(tlsd.starts.rbegin());
     tlsd.starts.pop_back();

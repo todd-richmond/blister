@@ -38,7 +38,7 @@ Sockaddr::SockInit Sockaddr::init;
 
 #endif
 
-ushort Sockaddr::families[] = {
+sa_family_t Sockaddr::families[] = {
     AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6, AF_UNSPEC
 };
 
@@ -204,7 +204,7 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 
 bool Sockaddr::set(const hostent *h) {
     ZERO(addr);
-    family(h->h_addrtype);
+    family((sa_family_t)h->h_addrtype);
     memcpy((void *)address(), h->h_addr, (size_t)h->h_length);
     name = achartotstring(h->h_name);
     return true;

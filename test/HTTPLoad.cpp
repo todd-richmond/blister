@@ -506,13 +506,14 @@ int HTTPLoad::onStart(void) {
 		    cmd->error();
 		    lock.unlock();
 		}
-		dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") << buf <<
-		    T(" status=") << hc.status() << T(" expected=") << cmd->status <<
-		    T(" duration=") << (diff / 1000) << endlog;
+		dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") <<
+		    buf << T(" status=") << hc.status() << T(" expected=") <<
+		    cmd->status << T(" duration=") << (diff / 1000) << endlog;
 		break;
 	    } else {
 		if (dbg)
-		    fs << cmd->cmd << T(" status: ") << hc.status() << endl << endl;
+		    fs << cmd->cmd << T(" status: ") << hc.status() << endl <<
+			endl;
 		rmap = hc.responses();
 		for (rit = rmap.begin(); rit != rmap.end(); ++rit) {
 		    if (!tstrcmp(rit->first.c_str(), T("set-cookie"))) {
@@ -587,12 +588,12 @@ inline tstring format(ulong u) {
 inline tstring format(float f) {
     tchar buf[20];
 
-    if (f - 0.0 < FLT_EPSILON)
+    if (f - 0.0f < FLT_EPSILON)
 	tstrcpy(buf, T("       0"));
     else if (f >= 100)
-	tsprintf(buf, T(" %7u"), (unsigned)(f + .5));
+	tsprintf(buf, T(" %7u"), (unsigned)(f + .5f));
     else
-	tsprintf(buf, T(" %7.2f"), f);
+	tsprintf(buf, T(" %7.2f"), (double)f);
     return buf;
 }
 

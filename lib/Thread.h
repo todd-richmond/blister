@@ -721,7 +721,7 @@ public:
 	sembuf op;
 
 	op.sem_num = 0;
-	op.sem_op = cnt;
+	op.sem_op = (short)cnt;
 	op.sem_flg = 0;
 	return semop(hdl, &op, 1) == 0;
     }

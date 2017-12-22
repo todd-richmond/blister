@@ -554,12 +554,12 @@ inline tstring format(ulong u) {
 inline tstring format(float f) {
     tchar buf[20];
 
-    if (f - 0.0 < FLT_EPSILON)
+    if (f - 0.0f < FLT_EPSILON)
 	tstrcpy(buf, T("       0"));
     else if (f >= 100)
-	tsprintf(buf, T(" %7u"), (unsigned)(f + .5));
+	tsprintf(buf, T(" %7u"), (unsigned)(f + .5f));
     else
-	tsprintf(buf, T(" %7.2f"), f);
+	tsprintf(buf, T(" %7.2f"), (double)f);
     return buf;
 }
 

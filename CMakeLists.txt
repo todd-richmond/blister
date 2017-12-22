@@ -19,7 +19,7 @@ if(NOT CMAKE_CXX_FLAGS_DEBUG AND NOT CMAKE_CXX_FLAGS_RELEASE)
 endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-    set(COMMON_C_FLAGS "-pipe -Wall -Werror -Wformat=2 -Wno-deprecated -Wno-format-nonliteral -Wno-format-y2k -Wstrict-aliasing=2 -Wwrite-strings")
+    set(COMMON_C_FLAGS "-pipe -Wall -Wconversion -Wdouble-promotion -Werror -Wextra -Wformat=2 -Wno-deprecated -Wno-format-nonliteral -Wno-format-y2k -Wnull-dereference -Woverloaded-virtual -Wshadow -Wsign-conversion -Wstrict-aliasing=2 -Wwrite-strings")
     set(COMMON_C_FLAGS_DEBUG "-O1 -fno-omit-frame-pointer -ggdb -D_DEBUG")
     set(COMMON_C_FLAGS_MINSIZEREL "")
     set(COMMON_C_FLAGS_RELEASE "")

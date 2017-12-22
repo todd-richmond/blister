@@ -125,7 +125,7 @@ public:
     void clear() { ZERO(addr); name.clear(); }
     sockaddr *data(void) { name.clear(); return &addr.sa; }
     ushort family(void) const { return addr.sa.sa_family; }
-    void family(ushort fam) { addr.sa.sa_family = fam; }
+    void family(sa_family_t fam) { addr.sa.sa_family = fam; }
     void family(Proto proto) { addr.sa.sa_family = families[(uint)proto]; }
     const tstring &host(void) const;
     bool host(const tchar *host, Proto proto = TCP) {
@@ -153,7 +153,7 @@ public:
     ushort size(void) const { return size(family()); }
     const tstring str(void) const { return str(host()); }
 
-    static ushort families[];
+    static sa_family_t families[];
     static bool dgram(Proto proto) {
 	return proto == UDP || proto == UDP4 || proto == UDP6;
     }

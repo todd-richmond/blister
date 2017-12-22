@@ -1206,9 +1206,9 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 		    delete [] (char *)output;
 		    return false;
 		}
-		out[0] = DEC(p[0]) << 2 | DEC(p[1]) >> 4;
-		out[1] = DEC(p[1]) << 4 | DEC(p[2]) >> 2;
-		out[2] = DEC(p[2]) << 6 | DEC(p[3]);
+		out[0] = (char)(DEC(p[0]) << 2 | DEC(p[1]) >> 4);
+		out[1] = (char)(DEC(p[1]) << 4 | DEC(p[2]) >> 2);
+		out[2] = (char)(DEC(p[2]) << 6 | DEC(p[3]));
 		out += 3;
 		outsz += 3;
 		sz -= 4;
@@ -1217,13 +1217,13 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 		    delete [] (char *)output;
 		    return false;
 		}
-		out[0] = DEC(p[0]) << 2 | DEC(p[1]) >> 4;
+		out[0] = (char)(DEC(p[0]) << 2 | DEC(p[1]) >> 4);
 		if (n >= 2) {
 		    if (sz < 3) {
 			delete [] (char *)output;
 			return false;
 		    }
-		    out[1] = DEC(p[1]) << 4 | DEC(p[2]) >> 2;
+		    out[1] = (char)(DEC(p[1]) << 4 | DEC(p[2]) >> 2);
 		    outsz += 2;
 		    sz -= 3;
 		} else {
