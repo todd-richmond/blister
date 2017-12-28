@@ -76,7 +76,7 @@ void Timing::clear() {
 
 const tstring Timing::data(bool sort_key, uint columns) const {
     timingmap::const_iterator it;
-    uint last = 0, start = 0;
+    uint last = 0, begin = 0;
     tstring s;
     vector<const Stats *>::const_iterator sit;
     vector<const Stats *> sorted;
@@ -104,9 +104,9 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 
 	if (columns > TIMINGSLOTS)
 	    columns = TIMINGSLOTS;
-	start = last < columns ? 0 : last - columns + 1;
+	begin = last < columns ? 0 : last - columns + 1;
 	s = T("key                            msec   cnt   avg");
-	for (u = start; u <= last; u++) {
+	for (u = begin; u <= last; u++) {
 	    s += (tchar)' ';
 	    s += hdrs[u];
 	}
@@ -122,7 +122,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	if (columns) {
 	    tchar cbuf[16];
 
-	    for (u = 0; u <= start; u++)
+	    for (u = 0; u <= begin; u++)
 		sum += stats->cnts[u];
 	    if (stats->cnt >= 10000000000UL)
 		tsprintf(cbuf, T("%4lug"), stats->cnt / 1000000000UL);
@@ -150,11 +150,12 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 		s += *p;
 	    }
 	    s += (tchar)'"';
-	    tsprintf(buf, T(",%.3f,%lu"), stats->tot / 1000000.0, stats->cnt);
+	    tsprintf(buf, T(",%.3f,%lu"), (double)stats->tot / 1000000.0,
+		stats->cnt);
 	}
 	s += buf;
-	for (u = start; u <= last && tot; u++) {
-	    ulong cnt = (columns && u == start) ? sum : stats->cnts[u];
+	for (u = begin; u <= last && tot; u++) {
+	    ulong cnt = (columns && u == begin) ? sum : stats->cnts[u];
 
 	    if (!columns) {
 		tsprintf(buf, T(",%lu"), cnt);
@@ -190,7 +191,7 @@ void Timing::erase(const TimingKey &key) {
 }
 
 const tchar *Timing::format(timing_t t, tchar *buf) {
-    double d(t / 1000.0);
+    double d((double)t / 1000.0);
 
     if (d < 10)
 	tsprintf(buf, T("%.3f"), d);

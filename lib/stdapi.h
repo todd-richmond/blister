@@ -747,10 +747,10 @@ inline usec_t microtime(void) {
 }
 
 inline void time_adjust_msec(struct timespec *ts, ulong msec) {
-    ts->tv_sec += msec / 1000;
-    ts->tv_nsec += (msec % 1000) * 1000000;
-    if (ts->tv_nsec > 1000000000) {
-	ts->tv_nsec -= 1000000000;
+    *(ulong *)&ts->tv_sec += msec / 1000U;
+    *(ulong *)&ts->tv_nsec += (msec % 1000U) * 1000000U;
+    if ((ulong)ts->tv_nsec > 1000000000U) {
+	*(ulong *)&ts->tv_nsec -= 1000000000;
 	++ts->tv_sec;
     }
 }
@@ -762,7 +762,10 @@ extern int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test);
 extern msec_t mticks(void);
 extern usec_t uticks(void);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
 extern int pidstat(pid_t pid, struct pidstat *psbuf);
+#pragma GCC diagnostic pop
 EXTERNC_
 
 // common includes, defines and code for C++ software
@@ -954,17 +957,17 @@ inline size_t stringihash(const wchar *s) {
     size_t ret = 0;
 
     while (*s)
-	ret = ret * 101 + (size_t)towupper(*s++);
+	ret = ret * 101 + (size_t)towupper((ushort)*s++);
     return ret;
 }
 
 template<class C>
 struct ptrhash {
-    size_t operator ()(const C *a) const { return (size_t)a; }
+    size_t operator ()(const C *p) const { return (size_t)p; }
 };
 
 struct llonghash {
-    size_t operator ()(llong a) const { return (size_t)((a >> 32) ^ a); }
+    size_t operator ()(llong l) const { return (size_t)((l >> 32) ^ l); }
 };
 
 struct ullonghash {
@@ -1041,7 +1044,7 @@ struct striless {
 
 // compile time string hashing
 #define STRING_HASH_PRE(i, d)	((
-#define STRING_HASH_POST(i, d)	* 101) + (tuchar)s[i])
+#define STRING_HASH_POST(i, d)	* 101) + (size_t)s[i])
 #define STRING_HASH(i) __forceinline StringHash(const tchar (&s)[i]): \
     hash(STDAPI_REPEAT(i, STRING_HASH_PRE, ~) 0 STDAPI_REPEAT(i, \
 	STRING_HASH_POST, ~)) {}

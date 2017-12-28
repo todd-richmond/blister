@@ -55,10 +55,10 @@ public:
 private:
     class LoadCmd {
     public:
-	LoadCmd(const tchar *comment, const tchar *command, const tchar *argument,
-	    const tchar *status = NULL): cmt(comment), cmd(command),
+	LoadCmd(const tchar *comment, const tchar *command, const tchar
+	    *argument, const tchar *status = NULL): cmt(comment), cmd(command),
 	    arg(argument ? argument : T("")),
-	    status(status ? (ushort)ttoi(status) : 200),
+	    sts(status ? (ushort)ttoi(status) : 200),
 	    usec(0), tusec(0), minusec(0), tminusec(0), maxusec(0), tmaxusec(0),
 	    count(0), tcount(0), err(0), terr(0) {
 	    for (uint i = 0; i < cmd.size(); i++)
@@ -66,15 +66,15 @@ private:
 	}
 
 	tstring cmt, cmd, arg;
-	ushort status;
+	ushort sts;
 	Sockaddr addr;
 	ulong usec, tusec, minusec, tminusec, maxusec, tmaxusec;
 	ulong count, tcount, err, terr;
 
-	void complete(bool sts, ulong diff) {
+	void complete(bool status, ulong diff) {
 	    count++;
 	    tcount++;
-	    if (!sts) {
+	    if (!status) {
 		err++;
 		terr++;
 	    }
@@ -383,7 +383,7 @@ int SMTPLoad::onStart(void) {
 
     srand((uint)(id ^ ((uticks() >> 32 ^ (msec_t)time(NULL)))));
     if (id > Processor::count())
-	msleep(rand() % 1000 * ((mthread / 20) + 1));
+	msleep((uint)rand() % 1000 * ((mthread / 20) + 1));
     while (!qflag) {
 	const tchar *p;
 	ulong smsec = 0;
@@ -564,7 +564,7 @@ inline tstring format(float f) {
 }
 
 inline float round(ulong count, ulong div) {
-    return div ? (float)(count / (div * 1.0)) : 0;
+    return div ? (float)count / ((float)div * 1.0f) : 0;
 }
 
 void SMTPLoad::print(tostream &out, usec_t last) {

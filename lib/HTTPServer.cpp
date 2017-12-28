@@ -107,8 +107,8 @@ static const signed char chunkmap[256] = {
 
 bool HTTPServerSocket::date;
 
-HTTPServerSocket::HTTPServerSocket(Dispatcher &dspr, Socket &sock):
-    DispatchServerSocket(dspr, sock), path(NULL), prot(NULL), postdata(NULL),
+HTTPServerSocket::HTTPServerSocket(Dispatcher &d, Socket &sock):
+    DispatchServerSocket(d, sock), path(NULL), prot(NULL), postdata(NULL),
     postsz(0), cmd(NULL), data(NULL), datasz(0), postin(0), sz(0),
     fmap(NULL), ka(false), nagleon(true), rto(RTimeout), wto(WTimeout),
     savechar(0), _status(0)  {

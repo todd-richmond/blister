@@ -21,8 +21,7 @@
 
 class HTTPDaemonSocket: public HTTPServerSocket {
 public:
-    HTTPDaemonSocket(Dispatcher &dspr, Socket &sock): HTTPServerSocket(dspr,
-	sock) {}
+    HTTPDaemonSocket(Dispatcher &d, Socket &s): HTTPServerSocket(d, s) {}
 
     static void pause(bool p) { paused = p; }
 
@@ -38,8 +37,8 @@ protected:
 
 class HTTPDaemon: public Daemon {
 public:
-    HTTPDaemon(const tchar *name, const tchar *display):
-	Daemon(name, display), dspr(cfg) {}
+    HTTPDaemon(const tchar *svc_name, const tchar *display):
+	Daemon(svc_name, display), dspr(cfg) {}
 
 protected:
     Dispatcher dspr;

@@ -36,8 +36,10 @@
 
 #endif
 
+#pragma GCC diagnostic ignored "-Wunused-result"
+
 #ifndef OPEN_MAX
-#define OPEN_MAX 256
+#define OPEN_MAX 2048
 #endif
 
 static const uint STATUS_LOOPS = 400;
@@ -66,8 +68,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	if (full[0] == '/' || full[1] == ':') {
 	    root = full;
 	} else {
-	    if (tgetcwd(buf, sizeof(buf) / sizeof(tchar)))
-		;
+	    (void)tgetcwd(buf, sizeof(buf) / sizeof(tchar));
 	    root = buf;
 	    root += '/';
 	    root += full;
@@ -1079,8 +1080,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];
 
-	if (tgetcwd(buf, sizeof(buf) / sizeof(tchar)))
-	    ;
+	(void)tgetcwd(buf, sizeof(buf) / sizeof(tchar));
 	path = buf;
 	path += '/';
 	path += argv[0];
@@ -1259,8 +1259,8 @@ const tchar *Service::status(Status s) {
 }
 
 
-Daemon::Daemon(const tchar *name, const tchar *display, bool pauseable):
-    Service(name, pauseable), qflag(None), child(0), lckfd(-1),
+Daemon::Daemon(const tchar *svc_name, const tchar *display, bool pauseable):
+    Service(svc_name, pauseable), qflag(None), child(0), lckfd(-1),
     refreshed(false), start(0), watch(false) {
     (void)display;
 }
@@ -1386,8 +1386,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    uid = pwd->pw_uid;
 	    uidname = pwd->pw_name;
 	    dlog.setids(uid, gid);
-	    if (fchown(lckfd, uid, gid))
-		;
+	    (void)fchown(lckfd, uid, gid);
 	} else {
 	    dloge(Log::mod(name), T(" unknown uid "), uidname);
 	}

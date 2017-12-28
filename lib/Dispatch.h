@@ -65,7 +65,7 @@ private:
 public:
     DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb), dspr(d),
 	flags(0), msg(DispatchNone), group(new Group), next(NULL) {}
-    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL):
+    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),
 	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()), next(NULL) {}
     virtual ~DispatchObj() {
@@ -398,8 +398,8 @@ private:
 template<class D, class S>
 class SimpleDispatchListenSocket: public DispatchListenSocket {
 public:
-    SimpleDispatchListenSocket(D &dspr, int type = SOCK_STREAM):
-	DispatchListenSocket(dspr, type) {}
+    SimpleDispatchListenSocket(D &d, int type = SOCK_STREAM):
+	DispatchListenSocket(d, type) {}
 
     bool listen(const Sockaddr &sa, bool enable = true, int backlog =
 	SOCK_BACKLOG) {

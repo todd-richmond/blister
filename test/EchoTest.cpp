@@ -60,8 +60,8 @@ public:
 
     class EchoServerSocket: public DispatchServerSocket {
     public:
-	EchoServerSocket(Dispatcher &dspr, Socket &sock):
-	    DispatchServerSocket(dspr, sock), buf(NULL), in(0), out(0),
+	EchoServerSocket(Dispatcher &d, Socket &sock):
+	    DispatchServerSocket(d, sock), buf(NULL), in(0), out(0),
 	    tmt(TIMEOUT) {}
 	virtual ~EchoServerSocket() { delete [] buf; }
 
@@ -75,7 +75,7 @@ public:
 
     private:
 	char *buf;
-	int in, out;
+	uint in, out;
 	ulong tmt;
 
 	DSP_DECLARE(EchoServerSocket, input);
@@ -85,8 +85,8 @@ public:
     class EchoListenSocket: public SimpleDispatchListenSocket<EchoTest,
 	EchoServerSocket> {
     public:
-	EchoListenSocket(EchoTest &dspr, ulong timeout):
-	    SimpleDispatchListenSocket<EchoTest, EchoServerSocket>(dspr),
+	EchoListenSocket(EchoTest &d, ulong timeout):
+	    SimpleDispatchListenSocket<EchoTest, EchoServerSocket>(d),
 	    tmt(timeout) {}
 
 	void start(EchoServerSocket &ess) { ess.timeout(tmt); ess.start(); }
@@ -162,7 +162,7 @@ void EchoTest::EchoClientSocket::input() {
 	usecs += usec;
 	dtiming.add(T("echo"), usec);
 	dlogt(T("client read"), len);
-	timeout(repeat, wait + (wait < 2000 ? 0 : rand() % 50));
+	timeout(repeat, wait + (wait < 2000 ? 0 : (uint)rand() % 50));
     } else {
 	dlogd(T("client partial read"), len);
 	readable(input, tmt);
@@ -219,7 +219,7 @@ void EchoTest::EchoServerSocket::input() {
 	    dloge(T("server read"), msg == DispatchTimeout ? T("timeout") :
 		T("close"));
 	erase();
-    } else if ((in = read(tmp, sizeof (tmp))) < 0) {
+    } else if ((in = (uint)read(tmp, sizeof (tmp))) == (uint)-1) {
 	if (loops && !qflag)
 	    dloge(T("server read failed:"), errstr());
 	erase();
@@ -227,7 +227,7 @@ void EchoTest::EchoServerSocket::input() {
 	readable(input);
     } else if (in == 1 && tmp[0] == '\0') {
 	erase();
-    } else if ((out = write(tmp, (uint)in)) < 0) {
+    } else if ((out = (uint)write(tmp, in)) == (uint)-1) {
 	dloge(T("server write failed:"), errstr());
 	erase();
     } else if (in == out) {

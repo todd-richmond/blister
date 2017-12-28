@@ -268,15 +268,15 @@ bool CIDR::add(const tchar *addrs) {
 
     while (addrs) {
 	uint ip1[4], ip2[4];
-	int maskbits = 32;
+	uint maskbits = 32;
 	Range range;
 	const tchar *p = addrs;
 
-	if (tstrchr(addrs, '/') && (tsscanf(addrs, T("%3u.%3u.%3u.%3u/%2d"),
+	if (tstrchr(addrs, '/') && (tsscanf(addrs, T("%3u.%3u.%3u.%3u/%2u"),
 	    &ip1[0], &ip1[1], &ip1[2], &ip1[3], &maskbits) == 5) &&
 	    VALID_IP(ip1) && maskbits >= 1 && maskbits <= 32) {
-	    range.rmin = BUILD_IP(ip1) & ~((1 << (32 - maskbits)) - 1);
-	    range.rmax = range.rmin | ((1 << (32 - maskbits)) - 1);
+	    range.rmin = BUILD_IP(ip1) & (ulong)~((1 << (32 - maskbits)) - 1);
+	    range.rmax = range.rmin | (ulong)((1 << (32 - maskbits)) - 1);
 	    ranges.push_back(range);
 	} else if (tstrchr(addrs, '-') && (tsscanf(addrs,
 	    T("%3u.%3u.%3u.%3u-%3u.%3u.%3u.%3u"), &ip1[0], &ip1[1], &ip1[2],

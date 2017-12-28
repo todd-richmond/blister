@@ -391,7 +391,7 @@ int HTTPLoad::onStart(void) {
 	fs.open("debug.out", ios::trunc | ios::out);
     srand((uint)(id ^ ((uticks() >> 32 ^ (msec_t)time(NULL)))));
     if (id > Processor::count())
-	msleep(rand() % 1000 * ((mthread / 20) + 1));
+	msleep((uint)rand() % 1000 * ((mthread / 20) + 1));
     while (!qflag) {
 	const tchar *p;
 	ulong smsec = 0;
@@ -598,7 +598,7 @@ inline tstring format(float f) {
 }
 
 inline float round(ulong count, ulong div) {
-    return div ? (float)(count / (div * 1.0)) : 0;
+    return div ? (float)count / ((float)div * 1.0f) : 0;
 }
 
 void HTTPLoad::print(tostream &out, usec_t last) {

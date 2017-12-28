@@ -127,13 +127,13 @@ public:
 	record(TimingKey(key));
     }
     template<class C> __forceinline timing_t record(const C &key, timing_t
-	start) {
-	record(TimingKey(key), start);
+	begin) {
+	return record(TimingKey(key), begin);
     }
-    __forceinline timing_t record(const TimingKey &key, timing_t start) {
+    __forceinline timing_t record(const TimingKey &key, timing_t begin) {
 	timing_t n = now();
 
-	add(key, n - start);
+	add(key, n - begin);
 	return n;
     }
     void restart(void);

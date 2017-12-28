@@ -442,7 +442,7 @@ int Dispatcher::onStart() {
 	    if ((nevts = ioctl(evtfd, DP_POLL, &dvp)) == -1)
 		nevts = 0;
 #elif defined(DSP_EPOLL)
-	    if ((nevts = epoll_wait(evtfd, evts, MAX_EVENTS, msec)) == -1)
+	    if ((nevts = epoll_wait(evtfd, evts, MAX_EVENTS, (int)msec)) == -1)
 		nevts = 0;
 #elif defined(DSP_KQUEUE)
 	    ts.tv_sec = msec / 1000;
@@ -913,7 +913,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
     };
 #elif defined(DSP_EPOLL)
     int op = EPOLL_CTL_MOD;
-    static const long sockevts[] = {
+    static const uint sockevts[] = {
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP, EPOLLOUT,
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT, EPOLLIN, EPOLLOUT, 0, 0, 0
     };

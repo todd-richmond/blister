@@ -217,13 +217,13 @@ public:
     }
 
     template<class C>
-    Log &operator <<(const KV<C> &kv) {
+    Log &operator <<(const KV<C> &_kv) {
         Tlsdata &tlsd(*tls);
 
 	if (tlsd.clvl != None) {
 	    if (tlsd.strm.size())
 		tlsd.strm << ' ';
-	    kv.print(tlsd.strm);
+	    _kv.print(tlsd.strm);
 	    tlsd.space = true;
 	}
 	return *this;
@@ -243,15 +243,15 @@ public:
 	const C &c, const D &d, const E &e, const F &f, const G &g, const H &h) \
 	{ log(l, c, d, e, f, g, h); }
 
-    _func_(emerg, Emerg);	_func_(m, Emerg);
-    _func_(alert, Alert);	_func_(a, Alert);
-    _func_(crit, Crit);		_func_(c, Crit);
-    _func_(err, Err);		_func_(e, Err);
-    _func_(warn, Warn);		_func_(w, Warn);
-    _func_(note, Note);		_func_(n, Note);
-    _func_(info, Info);		_func_(i, Info);
-    _func_(debug, Debug);	_func_(d, Debug);
-    _func_(trace, Trace);	_func_(t, Trace);
+    _func_(emerg, Emerg);
+    _func_(alert, Alert);
+    _func_(crit, Crit);
+    _func_(err, Err);
+    _func_(warn, Warn);
+    _func_(note, Note);
+    _func_(info, Info);
+    _func_(debug, Debug);
+    _func_(trace, Trace);
 
 #undef _func_
 #define _log_(s) \

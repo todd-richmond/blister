@@ -543,8 +543,8 @@ private:
 inline void msleep(ulong msec) {
     struct timespec ts;
 
-    ts.tv_sec = msec / 1000;
-    ts.tv_nsec = (msec % 1000) * 1000000;
+    *(ulong *)&ts.tv_sec = msec / 1000U;
+    *(ulong *)&ts.tv_nsec = (msec % 1000U) * 1000000U;
     nanosleep(&ts, NULL);
 }
 

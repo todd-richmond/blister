@@ -126,7 +126,7 @@ public:
 	if (p == NULL) {
 	    char c;
 
-	    return fd.read(&c, sizeof (c)) == sizeof (c) ? c : -1;
+	    return fd.read(&c, sizeof (c)) == (int)sizeof (c) ? c : -1;
 	} else if (p >= egptr()) {
 	    char *pb = pbase();
 	    streamsize left = (streamsize)(pptr() - pb);
@@ -149,7 +149,8 @@ public:
 	char c = (char)i;
 
 	if (pptr() == NULL) {
-	    return i == -1 || fd.write(&c, sizeof (c)) == sizeof (c) ? c : -1;
+	    return i == -1 || fd.write(&c, sizeof (c)) == (int)sizeof (c) ? i :
+		-1;
 	} else {
 	    int sz = i == -1 ? 0 : 1;
 

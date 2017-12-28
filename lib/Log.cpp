@@ -28,9 +28,7 @@
 #include "Log.h"
 #include "SMTPClient.h"
 
-#ifdef _WIN32
 #pragma comment(lib, "user32.lib")
-#endif
 
 static const tchar *USubst = T("\001\001");
 static const tchar *ZSubst = T("\002\002");
@@ -482,7 +480,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	string ss;
 	string::size_type pos;
 	char buf[64], cbuf[32];
-	uint u = (syslogfac << 3) | (clvl - (clvl < Debug ? 1 : 2));
+	uint u = (syslogfac << 3) | (uint)(clvl - (clvl < Debug ? 1 : 2));
 
 	sprintf(buf, "<%u>%.15s.%06u ", u, ctime_r(&now_sec, cbuf) + 4,
 	    (uint)now_usec);

@@ -20,10 +20,8 @@
 #include "SMTPClient.h"
 #include "Thread.h"
 
-#ifdef _WIN32
-#pragma warning(disable: 6328)
-#pragma warning(disable: 6330)
-#endif
+#pragma warning(disable: 6328 6330)
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 
 string SMTPClient::crlf("\r\n");
 
@@ -588,7 +586,6 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		local_part.erase();
 		domain_buf.erase();
 		continue;
-
 	    default:
 		err = T("Invalid domain");
 		goto fail;
@@ -641,7 +638,6 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	err = T("User address required");
 	goto fail;
     }
-
     make_address();
     return;
 

@@ -349,7 +349,7 @@ md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes)
     if (offset) {
 	int copy = (offset + nbytes > 64 ? 64 - offset : nbytes);
 
-	memcpy(pms->buf + offset, p, copy);
+	memcpy(pms->buf + offset, p, (size_t)copy);
 	if (offset + copy < 64)
 	    return;
 	p += copy;
@@ -363,7 +363,7 @@ md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes)
 
     /* Process a final partial block. */
     if (left)
-	memcpy(pms->buf, p, left);
+	memcpy(pms->buf, p, (size_t)left);
 }
 
 void
@@ -382,7 +382,7 @@ md5_finish(md5_state_t *pms, md5_byte_t digest[16])
     for (i = 0; i < 8; ++i)
 	data[i] = (md5_byte_t)(pms->count[i >> 2] >> ((i & 3) << 3));
     /* Pad to 56 bytes mod 64. */
-    md5_append(pms, pad, ((55 - (pms->count[0] >> 3)) & 63) + 1);
+    md5_append(pms, pad, (int)((55 - (pms->count[0] >> 3)) & 63) + 1);
     /* Append the length. */
     md5_append(pms, data, 8);
     for (i = 0; i < 16; ++i)
