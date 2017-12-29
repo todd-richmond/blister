@@ -28,7 +28,9 @@
 #include "Log.h"
 #include "SMTPClient.h"
 
+#ifdef _WIN32
 #pragma comment(lib, "user32.lib")
+#endif
 
 static const tchar *USubst = T("\001\001");
 static const tchar *ZSubst = T("\002\002");
@@ -662,9 +664,9 @@ void Log::stop(void) {
 }
 
 Log::Level Log::str2enum(const tchar *l) {
-    for (int i = 0; i < (int)(sizeof (LevelStr) / sizeof (const tchar *)); i++) {
-	if (!tstricmp(l, LevelStr[i]) || !tstricmp(l, LevelStr2[i]))
-	    return (Level)i;
+    for (uint u = 0; u < sizeof (LevelStr) / sizeof (const tchar *); ++u) {
+	if (!tstricmp(l, LevelStr[u]) || !tstricmp(l, LevelStr2[u]))
+	    return (Level)u;
     }
     return None;
 }

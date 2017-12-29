@@ -20,8 +20,11 @@
 #include "SMTPClient.h"
 #include "Thread.h"
 
+#ifdef _WIN32
 #pragma warning(disable: 6328 6330)
+#else
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#endif
 
 string SMTPClient::crlf("\r\n");
 

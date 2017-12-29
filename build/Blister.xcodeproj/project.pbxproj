@@ -949,7 +949,17 @@
 				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
-				WARNING_CFLAGS = "-Wall";
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wconversion",
+					"-Wextra",
+					"-Wformat=2",
+					"-Wnull-dereference",
+					"-Wshadow",
+					"-Wsign-conversion",
+					"-Wstrict-aliasing=2",
+					"-Wwrite-strings",
+				);
 			};
 			name = Debug;
 		};
@@ -1014,7 +1024,17 @@
 				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
-				WARNING_CFLAGS = "-Wall";
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wconversion",
+					"-Wextra",
+					"-Wformat=2",
+					"-Wnull-dereference",
+					"-Wshadow",
+					"-Wsign-conversion",
+					"-Wstrict-aliasing=2",
+					"-Wwrite-strings",
+				);
 			};
 			name = Release;
 		};
