@@ -20,6 +20,12 @@
 
 // defines, typedefs  and code to make non-UNIX systems support POSIX APIs
 
+#ifdef __has_feature
+#define __no_sanitize(check)  __attribute__((no_sanitize(check)))
+#else
+#define __no_sanitize(check)
+#endif
+
 #ifdef __cplusplus
 #define EXTERNC		extern "C" {
 #define EXTERNC_	}
@@ -937,7 +943,7 @@ inline bool stringless(const C &a, const C &b) {
 }
 
 template<class C>
-inline size_t stringhash(const C *s) {
+__no_sanitize("unsigned-integer-overflow") inline size_t stringhash(const C *s) {
     size_t ret = 0;
 
     while (*s)
@@ -945,7 +951,8 @@ inline size_t stringhash(const C *s) {
     return ret;
 }
 
-inline size_t stringihash(const char *s) {
+__no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const char
+    *s) {
     size_t ret = 0;
 
     while (*s)
@@ -953,7 +960,7 @@ inline size_t stringihash(const char *s) {
     return ret;
 }
 
-inline size_t stringihash(const wchar *s) {
+__no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const wchar *s) {
     size_t ret = 0;
 
     while (*s)

@@ -452,10 +452,10 @@ int Dispatcher::onStart() {
 		nevts = 0;
 #endif
 	}
-	polling = false;
 	count = 0;
 	now = mticks();
 	lock.lock();
+	polling = false;
 	if (shutdown)
 	    break;
 	if (evtfd == -1) {
@@ -686,11 +686,13 @@ bool Dispatcher::start(uint mthreads, uint stack) {
     maxthreads = mthreads;
     stacksz = stack ? stack : 128 * 1024;
     if (ThreadGroup::start(mthreads ? 8 * 1024 : stacksz, false, false)) {
+	lock.lock();
 	while (shutdown && getMainThread().getState() == Running) {
+	    lock.unlock();
 	    msleep(20);
 	    lock.lock();
-	    lock.unlock();
 	}
+	lock.unlock();
     }
     return !shutdown;
 }
@@ -1137,7 +1139,6 @@ void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB
 }
 
 void DispatchClientSocket::connected() {
-    msg = DispatchConnect;
     onConnect();
 }
 

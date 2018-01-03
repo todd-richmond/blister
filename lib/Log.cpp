@@ -431,7 +431,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	strbuf += tlsd.strm.str();
 	strbuf += '"';
     } else {
-	for (const tchar *p = tlsd.strm.str(); sz--; p++) {
+	for (const tchar *p = tlsd.strm.str(); sz; ++p) {
 	    if ((uchar)*p < ' ' && *p != '\t') {
 		if (*p == '\n') {
 		    strbuf += T("\\n");
@@ -444,6 +444,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    } else {
 		strbuf += *p;
 	    }
+	    --sz;
 	}
     }
     strbuf += '\n';

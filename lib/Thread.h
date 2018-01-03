@@ -28,6 +28,7 @@ typedef HANDLE thread_t;
 typedef DWORD thread_id_t;
 
 #define THREAD_EQUAL(x, y)	((x) == (y))
+#define THREAD_FENCE()		MemoryBarrier()
 #define THREAD_FUNC		uint __stdcall
 #define THREAD_HDL()		GetCurrentThread()
 #define THREAD_ID()		GetCurrentThreadId()
@@ -73,9 +74,11 @@ typedef pthread_t thread_id_t;
 #define THREAD_ID()		pthread_self()
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 #define THREAD_BARRIER()	asm volatile("" ::: "memory")
+#define THREAD_FENCE()		asm volatile("mfence" ::: "memory")
 #define THREAD_PAUSE()  	asm volatile("pause" ::: "memory")
 #else
 #define NO_THREAD_BARRIER
+#define THREAD_FENCE()
 #define THREAD_PAUSE()
 #endif
 #define THREAD_YIELD()		sched_yield()
@@ -134,13 +137,13 @@ inline atomic_t atomic_lck(atomic_t &lck) {
 #else
 
 typedef volatile int atomic_t;
+
 #define atomic_ref(i)		__sync_add_and_fetch(&i, 1)
 #define atomic_rel(i)		__sync_add_and_fetch(&i, -1)
 
 #define atomic_add(i, j)	__sync_fetch_and_add(&i, j)
 #define atomic_and(i, j)	__sync_fetch_and_and(&i, j)
 #define atomic_bar()		__sync_synchronize()
-// sync_lock_release() supposedly fails on some older x64 procs?
 #define atomic_clr(i)		__sync_lock_release(&i)
 // #define atomic_clr(i)	__sync_lock_test_and_set(&i, 0)
 #define atomic_dec(i)		__sync_fetch_and_add(&i, -1)
@@ -207,8 +210,10 @@ private:
 template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
 class FastLockerTemplate: nocopy {
 public:
-    explicit FastLockerTemplate(C &lock): lck(lock) { (lck.*LOCK)(); }
-    ~FastLockerTemplate() { (lck.*UNLOCK)(); }
+    explicit __forceinline FastLockerTemplate(C &lock): lck(lock) {
+        (lck.*LOCK)();
+    }
+    __forceinline ~FastLockerTemplate() { (lck.*UNLOCK)(); }
 
     void relock(void) { (lck.*UNLOCK)(); THREAD_YIELD(); (lck.*LOCK)(); }
 
@@ -303,14 +308,14 @@ protected:
 
 class SpinLock: nocopy {
 public:
-    SpinLock() { pthread_spin_init(&lck, NULL); }
+    SpinLock() { pthread_spin_init(&lck, 0); }
     ~SpinLock() { pthread_spin_destroy(&lck); }
 
     operator pthread_spinlock_t *() { return &lck; }
 
-    void lock(void) { pthread_spin_lock(&lck); }
-    bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
-    void unlock(void) { pthread_spin_unlock(&lck); }
+    __forceinline void lock(void) { pthread_spin_lock(&lck); }
+    __forceinline bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
+    __forceinline void unlock(void) { pthread_spin_unlock(&lck); }
 
 protected:
     pthread_spinlock_t lck;
@@ -324,10 +329,10 @@ class SpinLock: nocopy {
 public:
     SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U), lck(0) {}
 
-    void lock(void) {
+    __forceinline void lock(void) {
 	while (atomic_lck(lck)) {
 #ifdef THREAD_PAUSE
-	    uint pause = init;
+	    ushort pause = init;
 
 	    do {
 		if (pause == SPINLOCK_YIELD) {
@@ -338,17 +343,18 @@ public:
 			THREAD_PAUSE();
 		    pause <<= 1;
 		}
+		atomic_bar();
 	    } while (lck);
 #else
 	    THREAD_YIELD();
 #endif
 	}
     }
-    bool trylock(void) { return atomic_lck(lck) == 0; }
-    void unlock(void) { atomic_clr(lck); }
+    __forceinline bool trylock(void) { return atomic_lck(lck) == 0; }
+    __forceinline void unlock(void) { atomic_clr(lck); }
 
 private:
-    uint init;
+    const ushort init;
     atomic_t lck;
 };
 
@@ -596,9 +602,10 @@ public:
 	    SYNC_POLICY_FIFO : SYNC_POLICY_LIFO, (int)init) == KERN_SUCCESS;
     }
     bool set(uint cnt = 1) {
-	while (cnt--) {
+	while (cnt) {
 	    if (semaphore_signal(hdl) != KERN_SUCCESS)
 		return false;
+            --cnt;
 	}
 	return true;
     }
@@ -655,9 +662,10 @@ public:
 	return valid = (sem_init(&hdl, 0, init) == 0);
     }
     bool set(uint cnt = 1) {
-	while (cnt--) {
+	while (cnt) {
 	    if (sem_post(&hdl))
 		return false;
+            --cnt;
 	}
 	return true;
     }
@@ -776,7 +784,12 @@ public:
     ~Condvar() { pthread_cond_destroy(&cv); }
     
     void broadcast(void) { pthread_cond_broadcast(&cv); }
-    void set(uint count = 1) { while (count--) pthread_cond_signal(&cv); }
+    void set(uint count = 1) {
+        while (count) {
+            pthread_cond_signal(&cv);
+            --count;
+        }
+    }
     bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {
 	    return pthread_cond_wait(&cv, lock) == 0;
@@ -963,7 +976,7 @@ public:
     void unlock(void) { lck.unlock(); }
 
 protected:
-    C c;
+    volatile C c;
     mutable SpinLock lck;
     typedef FastSpinLocker TSLocker;
 
@@ -984,9 +997,9 @@ public:
     Lifo(): head(NULL), sz(0) {}
     ~Lifo() { close(); }
 
-    operator bool(void) const { return head != NULL; }
-    bool empty(void) const { return head == NULL; }
-    uint size(void) const { return sz; }
+    operator bool(void) const { FastSpinLocker lkr(lck); return sz != 0; }
+    bool empty(void) const { FastSpinLocker lkr(lck); return sz == 0; }
+    uint size(void) const { FastSpinLocker lkr(lck); return sz; }
 
     uint broadcast(void) {
 	Waiting *w, *next;
@@ -996,7 +1009,7 @@ public:
 	w = head;
 	head = NULL;
 	ret = sz;
-	sz = 0;
+        sz = 0;
 	lck.unlock();
 	while (w) {
 	    next = w->next;
@@ -1008,7 +1021,7 @@ public:
     bool close(void) { broadcast(); return true; }
     bool open(void) {
 	head = NULL;
-	sz = 0;
+        sz = 0;
 	return true;
     }
     uint set(uint count = 1) {
@@ -1050,7 +1063,7 @@ public:
 
 private:
     Waiting * volatile head;
-    SpinLock lck;
+    mutable SpinLock lck;
     volatile uint sz;
 };
 
