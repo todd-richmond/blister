@@ -332,14 +332,14 @@ public:
     __forceinline void lock(void) {
 	while (atomic_lck(lck)) {
 #ifdef THREAD_PAUSE
-	    ushort pause = init;
+	    uint pause = init;
 
 	    do {
 		if (pause == SPINLOCK_YIELD) {
 		    pause = init;
 		    THREAD_YIELD();
 		} else {
-		    for (ushort u = 0; u < pause; ++u)
+		    for (uint u = 0; u < pause; ++u)
 			THREAD_PAUSE();
 		    pause <<= 1;
 		}
@@ -354,7 +354,7 @@ public:
     __forceinline void unlock(void) { atomic_clr(lck); }
 
 private:
-    const ushort init;
+    const uint init;
     atomic_t lck;
 };
 
