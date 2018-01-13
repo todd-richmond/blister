@@ -184,7 +184,8 @@ template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
     &C::unlock>
 class LockerTemplate: nocopy {
 public:
-    LockerTemplate(C &lock, bool lockit = true): lck(lock), locked(lockit) {
+    explicit LockerTemplate(C &lock, bool lockit = true): lck(lock), locked(
+	lockit) {
 	if (lockit)
 	    (lck.*LOCK)();
     }
@@ -397,8 +398,8 @@ protected:
 
 class Event: nocopy {
 public:
-    Event(bool manual = false, bool set = false, const tchar *name = NULL):
-	hdl(NULL) { open(manual, set, name); }
+    explicit Event(bool manual = false, bool set = false, const tchar *name =
+	NULL): hdl(NULL) { open(manual, set, name); }
     ~Event() { close(); }
 
     operator HANDLE(void) const { return hdl; }
@@ -427,7 +428,7 @@ protected:
 
 class _Semaphore {
 public:
-    _Semaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
+    explicit _Semaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
 	if (init != (uint)-1)
 	    _open(name, init);
     }
@@ -469,7 +470,8 @@ public:
 
 class SharedSemaphore: public _Semaphore, private nocopy {
 public:
-    SharedSemaphore(const tchar *name, uint init = 0): _Semaphore(name, init) {}
+    explicit SharedSemaphore(const tchar *name, uint init = 0): _Semaphore(name,
+	init) {}
 
     bool open(const tchar *name = NULL, uint init = 0, bool exclusive = false) {
 	return _open(name, init, exclusive);
@@ -694,7 +696,7 @@ protected:
 
 class SharedSemaphore: nocopy {
 public:
-    SharedSemaphore(const tchar *name = NULL, uint init = 0): hdl(-1) {
+    explicit SharedSemaphore(const tchar *name = NULL, uint init = 0): hdl(-1) {
 	open(name, init);
     }
     ~SharedSemaphore() { close(); }
@@ -782,7 +784,7 @@ public:
 #endif
     }
     ~Condvar() { pthread_cond_destroy(&cv); }
-    
+
     void broadcast(void) { pthread_cond_broadcast(&cv); }
     void set(uint count = 1) {
         while (count) {
@@ -961,7 +963,7 @@ public:
     C test_and_decr() { return test_and_sub(1); }
     template<class N> N test_and_sub(N n) {
 	TSLocker lkr(lck);
-	
+
 	if (c <= 0) {
 	    n = 0;
 	} else if (n > c) {
@@ -1076,10 +1078,11 @@ enum ThreadState { Init, Running, Suspended, Terminated };
 /* manage OS native threads */
 class Thread: nocopy {
 public:
-    Thread(thread_t handle, ThreadGroup *tg = NULL, bool autoterm = false);
+    explicit Thread(thread_t handle, ThreadGroup *tg = NULL, bool autoterm =
+	false);
     Thread(void);
     virtual ~Thread();
-    
+
     static Thread MainThread;
 
     int exitStatus(void) const { return retval; }
@@ -1122,7 +1125,7 @@ private:
     ThreadRoutine main;
     int retval;
     volatile ThreadState state;
-    
+
     void clear(void);
     static int init(void *thisp);
     static THREAD_FUNC threadInit(void *thisp);
@@ -1144,10 +1147,10 @@ public:
     thread_id_t getId(void) const { return id; }
     const Thread &getMainThread(void) const { return master; }
     size_t size(void) const { return threads.size(); }
-    
+
     bool operator ==(const ThreadGroup &t) const { return id == t.id; }
     bool operator !=(const ThreadGroup &t) const { return id != t.id; }
-    
+
     void priority(int pri = 0);
     void remove(Thread &thread);
     void resume(void) { onResume(); control(Running, &Thread::resume); }
@@ -1160,7 +1163,7 @@ public:
     bool waitForMain(ulong msec = INFINITE) { return master.wait(msec); }
 
     static ThreadGroup *add(Thread &thread, ThreadGroup *tg = NULL);
-    
+
 protected:
     void control(ThreadState, ThreadControlRoutine);
     void notify(const Thread &thread);
@@ -1168,7 +1171,7 @@ protected:
     virtual int onStart(void) { return -1; }
     virtual void onStop(void) {}
     virtual void onSuspend(void) {}
-    
+
 private:
     Lock cvlck;
     Condvar cv;

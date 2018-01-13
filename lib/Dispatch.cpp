@@ -125,7 +125,7 @@ Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
 	wc.lpfnWndProc = DefWindowProc;
 	wc.cbWndExtra = 0;
 	wc.hInstance = GetModuleHandle(NULL);
-	wc.lpszClassName = DispatchClass; 
+	wc.lpszClassName = DispatchClass;
 	RegisterClass(&wc);
     }
 #endif
@@ -337,7 +337,7 @@ int Dispatcher::onStart() {
     timespec ts;
 
     evtfd = kqueue();
-    // ensure kqueue functions properly 
+    // ensure kqueue functions properly
     EV_SET(&evts[0], -1, EVFILT_READ, EV_ADD, 0, 0, NULL);
     if (kevent(evtfd, &evts[0], 1, &evts[0], 1, NULL) != 1 || evts[0].ident !=
 	(uintptr_t)-1 || !(evts[0].flags & EV_ERROR)) {
@@ -1157,15 +1157,14 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
 }
 
 DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &sa,
-    int type, bool reuse, int queue, DispatchObjCB cb): DispatchSocket(d, type)
-    {
+    int type, bool reuse, int queue, DispatchObjCB cb): DispatchSocket(d, type) {
     listen(sa, reuse, queue, cb);
 }
 
 void DispatchListenSocket::connection() {
     Socket s;
     bool b = accept(s);
- 
+
     relisten();
     if (b) {
 #ifdef __linux__

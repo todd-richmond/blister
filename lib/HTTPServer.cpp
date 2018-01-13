@@ -84,7 +84,7 @@ static const mimemap mime[] = {
     { NULL, NULL, NULL }
 };
 
-static string CRLF("\r\n");
+static const char CRLF[] = "\r\n";
 
 static const signed char chunkmap[256] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -1, -1, -2, -1, -1,
@@ -213,7 +213,7 @@ void HTTPServerSocket::readpost() {
 	    // skip over terminating CRLF of previous chunk
 	    uint pos = chunkin + (chunkin && !chunktrailer ? 2 : 0);
 
-	    if (postin <= pos) 
+	    if (postin <= pos)
 	        break;
 
 	    int c;
@@ -648,7 +648,6 @@ void HTTPServerSocket::error(uint sts) {
     static const char *err3xx[] = {
 	"Multiple Choices", "Moved Permanently", "Found", "See Other",
 	"Not Modified", "Use Proxy", "Reserved", "Temporary Redirect"
-
     };
     static const char *err4xx[] = {
 	"Bad Request", "Unauthorized", "Payment required", "Forbidden",

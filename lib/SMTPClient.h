@@ -92,7 +92,7 @@ class SMTPClient: nocopy {
 public:
     SMTPClient();
     virtual ~SMTPClient() {};
-    
+
     const tstring &extensions(void) const { return exts; }
     int code(void) const { return ttoi(sts.c_str()); }
     const tchar *message(void) const {
@@ -152,9 +152,9 @@ protected:
     tstring exts, multi, sts;
     Socket sock;
     sockstream sstrm;
-    static string crlf;
+    static const char crlf[];
 
-private:    
+private:
     string boundary;
     tstring frm, sub;
     bool datasent, lmtp, mime;

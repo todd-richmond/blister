@@ -34,7 +34,7 @@ extern "C" {
 const wstring _achartowstring(const char *s, int len) {
     wchar sbuf[512];
     int sz;
-    
+
     if (len == 0)
 	return L"";
     else if ((sz = MultiByteToWideChar(CP_UTF8, 0, s, len, sbuf,
@@ -45,7 +45,7 @@ const wstring _achartowstring(const char *s, int len) {
 
     wchar *buf = new wchar[(uint)sz];
     wstring ret;
-    	
+
     MultiByteToWideChar(CP_UTF8, 0, s, len, buf, sz);
     ret.assign(buf, sz - 1);
     delete [] buf;

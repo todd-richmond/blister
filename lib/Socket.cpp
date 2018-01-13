@@ -153,8 +153,8 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
 
     if (host && (p = tstrchr(host, ':')) != NULL) {
 	const tchar *pp;
-	
-	if ((pp = tstrchr(p + 1, ':')) != NULL) 
+
+	if ((pp = tstrchr(p + 1, ':')) != NULL)
 	    p = tstrrchr(pp, ';');
     }
     if (p) {

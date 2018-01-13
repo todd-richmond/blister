@@ -189,7 +189,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	ulong u;
 	ulong stime, utime;
 
-	sscanf (p + 2, "%c %ld %ld %ld %ld %ld %lu %lu %lu %lu %lu %lu %lu", 
+	sscanf(p + 2, "%c %ld %ld %ld %ld %ld %lu %lu %lu %lu %lu %lu %lu",
 	    &c, &d, &d, &d, &d, &d, &u, &u, &u, &u, &u, &utime, &stime);
 	psbuf->stime = stime / HZ * 1000 + (stime % HZ) * (1000L / HZ);
 	psbuf->utime = utime / HZ * 1000 + (utime % HZ) * (1000L / HZ);

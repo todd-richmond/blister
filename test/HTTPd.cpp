@@ -56,7 +56,7 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     if (ret)
 	return ret;
     if (!dspr.start()) {
-	dloge(name, Log::error( T("unable to start")));
+	dloge(name, Log::error(T("unable to start")));
 	return -1;
     }
     hsock = new SimpleDispatchListenSocket<Dispatcher, HTTPDaemonSocket>(dspr);

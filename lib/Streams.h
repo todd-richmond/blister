@@ -26,10 +26,10 @@
 template<class C>
 class faststreambuf: public streambuf {
 public:
-    faststreambuf(streamsize sz = 4096, char *p = NULL): alloced(false),
-	buf(NULL), bufsz(0), fd(-1) { setbuf(p, sz); }
-    faststreambuf(C &c, streamsize sz = 4096, char *p = NULL): alloced(false),
-	buf(NULL), bufsz(0), fd(c) { setbuf(p, sz); }
+    explicit faststreambuf(streamsize sz = 4096, char *p = NULL):
+	alloced(false), buf(NULL), bufsz(0), fd(-1) { setbuf(p, sz); }
+    explicit faststreambuf(C &c, streamsize sz = 4096, char *p = NULL):
+	alloced(false), buf(NULL), bufsz(0), fd(c) { setbuf(p, sz); }
     ~faststreambuf() { if (alloced) delete [] buf; }
 
     void attach(C &c) { fd = c; }
@@ -111,7 +111,7 @@ public:
 
     virtual int sync(void) {
 	char *pb = pbase(), *pp = pptr();
-    
+
 	if (pp > pb) {
 	    if (fd.write(pb, (uint)(pp - pb)) != pp - pb)
 		return -1;

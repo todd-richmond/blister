@@ -52,7 +52,7 @@ public:
 	 Stopping, Running, Stopped };
 
     Service(const tchar *name, const tchar *host);
-    Service(const tchar *name, bool pauseable = false);
+    explicit Service(const tchar *name, bool pauseable = false);
     virtual ~Service();
 
     long error(void) const { return errnum; }

@@ -81,8 +81,8 @@ typedef usec_t timing_t;
 
 class TimingKey: public StringHash {
 public:
-    __forceinline TimingKey(const DynamicString &ds): StringHash(ds), key(ds.s)
-	{}
+    __forceinline TimingKey(const DynamicString &ds): StringHash(ds),
+	key(ds.s) {}
 
     TIMING_KEY(1) TIMING_KEY(2) TIMING_KEY(3) TIMING_KEY(4)
     TIMING_KEY(5) TIMING_KEY(6) TIMING_KEY(7) TIMING_KEY(8)
@@ -151,7 +151,7 @@ private:
 	    ZERO(cnts);
 	}
 	~Stats() { free((char *)key); }
-	
+
 	ulong cnt;
 	ulong cnts[TIMINGSLOTS];
 	const tchar *key;

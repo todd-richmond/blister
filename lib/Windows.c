@@ -790,7 +790,7 @@ int wrename(const wchar *from, const wchar *to) {
 	return ret;
     wcscpy(oldbuf, to);
     p = wcsrchr(oldbuf, '/');
-    wsprintfW(p ? p + 1 : oldbuf, L"%u", (uint)uticks() ^ rand());
+    wsprintfW(p ? p + 1 : oldbuf, L"%u", (uint)uticks() ^ rand());  // NOLINT
     lck = rename_lock(to);
     old = oldbuf;
     if (!MoveFileExW(to, old, MOVEFILE_REPLACE_EXISTING)) {
@@ -1052,7 +1052,7 @@ static transitiondate dstend   = { -1, 0, 0L };
 static void cvtdate(int trantype, int datetype, int year, int month,
     int week, int dayofweek, int date, int hour, int min, int sec, int msec) {
     int yearday;
-    
+
     if (datetype == 1) {
 	int monthdow;
 
@@ -1093,7 +1093,7 @@ static void cvtdate(int trantype, int datetype, int year, int month,
 
 static int _isindst(const struct tm *tb) {
     long ms;
-    
+
     if (_daylight == 0)
 	return 0;
     if (tb->tm_year != dststart.yr || tb->tm_year != dstend.yr) {

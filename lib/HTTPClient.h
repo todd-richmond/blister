@@ -59,7 +59,7 @@ public:
 
     tostream &operator <<(tostream &os) const;
     bool close(void) { return sock.close(); }
-    bool connect(const Sockaddr &addr, bool keepalive = false, 
+    bool connect(const Sockaddr &addr, bool keepalive = false,
 	uint timeout = SOCK_INFINITE);
     bool connect(const tchar *host, ushort port = 80, bool keepalive = false,
 	uint timeout = SOCK_INFINITE) {
@@ -76,10 +76,12 @@ public:
     bool del(const tchar *path) { return send(T("DELETE"), path); }
     bool get(const tchar *path) { return send(T("GET"), path); }
     bool head(const tchar *path) { return send(T("HEAD"), path); }
-    bool post(const tchar *path, const void *data, ulong len)
-	{ return send(T("POST"), path, data, len); }
-    bool put(const tchar *path, const void *data, ulong len)
-	{ return send(T("PUT"), path, data, len); }
+    bool post(const tchar *path, const void *data, ulong len) {
+	return send(T("POST"), path, data, len);
+    }
+    bool put(const tchar *path, const void *data, ulong len) {
+	return send(T("PUT"), path, data, len);
+    }
     const tchar *response(const tstring &name) const {
 	attrmap::const_iterator it = reshdrs.find(name);
 	return it == reshdrs.end() ? NULL : it->second.c_str();

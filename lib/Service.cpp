@@ -595,7 +595,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    ctrs * sizeof (PERF_COUNTER_DEFINITION);
 	datasz = (size_t)size + sizeof (PERF_INSTANCE_DEFINITION) + DWORD_MULTIPLE(namesz) +
 	    sizeof (PERF_COUNTER_BLOCK);
-	if ((data = new char [datasz]) == NULL) {
+	if ((data = new char[datasz]) == NULL) {
 	    UnmapViewOfFile(map);
 	    return 1;
 	}
@@ -1378,9 +1378,9 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	uid = (uid_t)-1;
     } else {
 	if (istdigit(uidname[0]))
-	    pwd = getpwuid((uid_t)atoi(uidname.c_str()));
+	    pwd = getpwuid((uid_t)atoi(uidname.c_str()));   // NOLINT
 	else
-	    pwd = getpwnam(uidname.c_str());
+	    pwd = getpwnam(uidname.c_str());	// NOLINT
 	if (pwd) {
 	    gid = pwd->pw_gid;
 	    uid = pwd->pw_uid;
@@ -1548,7 +1548,7 @@ void Daemon::onAbort() {
 
 	if (execl("/bin/sh", "/bin/sh", "-c", s.c_str(), (char *)0) < 0)
 #endif
-	{
+	{   // NOLINT
 	    dloge(Log::mod(name), Log::error(T("restart failed ")));
 	    _exit(1);
 	}

@@ -270,7 +270,7 @@ loop:
 	    pp++;
 	} while (*pp && (*pp == '\r' || *pp == ' ' || *pp == '\t'));
 	sss.assign(pp, strlen(pp) - 1);
-	
+
 	pair<tstring, tstring> pr(astringtotstring(ss), astringtotstring(sss));
 
 	reshdrs.insert(pr);

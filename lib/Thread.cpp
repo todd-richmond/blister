@@ -16,7 +16,6 @@
  */
 
 #include "stdapi.h"
-#include <errno.h>
 #include "Thread.h"
 
 static const thread_id_t NOID = (thread_id_t)-1;
@@ -28,6 +27,8 @@ ThreadGroup ThreadGroup::MainThreadGroup(false);
 Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
 
 #ifdef _WIN32
+#include <errno.h>
+
 Process Process::self(GetCurrentProcess());
 int Process::argc = __argc;
 #ifdef _UNICODE
@@ -297,7 +298,7 @@ bool Thread::resume(void) {
 THREAD_FUNC Thread::threadInit(void *arg) {
     Thread *thread = static_cast<Thread *> (arg);
     ThreadState istate = thread->state;
-    
+
     thread->lck.lock();
     thread->id = THREAD_ID();
     srand((uint)((ulong)microtime() ^ (ulong)thread->id));
@@ -455,7 +456,7 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
     if (!tg) {
 	set<ThreadGroup *>::iterator i;
 	set<Thread *>::iterator ii;
-	
+
 	grouplck.lock();
 	for (i = groups.begin(); i != groups.end(); ++i) {
 	    tg = *i;
@@ -486,7 +487,7 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
     set<Thread *>::iterator it;
     Locker lck(cvlck);
-    
+
     state = ts;
     for (it = threads.begin(); it != threads.end(); ++it) {
 	if (!THREAD_ISSELF((*it)->id))

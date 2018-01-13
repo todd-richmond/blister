@@ -133,9 +133,7 @@
 #define T64 /* 0xeb86d391 */ (T_MASK ^ 0x14792c6e)
 
 
-static void
-md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/)
-{
+static void md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/) {
     md5_word_t
 	a = pms->abcd[0], b = pms->abcd[1],
 	c = pms->abcd[2], d = pms->abcd[3];
@@ -161,7 +159,7 @@ md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/)
 	if (*((const md5_byte_t *)&w)) /* dynamic little-endian */
 #endif
 #if BYTE_ORDER <= 0		/* little-endian */
-	{
+	{   // NOLINT
 	    /*
 	     * On little-endian machines, we can process properly aligned
 	     * data without copying it.
@@ -184,7 +182,7 @@ md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/)
 	else			/* dynamic big-endian */
 #endif
 #if BYTE_ORDER >= 0		/* big-endian */
-	{
+	{   // NOLINT
 	    /*
 	     * On big-endian machines, we must arrange the bytes in the
 	     * right order.
@@ -210,7 +208,7 @@ md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/)
        a = b + ((a + F(b,c,d) + X[k] + T[i]) <<< s). */
 #define F(x, y, z) (((x) & (y)) | (~(x) & (z)))
 #define SET(a, b, c, d, k, s, Ti)\
-  t = a + F(b,c,d) + X[k] + Ti;\
+  t = a + F(b, c, d) + X[k] + Ti;\
   a = ROTATE_LEFT(t, s) + b
     /* Do the following 16 operations. */
     SET(a, b, c, d,  0,  7,  T1);
@@ -236,7 +234,7 @@ md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/)
           a = b + ((a + G(b,c,d) + X[k] + T[i]) <<< s). */
 #define G(x, y, z) (((x) & (z)) | ((y) & ~(z)))
 #define SET(a, b, c, d, k, s, Ti)\
-  t = a + G(b,c,d) + X[k] + Ti;\
+  t = a + G(b, c, d) + X[k] + Ti;\
   a = ROTATE_LEFT(t, s) + b
      /* Do the following 16 operations. */
     SET(a, b, c, d,  1,  5, T17);
@@ -262,7 +260,7 @@ md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/)
           a = b + ((a + H(b,c,d) + X[k] + T[i]) <<< s). */
 #define H(x, y, z) ((x) ^ (y) ^ (z))
 #define SET(a, b, c, d, k, s, Ti)\
-  t = a + H(b,c,d) + X[k] + Ti;\
+  t = a + H(b, c, d) + X[k] + Ti;\
   a = ROTATE_LEFT(t, s) + b
      /* Do the following 16 operations. */
     SET(a, b, c, d,  5,  4, T33);
@@ -288,7 +286,7 @@ md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/)
           a = b + ((a + I(b,c,d) + X[k] + T[i]) <<< s). */
 #define I(x, y, z) ((y) ^ ((x) | ~(z)))
 #define SET(a, b, c, d, k, s, Ti)\
-  t = a + I(b,c,d) + X[k] + Ti;\
+  t = a + I(b, c, d) + X[k] + Ti;\
   a = ROTATE_LEFT(t, s) + b
      /* Do the following 16 operations. */
     SET(a, b, c, d,  0,  6, T49);
@@ -318,9 +316,7 @@ md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/)
     pms->abcd[3] += d;
 }
 
-void
-md5_init(md5_state_t *pms)
-{
+void md5_init(md5_state_t *pms) {
     pms->count[0] = pms->count[1] = 0;
     pms->abcd[0] = 0x67452301;
     pms->abcd[1] = /*0xefcdab89*/ T_MASK ^ 0x10325476;
@@ -328,9 +324,7 @@ md5_init(md5_state_t *pms)
     pms->abcd[3] = 0x10325476;
 }
 
-void
-md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes)
-{
+void md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes) {
     const md5_byte_t *p = data;
     int left = nbytes;
     int offset = (pms->count[0] >> 3) & 63;
@@ -366,9 +360,7 @@ md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes)
 	memcpy(pms->buf, p, (size_t)left);
 }
 
-void
-md5_finish(md5_state_t *pms, md5_byte_t digest[16])
-{
+void md5_finish(md5_state_t *pms, md5_byte_t digest[16]) {
     static const md5_byte_t pad[64] = {
 	0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

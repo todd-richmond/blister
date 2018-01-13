@@ -792,7 +792,7 @@ using namespace stdext;
     __cplusplus < 201103L
 #if GNUC_VERSION < 40300
 #define STL_UNORDERED_MAP_H	<ext/hash_map>
-#define STL_UNORDERED_SET_H	<ext/hash_set>	
+#define STL_UNORDERED_SET_H	<ext/hash_set>
 #define unordered_map		hash_map
 #define unordered_multimap	hash_multimap
 #define unordered_set		hash_set
@@ -800,7 +800,7 @@ using namespace stdext;
 using namespace __gnu_cxx;
 #else
 #define STL_UNORDERED_MAP_H	<tr1/unordered_map>
-#define STL_UNORDERED_SET_H	<tr1/unordered_set>	
+#define STL_UNORDERED_SET_H	<tr1/unordered_set>
 namespace std { namespace tr1 {} }
 using namespace std::tr1;
 #endif
@@ -808,7 +808,7 @@ using namespace std::tr1;
 #else
 
 #define STL_UNORDERED_MAP_H	<unordered_map>
-#define STL_UNORDERED_SET_H	<unordered_set>	
+#define STL_UNORDERED_SET_H	<unordered_set>
 #endif
 
 // narrow / wide sring routines
@@ -1147,7 +1147,7 @@ public:
     }
     C *pop_front(void) {
 	C *obj = front;
-	
+
 	if ((front = front->next) == NULL)
 	    back = NULL;
         else

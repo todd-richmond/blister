@@ -100,7 +100,9 @@ public:
     }
     explicit Sockaddr(const sockaddr &sa) { set(sa); }
     Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
-    Sockaddr(const tchar *host, Proto proto = TCP) { set(host, proto); }
+    explicit Sockaddr(const tchar *host, Proto proto = TCP) {
+	set(host, proto);
+    }
     Sockaddr(const tchar *host, ushort port, Proto proto = TCP) {
 	set(host, port, proto);
     }
@@ -108,7 +110,7 @@ public:
 	set(host, service, proto);
     }
 
-    bool operator ==(const Sockaddr &sa) const { 
+    bool operator ==(const Sockaddr &sa) const {
 	return !memcmp(&addr, &sa.addr, size());
     }
     bool operator !=(const Sockaddr &sa) const { return !operator ==(sa); }
@@ -232,7 +234,7 @@ private:
  */
 class Socket {
 public:
-    Socket(int type = SOCK_STREAM, socket_t sock = SOCK_INVALID):
+    explicit Socket(int type = SOCK_STREAM, socket_t sock = SOCK_INVALID):
 	sbuf(new SocketBuf(type, sock, sock == SOCK_INVALID)) {}
     // cppcheck-suppress copyCtorPointerCopying
     Socket(const Socket &r) { r.sbuf->count++; sbuf = r.sbuf; }
@@ -241,8 +243,9 @@ public:
     Socket &operator =(socket_t sock);
     Socket &operator =(const Socket &r);
     bool operator ==(socket_t sock) const { return sbuf->sock == sock; }
-    bool operator ==(const Socket &r) const
-	{ return sbuf == r.sbuf || sbuf->sock == r.sbuf->sock; }
+    bool operator ==(const Socket &r) const {
+	return sbuf == r.sbuf || sbuf->sock == r.sbuf->sock;
+    }
     bool operator !=(const Socket &r) const { return !operator ==(r); }
     bool operator !(void) const { return sbuf->sock == SOCK_INVALID; }
     operator socket_t() const { return sbuf->sock; }
@@ -379,7 +382,7 @@ protected:
 
 	friend class Socket;
     };
-    
+
 protected:
     bool check(int ret) const { return sbuf->check(ret); }
     bool rwpoll(bool rd) const;
@@ -396,9 +399,9 @@ public:
     explicit SocketSet(uint maxfds = 0);
     SocketSet(const SocketSet &ss): fds(NULL), maxsz(0), sz(0) { *this = ss; }
     ~SocketSet() { delete [] fds; }
-    
+
     SocketSet &operator =(const SocketSet &r);
-    template<class C> socket_t operator [](C at) const {
+    template<class C> socket_t operator[](C at) const {
 	return SSET_FD((uint)at);
     }
 
@@ -406,7 +409,7 @@ public:
     bool get(socket_t fd) const;
     bool get(const Socket &sock) const { return get(sock.fd()); }
     uint size(void) const { return sz; }
-    
+
     void clear(void) { sz = 0; }
     bool set(socket_t fd);
     bool set(const Socket &sock) { return set(sock.fd()); }
@@ -416,11 +419,11 @@ public:
     bool iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
 	uint msec = SOCK_INFINITE);
     bool opoll(SocketSet &oset, SocketSet &eset, uint msec = SOCK_INFINITE);
-    
+
     static bool iopoll(const SocketSet &rset, SocketSet &iset,
 	const SocketSet &wset, SocketSet &oset, SocketSet &eset,
 	uint msec = SOCK_INFINITE);
-    
+
 private:
 #ifdef _WIN32
     fd_set *fds;
@@ -503,9 +506,9 @@ typedef faststreambuf<Socket> socketbuf;
 
 class isockstream : public istream {
 public:
-    isockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
+    explicit isockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	istream(NULL), sb(sz, p) { ios::init(&sb); }
-    isockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
+    explicit isockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	istream(NULL), sb(s, sz, p) { ios::init(&sb); }
     virtual ~isockstream() {}
 
@@ -521,9 +524,9 @@ private:
 
 class osockstream: public ostream {
 public:
-    osockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
+    explicit osockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	ostream(NULL), sb(sz, p) { ios::init(&sb); }
-    osockstream(Socket & s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
+    explicit osockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	ostream(NULL), sb(s, sz, p) { ios::init(&sb); }
     virtual ~osockstream() {}
 
@@ -543,9 +546,9 @@ private:
 
 class sockstream: public iostream {
 public:
-    sockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
+    explicit sockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	iostream(NULL), sb(sz, p) { ios::init(&sb); }
-    sockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
+    explicit sockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	iostream(NULL), sb(s, sz, p) { ios::init(&sb); }
     virtual ~sockstream() {}
 

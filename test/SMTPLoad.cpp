@@ -321,7 +321,7 @@ char *SMTPLoad::read(uint idx, usec_t &iousec) {
     }
     iousec = uticks();
     if ((fd = open(tchartoachar(file), O_RDONLY|O_BINARY|O_SEQUENTIAL)) != -1) {
-	ret = new char [filelen + 1];
+	ret = new char[filelen + 1];
 	if (::read(fd, ret, filelen) == (int)filelen) {
 	    ret[filelen] = '\0';
 	    if (filelen <= bodycachesz) {
@@ -353,7 +353,7 @@ void SMTPLoad::add(const tchar *file) {
     if (access(tchartoachar(file), R_OK) || stat(tchartoachar(file), &sbuf)) {
 	tcerr << T("invalid body file: ") << file << endl;
     } else {
-	body[bodycnt] = new tchar [tstrlen(file) + 1];
+	body[bodycnt] = new tchar[tstrlen(file) + 1];
 	tstrcpy(body[bodycnt], file);
 	bodycache[bodycnt] = NULL;
 	bodysz[bodycnt] = (ulong)sbuf.st_size;
@@ -482,7 +482,7 @@ int SMTPLoad::onStart(void) {
 		} else {
 		    uint u = allfiles ? next() : ((uint)rand() % bodycnt);
 		    char *d = read(u, io);
-		    
+
 		    if (d) {
 			ret = sc.data(false, achartotchar(d)) &&
 			    sc.enddata();
@@ -493,7 +493,7 @@ int SMTPLoad::onStart(void) {
 	    } else if (cmd->cmd == T("data")) {
 		uint u = allfiles ? next() : ((uint)rand() % bodycnt);
 		char *d = read(u, io);
-		    
+
 		if (d) {
 		    ret = sc.data(d, bodysz[u]) && sc.enddata();
 		    if (d != bodycache[u])

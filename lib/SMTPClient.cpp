@@ -26,7 +26,7 @@
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #endif
 
-string SMTPClient::crlf("\r\n");
+const char SMTPClient::crlf[] = "\r\n";
 
 SMTPClient::SMTPClient(): sstrm(sock), datasent(false), lmtp(false),
     mime(false), parts(0) {}
@@ -97,7 +97,7 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 
 bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
     string asts;
-    
+
     multi.erase();
     if (s1) {
 	sstrm << tchartoachar(s1);
@@ -456,7 +456,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
     // Pass 1
     for (;;) {
 	tchar c = *input++;
-	
+
 	if ((tuchar)c & 0x80) {
 	    err = NonASCII;
 	    goto fail;
@@ -607,7 +607,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	case ' ':
 	case '.': {
 		bool saw_dot = (c == '.');
-		while (pos < addr.length() && 
+		while (pos < addr.length() &&
 		       ((c = addr[pos]) == ' ' || (!saw_dot && c == '.'))) {
 		    if (c == '.')
 			saw_dot = true;
@@ -799,13 +799,13 @@ uint RFC822Addr::parse(const tchar *addrs) {
     }
     if ((!tstrrchr(addrs, '<') && !tstrrchr(addrs, ';') &&
 	!tstrrchr(addrs, ',')) || !tstrrchr(addrs, '>')) {
-	s = buf = new tchar [len + 2];
+	s = buf = new tchar[len + 2];
 	s[0] = '<';
 	memcpy(s + 1, addrs, len - 1);
 	s[len] = '>';
 	s[len + 1] = '\0';
     } else {
-	s = buf = new tchar [len];
+	s = buf = new tchar[len];
 	memcpy(s, addrs, len);
     }
     while (tok) {
@@ -1385,7 +1385,7 @@ time_t mkgmtime(const tm *const tmp) {
     int seconds;
     time_t t;
     tm orgtm, tmbuf;
-    
+
     orgtm = *tmp;
     seconds = orgtm.tm_sec;
     orgtm.tm_sec = 0;

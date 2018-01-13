@@ -147,7 +147,7 @@ void Log::LogFile::roll(void) {
     struct stat sbuf;
     tchar sep;
 
-    if (!fstat(fd, &sbuf)) 
+    if (!fstat(fd, &sbuf))
 	inode = sbuf.st_ino;
     close();
     if (!enable)
@@ -301,7 +301,6 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
 void Log::LogFile::unlock(void) {
     if (fd >= 0)
 	lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
-
 }
 
 Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true),

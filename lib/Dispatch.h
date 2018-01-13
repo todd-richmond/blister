@@ -63,8 +63,8 @@ private:
     };
 
 public:
-    DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb), dspr(d),
-	flags(0), msg(DispatchNone), group(new Group), next(NULL) {}
+    explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
+	dspr(d), flags(0), msg(DispatchNone), group(new Group), next(NULL) {}
     DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),
 	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()), next(NULL) {}
@@ -106,11 +106,11 @@ private:
 
 class DispatchTimer: public DispatchObj {
 public:
-    DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
+    explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
 	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
 	DispatchObj(d), due(DSP_NEVER_DUE) {  init(); timeout(cb, msec); }
-    DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
+    explicit DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
 	DispatchObj(parent), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(DispatchObj &parent, ulong msec, DispatchObjCB cb):
 	DispatchObj(parent), due(DSP_NEVER_DUE) { init(); timeout(cb, msec); }
@@ -174,14 +174,18 @@ public:
     DispatchIOSocket(DispatchObj &parent, const Socket &sock, ulong msec =
 	DSP_NEVER): DispatchSocket(parent, sock, msec) {}
 
-    void closeable(DispatchObjCB cb = NULL, ulong msec = 15000)
-	{ poll(cb, msec, DispatchClose); }
-    void readable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
-	{ poll(cb, msec, DispatchRead); }
-    void writeable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
-	{ poll(cb, msec, DispatchWrite); }
-    void rwable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS)
-	{ poll(cb, msec, DispatchReadWrite); }
+    void closeable(DispatchObjCB cb = NULL, ulong msec = 15000) {
+	poll(cb, msec, DispatchClose);
+    }
+    void readable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS) {
+	poll(cb, msec, DispatchRead);
+    }
+    void writeable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS) {
+	poll(cb, msec, DispatchWrite);
+    }
+    void rwable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS) {
+	poll(cb, msec, DispatchReadWrite);
+    }
 };
 
 class DispatchClientSocket: public DispatchIOSocket {
@@ -215,7 +219,7 @@ public:
 
 class DispatchListenSocket: public DispatchSocket {
 public:
-    DispatchListenSocket(Dispatcher &d, int type = SOCK_STREAM):
+    explicit DispatchListenSocket(Dispatcher &d, int type = SOCK_STREAM):
 	DispatchSocket(d, type) {}
     DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
 	int type = SOCK_STREAM, bool reuse = true, int queue = SOCK_BACKLOG,
@@ -241,7 +245,7 @@ public:
     virtual ~Dispatcher() { stop(); }
 
     const Config &config(void) const { return cfg; }
-    
+
     bool start(uint maxthreads = 100, uint stacksz = 0);
     void stop(void);
 
@@ -273,10 +277,10 @@ private:
 	}
 	DispatchTimer *get(void) {
 	    unsorted_timerset::iterator it = unsorted.begin();
-	    
+
 	    if (it != unsorted.end()) {
 		DispatchTimer *dt = *it;
-		
+
 		if (dt->due <= split)
 		    sorted.erase(dt);
 		unsorted.erase(it);
@@ -398,7 +402,7 @@ private:
 template<class D, class S>
 class SimpleDispatchListenSocket: public DispatchListenSocket {
 public:
-    SimpleDispatchListenSocket(D &d, int type = SOCK_STREAM):
+    explicit SimpleDispatchListenSocket(D &d, int type = SOCK_STREAM):
 	DispatchListenSocket(d, type) {}
 
     bool listen(const Sockaddr &sa, bool enable = true, int backlog =

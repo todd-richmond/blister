@@ -280,7 +280,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	    if (!tstricmp(cmd, T("post")))
 		data = tstrtok(NULL, T(" \t"));
 	    status = tstrtok(NULL, T(" \t"));
-	    if (!status) 
+	    if (!status)
 		status = T("200");
 	    value = tstrtok(NULL, T(""));
 	    if (!url.set(req)) {
@@ -323,7 +323,7 @@ char *HTTPLoad::read(uint idx, usec_t &iousec) {
     }
     iousec = uticks();
     if ((fd = open(tchartoachar(file), O_RDONLY|O_BINARY|O_SEQUENTIAL)) != -1) {
-	ret = new char [filelen + 1];
+	ret = new char[filelen + 1];
 	if (::read(fd, ret, filelen) == (int)filelen) {
 	    ret[filelen] = '\0';
 	    if (filelen <= bodycachesz) {
@@ -355,7 +355,7 @@ void HTTPLoad::add(const tchar *file) {
     if (access(tchartoachar(file), R_OK) || stat(tchartoachar(file), &sbuf)) {
 	tcerr << T("invalid body file: ") << file << endl;
     } else {
-	body[bodycnt] = new tchar [tstrlen(file) + 1];
+	body[bodycnt] = new tchar[tstrlen(file) + 1];
 	tstrcpy(body[bodycnt], file);
 	bodycache[bodycnt] = NULL;
 	bodysz[bodycnt] = (ulong)sbuf.st_size;

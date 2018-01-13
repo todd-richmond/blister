@@ -240,8 +240,8 @@ public:
 	const D &d, const E &e, const F &f, const G &g) { log(l, c, d, e, f, \
 	g); } \
     template<class C, class D, class E, class F, class G, class H> void n( \
-	const C &c, const D &d, const E &e, const F &f, const G &g, const H &h) \
-	{ log(l, c, d, e, f, g, h); }
+	const C &c, const D &d, const E &e, const F &f, const G &g, const H \
+	&h) { log(l, c, d, e, f, g, h); }
 
     _func_(emerg, Emerg);
     _func_(alert, Alert);
@@ -462,7 +462,7 @@ inline Log &endlog(Log &l) { return l.endlog(); }
 
 extern Log &dlog;
 
-#define DLOGL(l, args)	{ if (l <= dlog.level()) dlog << l << args << endlog; }
+#define DLOGL(l, args)  { if (l <= dlog.level()) dlog << l << args << endlog; }
 #define DLOGM(args)	DLOGL(Log::Emerg, args)
 #define DLOGA(args)	DLOGL(Log::Alert, args)
 #define DLOGC(args)	DLOGL(Log::Crit, args)
@@ -473,7 +473,7 @@ extern Log &dlog;
 #define DLOGD(args)	DLOGL(Log::Debug, args)
 #define DLOGT(args)	DLOGL(Log::Trace, args)
 
-#define dlogl(l, ...)	{ if (l <= dlog.level()) dlog.log(l, __VA_ARGS__); }
+#define dlogl(l, ...)   { if (l <= dlog.level()) dlog.log(l, __VA_ARGS__); }
 #define dlogm(...)	dlogl(Log::Emerg, __VA_ARGS__)
 #define dloga(...)	dlogl(Log::Alert, __VA_ARGS__)
 #define dlogc(...)	dlogl(Log::Crit, __VA_ARGS__)
@@ -484,7 +484,10 @@ extern Log &dlog;
 #define dlogd(...)	dlogl(Log::Debug, __VA_ARGS__)
 #define dlogt(...)	dlogl(Log::Trace, __VA_ARGS__)
 
-#define dlogvl(l, ...)	{ if (l <= dlog.level()) dlog.logv(l, __VA_ARGS__, (char *)NULL); }
+#define dlogvl(l, ...)  { \
+    if (l <= dlog.level()) \
+	dlog.logv(l, __VA_ARGS__, (char *)NULL); \
+}
 #define dlogvm(...)	dlogvl(Log::Emerg, __VA_ARGS__)
 #define dlogva(...)	dlogvl(Log::Alert, __VA_ARGS__)
 #define dlogvc(...)	dlogvl(Log::Crit, __VA_ARGS__)

@@ -56,7 +56,7 @@
 
 class Config: nocopy {
 public:
-    Config(const tchar *file = NULL, const tchar *pre = NULL);
+    explicit Config(const tchar *file = NULL, const tchar *pre = NULL);
     explicit Config(tistream &is): ini(false), locker(0) { is >> *this; }
     ~Config() { clear(); }
 
@@ -95,23 +95,29 @@ public:
 
 	set(attr, val, sect, false);
     }
-    void set(const tchar *attr, const bool val, const tchar *sect = NULL)
-	{ set(attr, val ? T("t") : T("f"), sect); }
-    void set(const tchar *attr, int val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%d"), val); set(attr, buf, sect); }
-    void set(const tchar *attr, uint val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%u"), val); set(attr, buf, sect); }
-    void set(const tchar *attr, long val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%ld"), val); set(attr, buf, sect); }
-    void set(const tchar *attr, ulong val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%lu"), val); set(attr, buf, sect); }
+    void set(const tchar *attr, const bool val, const tchar *sect = NULL) {
+	set(attr, val ? T("t") : T("f"), sect);
+    }
+    void set(const tchar *attr, int val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%d"), val); set(attr, buf, sect);
+    }
+    void set(const tchar *attr, uint val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%u"), val); set(attr, buf, sect);
+    }
+    void set(const tchar *attr, long val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%ld"), val); set(attr, buf, sect);
+    }
+    void set(const tchar *attr, ulong val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%lu"), val); set(attr, buf, sect);
+    }
     void set(const tchar *attr, float val, const tchar *sect = NULL) {
 	tchar buf[24];
 	tsprintf(buf, T("%f"), (double)val);
 	set(attr, buf, sect);
     }
-    void set(const tchar *attr, double val, const tchar *sect = NULL)
-	{ tchar buf[24]; tsprintf(buf, T("%g"), val); set(attr, buf, sect); }
+    void set(const tchar *attr, double val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%g"), val); set(attr, buf, sect);
+    }
     void setv(const tchar *attr, const tchar *val, ... /* , const tchar
 	*sect = NULL, NULL */);
     void lock(void) { lck.lock(); locker = THREAD_ID(); }
