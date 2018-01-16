@@ -109,9 +109,10 @@ bool HTTPServerSocket::date;
 
 HTTPServerSocket::HTTPServerSocket(Dispatcher &d, Socket &sock):
     DispatchServerSocket(d, sock), path(NULL), prot(NULL), postdata(NULL),
-    postsz(0), cmd(NULL), data(NULL), datasz(0), postin(0), sz(0),
-    fmap(NULL), ka(false), nagleon(true), rto(RTimeout), wto(WTimeout),
-    savechar(0), _status(0)  {
+    postsz(0), chunkin(0), chunktrailer(false), postchunking(false), cmd(NULL),
+    data(NULL), datasz(0), postin(0), sz(0), fmap(NULL), ka(false),
+    nagleon(true), postdatasz(0), rto(RTimeout), wto(WTimeout), savechar(0),
+    _status(0)  {
     ZERO(iov);
 }
 
@@ -554,7 +555,7 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     int i;
 
     if (len == (ulong)-1)
-	len = p ? strlen(p) : 0;
+	len = p ? (ulong)strlen(p) : 0;
     i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)ss.size() + len);
     hdrs.write(buf, i);
     iov[0].iov_base = (char *)hdrs.str();

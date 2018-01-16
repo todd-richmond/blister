@@ -81,7 +81,7 @@ protected:
 
 private:
     attrmap attrs, args, postargs;
-    uint chunkin;
+    ulong chunkin;
     bool chunktrailer, postchunking;
     const char *cmd;
     char *data;

@@ -124,9 +124,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 
 	    for (u = 0; u <= begin; u++)
 		sum += stats->cnts[u];
-	    if (stats->cnt >= 10000000000UL)
-		tsprintf(cbuf, T("%4lug"), stats->cnt / 1000000000UL);
-            else if (stats->cnt >= 10000000UL)
+            if (stats->cnt >= 10000000UL)
 		tsprintf(cbuf, T("%4lum"), stats->cnt / 1000000UL);
 	    else if (stats->cnt >= 10000UL)
 		tsprintf(cbuf, T("%4luk"), stats->cnt / 1000UL);

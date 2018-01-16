@@ -362,7 +362,7 @@ int tmain(int argc, tchar *argv[]) {
 	    tcerr << T("echotest: unable to open ") << path << endl;
 	    return 1;
 	} else {
-	    dsz = (uint)tstrlen(path) * sizeof (tchar);
+	    dsz = (uint)(tstrlen(path) * sizeof (tchar));
 	    dbuf = new char[dsz];
 	    memcpy(dbuf, path, dsz);
 	}

@@ -101,8 +101,8 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 #endif
 	}
     } else {
-        if (!write(fd, buf, (size_t)(chars * sizeof (tchar))) && file[0] != '>')
-	    len += chars * sizeof (tchar);
+        if (!write(fd, buf, (uint)(chars * sizeof (tchar))) && file[0] != '>')
+	    len += (ulong)(chars * sizeof (tchar));
     }
 }
 
@@ -362,7 +362,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    afd.roll();
     }
     now_usec = microtime();
-    now_sec = (uint)(now_usec / 1000000);
+    now_sec = (time_t)(now_usec / 1000000);
     now_usec %= 1000000;
     if (now_sec != last_sec) {
 	tchar tbuf[128];
@@ -609,7 +609,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
     mailenable = cfg.get(T("mail.enable"), false, sect);
     if (src.empty()) {
 	src = cfg.prefix();
-	if ((pos = src.find_last_of(T("."))) != src.npos)
+	if ((pos = src.find_last_of(T('.'))) != src.npos)
 	    src.erase(0, pos + 1);
     }
     syslog(str2enum(cfg.get(T("syslog.level"), T("err"), sect).c_str()),

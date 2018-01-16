@@ -46,7 +46,7 @@ public:
 
     virtual int doallocate(void) {
 	if (!buf) {
-	    buf = new char[(uint)bufsz];
+	    buf = new char[(size_t)bufsz];
 	    alloced = true;
 	    setp(buf, buf + bufsz);
 	    setg(buf, buf, buf);
@@ -98,7 +98,7 @@ public:
 		alloced = false;
 	    }
 	    if (!p && sz) {
-		p = new char[(uint)sz];
+		p = new char[(size_t)sz];
 		alloced = true;
 	    }
 	    buf = p;

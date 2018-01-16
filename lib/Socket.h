@@ -26,16 +26,18 @@
 #pragma warning(pop)
 #pragma warning(disable: 4097)
 
-#define socklen_t	int
 #define SSET_FD(i)	fds->fd_array[i]
 #define SOCK_SIZE_T	int
+#define s6_addr16	u.Word
+#define s6_addr32	u.Dword
 
+typedef ushort sa_family_t;
+typedef int socklen_t;
 typedef SOCKET socket_t;
 
 inline int sockerrno(void) { return WSAGetLastError(); }
 
 #else
-#include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
@@ -53,6 +55,11 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #define WSAEINTR	EINTR
 #define WSAEWOULDBLOCK	EWOULDBLOCK
 
+#ifdef __APPLE__
+#define s6_addr16	__u6_addr.__u6_addr16
+#define s6_addr32	__u6_addr.__u6_addr32
+#endif
+
 typedef int socket_t;
 
 inline int closesocket(socket_t fd) { return ::close(fd); }
@@ -62,11 +69,6 @@ inline int sockerrno(void) { return errno; }
 #include <errno.h>
 #include <vector>
 #include "Streams.h"
-
-#if defined(__APPLE__) || defined(_WIN32)
-#define s6_addr16	__u6_addr.__u6_addr16
-#define s6_addr32	__u6_addr.__u6_addr32
-#endif
 
 const int SOCK_BACKLOG = 128;
 const int SOCK_BUFSZ = 3 * 1024;
@@ -136,7 +138,8 @@ public:
     bool is_v4mapped() const {
 	const in6_addr &sa6 = addr.sa6.sin6_addr;
 
-	return ipv6() && sa6.s6_addr32[0] == 0 && sa6.s6_addr32[1] == 0 &&
+	return ipv6() && sa6.s6_addr16[0] == 0 && sa6.s6_addr16[1] == 0 &&
+	    sa6.s6_addr16[2] == 0 && sa6.s6_addr16[3] == 0 &&
 	    sa6.s6_addr16[4] == 0 && sa6.s6_addr16[5] == 0xFFFF;
     }
     const tstring ip(void) const;

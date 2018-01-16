@@ -128,9 +128,13 @@ typedef unsigned short word;
 #define ino_t		__ino_t
 #define rename		_rename
 #define stat		__sstat
+#define statvfs		__statvfs
+#define wstatvfs	__wstatvfs
 #define _INO_T_DEFINED
 #define _STAT_DEFINED
+#define _STATVFS_DEFINED
 #define _WSTAT_DEFINED
+#define _WSTATVFS_DEFINED
 
 #define __STDC__ 1
 #define _WIN32_WINNT	0x601
@@ -145,6 +149,7 @@ typedef __int64 _ino_t;
 #undef __STDC__
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <wchar.h>
 #include <winsock2.h>
 #include <sys/stat.h>
@@ -313,14 +318,14 @@ typedef struct WDIR {
 
 // stat routines that support inodes and devices properly
 struct stat {
+    ino_t st_ino;
     ulong st_dev;
     ulong st_rdev;
-    nlink_t st_nlink;
     ulong st_size;
-    ino_t st_ino;
     ulong st_atime;
     ulong st_mtime;
     ulong st_ctime;
+    nlink_t st_nlink;
     ushort st_mode;
     ushort st_uid;
     ushort st_gid;
@@ -753,7 +758,7 @@ inline usec_t microtime(void) {
 }
 
 inline void time_adjust_msec(struct timespec *ts, ulong msec) {
-    *(ulong *)&ts->tv_sec += msec / 1000U;
+    *(time_t *)&ts->tv_sec += (time_t)(msec / 1000U);
     *(ulong *)&ts->tv_nsec += (msec % 1000U) * 1000000U;
     if ((ulong)ts->tv_nsec > 1000000000U) {
 	*(ulong *)&ts->tv_nsec -= 1000000000;
@@ -812,15 +817,15 @@ using namespace std::tr1;
 #endif
 
 // narrow / wide sring routines
-extern const wstring _achartowstring(const char *s, int len);
-extern const string _wchartoastring(const wchar *s, int len);
+extern const wstring _achartowstring(const char *s, size_t len);
+extern const string _wchartoastring(const wchar *s, size_t len);
 
 inline const wstring astringtowstring(const string &s) {
-    return _achartowstring(s.c_str(), (int)s.size() + 1);
+    return _achartowstring(s.c_str(), s.size() + 1);
 }
 
 inline const string wstringtoastring(const wstring &s) {
-    return _wchartoastring(s.c_str(), (int)s.size() + 1);
+    return _wchartoastring(s.c_str(), s.size() + 1);
 }
 
 #define achartowchar(s)	    achartowstring(s).c_str()

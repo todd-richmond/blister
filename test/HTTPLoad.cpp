@@ -488,7 +488,7 @@ int HTTPLoad::onStart(void) {
 		    tstrcpy(data, cmd->data.c_str());
 		    expand(data, lvars);
 		    hc.header(T("content-type"), T("application/x-www-form-urlencoded"));
-		    ret = hc.post(buf, data, tstrlen(data) * sizeof (tchar));
+		    ret = hc.post(buf, data, (ulong)(tstrlen(data) * sizeof (tchar)));
 		}
 	    }
 	    now = uticks();
@@ -520,7 +520,7 @@ int HTTPLoad::onStart(void) {
 			tstring::size_type pos;
 
 			s = rit->second;
-			if ((pos = s.find_first_of(T(";"))) != string::npos)
+			if ((pos = s.find_first_of(T(';'))) != string::npos)
 			    s.erase(pos);
 			if (s != T("invalid"))
 			    cookies.push_back(s);

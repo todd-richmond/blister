@@ -591,10 +591,10 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	namesz = (DWORD)name.length() * 2;
 	if (namesz)
 	    namesz += sizeof (WCHAR);
-	size = sizeof (PERF_OBJECT_TYPE) +
-	    ctrs * sizeof (PERF_COUNTER_DEFINITION);
-	datasz = (size_t)size + sizeof (PERF_INSTANCE_DEFINITION) + DWORD_MULTIPLE(namesz) +
-	    sizeof (PERF_COUNTER_BLOCK);
+	size = (DWORD)(sizeof (PERF_OBJECT_TYPE) +
+	    ctrs * sizeof (PERF_COUNTER_DEFINITION));
+	datasz = (uint)(size + sizeof (PERF_INSTANCE_DEFINITION) + DWORD_MULTIPLE(
+	    namesz) + sizeof (PERF_COUNTER_BLOCK));
 	if ((data = new char[datasz]) == NULL) {
 	    UnmapViewOfFile(map);
 	    return 1;
@@ -610,8 +610,8 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	pot->ObjectNameTitleIndex = counter;
 	pot->ObjectHelpTitleIndex = help;
 	pid = (PERF_INSTANCE_DEFINITION *)(data + size);
-	pid->ByteLength = sizeof (PERF_INSTANCE_DEFINITION) +
-	    DWORD_MULTIPLE(namesz) + 4;
+	pid->ByteLength = (DWORD)(sizeof (PERF_INSTANCE_DEFINITION) +
+	    DWORD_MULTIPLE(namesz) + 4);
 	pid->ParentObjectTitleIndex = 0;
 	pid->ParentObjectInstance = 0;
 	pid->UniqueID = PERF_NO_UNIQUE_ID;
@@ -623,7 +623,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	mbstowcs((wchar_t *)(pid + 1), name.c_str(), name.length() + 1);
 #endif
 	pcb = (PERF_COUNTER_BLOCK  *)((char *)pid + pid->ByteLength);
-	pcb->ByteLength = sizeof (PERF_COUNTER_BLOCK) + mapsz;
+	pcb->ByteLength = (DWORD)(sizeof (PERF_COUNTER_BLOCK) + mapsz);
 	init = true;
     }
     count++;
@@ -1302,7 +1302,6 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     char buf[64];
     bool buffer;
     int ret = 0;
-    tstring s;
     struct stat sbuf, sfile;
 
     time(&start);
@@ -1343,16 +1342,15 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	}
     }
     if (cfgfile.empty()) {
-	s = installdir + T("etc/") + name + T(".cfg");
-	if (access(tstringtoachar(s), R_OK)) {
-	    s = installdir + name + T(".cfg");
-	    if (access(tstringtoachar(s), R_OK)) {
-		s = name + T(".cfg");
-		if (access(tstringtoachar(s), R_OK))
-		    s.erase();
+	cfgfile = installdir + T("etc/") + name + T(".cfg");
+	if (access(tstringtoachar(cfgfile), R_OK)) {
+	    cfgfile = installdir + name + T(".cfg");
+	    if (access(tstringtoachar(cfgfile), R_OK)) {
+		cfgfile = name + T(".cfg");
+		if (access(tstringtoachar(cfgfile), R_OK))
+		    cfgfile.erase();
 	    }
 	}
-	cfgfile = s;
     }
     if (!onRefresh())
 	return 3;
@@ -1528,7 +1526,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	sprintf(buf, "%lu", (ulong)sigpid);
 	if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) < 0 || write(lckfd,
 	    buf, (uint)strlen(buf)) < 1)
-	    ret = false;
+	    ret = 0;
 	dlog.buffer(buffer);
     }
     return ret;
@@ -1653,7 +1651,7 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
 	tstring::size_type i;
 
 	name = argv[ac];
-	if ((i = name.find_last_of(T("."))) != name.npos)
+	if ((i = name.find_last_of(T('.'))) != name.npos)
 	    name.erase(i);
     }
 }

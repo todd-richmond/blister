@@ -84,13 +84,12 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
 	ret = cmd(T("AUTH LOGIN"), achartotchar(uubuf), 334);
-	delete [] uubuf;
 	if (ret && (ret = base64encode(pass, passlen, uubuf, uusz)) == true) {
 	    while (isspace(uubuf[uusz - 1]))
 		uubuf[--uusz] = '\0';
 	    ret = cmd(achartotchar(uubuf), NULL, 235);
-	    delete [] uubuf;
 	}
+	delete[] uubuf;
     }
     return ret;
 }
@@ -283,7 +282,7 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
 }
 
 bool SMTPClient::data(bool m, const tchar *txt) {
-    static TSNumber<uint64_t> nextmid(((ulong)time(NULL) << 18) & uticks());
+    static TSNumber<uint64_t> nextmid(((uint64_t)time(NULL) << 18) & uticks());
     char buf[64], gmtoff[16];
     int diff;
     char *encbuf;
@@ -1284,7 +1283,7 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
     outsz = 0;
     if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
 	return false;
-    while (sz) {
+    while (sz > 0) {
 	int add_bits = table[(int)*in++];
 
 	sz--;

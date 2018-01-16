@@ -55,9 +55,9 @@ private:
     public:
 	Group(): active(false) {}
 
-	bool active;
 	ObjectList<DispatchObj> glist;
 	RefCount refcount;
+	bool active;
 
 	Group &add() { refcount.reference(); return *this; }
     };

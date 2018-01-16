@@ -539,7 +539,7 @@ public:
     static Process self;
 
     operator HANDLE() const { return hdl; }
-    bool mask(uint m) { return SetProcessAffinityMask(hdl, m) != 0; }
+    bool mask(ulong m) { return SetProcessAffinityMask(hdl, m) != 0; }
     static Process start(tchar * const *args, const int *fds = NULL);
 
 private:
@@ -551,7 +551,7 @@ private:
 inline void msleep(ulong msec) {
     struct timespec ts;
 
-    *(ulong *)&ts.tv_sec = msec / 1000U;
+    ts.tv_sec = (time_t)(msec / 1000U);
     *(ulong *)&ts.tv_nsec = (msec % 1000U) * 1000000U;
     nanosleep(&ts, NULL);
 }

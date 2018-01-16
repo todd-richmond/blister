@@ -614,7 +614,7 @@ int wlink(const wchar *from, const wchar *to) {
     rename_unlock(lck);
     ZERO(sid);
     sid.dwStreamId = BACKUP_LINK;
-    sid.Size.LowPart = (sz + 1) * sizeof (wchar);
+    sid.Size.LowPart = (DWORD)((sz + 1) * sizeof (wchar));
     out = (DWORD)((LPBYTE)&sid.cStreamName - (LPBYTE)&sid);
     if (!BackupWrite(hdl, (LPBYTE)&sid, out, &out, FALSE, FALSE, &lpContext)) {
 	_dosmaperr(GetLastError());
@@ -1010,6 +1010,10 @@ int sigsend(idtype_t type, id_t id, int sig) {
     else
     	ret = 0;
     return ret ? 0 : -1;
+}
+
+int pidstat(pid_t pid, struct pidstat *psbuf) {
+    return 0;
 }
 
 int _strcmp(const char *a, const char *b) {

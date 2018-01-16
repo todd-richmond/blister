@@ -1,5 +1,3 @@
-project(blister)
-
 set(blister_INC_SOURCE
     Config.h
     Dispatch.h
