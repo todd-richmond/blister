@@ -758,10 +758,10 @@ inline usec_t microtime(void) {
 }
 
 inline void time_adjust_msec(struct timespec *ts, ulong msec) {
-    *(time_t *)&ts->tv_sec += (time_t)(msec / 1000U);
+    ts->tv_sec += (time_t)(msec / 1000U);
     *(ulong *)&ts->tv_nsec += (msec % 1000U) * 1000000U;
     if ((ulong)ts->tv_nsec > 1000000000U) {
-	*(ulong *)&ts->tv_nsec -= 1000000000;
+	*(ulong *)&ts->tv_nsec -= 1000000000U;
 	++ts->tv_sec;
     }
 }

@@ -212,13 +212,13 @@ void HTTPServerSocket::readpost() {
     if (postchunking) {
 	while (chunkin < postin) {
 	    // skip over terminating CRLF of previous chunk
-	    uint pos = chunkin + (chunkin && !chunktrailer ? 2 : 0);
+	    ulong pos = chunkin + (chunkin && !chunktrailer ? 2 : 0);
 
 	    if (postin <= pos)
 	        break;
 
 	    int c;
-	    uint chunksize = 0;
+	    ulong chunksize = 0;
 	    const char *lf = (const char *)memchr(postdata + pos, '\n',
                 postin - pos);
 
