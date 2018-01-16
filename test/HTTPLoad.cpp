@@ -39,10 +39,9 @@ class HTTPLoad: public Thread {
 public:
     HTTPLoad(): id(threads++) {}
 
-    static bool init(const tchar *host, uint maxthread,
-	ulong maxuser, bool randuser, bool debug, bool keepalive, uint timeout,
-	long loops, const tchar *file, const tchar *bodyfile, ulong cachesz,
-	bool all, int fcnt);
+    static bool init(const tchar *host, uint maxthread, ulong maxuser, bool
+	randuser, bool debug, bool keepalive, uint timeout, long loops, const
+	tchar *file, const tchar *bodyfile, ulong cachesz, bool all, int fcnt);
     static void print(tostream &os, usec_t last);
     static uint working(void) { return threads; }
     static void reset(bool all = false);
@@ -55,9 +54,9 @@ private:
 	LoadCmd(const tchar *c, const tchar *a, const URL &u, const tchar *d =
 	    NULL, const tchar *s = NULL, const tchar *v = NULL): cmd(c), arg(a ?
 	    a : T("")), data(d ? d : T("")), value(v ? v : T("")),
-	    status(s ? (ushort)ttoi(s) : 0), url(u), usec(0), tusec(0),
-	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0),
-	    count(0), tcount(0), err(0), terr(0) {}
+	    status((ushort)(s ? ttoi(s) : 0)), url(u), usec(0), tusec(0),
+	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0), count(0),
+	    tcount(0), err(0), terr(0) {}
 
 	tstring cmd, arg, data, value;
 	ushort status;

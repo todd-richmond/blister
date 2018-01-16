@@ -237,7 +237,7 @@ const tstring Sockaddr::service_name(ushort port, Proto proto) {
 ushort Sockaddr::service_port(const tchar *svc, Proto proto) {
     Sockaddr sa;
 
-    return sa.set(NULL, svc, proto) ? sa.port() : 0;
+    return sa.set(NULL, svc, proto) ? sa.port() : (ushort)0;
 }
 
 ushort Sockaddr::size(ushort family) {

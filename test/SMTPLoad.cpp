@@ -58,9 +58,9 @@ private:
 	LoadCmd(const tchar *comment, const tchar *command, const tchar
 	    *argument, const tchar *status = NULL): cmt(comment), cmd(command),
 	    arg(argument ? argument : T("")),
-	    sts(status ? (ushort)ttoi(status) : 200),
-	    usec(0), tusec(0), minusec(0), tminusec(0), maxusec(0), tmaxusec(0),
-	    count(0), tcount(0), err(0), terr(0) {
+	    sts(status ? (ushort)ttoi(status) : 200), usec(0), tusec(0),
+	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0), count(0),
+	    tcount(0), err(0), terr(0) {
 	    for (uint i = 0; i < cmd.size(); i++)
 		cmd[i] = (char)tolower(cmd[i]);
 	}
