@@ -45,7 +45,7 @@ public:
 
     static bool init(const tchar *host, uint maxthread, ulong maxuser,
 	bool randuser, uint timeout, long loops, const tchar *file,
-	const tchar *bodyfile, ulong bodycachesz, bool all, int fcnt);
+	const tchar *bodyfile, ulong cachesz, bool all, int fcnt);
     static void print(tostream &os, usec_t last);
     static ulong working(void) { return threads; }
     static void reset(bool all = false);
@@ -58,7 +58,7 @@ private:
 	LoadCmd(const tchar *comment, const tchar *command, const tchar
 	    *argument, const tchar *status = NULL): cmt(comment), cmd(command),
 	    arg(argument ? argument : T("")),
-	    sts(status ? (ushort)ttoi(status) : 200), usec(0), tusec(0),
+	    sts((ushort)(status ? ttoi(status) : 200)), usec(0), tusec(0),
 	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0), count(0),
 	    tcount(0), err(0), terr(0) {
 	    for (uint i = 0; i < cmd.size(); i++)
@@ -115,7 +115,7 @@ private:
 
     int onStart(void);
     static bool expand(tchar *str, const attrmap &amap = vars);
-    static char *read(uint index, usec_t &iousec);
+    static char *read(uint idx, usec_t &iousec);
     static void add(const tchar *file);
     static uint next(void);
 };
@@ -167,10 +167,9 @@ bool SMTPLoad::expand(tchar *str, const attrmap &amap) {
     return true;
 }
 
-bool SMTPLoad::init(const tchar *host, uint maxthread,
-    ulong maxuser, bool randuser, uint timeout, long loops,
-    const tchar *file, const tchar *bodyfile, ulong cachesz, bool all,
-    int fcnt) {
+bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
+    bool randuser, uint timeout, long loops, const tchar *file,
+    const tchar *bodyfile, ulong cachesz, bool all, int fcnt) {
     Sockaddr addr;
     tchar buf[1024];
     const tchar *cmt, *cmd, *arg = NULL, *status = NULL;
@@ -200,7 +199,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread,
 	if ((dir = opendir(tchartoachar(bodyfile))) != NULL) {
 	    struct dirent *ent;
 
-	    while ((ent = readdir(dir)) != NULL)
+	    while (readdir(dir) != NULL)
 		bodycnt++;
 	    rewinddir(dir);
 	    while ((ent = readdir(dir)) != NULL) {
@@ -567,16 +566,16 @@ inline float round(ulong count, ulong div) {
     return div ? (float)count / ((float)div * 1.0f) : 0;
 }
 
-void SMTPLoad::print(tostream &out, usec_t last) {
+void SMTPLoad::print(tostream &os, usec_t last) {
     tchar buf[32];
     LoadCmd *cmd;
     vector<LoadCmd *>::const_iterator it;
     ulong lusec = (ulong)(uticks() - last);
     ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0, calls = 0;
-    bufferstream<tchar> os;
+    bufferstream<tchar> bs;
 
-    os << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
+    bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
     for (it = cmds.begin(); it != cmds.end(); ++it) {
 	cmd = *it;
@@ -596,7 +595,7 @@ void SMTPLoad::print(tostream &out, usec_t last) {
 	if (cmd->tmaxusec > tmaxusec)
 	    tmaxusec = cmd->tmaxusec;
 	tsprintf(buf, T("%-7s"), cmd->cmd.c_str());
-	os << buf << format(round(cmd->count, lusec) * 1000000) <<
+	bs << buf << format(round(cmd->count, lusec) * 1000000) <<
 	    format(round(cmd->usec, cmd->count) / 1000) <<
 	    format(cmd->maxusec / 1000) << format(cmd->err) <<
 	    format(round(cmd->tcount, tusec) * 1000000) <<
@@ -605,19 +604,19 @@ void SMTPLoad::print(tostream &out, usec_t last) {
 	    format(cmd->tmaxusec / 1000) << endl;
     }
     lock.unlock();
-    os << T("ALL    ") << format(round(count, lusec) * 1000000) <<
+    bs << T("ALL    ") << format(round(count, lusec) * 1000000) <<
 	format(round(usec, count) / 1000) <<
 	format(maxusec / 1000) << format(err) <<
 	format(round(tcount, tusec) * 1000000) <<
 	format(round(tusec, tcount) / 1000) << format(terr) <<
 	format(tminusec / 1000) << format(tmaxusec / 1000) << endl;
-    os << T("AVG/TOT") << format(round(ops, lusec) * 1000000) <<
+    bs << T("AVG/TOT") << format(round(ops, lusec) * 1000000) <<
 	format(round(usec, ops) / 1000) << format(maxusec / 1000) <<
 	format(err) << format(round(tops, tusec) * 1000000) <<
 	format(round(tusec, tops) / 1000) << format(terr) <<
 	format(tminusec / 1000) << format(tmaxusec / 1000) << endl << endl;
-    out.write(os.str(), os.pcount());
-    out.flush();
+    os.write(bs.str(), bs.pcount());
+    os.flush();
 }
 
 void SMTPLoad::reset(bool all) {

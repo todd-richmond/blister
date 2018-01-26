@@ -112,8 +112,7 @@ bool Config::get(const tchar *attr, bool def, const tchar *sect) const {
     if (!val)
 	return def;
 
-    const tstring &s(expand(val));
-    tchar c = (tchar)totlower(s[0]);
+    tchar c = (tchar)totlower(expand(val)[0]);
 
     return c == 't' || c == 'y' || c == '1';
 }
@@ -145,9 +144,7 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
     const tchar *key = keystr(attr, sect);
 
     it = amap.find(key);
-    if (it == amap.end()) {
-	amap.insert(make_pair(tstrdup(key), new Value(val, tstrlen(val))));
-    } else {
+    if (it != amap.end()) {
 	Value *value = it->second;
 
 	if (append) {
@@ -164,8 +161,9 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
 	    val = _buf.c_str();
 	}
 	delete value;
-	it->second = new Value(val, tstrlen(val));
+	amap.erase(it);
     }
+    amap.insert(make_pair(tstrdup(key), new Value(val, tstrlen(val))));
 }
 
 void Config::setv(const tchar *attr1, const tchar *val1, ...) {
@@ -242,10 +240,11 @@ bool Config::parse(tistream &is) {
 			attr = attr.substr(0, sz - 1);
 			trim(attr);
 			sz = attr.size();
-		    	break;
+			break;
 		    }
 		} else {
-		    attr = attr.substr(0, sz - 1) + s;
+		    attr.resize(sz - 1);
+		    attr += s;
 		    sz = attr.size();
 		}
 	    }

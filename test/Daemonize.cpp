@@ -18,7 +18,7 @@
 #include "stdapi.h"
 #include "Service.h"
 
-int tmain(int argc, tchar *argv[]) {
+int tmain(int argc, const tchar *argv[]) {
     WatchDaemon wd(argc, argv);
 
     return wd.execute(argc, argv);

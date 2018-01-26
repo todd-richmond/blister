@@ -77,7 +77,7 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
 
 bool HTTPDaemonSocket::paused = false;
 
-int tmain(int argc, tchar *argv[]) {
+int tmain(int argc, const tchar *argv[]) {
     HTTPDaemon hd(T("httpd"), T("Test HTTP Server"));
 
     return hd.execute(argc, argv);

@@ -33,14 +33,12 @@ const int MAXREAD = 12 * 1024;
 class EchoTest: public Dispatcher {
 public:
     EchoTest(): Dispatcher(cfg) {}
-    virtual ~EchoTest() {}
 
     class EchoClientSocket: public DispatchClientSocket {
     public:
 	EchoClientSocket(EchoTest &es, const Sockaddr &a, ulong t, ulong w):
 	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0), tmt(t),
 	    wait(w) {}
-	virtual ~EchoClientSocket() {}
 
 	virtual void start(ulong msec) { timeout(start, msec); }
 
@@ -96,7 +94,7 @@ public:
     };
 
     bool listen(const Sockaddr &sa, ulong timeout);
-    void connect(const Sockaddr &sa, uint count, ulong delay, ulong timeout,
+    void connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
 	ulong wait);
 
 private:
@@ -252,7 +250,7 @@ void EchoTest::EchoServerSocket::output() {
 	erase();
 	return;
     }
-    if ((len = write((char *)buf + out, (uint)(in - out))) < 0) {
+    if ((len = write(buf + out, (uint)(in - out))) < 0) {
 	dloge(T("server write failed:"), errstr());
 	erase();
 	return;

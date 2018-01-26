@@ -675,16 +675,16 @@ bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
     uint u;
 
     for (u = 0; u < sz; u++)
-    	fds[u].events = POLLIN;
+	fds[u].events = POLLIN;
     iset.clear();
     eset.clear();
     ret = poll(fds, sz, (int)msec);
     if (ret <= 0)
 	return ret == 0 || (!msec && errno == EINTR);
     for (u = 0; u < sz; u++) {
-    	if (fds[u].revents & POLLIN)
+	if (fds[u].revents & POLLIN)
 	    iset.set(fds[u].fd);
-    	if (fds[u].revents & (POLLERR | POLLHUP))
+	if (fds[u].revents & (POLLERR | POLLHUP))
 	    eset.set(fds[u].fd);
     }
     return true;
@@ -708,16 +708,16 @@ bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
     uint u;
 
     for (u = 0; u < sz; u++)
-    	fds[u].events = POLLOUT;
+	fds[u].events = POLLOUT;
     oset.clear();
     eset.clear();
     ret = poll(fds, sz, (int)msec);
     if (ret <= 0)
 	return ret == 0 || (!msec && errno == EINTR);
     for (u = 0; u < sz; u++) {
-    	if (fds[u].revents & POLLOUT)
+	if (fds[u].revents & POLLOUT)
 	    oset.set(fds[u].fd);
-    	else if (fds[u].revents & (POLLERR | POLLHUP))
+	else if (fds[u].revents & (POLLERR | POLLHUP))
 	    eset.set(fds[u].fd);
     }
     return true;
@@ -743,7 +743,7 @@ bool SocketSet::iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
     uint u;
 
     for (u = 0; u < sz; u++)
-    	fds[u].events = POLLIN | POLLOUT;
+	fds[u].events = POLLIN | POLLOUT;
     iset.clear();
     oset.clear();
     eset.clear();
@@ -751,11 +751,11 @@ bool SocketSet::iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
     if (ret <= 0)
 	return ret == 0 || (!msec && interrupted(sockerrno()));
     for (u = 0; u < sz; u++) {
-    	if (fds[u].revents & POLLIN)
+	if (fds[u].revents & POLLIN)
 	    iset.set(fds[u].fd);
-    	if (fds[u].revents & POLLOUT)
+	if (fds[u].revents & POLLOUT)
 	    oset.set(fds[u].fd);
-    	if (fds[u].revents & (POLLERR | POLLHUP))
+	if (fds[u].revents & (POLLERR | POLLHUP))
 	    eset.set(fds[u].fd);
     }
     return true;
@@ -790,7 +790,7 @@ bool SocketSet::iopoll(const SocketSet &rset, SocketSet &iset,
     bool ro = true;
 
     for (u = 0; u < rset.sz; u++)
-    	rset.fds[u].events = POLLIN;
+	rset.fds[u].events = POLLIN;
     for (u = 0; u < wset.sz; u++) {
 	for (uu = 0; uu < rset.sz; uu++) {
 	    if (ro && rset[uu] == wset[u]) {

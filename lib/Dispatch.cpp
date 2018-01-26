@@ -241,13 +241,13 @@ int Dispatcher::onStart() {
 		    if (evt & (FD_CONNECT | FD_WRITE)) {
 			if (ds->msg == DispatchNone)
 			    ds->msg = DispatchWrite;
-		    	else
+			else
 			    ds->flags |= DSP_Writeable;
 		    }
 		    if (evt & FD_CLOSE) {
 			if (ds->msg == DispatchNone)
 			    ds->msg = DispatchClose;
-		    	else
+			else
 			    ds->flags |= DSP_Closeable;
 		    }
 		    if (ready(*ds, ds->msg == DispatchAccept))
@@ -334,8 +334,6 @@ int Dispatcher::onStart() {
 #elif defined(DSP_EPOLL)
     evtfd = epoll_create(1024);
 #elif defined(DSP_KQUEUE)
-    timespec ts;
-
     evtfd = kqueue();
     // ensure kqueue functions properly
     EV_SET(&evts[0], -1, EVFILT_READ, EV_ADD, 0, 0, NULL);
@@ -445,8 +443,10 @@ int Dispatcher::onStart() {
 	    if ((nevts = epoll_wait(evtfd, evts, MAX_EVENTS, (int)msec)) == -1)
 		nevts = 0;
 #elif defined(DSP_KQUEUE)
-	    ts.tv_sec = msec / 1000;
-	    ts.tv_nsec = (msec % 1000) * 1000000;
+	    timespec ts = {
+		(long)(msec / 1000), (long)((msec % 1000) * 1000000)
+	    };
+
 	    if ((nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, msec ==
 		SOCK_INFINITE ? NULL : &ts)) == -1)
 		nevts = 0;
@@ -697,9 +697,9 @@ bool Dispatcher::start(uint mthreads, uint stack) {
     return !shutdown;
 }
 
-void Dispatcher::stop() {
+void Dispatcher::onStop() {
     if (shutdown)
-    	return;
+	return;
     lock.lock();
     shutdown = true;
     wakeup(0);
@@ -767,10 +767,10 @@ void Dispatcher::wakeup(ulong msec) {
 	    RETRY(eventfd_write(wfd, inc));
 #elif defined(DSP_KQUEUE)
 	    event_t evt;
-	    timespec ts;
+	    timespec ts = {
+		(long)(msec / 1000), (long)((msec % 1000) * 1000000)
+	    };
 
-	    ts.tv_sec = msec / 1000;
-	    ts.tv_nsec = (msec % 1000) * 1000000;
 	    EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, 0, NULL);
 	    RETRY(kevent(evtfd, &evt, 1, NULL, 0, &ts));
 #endif

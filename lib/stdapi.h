@@ -965,7 +965,8 @@ __no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const char
     return ret;
 }
 
-__no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const wchar *s) {
+__no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const wchar
+    *s) {
     size_t ret = 0;
 
     while (*s)

@@ -67,14 +67,14 @@ protected:
     virtual void get(bool head = false);
     virtual void post(void) { error(501); }
     // call at beginning of PUT or POST unless all body data read
-    virtual void postpre(DispatchObjCB cb) { ready(cb, rto); }
-    // allow subclasses to allocate their own postdata buffers. subclasses
-    // must set postdata to NULL in their destructor to prevent ~HTTPServer
-    // from freeing this buffer incorrectly
+    virtual void postpre(DispatchObjCB cb) { ready(cb); }
+    // allow subclasses to allocate their own postdata buffers
+    // subclasses must reset postdata to NULL in their destructor to prevent
+    // it from freeing buffer incorrectly
     virtual void postdata_free(void);
     virtual void postdata_grow(DispatchObjCB cb, ulong keepsize, ulong newsize);
     virtual void put(void) { error(501); }
-    // Called when reply() no longer needs its data
+    // Called when reply() no longer needs its buffer data
     virtual void replydone(DispatchObjCB cb) { ready(cb); }
     DSP_DECLARE(HTTPServerSocket, done);
     DSP_DECLARE(HTTPServerSocket, send);

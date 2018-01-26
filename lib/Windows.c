@@ -623,7 +623,7 @@ int wlink(const wchar *from, const wchar *to) {
     }
     if (BackupWrite(hdl, (LPBYTE)to, sid.Size.LowPart,
 	&out, FALSE, FALSE, &lpContext))
-    	ret = 0;
+	ret = 0;
     else
 	_dosmaperr(GetLastError());
     BackupWrite(hdl, NULL, 0, &out, TRUE, FALSE, &lpContext);
@@ -1000,15 +1000,15 @@ int sigsend(idtype_t type, id_t id, int sig) {
     int ret;
 
     if (type != P_PID && type != P_PPID && type != P_SID && type != P_ALL)
-    	return -1;
+	return -1;
     if (id < 0)
-    	id *= -1;
+	id *= -1;
     if (sig == SIGINT || sig == SIGTERM)
 	ret = GenerateConsoleCtrlEvent(CTRL_C_EVENT, id);
     else if (sig == SIGBREAK)
 	ret = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, id);
     else
-    	ret = 0;
+	ret = 0;
     return ret ? 0 : -1;
 }
 

@@ -21,47 +21,48 @@ CMakeFiles
 cmake_install.cmake
 
 # Compiled Object files
-*.slo
-*.lo
 *.o
+*.lo
 *.obj
+*.slo
 
 # Compiled Dynamic libraries
-*.so
-*.dylib
 *.dll
+*.dylib
+*.so
 
 # Compiled Static libraries
-*.lai
-*.la
 *.a
+*.la
+*.lai
 *.lib
 
 # Executables
+*.app
 *.exe
 *.out
-*.app
 
 # Misc
+*.cbp
+*.db
+*.db-shm
+*.db-wal
 *.gch
+*.ib_pdb_index
+*.idb
+*.ipch
+*.ilk
+*.lastcodeanalysissucceeded
+*.log
+*.opendb
+*.pdb
 *.swp
+*.tlog
+*.xml
+.idea
 .ruby-version
 cov-int
 xcuserdata
-*.ipch
-*.db
-*.opendb
-*.db-shm
-*.db-wal
-/lib/Win32/Debug/Blister/Blister.tlog
-*.xml
-*.log
-*.ib_pdb_index
-*.idb
-*.pdb
-*.tlog
-/lib/Win32/Debug/Blister/Version.res
-*.lastcodeanalysissucceeded
-/lib/x64/Debug/Blister/Version.res
-/test/Win32/Debug
-*.ilk
+Win32
+x64
+

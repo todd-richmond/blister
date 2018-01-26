@@ -24,7 +24,6 @@
 #include <sys/sysctl.h>
 #include <mach/task.h>
 #include <mach/mach_init.h>
-#include <mach/mach_time.h>
 
 #ifdef APPLE_NO_CLOCK_GETTIME
 int clock_gettime(int id, struct timespec *ts) {

@@ -101,8 +101,13 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 #endif
 	}
     } else {
-        if (!write(fd, buf, (uint)(chars * sizeof (tchar))) && file[0] != '>')
-	    len += (ulong)(chars * sizeof (tchar));
+        uint charsz = (uint)(chars * sizeof (tchar));
+	uint out = (uint)write(fd, buf, charsz);
+
+	if (out != charsz && out != 0)
+	    ftruncate(fd, (off_t)len);
+	else if (file[0] != '>')
+	    len += (ulong)charsz;
     }
 }
 
@@ -510,7 +515,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 
 	    smtp.helo();
 	    if (ss.find_first_of('@') == ss.npos) {
-	    	ss += '@';
+		ss += '@';
 		ss += Sockaddr::hostname();
 	    }
 
@@ -585,6 +590,50 @@ void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {
 	mailhost = host;
 	mailto = to;
     }
+}
+
+tostream &Log::quote(tostream &os, const tchar *s) {
+    const tchar *p;
+    static const uchar needquote[128] = {
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // DLE - US
+	1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // SPACE - /
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0 - ?
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // @ - O
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,  // P - _
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // ` - o
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
+    };
+
+    for (p = s; *p; p++) {
+	if ((ushort)*p > 127 || needquote[(uchar)*p]) {
+	    os << '"';
+	    for (p = s; *p; p++) {
+		tchar c = *p;
+
+		if (c == '"') {
+		    os << '\\' << '"';
+		} else if (c == '\\') {
+		    os << '\\' << '\\';
+		} else if (c == '\n') {
+		    os << '\\' << 'n';
+		} else if (c == '\r') {
+		    os << '\\' << 'r';
+		} else if ((uchar)c < ' ' && c != '\t') {
+		    tchar tmp[8];
+
+		    tsprintf(tmp, T("\\%03o"), (uint)c);
+		    os << tmp;
+		} else {
+		    os << c;
+		}
+	    }
+	    os << '"';
+	    return os;
+	}
+    }
+    os.write(s, p - s);
+    return os;
 }
 
 void Log::set(const Config &cfg, const tchar *sect) {

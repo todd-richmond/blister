@@ -321,10 +321,10 @@ void Service::handle(ulong sig) {
 	update(Running);
 	break;
       case SERVICE_CONTROL_SIGUSR1:
-      	onSigusr1();
+  	onSigusr1();
 	break;
       case SERVICE_CONTROL_SIGUSR2:
-      	onSigusr2();
+  	onSigusr2();
 	break;
       default:
 	onSignal(sig);
@@ -842,11 +842,11 @@ int Service::ctrl_handler(void *) {
     sigaddset(&sigs, SIGUSR1);
     sigaddset(&sigs, SIGUSR2);
     do {
-	char buf[8];
+	tchar buf[16];
 	const tchar *str;
 
 	sig = 0;
-    	sigwait(&sigs, &sig);
+	sigwait(&sigs, &sig);
 	switch (sig) {
 	case SIGABRT:
 	    str = T("abort");
@@ -876,7 +876,7 @@ int Service::ctrl_handler(void *) {
 	    str = T("SIGUSR2");
 	    break;
 	default:
-	    sprintf(buf, T("%i"), sig);
+	    tsprintf(buf, T("%i"), sig);
 	    str = buf;
 	    break;
 	};
@@ -899,7 +899,7 @@ int Service::run(int argc, const tchar * const *argv) {
     }
     if (!console) {
 	int fd;
-    	pid_t fpid = fork();
+	pid_t fpid = fork();
 
 	dlog.file(Log::Info, service->logfile.c_str());
 	if (fpid > 0) {
@@ -942,7 +942,7 @@ bool Service::install(const char *file, const char *desc,
     const char * const *depend, bool manual) {
     (void)desc; (void)depend; (void)manual;
     if (!file)
-    	file = path.c_str();
+	file = path.c_str();
     return chown(file, getuid(), getgid()) == -1 &&
 	chmod(file, S_ISUID|S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) != -1;
 }
@@ -1069,7 +1069,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     Service::Status sts;
 
 #ifndef _WIN32
-    console = isatty(0);
+    console = isatty(0) != 0;
     if (getuid() != geteuid() && getuid() != 0) {
 	tcout << name << T(": uid permission denied") << endl;
 	return 1;
@@ -1154,8 +1154,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	    T("\tuninstall") << endl << T("\tversion") << endl << endl;
     } else if (tstreq(cmd, T("pause")) || tstreq(cmd, T("suspend"))) {
 	ret = !pause();
-    } else if (tstreq(cmd, T("refresh")) ||
-	tstreq(T("reload"), cmd)) {
+    } else if (tstreq(cmd, T("refresh")) || tstreq(cmd, T("reload"))) {
 	ret = !refresh();
     } else if (tstreq(cmd, T("condrestart"))) {
 	ret = !stop(false);
@@ -1168,7 +1167,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	ret = !start(ac, av);
     } else if (tstreq(cmd, T("continue")) || tstreq(cmd, T("resume"))) {
 	ret = !resume();
-    } else if (tstreq(cmd, T("sigusr1")) || tstreq(cmd, T("roll")) ||
+    } else if (tstreq(cmd, T("roll")) || tstreq(cmd, T("sigusr1")) ||
 	tstreq(cmd, T("rollover"))) {
 	ret = !sigusr1();
     } else if (tstreq(cmd, T("sigusr2"))) {
@@ -1193,7 +1192,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     } else if (tstreq(cmd, T("version"))) {
 	tcout << ver << endl;
     } else {
-    	ret = run(ac, av);
+	ret = run(ac, av);
     }
     if (ret && errnum)
 	tcerr << name << T(": ") << errstr() << endl;

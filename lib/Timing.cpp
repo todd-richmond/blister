@@ -42,11 +42,11 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 	    break;
     }
     lck.lock();
-    if ((it = tmap.find(key)) == tmap.end()) {
+    if ((it = tmap.find(key.hash())) == tmap.end()) {
 	lck.unlock();
 	stats = new Stats(key);
 	lck.lock();
-	if ((it = tmap.find(key)) == tmap.end()) {
+	if ((it = tmap.find(key.hash())) == tmap.end()) {
 	    tmap[key] = stats;
 	} else {
 	    delete stats;
@@ -124,7 +124,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 
 	    for (u = 0; u <= begin; u++)
 		sum += stats->cnts[u];
-            if (stats->cnt >= 10000000UL)
+	    if (stats->cnt >= 10000000UL)
 		tsprintf(cbuf, T("%4lum"), stats->cnt / 1000000UL);
 	    else if (stats->cnt >= 10000UL)
 		tsprintf(cbuf, T("%4luk"), stats->cnt / 1000UL);
@@ -178,7 +178,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 
 void Timing::erase(const TimingKey &key) {
     FastSpinLocker lkr(lck);
-    timingmap::iterator it = tmap.find(key);
+    timingmap::iterator it = tmap.find(key.hash());
 
     if (it != tmap.end()) {
 	Stats *stats = it->second;

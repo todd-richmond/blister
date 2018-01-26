@@ -403,7 +403,7 @@ public:
     SocketSet(const SocketSet &ss): fds(NULL), maxsz(0), sz(0) { *this = ss; }
     ~SocketSet() { delete [] fds; }
 
-    SocketSet &operator =(const SocketSet &r);
+    SocketSet &operator =(const SocketSet &ss);
     template<class C> socket_t operator[](C at) const {
 	return SSET_FD((uint)at);
     }

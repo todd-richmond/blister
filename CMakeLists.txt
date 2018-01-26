@@ -7,7 +7,7 @@ find_program(CMAKE_CPPCHECK NAMES cppcheck PATHS ENV PATH)
 if(CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE Debug)
 endif()
-# set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_MACOSX_RPATH 1)
 
 # CXX CMAKE_BUILD_TYPE flags are not always set

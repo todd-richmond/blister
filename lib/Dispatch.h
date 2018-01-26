@@ -119,7 +119,7 @@ public:
     msec_t expires(void) const { return due; }
     ulong timeout(void) const { return to; }
 
-    void timeout(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS);
+    void timeout(DispatchObjCB cb, ulong msec = DSP_PREVIOUS);
     virtual void cancel(void);
 
 protected:
@@ -141,11 +141,11 @@ private:
 // handle socket events
 class DispatchSocket: public DispatchTimer, public Socket {
 public:
-    DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =
+    explicit DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =
 	DSP_NEVER);
     DispatchSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER);
-    DispatchSocket(DispatchObj &parent, int type = SOCK_STREAM, ulong msec =
-	DSP_NEVER);
+    explicit DispatchSocket(DispatchObj &parent, int type = SOCK_STREAM, ulong
+	msec = DSP_NEVER);
     DispatchSocket(DispatchObj &parent, const Socket &sock, ulong msec =
 	DSP_NEVER);
     virtual ~DispatchSocket() { close(); }
@@ -165,10 +165,10 @@ protected:
 
 class DispatchIOSocket: public DispatchSocket {
 public:
-    DispatchIOSocket(Dispatcher &d, int type = SOCK_STREAM,
-    	ulong msec = DSP_NEVER): DispatchSocket(d, type, msec) {}
-    DispatchIOSocket(DispatchObj &parent, int type = SOCK_STREAM,
-    	ulong msec = DSP_NEVER): DispatchSocket(parent, type, msec) {}
+    explicit DispatchIOSocket(Dispatcher &d, int type = SOCK_STREAM,
+	ulong msec = DSP_NEVER): DispatchSocket(d, type, msec) {}
+    explicit DispatchIOSocket(DispatchObj &parent, int type = SOCK_STREAM,
+	ulong msec = DSP_NEVER): DispatchSocket(parent, type, msec) {}
     DispatchIOSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER):
 	DispatchSocket(d, sock, msec) {}
     DispatchIOSocket(DispatchObj &parent, const Socket &sock, ulong msec =
@@ -190,9 +190,9 @@ public:
 
 class DispatchClientSocket: public DispatchIOSocket {
 public:
-    DispatchClientSocket(Dispatcher &d, int type = SOCK_STREAM,
+    explicit DispatchClientSocket(Dispatcher &d, int type = SOCK_STREAM,
 	ulong msec = DSP_NEVER): DispatchIOSocket(d, type, msec) {}
-    DispatchClientSocket(DispatchObj &parent, int type = SOCK_STREAM,
+    explicit DispatchClientSocket(DispatchObj &parent, int type = SOCK_STREAM,
 	ulong msec = DSP_NEVER): DispatchIOSocket(parent, type, msec) {}
     DispatchClientSocket(Dispatcher &d, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(d, sock, msec) {}
@@ -222,11 +222,11 @@ public:
     explicit DispatchListenSocket(Dispatcher &d, int type = SOCK_STREAM):
 	DispatchSocket(d, type) {}
     DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
-	int type = SOCK_STREAM, bool reuse = true, int queue = SOCK_BACKLOG,
+	int type = SOCK_STREAM, bool reuse = true, int backlog = SOCK_BACKLOG,
 	DispatchObjCB cb = connection);
 
     const Sockaddr address(void) { return addr; }
-    bool listen(const Sockaddr &addr, bool reuse = true, int queue =
+    bool listen(const Sockaddr &addr, bool reuse = true, int backlog =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL);
     void relisten() { poll(NULL, DSP_PREVIOUS, DispatchAccept); }
 
@@ -247,10 +247,10 @@ public:
     const Config &config(void) const { return cfg; }
 
     bool start(uint maxthreads = 100, uint stacksz = 0);
-    void stop(void);
 
 protected:
     virtual int onStart(void);
+    virtual void onStop(void);
 
     const Config &cfg;
 
@@ -405,14 +405,14 @@ public:
     explicit SimpleDispatchListenSocket(D &d, int type = SOCK_STREAM):
 	DispatchListenSocket(d, type) {}
 
-    bool listen(const Sockaddr &sa, bool enable = true, int backlog =
-	SOCK_BACKLOG) {
+    bool listen(const Sockaddr &sa, bool enable = true) {
 	const Config &cfg = dspr.config();
+	int backlog = cfg.get(T("socket.backlog"), SOCK_BACKLOG, S::section());
+	bool reuse = cfg.get(T("socket.reuse"), true, S::section());
 
 	if (!cfg.get(T("enable"), enable, S::section()))
 	    return true;
-	backlog = cfg.get(T("backlog"), backlog, S::section());
-	if (DispatchListenSocket::listen(sa, true, backlog)) {
+	if (DispatchListenSocket::listen(sa, reuse, backlog)) {
 	    dlogi(Log::mod(S::section()), Log::cmd(T("listen")),
                 Log::kv(T("addr"), sa.str()));
 	    return true;
@@ -421,16 +421,15 @@ public:
             Log::kv(T("addr"), sa.str()), Log::error(errstr()));
 	return false;
     }
-    bool listen(const tchar *host = NULL, bool enable = true, int backlog =
-	SOCK_BACKLOG) {
+    bool listen(const tchar *host = NULL, bool enable = true) {
 	tstring s(dspr.config().get(T("host"), host, S::section()));
 
-	return listen(Sockaddr(s.c_str()), enable, backlog);
+	return listen(Sockaddr(s.c_str()), enable);
     }
 
 protected:
     virtual void onAccept(Socket &sock) {
-	S *s = new S(static_cast<D &>(dspr), sock);
+	S *s = new(nothrow) S(static_cast<D &>(dspr), sock);
 
 	if (s == NULL) {
 	    sock.close();

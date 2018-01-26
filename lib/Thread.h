@@ -68,7 +68,7 @@ typedef pthread_t thread_t;
 typedef pthread_t thread_id_t;
 
 #define INFINITE		(ulong)-1
-#define THREAD_EQUAL(x, y)	pthread_equal(x, y)
+#define THREAD_EQUAL(x, y)	(pthread_equal(x, y) != 0)
 #define THREAD_FUNC		void *
 #define THREAD_HDL()		pthread_self()
 #define THREAD_ID()		pthread_self()
@@ -260,8 +260,9 @@ public:
     ThreadLocal() { tls_init(key); }
     ~ThreadLocal() { tls_free(key); }
 
-    C operator =(C c) const { set(c); return c; }
+    ThreadLocal &operator =(C c) { set(c); return *this; }
     operator bool() const { return tls_get(key) != NULL; }
+    operator C() const { return (C)tls_get(key); }
 
     C get(void) const { return (C)tls_get(key); }
     void set(const C c) const { tls_set(key, c); }
@@ -620,10 +621,10 @@ public:
 	if (msec == INFINITE) {
 	    return semaphore_wait(hdl) == KERN_SUCCESS;
 	} else {
-	    mach_timespec ts;
+	    mach_timespec ts = {
+		(uint) (msec / 1000), ((clock_res_t) msec % 1000) * 1000000
+	    };
 
-	    ts.tv_sec = (uint)(msec / 1000);
-	    ts.tv_nsec = (msec % 1000) * 1000000;
 	    return semaphore_timedwait(hdl, ts) == KERN_SUCCESS;
 	}
     }
@@ -937,6 +938,7 @@ template<class C>
 class TSNumber: nocopy {
 public:
     explicit TSNumber(C init = 0) { c = init; }
+    TSNumber(const TSNumber<C> &init) { c = init; }
 
     operator C() const { TSLocker lkr(lck); return c; }
     template<class N> bool operator ==(N n) const { TSLocker lkr(lck); return c == n; }
@@ -945,7 +947,10 @@ public:
     C operator ++(int) { TSLocker lkr(lck); return c++; }
     C operator --(void) { TSLocker lkr(lck); return --c; }
     C operator --(int) { TSLocker lkr(lck); return c--; }
-    template<class N> C operator =(N n) { TSLocker lkr(lck); return c = (C)n; }
+    template<class N> TSNumber<C> &operator =(const N &n) {
+	TSLocker lkr(lck); c = (C)n; return *this;
+    }
+    TSNumber<C> &operator =(const TSNumber<C> &n) { return operator=((C)n); }
     template<class N> C operator +=(N n) { TSLocker lkr(lck); return c += (C)n; }
     template<class N> C operator -=(N n) { TSLocker lkr(lck); return c -= (C)n; }
     template<class N> C operator *=(N n) { TSLocker lkr(lck); return c *= (C)n; }
@@ -982,7 +987,7 @@ protected:
     mutable SpinLock lck;
     typedef FastSpinLocker TSLocker;
 
-    C *operator &();
+    C *operator &();	// NOLINT
 };
 
 /* Last-in-first-out queue useful for thread pools */

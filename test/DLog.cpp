@@ -66,15 +66,15 @@ int tmain(int argc, tchar *argv[]) {
 		break;
 	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stderr");
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
-	    	if ((alvl = Log::str2enum(argv[++i])) == Log::None)
+		if ((alvl = Log::str2enum(argv[++i])) == Log::None)
 		    break;
 	    }
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	cnt = tstrtoul(argv[++i], NULL, 10);
+		cnt = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	sz = tstrtoul(argv[++i], NULL, 10);
+		sz = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	tm = tstrtoul(argv[++i], NULL, 10);
+		tm = tstrtoul(argv[++i], NULL, 10);
 	    dlog.alert(alvl, file, cnt, sz, tm);
 	} else if (!tstricmp(argv[i], T("-b")) || !tstricmp(argv[i],
 	    T("--buffer"))) {
@@ -115,15 +115,15 @@ int tmain(int argc, tchar *argv[]) {
 		break;
 	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stdout");
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
-	    	if ((flvl = Log::str2enum(argv[++i])) == Log::None)
+		if ((flvl = Log::str2enum(argv[++i])) == Log::None)
 		    break;
 	    }
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		cnt = (uint)ttoi(argv[++i]);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	sz = tstrtoul(argv[++i], NULL, 10);
+		sz = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-	    	tm = tstrtoul(argv[++i], NULL, 10);
+		tm = tstrtoul(argv[++i], NULL, 10);
 	    dlog.file(flvl, file, cnt, sz, tm);
 	} else if (!tstricmp(argv[i], T("-i")) || !tstricmp(argv[i],
 	    T("--input"))) {
@@ -159,7 +159,7 @@ int tmain(int argc, tchar *argv[]) {
 		break;
 	    to = argv[i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
-	    	if ((mlvl = Log::str2enum(argv[++i])) == Log::None)
+		if ((mlvl = Log::str2enum(argv[++i])) == Log::None)
 		    break;
 	    }
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
@@ -192,7 +192,7 @@ int tmain(int argc, tchar *argv[]) {
 	    Log::Level slvl = Log::Err;
 
 	    if (i + 1 < argc && argv[i + 1][0] != '-') {
-	    	if ((slvl = Log::str2enum(argv[++i])) == Log::None)
+		if ((slvl = Log::str2enum(argv[++i])) == Log::None)
 		    break;
 	    }
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
@@ -217,10 +217,10 @@ int tmain(int argc, tchar *argv[]) {
 	    dlog.setmp(false);
 	} else if (!tstricmp(argv[i], T("-w")) || !tstricmp(argv[i],
 	    T("--write"))) {
-	    log(lvl, argv[++i]);
+	    dlog.log(lvl, argv[++i]);
 	    out = true;
 	} else if (argv[i][0] != '-') {
-	    log(lvl, argv[i]);
+	    dlog.log(lvl, argv[i]);
 	    out = true;
 	} else {
 	    break;

@@ -129,7 +129,7 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 	    dlogd(T("mod=smtp action=disconnect"));
 	    return false;
 	}
-	sts = achartotstring(asts.c_str());
+	sts = astringtotstring(asts);
 	if (sts.length() < 3 || (sts[3] != '-' && sts[3] != ' ')) {
 	    dlogd(T("mod=smtp data=invalid"),
 		Log::kv(T("reply"), sts.c_str()));
@@ -576,7 +576,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		}
 		goto pass2done;
 	    }
-	    switch (c = addr[pos++]) {
+	    switch (addr[pos++]) {
 	    case ',':
 	    case '@':
 		if (!local_part.empty()) {
@@ -608,12 +608,13 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	case '.': {
 		bool saw_dot = (c == '.');
 		while (pos < addr.length() &&
-		       ((c = addr[pos]) == ' ' || (!saw_dot && c == '.'))) {
+		    ((c = addr[pos]) == ' ' || (!saw_dot && c == '.'))) {
 		    if (c == '.')
 			saw_dot = true;
 		    ++pos;
 		}
-		if (saw_dot || (!local_part.empty() && pos < addr.length() && addr[pos] != '@'))
+		if (saw_dot || (!local_part.empty() && pos < addr.length() &&
+		    addr[pos] != '@'))
 		    local_part += '.';
 	    }
 	    continue;
@@ -1096,7 +1097,7 @@ static inline void encode(const void *input, size_t len, void *output, size_t
     }
     if (n) {
 	char c1 = in[0];
-	char c2 = n == 1 ? '\0' : in[1];
+	char c2 = n == 1 ? (char)'\0' : in[1];
 
 	out[0] = ENC(c1 >> 2);
 	out[1] = ENC(((c1 << 4) & 060) | ((c2 >> 4) & 017));
@@ -1164,9 +1165,8 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
 
 bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     void *&output, size_t &outsz) {
-    const char *in = (const char *)input;
     char *out;
-    const char *p = in;
+    const char *p = input;
 
     outsz = 0;
     while (isspace(*p))
@@ -1186,7 +1186,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     file.erase();
     while (*p != '\r' && *p != '\n'&& !isspace(*p))
 	file.append(1, *p++);
-    sz -= (size_t)(p - in);
+    sz -= (size_t)(p - input);
     if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
 	return false;
     while (sz) {
@@ -1243,7 +1243,6 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 }
 
 bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
-    const char *in = (const char *)input;
     char *out;
     int out_byte = 0, out_bits = 0;
     static const uchar table[256] = {
@@ -1285,11 +1284,11 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
     if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
 	return false;
     while (sz > 0) {
-	int add_bits = table[(int)*in++];
+	int add_bits = table[(int)*input++];
 
 	sz--;
 	if (add_bits >= 64) {
-	    if (in[0] == '=' && in[1] == '=' && in[2] == '=')
+	    if (input[0] == '=' && input[1] == '=' && input[2] == '=')
 		break;
 	    else
 		continue;

@@ -265,13 +265,13 @@ bool Thread::priority(int pri) {
     struct sched_param sched;
 
     if (pthread_getschedparam(hdl, &policy, &sched))
-    	return false;
+	return false;
     mn = sched_get_priority_min(policy);
     mx = sched_get_priority_max(policy);
     if (pri < -20)
-    	pri = -20;
+	pri = -20;
     else if (pri > 20)
-    	pri = 20;
+	pri = 20;
     sched.sched_priority = (int)(mn + (mx * 1.0 - mn) / 41 * (pri + 20));
     return pthread_setschedparam(hdl, policy, &sched) == 0;
 #endif

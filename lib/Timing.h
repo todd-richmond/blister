@@ -102,6 +102,7 @@ public:
     TIMING_KEY(61) TIMING_KEY(62) TIMING_KEY(63) TIMING_KEY(64)
 
     __forceinline operator const tchar *(void) const { return key; }
+    __forceinline size_t hash(void) const { return operator size_t(); }
 
 private:
     const tchar *key;

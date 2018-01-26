@@ -87,50 +87,7 @@ public:
 	    bufferstream<tchar> buf;
 
 	    buf << val << '\0';
-	    return quote(os, buf.str());
-	}
-	static tostream &quote(tostream &os, const tchar *s) {
-	    const tchar *p;
-	    static const uchar needquote[128] = {
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
-		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // DLE - US
-		1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // SPACE - /
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0 - ?
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // @ - O
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,  // P - _
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // ` - o
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
-	    };
-
-	    for (p = s; *p; p++) {
-		if ((ushort)*p > 127 || needquote[(uchar)*p]) {
-		    os << '"';
-		    for (p = s; *p; p++) {
-			tchar c = *p;
-
-			if (c == '"') {
-			    os << '\\' << '"';
-			} else if (c == '\\') {
-			    os << '\\' << '\\';
-			} else if (c == '\n') {
-			    os << '\\' << 'n';
-			} else if (c == '\r') {
-			    os << '\\' << 'r';
-			} else if ((uchar)c < ' ' && c != '\t') {
-			    tchar tmp[8];
-
-			    tsprintf(tmp, T("\\%03o"), (uint)c);
-			    os << tmp;
-			} else {
-			    os << c;
-			}
-		    }
-		    os << '"';
-		    return os;
-		}
-	    }
-	    os.write(s, p - s);
-	    return os;
+	    return Log::quote(os, buf.str());
 	}
     };
 
@@ -194,6 +151,7 @@ public:
     void setmp(bool b = false);
     void start(void);
     void stop(void);
+    static tostream &quote(tostream &os, const tchar *s);
 
     template<class C> Log &operator <<(const C &c) {
         Tlsdata &tlsd(*tls);
@@ -330,8 +288,9 @@ private:
 	bool locked;
 	Level lvl;
 
-    	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m):
-	    gmt(false), mp(m), len(0), locked(false), lvl(dlvl), fd(-1) {
+	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m): cnt(0),
+	    gmt(false), mp(m), len(0), sec(0), sz(0), locked(false), lvl(dlvl),
+	    fd(-1) {
 	    set(dlvl, dfile, 3, 5 * 1024 * 1024, 0);
 	    enable = denable;
 	}
@@ -344,7 +303,6 @@ private:
 	const tchar *pathname(void) const { return path.c_str(); }
 
 	bool close(void);
-	void flush(void);
 	void lock(void);
 	void print(const tchar *buf, uint sz);
 	void print(const tstring &s) { print(s.c_str(), (uint)s.size()); }
@@ -404,13 +362,13 @@ template<> inline tostream &Log::KV<bool>::value(tostream &os) const {
     return os << (val ? 't' : 'f');
 }
 template<> inline tostream &Log::KV<const tchar *>::value(tostream &os) const {
-    return quote(os, val);
+    return Log::quote(os, val);
 }
 template<> inline tostream &Log::KV<tchar *>::value(tostream &os) const {
-    return quote(os, val);
+    return Log::quote(os, val);
 }
 template<> inline tostream &Log::KV<tstring>::value(tostream &os) const {
-    return quote(os, val.c_str());
+    return Log::quote(os, val.c_str());
 }
 template<> inline tostream &Log::KV<char>::value(tostream &os) const {
     return os << val;
