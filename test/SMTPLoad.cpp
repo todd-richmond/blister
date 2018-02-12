@@ -23,6 +23,7 @@
 #endif
 #include <ctype.h>
 #include <fcntl.h>
+#include <float.h>
 #include <fstream>
 #include <signal.h>
 #include <time.h>

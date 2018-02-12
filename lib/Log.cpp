@@ -104,8 +104,8 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
         uint charsz = (uint)(chars * sizeof (tchar));
 	uint out = (uint)write(fd, buf, charsz);
 
-	if (out != charsz && out != 0)
-	    ftruncate(fd, (off_t)len);
+	if (out != charsz && out != 0 && !ftruncate(fd, (off_t)len))
+            ;
 	else if (file[0] != '>')
 	    len += (ulong)charsz;
     }

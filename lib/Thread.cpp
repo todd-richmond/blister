@@ -79,6 +79,23 @@ Process Process::start(tchar *const *args, const int *fds) {
 
 #else
 #include <dlfcn.h>
+#include <fcntl.h>
+
+bool SharedSemaphore::open(const tchar *name, uint init, bool exclusive) {
+    int key = (int)(name ? stringhash(name) : IPC_PRIVATE);
+
+    close();
+    if ((hdl = semget(key, 1, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR)) ==
+	-1) {
+	if (exclusive)
+	    return false;
+    } else {
+	semctl(hdl, 0, SETVAL, init);
+	return true;
+    }
+    hdl = semget(key, 1, IPC_CREAT | S_IRUSR | S_IWUSR);
+    return hdl != -1;
+}
 #endif
 
 bool DLLibrary::open(const tchar *dll) {
@@ -461,6 +478,8 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 	for (i = groups.begin(); i != groups.end(); ++i) {
 	    tg = *i;
 	    tg->cvlck.lock();
+            if (THREAD_ISSELF(tg->master.id))
+		break;
 	    for (ii = tg->threads.begin(); ii != tg->threads.end(); ++ii) {
 		if (THREAD_ISSELF((*ii)->id))
 		    break;

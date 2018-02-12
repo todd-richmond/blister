@@ -24,6 +24,7 @@
 #include <winsvc.h>
 
 #else
+#include <signal.h>
 
 const int SERVICE_CONTROL_START = 0;
 const int SERVICE_CONTROL_PAUSE = 1;
@@ -51,6 +52,21 @@ public:
     enum Status { Error, Starting, Refreshing, Pausing, Paused, Resuming,
 	 Stopping, Running, Stopped };
 
+    class Timer: nocopy {
+    public:
+	explicit Timer(ulong msec = 0);
+	~Timer() { cancel(); }
+
+	void cancel();
+
+	static ulong dmsec;
+
+    private:
+#ifndef _WIN32
+	timer_t timer;
+#endif
+    };
+
     Service(const tchar *name, const tchar *host);
     explicit Service(const tchar *name, bool pauseable = false);
     virtual ~Service();
@@ -67,16 +83,17 @@ public:
     bool start(int argc, const tchar * const *argv);
     bool stop(bool fast = false) { return send(fast ? SERVICE_CONTROL_EXIT :
 	SERVICE_CONTROL_STOP); }
+    bool abort(void) { return send(SERVICE_CONTROL_ABORT); }
     bool pause(void) { return send(SERVICE_CONTROL_PAUSE); }
-    bool resume(void) { return send(SERVICE_CONTROL_CONTINUE); }
     bool refresh(void) { return send(SERVICE_CONTROL_REFRESH); }
+    bool resume(void) { return send(SERVICE_CONTROL_CONTINUE); }
     bool sigusr1(void) { return send(SERVICE_CONTROL_SIGUSR1); }
     bool sigusr2(void) { return send(SERVICE_CONTROL_SIGUSR2); }
-    bool abort(void) { return send(SERVICE_CONTROL_ABORT); }
     bool send(int sig);
 
     static void setsignal(bool abrt = false);
     static const tchar *status(Status status);
+    static void unsetsignal(void);
 
 protected:
     bool bPause;
@@ -101,15 +118,16 @@ protected:
 	(void)cmd; (void)argc; (void)argv;
 	return -1;
     }
-    virtual int onStart(int argc, const tchar * const *argv);
     virtual void onAbort(void) { tcerr << T("abnormal termination") << endl; }
-    virtual void onStop(bool fast = false) { (void)fast; }
     virtual void onPause(void) {}
     virtual bool onRefresh(void) { return true; }
     virtual void onResume(void) {}
     virtual void onSigusr1(void) {}
     virtual void onSigusr2(void) {}
     virtual void onSignal(ulong sig) { (void)sig; }
+    virtual int onStart(int argc, const tchar * const *argv);
+    virtual void onStop(bool fast) { (void)fast; }
+    virtual void onTimer(ulong timer);
     virtual bool update(Status status);
     static void null_handler(int sig);
     static int run(int argc = 0, const tchar * const *argv = NULL);
@@ -136,13 +154,16 @@ protected:
     static int __stdcall ctrl_handler(ulong sig);
     static long __stdcall exception_handler(_EXCEPTION_POINTERS *info);
     static void __stdcall service_handler(ulong sig);
+    static void __stdcall signal_handler(int sig);
     static void __stdcall srv_main(ulong argc, tchar **argv);
 #else
     Thread sigthread;
 
+    static void abort_handler(sigval arg);
     static int ctrl_handler(void *);
+    static void init_sigset(sigset_t &sigs);
+    static void signal_handler(int sig, struct siginfo *si, void *context);
 #endif
-    static void signal_handler(int sig);
 };
 
 #ifdef _WIN32
@@ -202,9 +223,14 @@ protected:
     virtual void onStop(bool fast);
     virtual void onSigusr1(void);
     virtual bool update(Status status);
+    static ulong addTimer(ulong msec = 0);
 
 private:
-    static void watch_handler(int sig);
+#ifdef _WIN32
+    static void __stdcall watch_handler(int sig);
+#else
+    static void watch_handler(int sig, struct siginfo *si, void *context);
+#endif
 };
 
 class WatchDaemon: public Daemon {

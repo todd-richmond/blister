@@ -713,21 +713,7 @@ public:
 	hdl = -1;
 	return h == -1 || semctl(h, 0, IPC_RMID) == 0;
     }
-    bool open(const tchar *name = NULL, uint init = 0, bool exclusive = false) {
-	int key = (int)(name ? stringhash(name) : IPC_PRIVATE);
-
-	close();
-	if ((hdl = semget(key, 1, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR)) ==
-	    -1) {
-	    if (exclusive)
-		return false;
-	} else {
-	    semctl(hdl, 0, SETVAL, init);
-	    return true;
-	}
-	hdl = semget(key, 1, IPC_CREAT | S_IRUSR | S_IWUSR);
-	return hdl != -1;
-    }
+    bool open(const tchar *name = NULL, uint init = 0, bool exclusive = false);
     bool set(uint cnt = 1) {
 	sembuf op;
 

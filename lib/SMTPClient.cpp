@@ -22,7 +22,7 @@
 
 #ifdef _WIN32
 #pragma warning(disable: 6328 6330)
-#else
+#elif defined(__GNUC__) && GNUC_VERSION >= 40600
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #endif
 

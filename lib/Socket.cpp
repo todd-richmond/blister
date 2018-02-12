@@ -511,7 +511,7 @@ bool Socket::peername(Sockaddr &sa) {
     return check(getpeername(sbuf->sock, sa.data(), &sz));
 }
 
-#ifdef linux
+#ifdef __linux__
 #include <linux/netfilter_ipv4.h>
 
 bool Socket::proxysockname(Sockaddr &sa) {

@@ -19,8 +19,9 @@
 #include <fcntl.h>
 #include <time.h>
 #include <sys/times.h>
-
-#if defined(__APPLE__)
+#if defined(__linux__)
+#include <linux/param.h>
+#elif defined(__APPLE__)
 #include <sys/sysctl.h>
 #include <mach/task.h>
 #include <mach/mach_init.h>
@@ -48,17 +49,21 @@ int clock_gettime(int id, struct timespec *ts) {
     return -1;
 }
 #endif
-#elif defined(__linux__)
-#include <linux/param.h>
 #endif
 
-usec_t uticks(void) {
-#ifdef CLOCK_BOOTTIME
+msec_t mticks(void) {
+#ifdef CLOCK_MONOTONIC_COARSE
     struct timespec ts;
 
-    clock_gettime(CLOCK_BOOTTIME, &ts);
-    return (usec_t)ts.tv_sec * 1000000 + (msec_t)ts.tv_nsec / 1000;
-#elif defined(__APPLE__)
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    return (msec_t)ts.tv_sec * 1000 + (msec_t)ts.tv_nsec / 1000000;
+#else
+    return (msec_t)(uticks() / 1000);
+#endif
+}
+
+usec_t uticks(void) {
+#if defined(__APPLE__)
     static struct mach_timebase_info mti;
 
     if (!mti.denom) {
@@ -66,6 +71,11 @@ usec_t uticks(void) {
 	mti.denom *= 1000;
     }
     return mach_absolute_time() * mti.numer / mti.denom;
+#elif defined(CLOCK_BOOTTIME)
+    struct timespec ts;
+
+    clock_gettime(CLOCK_BOOTTIME, &ts);
+    return (usec_t)ts.tv_sec * 1000000 + (msec_t)ts.tv_nsec / 1000;
 #else
     usec_t diff, now, save;
     struct timeval tv;
@@ -98,17 +108,6 @@ usec_t uticks(void) {
 	lastusec = now;
     }
     return lastutick;
-#endif
-}
-
-msec_t mticks(void) {
-#ifdef CLOCK_BOOTTIME_COARSE
-    struct timespec ts;
-
-    clock_gettime(CLOCK_BOOTTIME_COARSE, &ts);
-    return (msec_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-#else
-    return (msec_t)(uticks() / 1000);
 #endif
 }
 

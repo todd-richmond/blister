@@ -551,7 +551,7 @@ void Dispatcher::cleanup(void) {
 	Thread *t;
 
 	lifo.broadcast();
-	if ((t = wait(30000)) == NULL)
+	if ((t = wait()) == NULL)
 	    break;
 	delete t;
     };

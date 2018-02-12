@@ -437,8 +437,6 @@ EXTERNC_
 #endif
 
 #include <unistd.h>
-#include <fcntl.h>
-#include <float.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -455,6 +453,9 @@ EXTERNC_
 #if defined(__GNUC__)
 #define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
     __GNUC_PATCHLEVEL__)
+#if GNUC_VERSION < 40600
+#pragma GCC diagnostic ignored "-Wshadow"
+#endif
 #define __forceinline	__attribute__((always_inline))
 #endif
 
@@ -520,10 +521,18 @@ EXTERNC_
 #define CLOCK_BOOTTIME_COURSE	CLOCK_UPTIME_FAST
 #define CLOCK_MONOTONIC_COURSE	CLOCK_MONOTONIC_FAST
 #define CLOCK_REALTIME_COURSE	CLOCK_REALTIME_FAST
-#endif
-#ifndef CLOCK_BOOTTIME
+#elif !defined(CLOCK_BOOTTIME)
+#ifdef CLOCK_MONOTONIC_RAW
+#define CLOCK_BOOTTIME		CLOCK_MONOTONIC_RAW
+#else
 #define CLOCK_BOOTTIME		CLOCK_MONOTONIC
-#define CLOCK_BOOTTIME_COURSE	CLOCK_MONOTONIC_COURSE
+#endif
+#endif
+#ifndef CLOCK_MONOTONIC_COARSE
+#define CLOCK_MONOTONIC_COARSE	CLOCK_MONOTONIC
+#endif
+#ifndef CLOCK_MONOTONIC_RAW
+#define CLOCK_MONOTONIC_RAW	CLOCK_MONOTONIC
 #endif
 
 #endif // _WIN32
@@ -773,10 +782,7 @@ extern int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test);
 extern msec_t mticks(void);
 extern usec_t uticks(void);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
 extern int pidstat(pid_t pid, struct pidstat *psbuf);
-#pragma GCC diagnostic pop
 EXTERNC_
 
 // common includes, defines and code for C++ software
@@ -785,7 +791,6 @@ EXTERNC_
 #include <functional>
 #include <iostream>
 #include <string>
-#include <vector>
 
 using namespace std;
 #if _MSC_VER >= 1500 && _MSC_VER < 1600
