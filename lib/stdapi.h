@@ -453,9 +453,6 @@ EXTERNC_
 #if defined(__GNUC__)
 #define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
     __GNUC_PATCHLEVEL__)
-#if GNUC_VERSION < 40600
-#pragma GCC diagnostic ignored "-Wshadow"
-#endif
 #define __forceinline	__attribute__((always_inline))
 #endif
 
@@ -782,7 +779,10 @@ extern int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test);
 extern msec_t mticks(void);
 extern usec_t uticks(void);
+#pragma GCC push_options
+#pragma GCC diagnostic ignored "-Wshadow"
 extern int pidstat(pid_t pid, struct pidstat *psbuf);
+#pragma GCC pop_options
 EXTERNC_
 
 // common includes, defines and code for C++ software

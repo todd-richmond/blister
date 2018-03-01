@@ -22,8 +22,6 @@
 
 #ifdef _WIN32
 #pragma warning(disable: 6328 6330)
-#elif defined(__GNUC__) && GNUC_VERSION >= 40600
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 #endif
 
 const char SMTPClient::crlf[] = "\r\n";
@@ -535,7 +533,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		addr += c;
 		break;
 	    }
-	    /* no break backslash before whitespace is ignored */
+	    /* fall-thru */
 	case ' ':
 	case '\t':
 	case '\v':
@@ -546,7 +544,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		addr += ' ';
 		break;
 	    }
-	    /* no break */
+	    /* fall-thru */
 	case '\0':
 	    --input;
 	    goto pass1done;
@@ -583,7 +581,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		    err = T("Invalid route address");
 		    goto fail;
 		}
-		/* no break */
+		/* fall-thru */
 	    case ':':
 		// Strip route-address
 		local_part.erase();
@@ -623,7 +621,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		err = T("List:; syntax illegal");
 		goto fail;
 	    }
-	    /* no break */
+	    /* fall-thru */
 	default:
 	    local_part += c;
 	    continue;
@@ -1344,7 +1342,7 @@ static void parse_rfc822space(const tchar *&s) {
 		    p++;
 		    if (*p == ' ' || *p == '\t')
 			break;
-		    /* no break */
+		    /* fall-thru */
 		case '\0':
 		    s = NULL;
 		    return;

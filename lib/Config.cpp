@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <algorithm>
 #include <fstream>
+#include <vector>
 #include "Config.h"
 
 Config::Value::Value(const tchar *val, size_t len): expand(false), quote(0) {
@@ -168,13 +169,13 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
 
 void Config::setv(const tchar *attr1, const tchar *val1, ...) {
     const tchar *arg, *attr = NULL, *sect = NULL;
-    Locker lkr(lck, !THREAD_ISSELF(locker));
     va_list vl;
 
     va_start(vl, val1);
     while ((arg = va_arg(vl, const tchar *)) != NULL)
 	sect = sect == NULL ? arg : NULL;
     va_end(vl);
+    lock();
     set(attr1, val1, sect, false);
     va_start(vl, val1);
     while ((arg = va_arg(vl, const tchar *)) != NULL) {
@@ -185,6 +186,7 @@ void Config::setv(const tchar *attr1, const tchar *val1, ...) {
 	    attr = arg;
 	}
     }
+    unlock();
     va_end(vl);
 }
 
@@ -284,15 +286,16 @@ bool Config::parse(tistream &is) {
 }
 
 bool Config::read(tistream &is, const tchar *str, bool app) {
-    Locker lkr(lck, !THREAD_ISSELF(locker));
     bool ret;
 
     if (!is)
 	return false;
+    lock();
     prefix(str);
     if (!app)
 	clear();
     ret = parse(is);
+    unlock();
     return ret;
 }
 
