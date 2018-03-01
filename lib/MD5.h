@@ -78,10 +78,16 @@ extern "C" {
 void md5_init(md5_state_t *pms);
 
 /* Append a string to the message. */
-void md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes);
+void md5_append(md5_state_t *pms, const md5_byte_t *data, unsigned nbytes);
 
 /* Finish the message and return the digest. */
 void md5_finish(md5_state_t *pms, md5_byte_t digest[16]);
+
+void md5_hmac(unsigned char *text,	/* data stream */
+    unsigned textlen,			/* data stream length */
+    unsigned char *key,			/* authentication key */
+    unsigned keylen,			/* authentication key length */
+    md5_byte_t digest[16]);		/* result digest */
 
 #ifdef __cplusplus
 }  /* end extern "C" */

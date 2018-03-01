@@ -324,13 +324,13 @@ void md5_init(md5_state_t *pms) {
     pms->abcd[3] = 0x10325476;
 }
 
-void md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes) {
+void md5_append(md5_state_t *pms, const md5_byte_t *data, unsigned nbytes) {
     const md5_byte_t *p = data;
-    int left = nbytes;
-    int offset = (pms->count[0] >> 3) & 63;
+    unsigned left = nbytes;
+    unsigned offset = (pms->count[0] >> 3) & 63;
     md5_word_t nbits = (md5_word_t)(nbytes << 3);
 
-    if (data == NULL || nbytes <= 0)
+    if (data == NULL)
 	return;
 
     /* Update the message length. */
@@ -341,7 +341,7 @@ void md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes) {
 
     /* Process an initial partial block. */
     if (offset) {
-	int copy = (offset + nbytes > 64 ? 64 - offset : nbytes);
+	unsigned copy = (offset + nbytes > 64 ? 64 - offset : nbytes);
 
 	memcpy(pms->buf + offset, p, (size_t)copy);
 	if (offset + copy < 64)
@@ -374,9 +374,61 @@ void md5_finish(md5_state_t *pms, md5_byte_t digest[16]) {
     for (i = 0; i < 8; ++i)
 	data[i] = (md5_byte_t)(pms->count[i >> 2] >> ((i & 3) << 3));
     /* Pad to 56 bytes mod 64. */
-    md5_append(pms, pad, (int)((55 - (pms->count[0] >> 3)) & 63) + 1);
+    md5_append(pms, pad, ((55 - (pms->count[0] >> 3)) & 63) + 1);
     /* Append the length. */
     md5_append(pms, data, 8);
     for (i = 0; i < 16; ++i)
 	digest[i] = (md5_byte_t)(pms->abcd[i >> 2] >> ((i & 3) << 3));
 }
+
+void md5_hmac(unsigned char *text, unsigned textlen, unsigned char *key,
+    unsigned keylen, md5_byte_t digest[16]) {
+    unsigned char k_ipad[65];    /* inner padding - key XORd with ipad */
+    unsigned char k_opad[65];    /* outer padding - key XORd with opad */
+    md5_state_t state;
+    md5_byte_t tk[16];
+
+    /* if key is longer than 64 bytes reset it to key=MD5(key) */
+    if (keylen > 64) {
+	md5_init(&state);
+	md5_append(&state, key, keylen);
+	md5_finish(&state, tk);
+	key = tk;
+	keylen = sizeof (tk);
+    }
+
+    /*
+     * the HMAC_MD5 transform looks like:
+     *
+     * MD5(K XOR opad, MD5(K XOR ipad, text))
+     *
+     * where K is an n byte key
+     * ipad is the byte 0x36 repeated 64 times
+     * opad is the byte 0x5c repeated 64 times
+     * and text is the data being protected
+     */
+
+    /* start out by storing key in pads */
+    memset(k_ipad, 0, sizeof k_ipad);
+    memset(k_opad, 0, sizeof k_opad);
+    memcpy(k_ipad, key, keylen);
+    memcpy(k_opad, key, keylen);
+
+    /* XOR key with ipad and opad values */
+    for (int i = 0; i < 64; i++) {
+	k_ipad[i] ^= 0x36;
+	k_opad[i] ^= 0x5c;
+    }
+
+    /* perform inner MD5 */
+    md5_init(&state);			/* init state for 1st pass */
+    md5_append(&state, k_ipad, 64);	/* start with inner pad */
+    md5_append(&state, text, textlen);	/* then text of datagram */
+    md5_finish(&state, digest);		/* finish up 1st pass */
+    /* perform outer MD5 */
+    md5_init(&state);			/* init state for 2nd pass */
+    md5_append(&state, k_opad, 64);	/* start with outer pad */
+    md5_append(&state, digest, 16);	/* then results of 1st hash */
+    md5_finish(&state, digest);		/* finish up 2nd pass */
+}
+
