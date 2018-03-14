@@ -101,11 +101,11 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 #endif
 	}
     } else {
-        uint charsz = (uint)(chars * sizeof (tchar));
+	uint charsz = (uint)(chars * sizeof (tchar));
 	uint out = (uint)write(fd, buf, charsz);
 
 	if (out != charsz && out != 0 && !ftruncate(fd, (off_t)len))
-            ;
+	    ;
 	else if (file[0] != '>')
 	    len += (ulong)charsz;
     }
@@ -127,14 +127,14 @@ bool Log::LogFile::reopen(void) {
 	    char buf[PATH_MAX];
 	    time_t now = ::time(NULL);
 	    struct tm tmbuf, *tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(
-                &now, &tmbuf);
+		&now, &tmbuf);
 
 	    strftime(buf, sizeof (buf), tstringtoachar(file), tm);
 	    if (link(tstringtoachar(path), buf)) {
-                ::close(fd);
-                fd = -3;
-                ret = false;
-            }
+		::close(fd);
+		fd = -3;
+		ret = false;
+	    }
 	}
     }
     return ret;
@@ -208,8 +208,8 @@ void Log::LogFile::roll(void) {
 	    }
 	    if (oldtime == (ulong)-1) {
 		break;
-            } else if ((cnt || sec) && (!sec || oldtime < ((ulong)now - sec)) &&
-                (!cnt || files >= cnt)) {
+	    } else if ((cnt || sec) && (!sec || oldtime < ((ulong)now - sec)) &&
+		(!cnt || files >= cnt)) {
 		tunlink(oldfile.c_str());
 		files--;
 		trewinddir(dir);

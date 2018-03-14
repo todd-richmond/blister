@@ -49,8 +49,8 @@ const int SERVICE_CONTROL_SIGUSR2 = 132;
 
 class Service: nocopy {
 public:
-    enum Status { Error, Starting, Refreshing, Pausing, Paused, Resuming,
-	 Stopping, Running, Stopped };
+    enum Status { Error, Pausing, Paused, Refreshing, Resuming, Running,
+	Starting, Stopping, Stopped };
 
     class Timer: nocopy {
     public:
@@ -62,7 +62,9 @@ public:
 	static ulong dmsec;
 
     private:
-#ifndef _WIN32
+#if defined(__APPLE__)
+	long timer;
+#elif defined(__linux__)
 	timer_t timer;
 #endif
     };
@@ -159,10 +161,10 @@ protected:
 #else
     Thread sigthread;
 
-    static void abort_handler(sigval arg);
+    static void abort_handler(int arg);
     static int ctrl_handler(void *);
     static void init_sigset(sigset_t &sigs);
-    static void signal_handler(int sig, struct siginfo *si, void *context);
+    static void signal_handler(int sig, siginfo_t *si, void *context);
 #endif
 };
 
@@ -208,8 +210,8 @@ protected:
     tstring cfgfile, instance;
     pid_t child;
     int lckfd;
+    msec_t msec;
     bool refreshed;
-    time_t start;
     bool watch;
 
     bool setids(void);
@@ -229,20 +231,9 @@ private:
 #ifdef _WIN32
     static void __stdcall watch_handler(int sig);
 #else
-    static void watch_handler(int sig, struct siginfo *si, void *context);
+    static void watch_handler(int sig, siginfo_t *si, void *context);
 #endif
 };
 
-class WatchDaemon: public Daemon {
-public:
-    WatchDaemon(int argc, const tchar * const *argv, const tchar *name = NULL);
-
-protected:
-    ulong interval, maxmem;
-
-    virtual int onStart(int argc, const tchar * const *argv);
-    virtual bool onRefresh(void);
-};
-
-
 #endif // Service_h
+

@@ -59,14 +59,13 @@ int tmain(int argc, tchar *argv[]) {
 	}
     }
     if (i < argc || !attr) {
-	tcerr << T("Usage: cfg\n")
+	tcerr << T("Usage: cfg [options] attribute [file]\n")
 	    T("\t[-b|--boolean]\n")
 	    T("\t[-c|--check]\n")
 	    T("\t[-i|--integer]\n")
 	    T("\t[-n|--nonewline]\n")
 	    T("\t[-p|--prefix prefix]\n")
-	    T("\t[-s|--section section]\n")
-	    T("\tattribute [file]\n") << endl;
+	    T("\t[-s|--section section]\n");
 	    return -1;
     }
     if (file) {

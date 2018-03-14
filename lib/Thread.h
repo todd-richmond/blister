@@ -212,7 +212,7 @@ template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock
 class FastLockerTemplate: nocopy {
 public:
     explicit __forceinline FastLockerTemplate(C &lock): lck(lock) {
-        (lck.*LOCK)();
+	(lck.*LOCK)();
     }
     __forceinline ~FastLockerTemplate() { (lck.*UNLOCK)(); }
 
@@ -608,7 +608,7 @@ public:
 	while (cnt) {
 	    if (semaphore_signal(hdl) != KERN_SUCCESS)
 		return false;
-            --cnt;
+	    --cnt;
 	}
 	return true;
     }
@@ -668,7 +668,7 @@ public:
 	while (cnt) {
 	    if (sem_post(&hdl))
 		return false;
-            --cnt;
+	    --cnt;
 	}
 	return true;
     }
@@ -680,7 +680,7 @@ public:
 	    timespec ts;
 
 	    clock_gettime(CLOCK_REALTIME, &ts);
-            time_adjust_msec(&ts, msec);
+	    time_adjust_msec(&ts, msec);
 	    return sem_timedwait(&hdl, &ts) == 0;
 	}
     }
@@ -746,7 +746,7 @@ public:
 	    timespec ts;
 
 	    clock_gettime(CLOCK_REALTIME, &ts);
-            time_adjust_msec(&ts, msec);
+	    time_adjust_msec(&ts, msec);
 	    return semtimedop(hdl, &op, 1, &ts) == 0;
 	}
 #endif
@@ -774,10 +774,10 @@ public:
 
     void broadcast(void) { pthread_cond_broadcast(&cv); }
     void set(uint count = 1) {
-        while (count) {
-            pthread_cond_signal(&cv);
-            --count;
-        }
+	while (count) {
+	    pthread_cond_signal(&cv);
+	    --count;
+	}
     }
     bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {
@@ -790,7 +790,7 @@ public:
 	    return !pthread_cond_timedwait_relative_np(&cv, lock, &ts);
 #else
 	    clock_gettime(CLOCK_MONOTONIC, &ts);
-            time_adjust_msec(&ts, msec);
+	    time_adjust_msec(&ts, msec);
 #ifdef __ANDROID__
 	    return !pthread_cond_timedwait_monotonic_np(cond, lock, &ts);
 #else
@@ -1002,7 +1002,7 @@ public:
 	w = head;
 	head = NULL;
 	ret = sz;
-        sz = 0;
+	sz = 0;
 	lck.unlock();
 	while (w) {
 	    next = w->next;
@@ -1014,7 +1014,7 @@ public:
     bool close(void) { broadcast(); return true; }
     bool open(void) {
 	head = NULL;
-        sz = 0;
+	sz = 0;
 	return true;
     }
     uint set(uint count = 1) {

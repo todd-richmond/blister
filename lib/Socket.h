@@ -79,7 +79,7 @@ inline bool blocked(int e) {
 #ifdef _WIN32
     return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY;
 #elif EAGAIN == EWOULDBLOCK
-    return e == EAGAIN || e == ENOBUFS || e == ENOSR || e == EINPROGRESS ||
+    return e == EAGAIN || e == ENOBUFS || e == ENOSR || e == EINPROGRESS || 
 	e == EALREADY;
 #else
     return e == EWOULDBLOCK || e == EAGAIN || e == ENOBUFS ||

@@ -675,41 +675,41 @@ int wopen(const wchar *path, int oflag, ...) {
 	    oflag |= O_BINARY;
     }
     switch (oflag & (O_RDONLY | O_WRONLY | O_RDWR)) {
-      case O_RDONLY:
+    case O_RDONLY:
 	fileaccess = GENERIC_READ;
 	break;
-      case O_WRONLY:
+    case O_WRONLY:
 	fileaccess = GENERIC_WRITE;
 	break;
-      case O_RDWR:
+    case O_RDWR:
 	fileaccess = GENERIC_READ | GENERIC_WRITE;
 	break;
-      default:
+    default:
 	errno = EINVAL;
 	_doserrno = 0L;		    /* not an OS error */
 	return -1;
     }
     fileshare = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
     switch (oflag & (O_CREAT | O_EXCL | O_TRUNC)) {
-      case 0:
-      case O_EXCL:		    /* ignore EXCL w/o CREAT */
+    case 0:
+    case O_EXCL:		    /* ignore EXCL w/o CREAT */
 	filecreate = OPEN_EXISTING;
 	break;
-      case O_CREAT:
+    case O_CREAT:
 	filecreate = OPEN_ALWAYS;
 	break;
-      case O_CREAT | O_EXCL:
-      case O_CREAT | O_TRUNC | O_EXCL:
+    case O_CREAT | O_EXCL:
+    case O_CREAT | O_TRUNC | O_EXCL:
 	filecreate = CREATE_NEW;
 	break;
-      case O_TRUNC:
-      case O_TRUNC | O_EXCL:	    /* ignore EXCL w/o CREAT */
+    case O_TRUNC:
+    case O_TRUNC | O_EXCL:	    /* ignore EXCL w/o CREAT */
 	filecreate = TRUNCATE_EXISTING;
 	break;
-      case O_CREAT | O_TRUNC:
+    case O_CREAT | O_TRUNC:
 	filecreate = CREATE_ALWAYS;
 	break;
-      default:
+    default:
 	/* this can't happen ... all cases are covered */
 	errno = EINVAL;
 	_doserrno = 0L;

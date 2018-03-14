@@ -304,17 +304,17 @@ int tmain(int argc, tchar *argv[]) {
 
     if (argc == 1 || !tstrcmp(argv[1], T("-?"))) {
 	tcerr << T("Usage: echotest\n")
-            T("\t[-c]\n")
-            T("\t[-d delay]\n")
-            T("\t[-h host[:port]]\n")
-            T("\t[-e sockets]\n")
-            T("\t[-l loops]\n")
+	    T("\t[-c]\n")
+	    T("\t[-d delay]\n")
+	    T("\t[-h host[:port]]\n")
+	    T("\t[-e sockets]\n")
+	    T("\t[-l loops]\n")
 	    T("\t[-p threads]\n")
-            T("\t[-s]\n")
-            T("\t[-v*]\n")
-            T("\t[-t timeout]\n")
-            T("\t[-w wait]\n")
-            T("\tdatafile | datastr") << endl;
+	    T("\t[-s]\n")
+	    T("\t[-v*]\n")
+	    T("\t[-t timeout]\n")
+	    T("\t[-w wait]\n")
+	    T("\tdatafile | datastr") << endl;
 	return 1;
     }
     signal(SIGINT, signal_handler);

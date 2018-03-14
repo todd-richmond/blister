@@ -381,10 +381,12 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
 	sa.size()))) {
 	ret = true;
     } else if (blocked() && msec > 0 && msec != SOCK_INFINITE) {
+	int err = 0;
 	SocketSet sset(1), oset(1), eset(1);
 
 	sset.set(sbuf->sock);
-	ret = sset.opoll(oset, eset, msec) && oset.get(sbuf->sock);
+	ret = sset.opoll(oset, eset, msec) && oset.get(sbuf->sock) &&
+	    check(getsockopt(SOL_SOCKET, SO_ERROR, err)) && !err;
     }
     if (msec != SOCK_INFINITE) {
 	int e = sbuf->err;
@@ -430,14 +432,14 @@ bool Socket::movehigh(void) {
 	    ) {
 	    return false;
 	} else if (fd == sbuf->sock) {
-            (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
+	    (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
 	} else {
 #ifndef F_DUPFD_CLOEXEC
-            (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
+	    (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
 #endif
 	    ::closesocket(sbuf->sock);
 	    sbuf->sock = fd;
-        }
+	}
     }
 #endif
     return true;

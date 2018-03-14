@@ -55,10 +55,10 @@ class Config;
  * objects can be instantiated as well. A kv() member function eases logging
  * attr=val pairs with proper quoting
  *
- * dlog << Log::Warn << T("errno ") << errno << endlog;
- * dlogw(T("errno"), errno);
- * dlogw(Log::kv(T("errno"), errno));
- * DLOGW(T("errno ") << errno);
+ * dlog << Log::Warn << T("value=") << value << endlog;
+ * dlogw(T("value="), value);
+ * dlogw(Log::kv(T("value"), value));
+ * DLOGW(T("value=") << value);
  */
 
 class Log: nocopy {
@@ -77,6 +77,10 @@ public:
 	tostream &print(tostream &os) const {
 	    os << key << '=';
 	    return value(os);
+	}
+	tostream &printstr(tostream &os) const {
+	    os << key << '=';
+	    return Log::quote(os, val);
 	}
 
     private:
@@ -137,7 +141,7 @@ public:
 
     bool close(void);
     Log &endlog(void) {
-        Tlsdata &tlsd(*tls);
+	Tlsdata &tlsd(*tls);
 
 	if (tlsd.clvl != None)
 	    endlog(tlsd, tlsd.clvl);
@@ -154,7 +158,7 @@ public:
     static tostream &quote(tostream &os, const tchar *s);
 
     template<class C> Log &operator <<(const C &c) {
-        Tlsdata &tlsd(*tls);
+	Tlsdata &tlsd(*tls);
 
 	if (tlsd.clvl != None) {
 	    if (tlsd.space) {
@@ -176,7 +180,7 @@ public:
 
     template<class C>
     Log &operator <<(const KV<C> &_kv) {
-        Tlsdata &tlsd(*tls);
+	Tlsdata &tlsd(*tls);
 
 	if (tlsd.clvl != None) {
 	    if (tlsd.strm.size())
@@ -252,9 +256,6 @@ public:
     template<class C> static const KV<C> cmd(const C &c) {
 	return KV<C>(T("cmd"), c);
     }
-    template<class C> static const KV<C> error(int num) {
-	return KV<C>(T("err"), tstrerror(num));
-    }
     template<class C> static const KV<C> error(const C &c) {
 	return KV<C>(T("err"), c);
     }
@@ -319,12 +320,12 @@ private:
     };
 
     struct Tlsdata {
-	Level clvl;
 	tstring prefix;
-	bool space;
 	tstring strbuf;
-	bool suppress;
 	tbufferstream strm;
+	Level clvl;
+	bool space;
+	bool suppress;
 
 	Tlsdata(): clvl(None), space(false), suppress(false) {}
     };
@@ -413,6 +414,11 @@ template<> inline tostream &Log::KV<wchar>::value(tostream &os) const {
 template<class C> inline tostream &operator <<(tostream &os, const Log::KV<C>
     &kv) {
     return kv.print(os);
+}
+
+template<size_t N> inline tostream &operator <<(tostream &os, const
+    Log::KV<tchar[N]> &kv) {
+    return kv.printstr(os);
 }
 
 inline Log &operator <<(Log &l, Log &(*manip)(Log &)) { return manip(l); }
