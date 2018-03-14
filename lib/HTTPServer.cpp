@@ -572,8 +572,12 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
 void HTTPServerSocket::reply(int fd, ulong len) {
     char buf[1024];
 
-    if (len < sizeof (buf)) {
+    if (len <= sizeof (buf)) {
+#ifdef _FORTIFY_SOURCE
+	if ((long)::read(fd, buf, sizeof (buf)) < (long)len) {
+#else
 	if ((ulong)::read(fd, buf, (uint)len) != len) {
+#endif
 	    error(404);
 	    return;
 	}

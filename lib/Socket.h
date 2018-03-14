@@ -78,6 +78,9 @@ const socket_t SOCK_INVALID = INVALID_SOCKET;
 inline bool blocked(int e) {
 #ifdef _WIN32
     return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY;
+#elif EAGAIN == EWOULDBLOCK
+    return e == EAGAIN || e == ENOBUFS || e == ENOSR || e == EINPROGRESS ||
+	e == EALREADY;
 #else
     return e == EWOULDBLOCK || e == EAGAIN || e == ENOBUFS ||
 	e == ENOSR || e == EINPROGRESS || e == EALREADY;

@@ -903,7 +903,7 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials) 
 int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
     tchar c;
     tchar *cdst;
-    int cnt;
+    uint cnt;
     tchar *dst;
     tchar *src = in;
 
