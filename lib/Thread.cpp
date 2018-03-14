@@ -132,7 +132,7 @@ bool DLLibrary::close() {
 	FreeLibrary((HMODULE)hdl);
 #else
     if (hdl)
-        dlclose(hdl);
+	dlclose(hdl);
 #endif
     hdl = 0;
     return true;
@@ -383,6 +383,7 @@ bool Thread::stop(void) {
 	onStop();
 	if (state == Suspended)
 	    resume();
+	state = Terminated; 
     }
     return true;
 }
@@ -478,7 +479,7 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 	for (i = groups.begin(); i != groups.end(); ++i) {
 	    tg = *i;
 	    tg->cvlck.lock();
-            if (THREAD_ISSELF(tg->master.id))
+	    if (THREAD_ISSELF(tg->master.id))
 		break;
 	    for (ii = tg->threads.begin(); ii != tg->threads.end(); ++ii) {
 		if (THREAD_ISSELF((*ii)->id))

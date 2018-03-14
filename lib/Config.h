@@ -139,9 +139,9 @@ private:
     public:
 	Value(const tchar *val, size_t len);
 
+	tstring value;
 	bool expand;
 	tchar quote;
-	tstring value;
     };
 
     typedef unordered_map<const tchar *, Value *, strhash<tchar>, streq<tchar> >

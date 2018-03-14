@@ -111,7 +111,7 @@ typedef struct pollfd event_t;
 Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
     maxthreads(0), running(0), shutdown(true), stacksz(0), workers(0),
 #ifdef DSP_WIN32_ASYNC
-     interval(DSP_NEVER), wnd(0)
+    interval(DSP_NEVER), wnd(0)
 #else
     evtfd(-1), wfd(-1), isock(SOCK_STREAM), polling(false), wsock(SOCK_STREAM)
 #endif

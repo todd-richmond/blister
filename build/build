@@ -23,7 +23,6 @@ if [ "$1" == automake -o -z "$(which cmake 2> /dev/null)" ]; then
     set -x
     make distclean > /dev/null 2>&1
     aclocal || exit 1
-    #aclocal -I ${TOOLDIR}/share/aclocal || exit 1
     autoconf || exit 1
     $LIBTOOLIZE --automake || exit 1
     automake -a || exit 1
@@ -32,8 +31,8 @@ else
     CMAKE_BUILD_TYPE=${1:-Release}
     shift
     set -x
-    cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-Release} $* . || exit 1
+    cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} $* . || exit 1
 fi
 
-make -j 4
+make -j 6
 

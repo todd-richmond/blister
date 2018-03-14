@@ -174,6 +174,9 @@ public:
     DispatchIOSocket(DispatchObj &parent, const Socket &sock, ulong msec =
 	DSP_NEVER): DispatchSocket(parent, sock, msec) {}
 
+    void acceptable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS) {
+	poll(cb, msec, DispatchAccept);
+    }
     void closeable(DispatchObjCB cb = NULL, ulong msec = 15000) {
 	poll(cb, msec, DispatchClose);
     }
@@ -410,16 +413,16 @@ public:
 	int backlog = cfg.get(T("socket.backlog"), SOCK_BACKLOG, S::section());
 	bool reuse = cfg.get(T("socket.reuse"), true, S::section());
 
-	if (!cfg.get(T("enable"), enable, S::section()))
+	if (!cfg.get(T("enable"), enable, S::section())) {
 	    return true;
-	if (DispatchListenSocket::listen(sa, reuse, backlog)) {
-	    dlogi(Log::mod(S::section()), Log::cmd(T("listen")),
-                Log::kv(T("addr"), sa.str()));
-	    return true;
+	} else if (!DispatchListenSocket::listen(sa, reuse, backlog)) {
+	    dloge(Log::mod(S::section()), Log::cmd(T("listen")),
+		Log::kv(T("addr"), sa.str()), Log::error(errstr()));
+	    return false;
 	}
-	dloge(Log::mod(S::section()), Log::cmd(T("listen")),
-            Log::kv(T("addr"), sa.str()), Log::error(errstr()));
-	return false;
+	dlogi(Log::mod(S::section()), Log::cmd(T("listen")), Log::kv(T("addr"),
+	    sa.str()));
+	return true;
     }
     bool listen(const tchar *host = NULL, bool enable = true) {
 	tstring s(dspr.config().get(T("host"), host, S::section()));

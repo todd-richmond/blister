@@ -167,7 +167,7 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     ka = keepalive;
     if (!sock.connect(addr, to)) {
 	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
-            addr.str()), Log::error(sock.errstr()));
+	    addr.str()), Log::error(sock.errstr()));
 	sock.close();
 	return false;
     }
@@ -177,7 +177,7 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     sstrm.rdbuf()->reset();
     sstrm.clear(sstrm.rdstate() & ~(ios::badbit | ios::eofbit | ios::failbit));
     dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
-        addr.ipstr()));
+	addr.ipstr()));
     return true;
 }
 
@@ -267,7 +267,7 @@ loop:
 	do {
 	    pp++;
 	} while (*pp && (*pp == '\r' || *pp == ' ' || *pp == '\t'));
-	sss.assign(pp, strlen(pp) - 1);
+	sss.assign(pp, *pp ? strlen(pp) - 1 : 0);
 
 	pair<tstring, tstring> pr(astringtotstring(ss), astringtotstring(sss));
 

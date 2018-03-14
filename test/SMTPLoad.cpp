@@ -24,11 +24,11 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <float.h>
-#include <fstream>
 #include <signal.h>
 #include <time.h>
-#include STL_UNORDERED_MAP_H
 #include <sys/stat.h>
+#include <fstream>
+#include STL_UNORDERED_MAP_H
 #include "Log.h"
 #ifndef CLIENT
 #include "SMTPClient.h"

@@ -20,9 +20,7 @@
 #include "SMTPClient.h"
 #include "Thread.h"
 
-#ifdef _WIN32
 #pragma warning(disable: 6328 6330)
-#endif
 
 const char SMTPClient::crlf[] = "\r\n";
 
@@ -119,17 +117,17 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
     do {
 	sts.erase();
 	if (!sstrm) {
-	    dlogd(T("mod=smtp status=closed"));
+	    dlogd(Log::mod(T("smtp")), Log::kv(T("status"), T("closed")));
 	    return false;
 	} else if (!getline(sstrm, asts)) {
 	    sock.close();
 	    sts = T("000 socket disconnect");
-	    dlogd(T("mod=smtp action=disconnect"));
+	    dlogd(Log::mod(T("smtp")), Log::kv(T("action"), T("disconnect")));
 	    return false;
 	}
 	sts = astringtotstring(asts);
 	if (sts.length() < 3 || (sts[3] != '-' && sts[3] != ' ')) {
-	    dlogd(T("mod=smtp data=invalid"),
+	    dlogd(Log::mod(T("smtp")), Log::kv(T("data"), T("invalid")),
 		Log::kv(T("reply"), sts.c_str()));
 	    return false;
 	}
@@ -138,7 +136,7 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 	if (!multi.empty())
 	    multi += '\n';
 	multi += sts.substr(4);
-	dlogt(Log::kv(T("mod=smtp expected"), retcode),
+	dlogt(Log::mod(T("smtp")), Log::kv(T("expected"), retcode),
 	    Log::kv(T("reply"), sts.c_str()));
     } while (sts[3] == '-');
     return code() == retcode;
@@ -903,7 +901,7 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials) 
 int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
     tchar c;
     tchar *cdst;
-    int cnt;
+    uint cnt;
     tchar *dst;
     tchar *src = in;
 
@@ -958,7 +956,7 @@ int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
     rte = dst = src;
     for (;;) {
 	skip_whitespace(src);
-        c = *src++;
+	c = *src++;
 	if (isalnum(c) || c == '-' || c == '[' || c == ']' || c == ',' ||
 	    c == '@') {
 	    *dst++ = c;
@@ -1114,14 +1112,14 @@ static inline void encode(const void *input, size_t len, void *output, size_t
 
 bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
     static const uchar table[64] = {
-      'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
-      'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
-      'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
-      'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
-      'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
-      'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-      'w', 'x', 'y', 'z', '0', '1', '2', '3',
-      '4', '5', '6', '7', '8', '9', '+', '/'
+	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+	'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+	'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+	'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+	'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+	'w', 'x', 'y', 'z', '0', '1', '2', '3',
+	'4', '5', '6', '7', '8', '9', '+', '/'
     };
 
     outsz = 0;
@@ -1136,14 +1134,14 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
     static const char begin[] = "begin 644 ";
     static const char end[] = "\r\nend\r\n";
     static const uchar table[64] = {
-      '`', '!', '"', '#', '$', '%', '&', '\'',
-      '(', ')', '*', '+', ',', '-', '.', '/',
-      '0', '1', '2', '3', '4', '5', '6', '7',
-      '8', '9', ':', ';', '<', '=', '>', '?',
-      '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
-      'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
-      'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
-      'X', 'Y', 'Z', '[', '\\', ']', '^', '_'
+	'`', '!', '"', '#', '$', '%', '&', '\'',
+	'(', ')', '*', '+', ',', '-', '.', '/',
+	'0', '1', '2', '3', '4', '5', '6', '7',
+	'8', '9', ':', ';', '<', '=', '>', '?',
+	'@', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
+	'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
+	'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
+	'X', 'Y', 'Z', '[', '\\', ']', '^', '_'
     };
 
     outsz = (size_t)tstrlen(file);

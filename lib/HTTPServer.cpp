@@ -215,12 +215,12 @@ void HTTPServerSocket::readpost() {
 	    ulong pos = chunkin + (chunkin && !chunktrailer ? 2 : 0);
 
 	    if (postin <= pos)
-	        break;
+		break;
 
 	    int c;
 	    ulong chunksize = 0;
 	    const char *lf = (const char *)memchr(postdata + pos, '\n',
-                postin - pos);
+		postin - pos);
 
 	    if (!lf)
 		break;
@@ -240,7 +240,7 @@ void HTTPServerSocket::readpost() {
 		    return;
 		}
 	    }
-            ++lf;
+	    ++lf;
 	    memmove(postdata + chunkin, lf, (ulong)(postdata + postin - lf));
 	    postin -= (ulong)(lf - (postdata + chunkin));
 	    if (!postdatasz)
@@ -332,7 +332,7 @@ void HTTPServerSocket::parse(void) {
 	args.clear();
     } else {
 	*pp++ = '\0';
-        argdata = pp;
+	argdata = pp;
 	urldecode(pp, args);
     }
     if (!noprot) {
@@ -401,13 +401,13 @@ void HTTPServerSocket::parse(void) {
 	postsz = (uint)-1;
     } else {
 	postchunking = false;
-        val = attr("content-length");
-        if (val)
-            postsz = (uint)atol(val);
-        else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT"))
-            postsz = (uint)-1;
-        else
-            postsz = 0;
+	val = attr("content-length");
+	if (val)
+	    postsz = (uint)atol(val);
+	else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT"))
+	    postsz = (uint)-1;
+	else
+	    postsz = 0;
     }
     if (postsz) {
 	postin = datasz - (ulong)(postdata - data);
@@ -572,8 +572,12 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
 void HTTPServerSocket::reply(int fd, ulong len) {
     char buf[1024];
 
-    if (len < sizeof (buf)) {
+    if (len <= sizeof (buf)) {
+#ifdef _FORTIFY_SOURCE
+	if ((long)::read(fd, buf, sizeof (buf)) < (long)len) {
+#else
 	if ((ulong)::read(fd, buf, (uint)len) != len) {
+#endif
 	    error(404);
 	    return;
 	}
@@ -664,10 +668,8 @@ void HTTPServerSocket::error(uint sts) {
 	"Internal Server Error", "Not Implemented", "Bad Gateway",
 	"Service Unavailable", "Gateway Timeout", "Version Not Supported"
     };
-#ifdef _WIN32
 #pragma warning(push)
 #pragma warning(disable: 6385)
-#endif
     if (sts >= 200 && sts < 200 + sizeof (err2xx) / sizeof (char *))
 	p = err2xx[sts % 200];
     else if (sts >= 300 && sts < 300 + sizeof (err3xx) / sizeof (char *))
@@ -678,9 +680,7 @@ void HTTPServerSocket::error(uint sts) {
 	p = err5xx[sts % 500];
     else
 	p = "HTTP error";
-#ifdef _WIN32
 #pragma warning(pop)
-#endif
     status(sts, "text", "plain");
     ss << sts << ' ' << p << CRLF;
     _status = sts;

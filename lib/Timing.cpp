@@ -194,13 +194,13 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
     if (d < 10)
 	tsprintf(buf, T("%.3f"), d);
     else if (d < 100)
-        tsprintf(buf, T("%.2f"), d);
+	tsprintf(buf, T("%.2f"), d);
     else if (d < 10000)
-        tsprintf(buf, T("%.0f"), d);
+	tsprintf(buf, T("%.0f"), d);
     else if (d < 1000000)
-        tsprintf(buf, T("%.0fk"), d / 1000);
+	tsprintf(buf, T("%.0fk"), d / 1000);
     else
-        tsprintf(buf, T("%.0fm"), d / 1000000);
+	tsprintf(buf, T("%.0fm"), d / 1000000);
     return buf;
 }
 

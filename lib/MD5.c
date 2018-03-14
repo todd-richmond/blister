@@ -229,14 +229,15 @@ static void md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/) {
     SET(b, c, d, a, 15, 22, T16);
 #undef SET
 
-     /* Round 2. */
-     /* Let [abcd k s i] denote the operation
-          a = b + ((a + G(b,c,d) + X[k] + T[i]) <<< s). */
+    /* Round 2. */
+    /* Let [abcd k s i] denote the operation
+          a = b + ((a + G(b,c,d) + X[k] + T[i]) <<< s).
+     */
 #define G(x, y, z) (((x) & (z)) | ((y) & ~(z)))
 #define SET(a, b, c, d, k, s, Ti)\
   t = a + G(b, c, d) + X[k] + Ti;\
   a = ROTATE_LEFT(t, s) + b
-     /* Do the following 16 operations. */
+    /* Do the following 16 operations. */
     SET(a, b, c, d,  1,  5, T17);
     SET(d, a, b, c,  6,  9, T18);
     SET(c, d, a, b, 11, 14, T19);
@@ -255,14 +256,15 @@ static void md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/) {
     SET(b, c, d, a, 12, 20, T32);
 #undef SET
 
-     /* Round 3. */
-     /* Let [abcd k s t] denote the operation
-          a = b + ((a + H(b,c,d) + X[k] + T[i]) <<< s). */
+    /* Round 3. */
+    /* Let [abcd k s t] denote the operation
+          a = b + ((a + H(b,c,d) + X[k] + T[i]) <<< s).
+     */
 #define H(x, y, z) ((x) ^ (y) ^ (z))
 #define SET(a, b, c, d, k, s, Ti)\
   t = a + H(b, c, d) + X[k] + Ti;\
   a = ROTATE_LEFT(t, s) + b
-     /* Do the following 16 operations. */
+    /* Do the following 16 operations. */
     SET(a, b, c, d,  5,  4, T33);
     SET(d, a, b, c,  8, 11, T34);
     SET(c, d, a, b, 11, 16, T35);
@@ -281,14 +283,15 @@ static void md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/) {
     SET(b, c, d, a,  2, 23, T48);
 #undef SET
 
-     /* Round 4. */
-     /* Let [abcd k s t] denote the operation
-          a = b + ((a + I(b,c,d) + X[k] + T[i]) <<< s). */
+    /* Round 4. */
+    /* Let [abcd k s t] denote the operation
+          a = b + ((a + I(b,c,d) + X[k] + T[i]) <<< s).
+     */
 #define I(x, y, z) ((y) ^ ((x) | ~(z)))
 #define SET(a, b, c, d, k, s, Ti)\
   t = a + I(b, c, d) + X[k] + Ti;\
   a = ROTATE_LEFT(t, s) + b
-     /* Do the following 16 operations. */
+    /* Do the following 16 operations. */
     SET(a, b, c, d,  0,  6, T49);
     SET(d, a, b, c,  7, 10, T50);
     SET(c, d, a, b, 14, 15, T51);
@@ -307,9 +310,9 @@ static void md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/) {
     SET(b, c, d, a,  9, 21, T64);
 #undef SET
 
-     /* Then perform the following additions. (That is increment each
-        of the four registers by the value it had before this block
-        was started.) */
+    /* Then perform the following additions. (That is increment each
+       of the four registers by the value it had before this block
+       was started.) */
     pms->abcd[0] += a;
     pms->abcd[1] += b;
     pms->abcd[2] += c;

@@ -24,11 +24,11 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <float.h>
-#include <fstream>
 #include <signal.h>
 #include <time.h>
-#include STL_UNORDERED_MAP_H
 #include <sys/stat.h>
+#include <fstream>
+#include STL_UNORDERED_MAP_H
 #include "HTTPClient.h"
 #include "Log.h"
 
@@ -760,10 +760,10 @@ int tmain(int argc, tchar *argv[]) {
 	    timeout = (uint)tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-v"))) {
 	    dlog.level(Log::Level(dlog.level() + 1));
-	 } else if (!wld && *argv[i] != '-') {
-	     wld = argv[i];
-	 } else {
-	     break;
+	} else if (!wld && *argv[i] != '-') {
+	    wld = argv[i];
+	} else {
+	    break;
 	}
     }
     if (argc == 1 || i < argc) {

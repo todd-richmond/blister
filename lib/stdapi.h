@@ -18,13 +18,20 @@
 #ifndef stdapi_h
 #define stdapi_h
 
-// defines, typedefs  and code to make non-UNIX systems support POSIX APIs
-
-#ifdef __has_feature
-#define __no_sanitize(check)  __attribute__((no_sanitize(check)))
+// defines, typedefs and code to make non-UNIX systems support POSIX APIs
+#define CPP_STR(s)		#s
+#ifdef _MSC_VER
+#define PRAGMA_WARN_DISABLE(e)	_Pragma(warning(disable: e))
+#define PRAGMA_WARN_ENABLE(e)	_Pragma(warning(enable: e))
+#define PRAGMA_WARN_POP		_Pragma(warning(pop))
+#define PRAGMA_WARN_PUSH	_Pragma(warning(push))
 #else
-#define __no_sanitize(check)
+#define PRAGMA_WARN_POP		_Pragma(CPP_STR(GCC pop_options))
+#define PRAGMA_WARN_PUSH	_Pragma(CPP_STR(GCC push_options))
+#define PRAGMA_WARN_DISABLE(e)	_Pragma(CPP_STR(GCC diagnostic ignored #e))
+#define PRAGMA_WARN_ENABLE(e)	_Pragma(CPP_STR(GCC diagnostic warning #e))
 #endif
+#define PRAGMA_WARN_PUSH_DISABLE(e)	PRAGMA_WARN_PUSH PRAGMA_WARN_DISABLE(e)
 
 #ifdef __cplusplus
 #define EXTERNC		extern "C" {
@@ -33,81 +40,6 @@
 #define EXTERNC
 #define EXTERNC_
 #endif
-
-#define ZERO(x)		memset(&(x), 0, sizeof (x))
-
-// recursive macros for compile-time optimization
-#define STDAPI_REPEAT(i, m, d)	STDAPI_REPEAT_I(i, m, d)
-#define STDAPI_REPEAT_I(i, m, d)STDAPI_REPEAT_##i(m, d)
-#define STDAPI_REPEAT_0(m, d)
-#define STDAPI_REPEAT_1(m, d)	m(0, d)
-#define STDAPI_REPEAT_2(m, d)	STDAPI_REPEAT_1(m, d)	m(1, d)
-#define STDAPI_REPEAT_3(m, d)	STDAPI_REPEAT_2(m, d)	m(2, d)
-#define STDAPI_REPEAT_4(m, d)	STDAPI_REPEAT_3(m, d)	m(3, d)
-#define STDAPI_REPEAT_5(m, d)	STDAPI_REPEAT_4(m, d)	m(4, d)
-#define STDAPI_REPEAT_6(m, d)	STDAPI_REPEAT_5(m, d)	m(5, d)
-#define STDAPI_REPEAT_7(m, d)	STDAPI_REPEAT_6(m, d)	m(6, d)
-#define STDAPI_REPEAT_8(m, d)	STDAPI_REPEAT_7(m, d)	m(7, d)
-#define STDAPI_REPEAT_9(m, d)	STDAPI_REPEAT_8(m, d)	m(8, d)
-#define STDAPI_REPEAT_10(m, d)	STDAPI_REPEAT_9(m, d)	m(9, d)
-#define STDAPI_REPEAT_11(m, d)	STDAPI_REPEAT_10(m, d)	m(10, d)
-#define STDAPI_REPEAT_12(m, d)	STDAPI_REPEAT_11(m, d)	m(11, d)
-#define STDAPI_REPEAT_13(m, d)	STDAPI_REPEAT_12(m, d)	m(12, d)
-#define STDAPI_REPEAT_14(m, d)	STDAPI_REPEAT_13(m, d)	m(13, d)
-#define STDAPI_REPEAT_15(m, d)	STDAPI_REPEAT_14(m, d)	m(14, d)
-#define STDAPI_REPEAT_16(m, d)	STDAPI_REPEAT_15(m, d)	m(15, d)
-#define STDAPI_REPEAT_17(m, d)	STDAPI_REPEAT_16(m, d)	m(16, d)
-#define STDAPI_REPEAT_18(m, d)	STDAPI_REPEAT_17(m, d)	m(17, d)
-#define STDAPI_REPEAT_19(m, d)	STDAPI_REPEAT_18(m, d)	m(18, d)
-#define STDAPI_REPEAT_20(m, d)	STDAPI_REPEAT_19(m, d)	m(19, d)
-#define STDAPI_REPEAT_21(m, d)	STDAPI_REPEAT_20(m, d)	m(20, d)
-#define STDAPI_REPEAT_22(m, d)	STDAPI_REPEAT_21(m, d)	m(21, d)
-#define STDAPI_REPEAT_23(m, d)	STDAPI_REPEAT_22(m, d)	m(22, d)
-#define STDAPI_REPEAT_24(m, d)	STDAPI_REPEAT_23(m, d)	m(23, d)
-#define STDAPI_REPEAT_25(m, d)	STDAPI_REPEAT_24(m, d)	m(24, d)
-#define STDAPI_REPEAT_26(m, d)	STDAPI_REPEAT_25(m, d)	m(25, d)
-#define STDAPI_REPEAT_27(m, d)	STDAPI_REPEAT_26(m, d)	m(26, d)
-#define STDAPI_REPEAT_28(m, d)	STDAPI_REPEAT_27(m, d)	m(27, d)
-#define STDAPI_REPEAT_29(m, d)	STDAPI_REPEAT_28(m, d)	m(28, d)
-#define STDAPI_REPEAT_30(m, d)	STDAPI_REPEAT_29(m, d)	m(29, d)
-#define STDAPI_REPEAT_31(m, d)	STDAPI_REPEAT_30(m, d)	m(30, d)
-#define STDAPI_REPEAT_32(m, d)	STDAPI_REPEAT_31(m, d)	m(31, d)
-#define STDAPI_REPEAT_33(m, d)	STDAPI_REPEAT_32(m, d)	m(32, d)
-#define STDAPI_REPEAT_34(m, d)	STDAPI_REPEAT_33(m, d)	m(33, d)
-#define STDAPI_REPEAT_35(m, d)	STDAPI_REPEAT_34(m, d)	m(34, d)
-#define STDAPI_REPEAT_36(m, d)	STDAPI_REPEAT_35(m, d)	m(35, d)
-#define STDAPI_REPEAT_37(m, d)	STDAPI_REPEAT_36(m, d)	m(36, d)
-#define STDAPI_REPEAT_38(m, d)	STDAPI_REPEAT_37(m, d)	m(37, d)
-#define STDAPI_REPEAT_39(m, d)	STDAPI_REPEAT_38(m, d)	m(38, d)
-#define STDAPI_REPEAT_40(m, d)	STDAPI_REPEAT_39(m, d)	m(39, d)
-#define STDAPI_REPEAT_41(m, d)	STDAPI_REPEAT_40(m, d)	m(40, d)
-#define STDAPI_REPEAT_42(m, d)	STDAPI_REPEAT_41(m, d)	m(41, d)
-#define STDAPI_REPEAT_43(m, d)	STDAPI_REPEAT_42(m, d)	m(42, d)
-#define STDAPI_REPEAT_44(m, d)	STDAPI_REPEAT_43(m, d)	m(43, d)
-#define STDAPI_REPEAT_45(m, d)	STDAPI_REPEAT_44(m, d)	m(44, d)
-#define STDAPI_REPEAT_46(m, d)	STDAPI_REPEAT_45(m, d)	m(45, d)
-#define STDAPI_REPEAT_47(m, d)	STDAPI_REPEAT_46(m, d)	m(46, d)
-#define STDAPI_REPEAT_48(m, d)	STDAPI_REPEAT_47(m, d)	m(47, d)
-#define STDAPI_REPEAT_49(m, d)	STDAPI_REPEAT_48(m, d)	m(48, d)
-#define STDAPI_REPEAT_50(m, d)	STDAPI_REPEAT_49(m, d)	m(49, d)
-#define STDAPI_REPEAT_51(m, d)	STDAPI_REPEAT_50(m, d)	m(50, d)
-#define STDAPI_REPEAT_52(m, d)	STDAPI_REPEAT_51(m, d)	m(51, d)
-#define STDAPI_REPEAT_53(m, d)	STDAPI_REPEAT_52(m, d)	m(52, d)
-#define STDAPI_REPEAT_54(m, d)	STDAPI_REPEAT_53(m, d)	m(53, d)
-#define STDAPI_REPEAT_55(m, d)	STDAPI_REPEAT_54(m, d)	m(54, d)
-#define STDAPI_REPEAT_56(m, d)	STDAPI_REPEAT_55(m, d)	m(55, d)
-#define STDAPI_REPEAT_57(m, d)	STDAPI_REPEAT_56(m, d)	m(56, d)
-#define STDAPI_REPEAT_58(m, d)	STDAPI_REPEAT_57(m, d)	m(57, d)
-#define STDAPI_REPEAT_59(m, d)	STDAPI_REPEAT_58(m, d)	m(58, d)
-#define STDAPI_REPEAT_60(m, d)	STDAPI_REPEAT_59(m, d)	m(59, d)
-#define STDAPI_REPEAT_61(m, d)	STDAPI_REPEAT_60(m, d)	m(60, d)
-#define STDAPI_REPEAT_62(m, d)	STDAPI_REPEAT_61(m, d)	m(61, d)
-#define STDAPI_REPEAT_63(m, d)	STDAPI_REPEAT_62(m, d)	m(62, d)
-#define STDAPI_REPEAT_64(m, d)	STDAPI_REPEAT_63(m, d)	m(63, d)
-
-typedef unsigned char byte;
-typedef unsigned char uchar;
-typedef unsigned short word;
 
 #ifdef _WIN32
 
@@ -119,6 +51,8 @@ typedef unsigned short word;
 #ifndef WIN32
 #define WIN32
 #endif
+#define NTDDI_VERSION	NTDDI_WIN8 
+#define _WIN32_WINNT	_WIN32_WINNT_WIN8
 #define NOIME
 #define NOMCX
 #define NOSERVICE
@@ -136,12 +70,10 @@ typedef unsigned short word;
 #define _WSTAT_DEFINED
 #define _WSTATVFS_DEFINED
 
-#define __STDC__ 1
-#define _WIN32_WINNT	0x601
 #if _MSC_VER >= 1900
 typedef __int64 _ino_t;
 #endif
-
+#define __STDC__ 1
 #include <direct.h>
 #include <io.h>
 #include <stdint.h>
@@ -235,9 +167,10 @@ typedef __int64 _ino_t;
 
 #define bcopy(a, b, c)  memmove(b, a, c)
 #define bzero(a, b)	memset(a, 0, b)
-#define chown(path, owner, group)   0
-#define fchown(fd, owner, group)    0
-#define lchown(path, owner, group)  0
+#define chown(p, o, g)	0
+#define fchown(f, o, g)	0
+#define lchown(p, o, g)	0
+#define getcwd		_getcwd
 #define getuid()	0
 #define getgid()	0
 #define geteuid		getuid
@@ -250,22 +183,19 @@ typedef __int64 _ino_t;
 #define setgid(gid)	0
 #define seteuid		setuid
 #define setegid		setgid
+#define sleep(x)	Sleep((x) * 1000)
 #define strcasecmp	stricmp
 #define strncasecmp	strnicmp
 #define snprintf	_snprintf
+#define usleep(x)	Sleep((x) / 1000)
+#define waitpid(pid, sts, opt)	cwait(sts, pid, opt)
 #define wcserror	_wcserror
+#define	wexecvp		_wexecvp
+#define wgetcwd		_wgetcwd
+#define wgetenv		_wgetenv
 #define wtof		_wtof
 #define wtoi		_wtoi
 #define wtol		_wtol
-
-#define getcwd		_getcwd
-#define wgetcwd		_wgetcwd
-#define wgetenv		_wgetenv
-#define	wexecvp		_wexecvp
-#define waitpid(pid, status, opt)	cwait(status, pid, opt)
-
-#define sleep(x)	Sleep((x) * 1000)
-#define usleep(x)	Sleep((x) / 1000)
 
 typedef __int64 llong;
 typedef unsigned short ushort;
@@ -312,9 +242,9 @@ typedef struct WDIR {
     wchar path[1];
 } WDIR;
 
-#define telldir(p)	    (p->dir.d_off)
-#define rewinddir(dirp)	    seekdir(dirp, 0L)
-#define wrewinddir(dirp)    wseekdir(dirp, 0L)
+#define telldir(p)		(p->dir.d_off)
+#define rewinddir(dirp)		seekdir(dirp, 0L)
+#define wrewinddir(dirp)	wseekdir(dirp, 0L)
 
 // stat routines that support inodes and devices properly
 struct stat {
@@ -426,9 +356,6 @@ EXTERNC_
 
 #else // _WIN32
 
-#ifndef _FORTIFY_SOURCE
-#define _FORTIFY_SOURCE 2
-#endif
 #ifndef _POSIX_PTHREAD_SEMANTICS
 #define _POSIX_PTHREAD_SEMANTICS
 #endif
@@ -457,8 +384,8 @@ EXTERNC_
 #endif
 
 #ifndef __DBL_EPSILON__
-#define DBL_EPSILON     2.2204460492503131e-016
-#define FLT_EPSILON     1.192092896e-07F
+#define DBL_EPSILON	2.2204460492503131e-016
+#define FLT_EPSILON	1.192092896e-07F
 #endif
 #ifndef ENOSR
 #define ENOSR		ENOBUFS
@@ -482,12 +409,6 @@ EXTERNC_
 #define strnicmp	strncasecmp
 #define wcsicmp		wcscasecmp
 
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun__)
-EXTERNC
-int wcscasecmp(const wchar_t *, const wchar_t *);
-EXTERNC_
-#endif
-
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 typedef unsigned short ushort;
 typedef unsigned int uint;
@@ -505,7 +426,7 @@ typedef wchar_t wchar;
 #define CLOCK_MONOTONIC	1
 
 EXTERNC
-int clock_gettime(int, struct timespec *ts);
+extern int clock_gettime(int, struct timespec *ts);
 EXTERNC_
 #endif
 #ifndef PATH_MAX
@@ -532,7 +453,18 @@ EXTERNC_
 #define CLOCK_MONOTONIC_RAW	CLOCK_MONOTONIC
 #endif
 
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun__)
+EXTERNC
+extern int wcscasecmp(const wchar_t *, const wchar_t *);
+EXTERNC_
+#endif
 #endif // _WIN32
+
+#ifdef __has_feature
+#define __no_sanitize(check)	 __attribute__((no_sanitize(check)))
+#else
+#define __no_sanitize(check)
+#endif
 
 // primitive type value limits
 #define MAXUCHAR	~(uchar)0
@@ -572,10 +504,82 @@ EXTERNC_
 #define MAXWORD		0xffff
 #define MAXDWORD	0xffffffff
 
+#define ZERO(x)		memset(&(x), 0, sizeof (x))
+
+// recursive macros for compile-time optimization
+#define STDAPI_REPEAT(i, m, d)	STDAPI_REPEAT_I(i, m, d)
+#define STDAPI_REPEAT_I(i, m, d)STDAPI_REPEAT_##i(m, d)
+#define STDAPI_REPEAT_0(m, d)
+#define STDAPI_REPEAT_1(m, d)	m(0, d)
+#define STDAPI_REPEAT_2(m, d)	STDAPI_REPEAT_1(m, d)	m(1, d)
+#define STDAPI_REPEAT_3(m, d)	STDAPI_REPEAT_2(m, d)	m(2, d)
+#define STDAPI_REPEAT_4(m, d)	STDAPI_REPEAT_3(m, d)	m(3, d)
+#define STDAPI_REPEAT_5(m, d)	STDAPI_REPEAT_4(m, d)	m(4, d)
+#define STDAPI_REPEAT_6(m, d)	STDAPI_REPEAT_5(m, d)	m(5, d)
+#define STDAPI_REPEAT_7(m, d)	STDAPI_REPEAT_6(m, d)	m(6, d)
+#define STDAPI_REPEAT_8(m, d)	STDAPI_REPEAT_7(m, d)	m(7, d)
+#define STDAPI_REPEAT_9(m, d)	STDAPI_REPEAT_8(m, d)	m(8, d)
+#define STDAPI_REPEAT_10(m, d)	STDAPI_REPEAT_9(m, d)	m(9, d)
+#define STDAPI_REPEAT_11(m, d)	STDAPI_REPEAT_10(m, d)	m(10, d)
+#define STDAPI_REPEAT_12(m, d)	STDAPI_REPEAT_11(m, d)	m(11, d)
+#define STDAPI_REPEAT_13(m, d)	STDAPI_REPEAT_12(m, d)	m(12, d)
+#define STDAPI_REPEAT_14(m, d)	STDAPI_REPEAT_13(m, d)	m(13, d)
+#define STDAPI_REPEAT_15(m, d)	STDAPI_REPEAT_14(m, d)	m(14, d)
+#define STDAPI_REPEAT_16(m, d)	STDAPI_REPEAT_15(m, d)	m(15, d)
+#define STDAPI_REPEAT_17(m, d)	STDAPI_REPEAT_16(m, d)	m(16, d)
+#define STDAPI_REPEAT_18(m, d)	STDAPI_REPEAT_17(m, d)	m(17, d)
+#define STDAPI_REPEAT_19(m, d)	STDAPI_REPEAT_18(m, d)	m(18, d)
+#define STDAPI_REPEAT_20(m, d)	STDAPI_REPEAT_19(m, d)	m(19, d)
+#define STDAPI_REPEAT_21(m, d)	STDAPI_REPEAT_20(m, d)	m(20, d)
+#define STDAPI_REPEAT_22(m, d)	STDAPI_REPEAT_21(m, d)	m(21, d)
+#define STDAPI_REPEAT_23(m, d)	STDAPI_REPEAT_22(m, d)	m(22, d)
+#define STDAPI_REPEAT_24(m, d)	STDAPI_REPEAT_23(m, d)	m(23, d)
+#define STDAPI_REPEAT_25(m, d)	STDAPI_REPEAT_24(m, d)	m(24, d)
+#define STDAPI_REPEAT_26(m, d)	STDAPI_REPEAT_25(m, d)	m(25, d)
+#define STDAPI_REPEAT_27(m, d)	STDAPI_REPEAT_26(m, d)	m(26, d)
+#define STDAPI_REPEAT_28(m, d)	STDAPI_REPEAT_27(m, d)	m(27, d)
+#define STDAPI_REPEAT_29(m, d)	STDAPI_REPEAT_28(m, d)	m(28, d)
+#define STDAPI_REPEAT_30(m, d)	STDAPI_REPEAT_29(m, d)	m(29, d)
+#define STDAPI_REPEAT_31(m, d)	STDAPI_REPEAT_30(m, d)	m(30, d)
+#define STDAPI_REPEAT_32(m, d)	STDAPI_REPEAT_31(m, d)	m(31, d)
+#define STDAPI_REPEAT_33(m, d)	STDAPI_REPEAT_32(m, d)	m(32, d)
+#define STDAPI_REPEAT_34(m, d)	STDAPI_REPEAT_33(m, d)	m(33, d)
+#define STDAPI_REPEAT_35(m, d)	STDAPI_REPEAT_34(m, d)	m(34, d)
+#define STDAPI_REPEAT_36(m, d)	STDAPI_REPEAT_35(m, d)	m(35, d)
+#define STDAPI_REPEAT_37(m, d)	STDAPI_REPEAT_36(m, d)	m(36, d)
+#define STDAPI_REPEAT_38(m, d)	STDAPI_REPEAT_37(m, d)	m(37, d)
+#define STDAPI_REPEAT_39(m, d)	STDAPI_REPEAT_38(m, d)	m(38, d)
+#define STDAPI_REPEAT_40(m, d)	STDAPI_REPEAT_39(m, d)	m(39, d)
+#define STDAPI_REPEAT_41(m, d)	STDAPI_REPEAT_40(m, d)	m(40, d)
+#define STDAPI_REPEAT_42(m, d)	STDAPI_REPEAT_41(m, d)	m(41, d)
+#define STDAPI_REPEAT_43(m, d)	STDAPI_REPEAT_42(m, d)	m(42, d)
+#define STDAPI_REPEAT_44(m, d)	STDAPI_REPEAT_43(m, d)	m(43, d)
+#define STDAPI_REPEAT_45(m, d)	STDAPI_REPEAT_44(m, d)	m(44, d)
+#define STDAPI_REPEAT_46(m, d)	STDAPI_REPEAT_45(m, d)	m(45, d)
+#define STDAPI_REPEAT_47(m, d)	STDAPI_REPEAT_46(m, d)	m(46, d)
+#define STDAPI_REPEAT_48(m, d)	STDAPI_REPEAT_47(m, d)	m(47, d)
+#define STDAPI_REPEAT_49(m, d)	STDAPI_REPEAT_48(m, d)	m(48, d)
+#define STDAPI_REPEAT_50(m, d)	STDAPI_REPEAT_49(m, d)	m(49, d)
+#define STDAPI_REPEAT_51(m, d)	STDAPI_REPEAT_50(m, d)	m(50, d)
+#define STDAPI_REPEAT_52(m, d)	STDAPI_REPEAT_51(m, d)	m(51, d)
+#define STDAPI_REPEAT_53(m, d)	STDAPI_REPEAT_52(m, d)	m(52, d)
+#define STDAPI_REPEAT_54(m, d)	STDAPI_REPEAT_53(m, d)	m(53, d)
+#define STDAPI_REPEAT_55(m, d)	STDAPI_REPEAT_54(m, d)	m(54, d)
+#define STDAPI_REPEAT_56(m, d)	STDAPI_REPEAT_55(m, d)	m(55, d)
+#define STDAPI_REPEAT_57(m, d)	STDAPI_REPEAT_56(m, d)	m(56, d)
+#define STDAPI_REPEAT_58(m, d)	STDAPI_REPEAT_57(m, d)	m(57, d)
+#define STDAPI_REPEAT_59(m, d)	STDAPI_REPEAT_58(m, d)	m(58, d)
+#define STDAPI_REPEAT_60(m, d)	STDAPI_REPEAT_59(m, d)	m(59, d)
+#define STDAPI_REPEAT_61(m, d)	STDAPI_REPEAT_60(m, d)	m(60, d)
+#define STDAPI_REPEAT_62(m, d)	STDAPI_REPEAT_61(m, d)	m(61, d)
+#define STDAPI_REPEAT_63(m, d)	STDAPI_REPEAT_62(m, d)	m(62, d)
+#define STDAPI_REPEAT_64(m, d)	STDAPI_REPEAT_63(m, d)	m(63, d)
+
 #ifndef O_NOATIME
 #define O_NOATIME	0
 #endif
 
+// 8 / 16 bit char string macros
 #ifdef _UNICODE
 #ifndef UNICODE
 #define UNICODE
@@ -737,11 +741,15 @@ typedef wchar tuchar;
 #define tunlink		unlink
 
 typedef char tchar;
-typedef uchar tuchar;
+typedef unsigned char tuchar;
 #endif // UNICODE
 
 #define tstreq(a, b)	!tstrcmp(a, b)
 #define tstrieq(a, b)	!tstricmp(a, b)
+
+typedef unsigned char byte;
+typedef unsigned char uchar;
+typedef unsigned short word;
 
 // process resource usage in kb / msec
 struct pidstat {
@@ -807,10 +815,12 @@ using namespace stdext;
 #define unordered_multimap	hash_multimap
 #define unordered_set		hash_set
 #define unordered_multiset	hash_multiset
+
 using namespace __gnu_cxx;
 #else
 #define STL_UNORDERED_MAP_H	<tr1/unordered_map>
 #define STL_UNORDERED_SET_H	<tr1/unordered_set>
+
 namespace std { namespace tr1 {} }
 using namespace std::tr1;
 #endif
@@ -833,85 +843,85 @@ inline const string wstringtoastring(const wstring &s) {
     return _wchartoastring(s.c_str(), s.size() + 1);
 }
 
-#define achartowchar(s)	    achartowstring(s).c_str()
-#define achartowstring(s)   _achartowstring((s), -1)
-#define astringtoachar(s)   (s).c_str()
-#define astringtowchar(s)   astringtowstring(s).c_str()
-#define wchartoachar(s)	    wchartoastring(s).c_str()
-#define wchartoastring(s)   _wchartoastring((s), -1)
-#define wstringtoachar(s)   wstringtoastring(s).c_str()
-#define wstringtowchar(s)   (s).c_str()
+#define achartowchar(s)		achartowstring(s).c_str()
+#define achartowstring(s)	_achartowstring((s), -1)
+#define astringtoachar(s)	(s).c_str()
+#define astringtowchar(s)	astringtowstring(s).c_str()
+#define wchartoachar(s)		wchartoastring(s).c_str()
+#define wchartoastring(s)	_wchartoastring((s), -1)
+#define wstringtoachar(s)	wstringtoastring(s).c_str()
+#define wstringtowchar(s)	(s).c_str()
 
 #ifdef UNICODE
-#define achartotchar(s)	    achartowchar(s)
-#define achartotstring(s)   achartowstring(s)
-#define astringtotchar(s)   astringtowchar(s)
-#define astringtotstring(s) astringtowstring(s)
-#define tchartoachar(s)	    wchartoachar(s)
-#define tchartowchar(s)	    (s)
-#define tchartotstring(s)   wstring(s)
-#define tstringtoachar(s)   wstringtoachar(s)
-#define tstringtoastring(s) wstringtoastring(s)
-#define tstringtowchar(s)   wstringtowchar(s)
-#define tstringtowstring(s) (s)
-#define wchartotchar(s)	    wchartowchar(s)
-#define wchartotstring(s)   wchartowstring(s)
-#define wstringtotchar(s)   wstringtowchar(s)
-#define wstringtotstring(s) wstringtowstring(s)
+#define achartotchar(s)		achartowchar(s)
+#define achartotstring(s)	achartowstring(s)
+#define astringtotchar(s)	astringtowchar(s)
+#define astringtotstring(s)	astringtowstring(s)
+#define tchartoachar(s)		wchartoachar(s)
+#define tchartowchar(s)		(s)
+#define tchartotstring(s)	wstring(s)
+#define tstringtoachar(s)	wstringtoachar(s)
+#define tstringtoastring(s)	wstringtoastring(s)
+#define tstringtowchar(s)	wstringtowchar(s)
+#define tstringtowstring(s)	(s)
+#define wchartotchar(s)		wchartowchar(s)
+#define wchartotstring(s)	wchartowstring(s)
+#define wstringtotchar(s)	wstringtowchar(s)
+#define wstringtotstring(s)	wstringtowstring(s)
 
-#define tcerr		    wcerr
-#define tcin		    wcin
-#define tcout		    wcout
-#define tstreambuf	    wstreambuf
-#define tistream	    wistream
-#define tostream	    wostream
-#define tiostream	    wiostream
-#define tfstream	    wfstream
-#define tifstream	    wifstream
-#define tofstream	    wofstream
-#define tstringstream	    wstringstream
-#define tistringstream	    wistringstream
-#define tostringstream	    wostringstream
-#define tstrstream	    wstrstream
-#define tistrstream	    wistrstream
-#define tostrstream	    wostrstream
-#define tstringbuf	    wstringbuf
+#define tcerr			wcerr
+#define tcin			wcin
+#define tcout			wcout
+#define tstreambuf		wstreambuf
+#define tistream		wistream
+#define tostream		wostream
+#define tiostream		wiostream
+#define tfstream		wfstream
+#define tifstream		wifstream
+#define tofstream		wofstream
+#define tstringstream		wstringstream
+#define tistringstream		wistringstream
+#define tostringstream		wostringstream
+#define tstrstream		wstrstream
+#define tistrstream		wistrstream
+#define tostrstream		wostrstream
+#define tstringbuf		wstringbuf
 
 #else
 
-#define achartotchar(s)	    (s)
-#define achartotstring(s)   string(s)
-#define astringtotchar(s)   astringtoachar(s)
-#define astringtotstring(s) (s)
-#define tchartoachar(s)	    (s)
-#define tchartowchar(s)	    achartowchar(s)
-#define tchartotstring(s)   string(s)
-#define tstringtoachar(s)   astringtoachar(s)
-#define tstringtoastring(s) (s)
-#define tstringtowchar(s)   astringtowchar(s)
-#define tstringtowstring(s) astringtowstring(s)
-#define wchartotchar(s)	    wchartoachar(s)
-#define wchartotstring(s)   wchartoastring(s)
-#define wstringtotchar(s)   wstringtoachar(s)
-#define wstringtotstring(s) wstringtoastring(s)
+#define achartotchar(s)		(s)
+#define achartotstring(s)	string(s)
+#define astringtotchar(s)	astringtoachar(s)
+#define astringtotstring(s)	(s)
+#define tchartoachar(s)		(s)
+#define tchartowchar(s)		achartowchar(s)
+#define tchartotstring(s)	string(s)
+#define tstringtoachar(s)	astringtoachar(s)
+#define tstringtoastring(s)	(s)
+#define tstringtowchar(s)	astringtowchar(s)
+#define tstringtowstring(s)	astringtowstring(s)
+#define wchartotchar(s)		wchartoachar(s)
+#define wchartotstring(s)	wchartoastring(s)
+#define wstringtotchar(s)	wstringtoachar(s)
+#define wstringtotstring(s)	wstringtoastring(s)
 
-#define tcerr		    cerr
-#define tcin		    cin
-#define tcout		    cout
-#define tstreambuf	    streambuf
-#define tistream	    istream
-#define tostream	    ostream
-#define tiostream	    iostream
-#define tfstream	    fstream
-#define tifstream	    ifstream
-#define tofstream	    ofstream
-#define tstringstream	    stringstream
-#define tistringstream	    istringstream
-#define tostringstream	    ostringstream
-#define tstrstream	    strstream
-#define tistrstream	    istrstream
-#define tostrstream	    ostrstream
-#define tstringbuf	    stringbuf
+#define tcerr			cerr
+#define tcin			cin
+#define tcout			cout
+#define tstreambuf		streambuf
+#define tistream		istream
+#define tostream		ostream
+#define tiostream		iostream
+#define tfstream		fstream
+#define tifstream		ifstream
+#define tofstream		ofstream
+#define tstringstream		stringstream
+#define tistringstream		istringstream
+#define tostringstream		ostringstream
+#define tstrstream		strstream
+#define tistrstream		istrstream
+#define tostrstream		ostrstream
+#define tstringbuf		stringbuf
 #endif
 
 // useful string utils
@@ -1070,9 +1080,9 @@ struct striless {
 class StringHash {
 public:
     struct DynamicString {
-        __forceinline DynamicString(const tchar *str): s(str) {}
+	__forceinline DynamicString(const tchar *str): s(str) {}
 
-        const tchar *s;
+	const tchar *s;
     };
 
     __forceinline StringHash(const DynamicString &ds): hash(stringhash(ds.s)) {}
@@ -1132,8 +1142,8 @@ public:
 		if (p->next == &obj) {
 		    if ((p->next = obj.next) == NULL)
 			back = p;
-                    else
-                        obj.next = NULL;
+		    else
+			obj.next = NULL;
 		    --sz;
 		    break;
 		}
@@ -1161,8 +1171,8 @@ public:
 
 	if ((front = front->next) == NULL)
 	    back = NULL;
-        else
-            obj->next = NULL;
+	else
+	    obj->next = NULL;
 	--sz;
 	return obj;
     }
@@ -1171,7 +1181,7 @@ public:
 	    back->next = &obj;
 	else
 	    front = &obj;
-        back = &obj;
+	back = &obj;
 	++sz;
     }
     void push_back(ObjectList &lst) {

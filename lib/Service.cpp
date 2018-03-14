@@ -32,11 +32,10 @@
 
 #define DWORD_MULTIPLE(x) ((((x) + sizeof (DWORD) - 1 ) / sizeof (DWORD)) * \
     sizeof (DWORD))
-#define PREFIX T("service_")
-
-#endif
-
+#define SERVICE_PREFIX T("service_")
+#else
 #pragma GCC diagnostic ignored "-Wunused-result"
+#endif
 
 #ifndef OPEN_MAX
 #define OPEN_MAX 2048
@@ -197,7 +196,7 @@ void Service::signal_handler(int sig) {
 	    service->onAbort();
 	}
     }
-    _exit(1);
+    _exit(sig);
 }
 
 #pragma warning(push)
@@ -290,44 +289,44 @@ void __stdcall Service::service_handler(ulong sig) {
 
 void Service::handle(ulong sig) {
     switch (sig) {
-      case SERVICE_CONTROL_SHUTDOWN:
-      case SERVICE_CONTROL_STOP:
+    case SERVICE_CONTROL_SHUTDOWN:
+    case SERVICE_CONTROL_STOP:
 	update(Stopping);
 	GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0); //-V549
 	break;
-      case SERVICE_CONTROL_ABORT:
+    case SERVICE_CONTROL_ABORT:
 	onAbort();
 	_exit(1);
 	break;
-      case SERVICE_CONTROL_EXIT:
+    case SERVICE_CONTROL_EXIT:
 	update(Stopping);
 	onStop(true);
 	break;
-      case SERVICE_CONTROL_PAUSE:
+    case SERVICE_CONTROL_PAUSE:
 	update(Pausing);
 	onPause();
 	update(Paused);
 	break;
-      case SERVICE_CONTROL_CONTINUE:
+    case SERVICE_CONTROL_CONTINUE:
 	update(Resuming);
 	onResume();
 	update(Running);
 	break;
-      case SERVICE_CONTROL_INTERROGATE:
+    case SERVICE_CONTROL_INTERROGATE:
 	update((Status)ssStatus.dwCurrentState);
 	break;
-      case SERVICE_CONTROL_REFRESH:
+    case SERVICE_CONTROL_REFRESH:
 	update(Refreshing);
 	GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, 0);
 	update(Running);
 	break;
-      case SERVICE_CONTROL_SIGUSR1:
+    case SERVICE_CONTROL_SIGUSR1:
   	onSigusr1();
 	break;
-      case SERVICE_CONTROL_SIGUSR2:
+    case SERVICE_CONTROL_SIGUSR2:
   	onSigusr2();
 	break;
-      default:
+    default:
 	onSignal(sig);
 	break;
     }
@@ -337,6 +336,7 @@ void Service::handle(ulong sig) {
 bool Service::update(Status status) {
     DWORD state;
 
+    stStatus = status;
     switch (status) {
     case Starting:
 	state = SERVICE_START_PENDING;
@@ -364,7 +364,6 @@ bool Service::update(Status status) {
     default:
 	return false;
     }
-
     ssStatus.dwCurrentState = state;
     ssStatus.dwWaitHint = 3000;
     if (state == SERVICE_START_PENDING)
@@ -524,7 +523,7 @@ tstring Service::errstr() const {
 }
 
 void *Service::open(uint size) {
-    tstring s(PREFIX + name);
+    tstring s(SERVICE_PREFIX + name);
 
     mapsz = size;
     if ((maphdl = CreateFileMapping((HANDLE)-1, NULL, PAGE_READWRITE, 0, mapsz,
@@ -581,7 +580,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    return 1;
 	}
 	RegCloseKey(key);
-	s = PREFIX + name;
+	s = SERVICE_PREFIX + name;
 	if ((hdl = OpenFileMapping(FILE_MAP_READ, FALSE, s.c_str())) == NULL)
 	    return 1;
 	if ((map = MapViewOfFile(hdl, FILE_MAP_READ, 0, 0, mapsz)) == NULL) {
@@ -695,6 +694,9 @@ void ServiceData::add(uint size, uint type, uint level) {
 #include <sys/wait.h>
 
 Service::Timer::Timer(ulong msec): timer(NULL) {
+#if defined(__APPLE__)
+    (void)msec;
+#elif defined(__linux__)
     itimerspec its;
     sigevent se;
 
@@ -702,7 +704,7 @@ Service::Timer::Timer(ulong msec): timer(NULL) {
     se.sigev_notify = SIGEV_SIGNAL;
     se.sigev_signo = SIGALRM;
     se.sigev_value.sival_ptr = &timer;
-    if (timer_create(CLOCK_MONOTONIC, &se, &timer))
+    if (msec == (ulong)-1 || timer_create(CLOCK_MONOTONIC, &se, &timer))
 	return;
     if (!msec)
 	msec = dmsec;
@@ -713,11 +715,15 @@ Service::Timer::Timer(ulong msec): timer(NULL) {
 	timer_delete(timer);
 	timer = NULL;
     }
+#endif
 }
 
 void Service::Timer::cancel() {
     if (timer) {
+#if defined(__APPLE__)
+#elif defined(__linux__)
 	timer_delete(timer);
+#endif
 	timer = NULL;
     }
 }
@@ -745,22 +751,14 @@ bool Service::open(const tchar *file) {
     stStatus = Stopped;
     if (file)
 	lckfile = file;
-    if ((fd = ::open(lckfile.c_str(), O_RDONLY)) == -1)
+    if ((fd = ::open(lckfile.c_str(), O_RDONLY | O_NOATIME)) == -1)
 	return false;
     ZERO(fl);
     fl.l_type = F_WRLCK;
     fl.l_whence = SEEK_SET;
-    if (fcntl(fd, F_GETLK, &fl) != -1 && fl.l_pid) {
-	char buf[16];
-	int in;
-
+    if (fcntl(fd, F_GETLK, &fl) != -1 && fl.l_pid && fl.l_type != F_UNLCK) {
 	pid = (pid_t)fl.l_pid;
 	stStatus = (Status)fl.l_len;
-	if ((in = (int)read(fd, buf, sizeof (buf) - 1)) > 0) {
-	    buf[in] = '\0';
-	    pid = atoi(buf);
-	    lseek(fd, 0, SEEK_SET);
-	}
     }
     ::close(fd);
     return pid != 0;
@@ -771,7 +769,7 @@ bool Service::close(void) {
     return true;
 }
 
-void Service::abort_handler(sigval) {
+void Service::abort_handler(int) {
     static bool aborting;
 
     if (!aborting) {
@@ -779,99 +777,104 @@ void Service::abort_handler(sigval) {
 
 	aborting = true;
 	ZERO(sa);
-	sa.sa_handler = (__sighandler_t)abort_handler;
+	sa.sa_handler = abort_handler;
 	sigaction(SIGALRM, &sa, NULL);
 	alarm(5);
-	dlog << Log::Crit << Log::mod(service->name) << Log::cmd("abort") << 
-	    Log::kv("err", "timeout") << endlog;
+	dlog << Log::Crit << Log::mod(service->name) << Log::cmd(T("abort")) << 
+	    Log::kv(T("err"), T("timeout")) << endlog;
 	alarm(0);
     }
-    _exit(2);
+    _exit(-2);
 }
 
 void Service::null_handler(int) {}
 
 void Service::signal_handler(int sig, siginfo_t *si, void *) {
-    if (!aborted) {
-	itimerspec its;
-	bool paused = (service->stStatus == Paused);
-	sigevent se;
-	timer_t timer;
+    bool paused = (service->stStatus == Paused);
 
-	ZERO(se);
-	se.sigev_notify = SIGEV_THREAD;
-	se.sigev_notify_function = abort_handler;
-	se.sigev_value.sival_ptr = &timer;
-	if (timer_create(CLOCK_MONOTONIC, &se, &timer)) {
-	    timer = NULL;
-	} else {
-	    ZERO(its);
-	    its.it_value.tv_sec = (time_t)(Timer::dmsec / 1000U);
-	    its.it_value.tv_nsec = (long)((Timer::dmsec % 1000U) * 1000000U);
-	    timer_settime(timer, 0, &its, NULL);
-	}
-	switch (sig) {
-	case SIGALRM:
-	    service->onTimer((ulong)si->si_value.sival_ptr);
-	    break;
-	case SIGABRT:
-	case SIGBUS:
-	case SIGFPE:
-	case SIGILL:
-	case SIGSEGV:
-#ifdef SIGSTKFLT
-	case SIGSTKFLT:
+    if (aborted)
+	_exit(sig);
+#ifdef __linux__
+    itimerspec its;
+    sigevent se;
+    timer_t timer;
+
+    ZERO(se);
+    se.sigev_notify = SIGEV_THREAD;
+    se.sigev_notify_function = abort_handler;
+    se.sigev_value.sival_ptr = &timer;
+    if (timer_create(CLOCK_MONOTONIC, &se, &timer)) {
+	timer = NULL;
+    } else {
+	ZERO(its);
+	its.it_value.tv_sec = (time_t)(Timer::dmsec / 1000U);
+	its.it_value.tv_nsec = (long)((Timer::dmsec % 1000U) * 1000000U);
+	timer_settime(timer, 0, &its, NULL);
+    }
 #endif
-	case SIGTRAP:
-	    service->onAbort();
-	    break;
-	case SIGCONT:
-	    if (paused) {
-		service->update(Resuming);
-		service->onResume();
-		service->update(Running);
-	    }
-	    break;
-	case SIGHUP:
-	    if (!paused)
-		service->update(Refreshing);
-	    if (!service->onRefresh()) {
-		service->update(Stopping);
-		service->onStop(false);
-	    } else if (!paused) {
-		service->update(Running);
-	    }
-	    break;
-	case SIGINT:
+    switch (sig) {
+    case SIGALRM:
+	service->onTimer((ulong)si->si_value.sival_ptr);
+	break;
+    case SIGABRT:
+    case SIGBUS:
+    case SIGFPE:
+    case SIGILL:
+    case SIGSEGV:
+#ifdef SIGSTKFLT
+    case SIGSTKFLT:
+#endif
+    case SIGTRAP:
+	service->onAbort();
+	break;
+    case SIGCONT:
+	if (paused) {
+	    service->update(Resuming);
+	    service->onResume();
+	    service->update(Running);
+	}
+	break;
+    case SIGHUP:
+	if (!paused)
+	    service->update(Refreshing);
+	if (!service->onRefresh()) {
 	    service->update(Stopping);
 	    service->onStop(false);
-	    break;
-	case SIGPIPE:
-	    break;
-	case SIGTERM:
-	    service->update(Stopping);
-	    service->onStop(true);
-	    break;
-	case SIGTSTP:
-	    if (service->bPause && !paused) {
-		service->update(Pausing);
-		service->onPause();
-		service->update(Paused);
-	    }
-	    break;
-	case SIGUSR1:
-	    service->onSigusr1();
-	    break;
-	case SIGUSR2:
-	    service->onSigusr2();
-	    break;
+	} else if (!paused) {
+	    service->update(Running);
 	}
-	if (timer)
-	    timer_delete(timer);
+	break;
+    case SIGINT:
+	service->update(Stopping);
+	service->onStop(false);
+	break;
+    case SIGPIPE:
+	break;
+    case SIGTERM:
+	service->update(Stopping);
+	service->onStop(true);
+	break;
+    case SIGTSTP:
+	if (service->bPause && !paused) {
+	    service->update(Pausing);
+	    service->onPause();
+	    service->update(Paused);
+	}
+	break;
+    case SIGUSR1:
+	service->onSigusr1();
+	break;
+    case SIGUSR2:
+	service->onSigusr2();
+	break;
     }
+#ifdef __linux__
+    if (timer)
+	timer_delete(timer);
+#endif
     dlog.flush();
     if (aborted)
-	_exit(1);
+	_exit(sig);
 }
 
 void Service::init_sigset(sigset_t &sigs) {
@@ -902,7 +905,7 @@ void Service::setsignal(bool abrt) {
     sigprocmask(SIG_UNBLOCK, &sigs, NULL);
     pthread_sigmask(SIG_BLOCK, &sigs, NULL);
     if (abrt) {
-        sa.sa_flags = SA_SIGINFO;
+	sa.sa_flags = SA_SIGINFO;
 	sa.sa_mask = sigs;
 	sa.sa_sigaction = signal_handler;
 
@@ -942,10 +945,16 @@ int Service::ctrl_handler(void *) {
     sigaddset(&sigs, SIGPIPE);
     while (!quit) {
 	tchar buf[16];
-        siginfo_t si;
+	siginfo_t si;
 	const tchar *str;
+#ifdef linux
 
 	sig = sigwaitinfo(&sigs, &si);
+#else
+	ZERO(si);
+	if (sigwait(&sigs, &sig))
+	    sig = 0;
+#endif
 	switch (sig) {
 	case SIGABRT:
 	    quit = true;
@@ -996,8 +1005,11 @@ int Service::ctrl_handler(void *) {
 	    str = buf;
 	    break;
 	};
-	dlogi(Log::mod(service->name), Log::kv(T("sig"), str));
-	signal_handler(sig, &si, NULL);
+	// ignore signals we sent our own pg
+	if (si.si_pid != getpid() || si.si_code == SI_QUEUE) {
+	    dlogi(Log::mod(service->name), Log::kv(T("sig"), str));
+	    signal_handler(sig, &si, NULL);
+	}
     };
     sigpid = 0;
     return 0;
@@ -1006,6 +1018,7 @@ int Service::ctrl_handler(void *) {
 int Service::run(int argc, const tchar * const *argv) {
     int ret;
     rlimit rl;
+    struct sigaction sa;
 
     if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
 	rl.rlim_cur = rl.rlim_max == RLIM_INFINITY ? 100 * 1024 : rl.rlim_max;
@@ -1043,6 +1056,10 @@ int Service::run(int argc, const tchar * const *argv) {
 	setsignal(true);
     if (sigpid)
 	kill(sigpid, SIGINT);
+    ZERO(sa);
+    sa.sa_handler = abort_handler;
+    sigaction(SIGALRM, &sa, NULL);
+    alarm(5);
     service->sigthread.wait();
     dlog.stop();
     return ret;
@@ -1080,7 +1097,7 @@ bool Service::start(int argc, const tchar * const *argv) {
 	exit(run(argc, argv));
     } else if (fpid == -1) {
 	errnum = errno;
-        dloge(Log::mod(argv[0]), Log::error(T("unable to fork")));
+	dloge(Log::mod(argv[0]), Log::error(T("unable to fork")));
 	return false;
     } else {
 	bool started = false;
@@ -1214,6 +1231,13 @@ int Service::execute(int argc, const tchar * const *argv) {
 		return -1;
 	    }
 	    installdir = argv[++i];
+	} else if (tstreq(cmd, T("lockfile"))) {
+	    if (i == argc - 1) {
+		dlog.err(T("lock filename required"));
+		delete [] av;
+		return -1;
+	    }
+	    lckfile = argv[++i];
 	} else if (tstreq(cmd, T("logfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("log filename required"));
@@ -1228,19 +1252,13 @@ int Service::execute(int argc, const tchar * const *argv) {
 		return -1;
 	    }
 	    outfile = argv[++i];
-	} else if (tstreq(cmd, T("pidfile"))) {
-	    if (i == argc - 1) {
-		dlog.err(T("pid filename required"));
-		delete [] av;
-		return -1;
-	    }
-	    lckfile = argv[++i];
 	} else {
 	    while (++i < argc)
 		av[ac++] = argv[i];
 	    break;
 	}
     }
+    av[ac] = NULL;
     splitpath(argv[0], name.c_str(), installdir, prog);
     if (name.empty())
 	name = prog;
@@ -1255,8 +1273,8 @@ int Service::execute(int argc, const tchar * const *argv) {
 	ret = !abort();
     } else if (tstreq(cmd, T("help")) || tstreq(cmd, T("?"))) {
 	tcout << T("usage:\t") << name << endl <<
-            T("\t[--console|--daemon] [--installdir dir] [--logfile file]") <<
-            endl << T("\t[--outfile file] --pidfile file]") << endl <<
+	    T("\t[--console|--daemon] [--installdir dir] [--logfile file]") <<
+	    endl << T("\t[--outfile file] --pidfile file]") << endl <<
 	    T("\tcondrestart|restart|start [args]") << endl <<
 	    T("\thelp") << endl <<
 	    T("\tinstall [description [dependencies]]") << endl <<
@@ -1362,14 +1380,14 @@ int Service::onStart(int argc, const tchar * const *argv) {
 }
 
 void Service::onTimer(ulong timer) {
-    dlog << Log::Debug << Log::mod(name) << Log::cmd("timer") << Log::kv("id",
+    dlog << Log::Debug << Log::mod(name) << Log::cmd("timer") << Log::kv(T("id"),
 	timer) << endlog;
 }
 
 const tchar *Service::status(Status s) {
     static const tchar *StatusStr[] = {
-	T("Error"), T("Starting"), T("Refreshing"), T("Pausing"), T("Paused"),
-	T("Resuming"), T("Stopping"), T("Running"), T("Stopped")
+	T("Error"), T("Pausing"), T("Paused"), T("Refreshing"), T("Resuming"),
+	T("Running"), T("Starting"), T("Stopping"), T("Stopped")
     };
 
     return StatusStr[(int)s];
@@ -1377,8 +1395,8 @@ const tchar *Service::status(Status s) {
 
 
 Daemon::Daemon(const tchar *svc_name, const tchar *display, bool pauseable):
-    Service(svc_name, pauseable), qflag(None), child(0), lckfd(-1),
-    refreshed(false), start(0), watch(false) {
+    Service(svc_name, pauseable), qflag(None), child(0), lckfd(-1), msec(mticks()),
+    refreshed(false), watch(false) {
     (void)display;
 }
 
@@ -1394,6 +1412,10 @@ Daemon::~Daemon() {
 }
 
 bool Daemon::update(Status status) {
+    if (!child) {
+	stStatus = status;
+	return true;
+    }
     if (status < stStatus)
 	(void)lockfile(lckfd, F_UNLCK, SEEK_SET, status, 0, 0);
     else
@@ -1420,6 +1442,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     bool buffer;
     int ret = 0;
     struct stat sbuf, sfile;
+    time_t start;
 
     time(&start);
     srvcpath = path;
@@ -1476,14 +1499,14 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     dlog.setmp(false);
     if (!cfg.get(T("enable"), true)) {
 	dlogn(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
-            T("disabled")));
+	    T("disabled")));
 	return 4;
     }
     if (sbuf.st_size)
 	dlogw(Log::mod(name), Log::error(T("restarting after abort")));
     dlogn(Log::mod(name), Log::cmd(T("start")), Log::kv(T("host"),
-        Sockaddr::hostname()), Log::kv(T("dir"), installdir.c_str()),
-        Log::kv(T("instance"), instance), Log::kv(T("release"), ver));
+	Sockaddr::hostname()), Log::kv(T("dir"), installdir.c_str()),
+	Log::kv(T("instance"), instance), Log::kv(T("release"), ver));
 #ifndef _WIN32
     rlimit rl;
     passwd *pwd;
@@ -1507,9 +1530,9 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	}
     }
     dlogd(Log::mod(name), Log::kv(T("uid"), uid == (uid_t)-1 ? getuid() :
-        (uid_t)uid), Log::kv(T("gid"), gid <= 0 ? getgid() : (uid_t)gid),
+	(uid_t)uid), Log::kv(T("gid"), gid <= 0 ? getgid() : (uid_t)gid),
 	Log::kv(T("maxfd"), getrlimit(RLIMIT_NOFILE, &rl) ? OPEN_MAX :
-        rl.rlim_cur));
+	rl.rlim_cur));
 #endif
     if (watch) {
 #ifndef _WIN32
@@ -1517,7 +1540,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	struct sigaction sa;
 
 	ZERO(sa);
-        sa.sa_flags = SA_SIGINFO;
+	sa.sa_flags = SA_SIGINFO;
 	sa.sa_sigaction = watch_handler;
 	sigaction(SIGABRT, &sa, NULL);
 	sigaction(SIGCONT, &sa, NULL);
@@ -1546,7 +1569,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		sigaddset(&sigs, SIGALRM);
 		pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
 		first = false;
-		sprintf(buf, "%ld %ld", (long)getpid(), (long)child);
+		sprintf(buf, "%lu %lu", (ulong)getpid(), (ulong)child);
 		if (lseek(lckfd, 0, SEEK_SET) || write(lckfd, buf, strlen(
 		    buf)) < 1) {
 		    dlogw(Log::mod(name), Log::cmd(T("watch")),
@@ -1573,7 +1596,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		    dlog.close();
 		    alarm(intvl);
 		    if (lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Running, 0) ==
-                        -1) {
+			-1) {
 			alarm(0);
 			flg = WNOHANG;
 		    }
@@ -1612,12 +1635,12 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			    dlogw(Log::mod(name), Log::cmd(T("watch")),
 				Log::kv(T("pid"), child), Log::kv(T("mem"), kb),
 				Log::kv(T("max"), maxmem), T("restarted"));
-                        } else if (!flg) {
+			} else if (!flg) {
 			    dlogn(Log::mod(name), Log::cmd(qflag == Fast ?
-                                T("exit") : T("stop")), Log::kv(T("duration"),
-                                time(NULL) - start), Log::kv(T("mem"), kb),
-                                Log::kv(T("rss"), psbuf.rss));
-                        }
+				T("exit") : T("stop")), Log::kv(T("duration"),
+				time(NULL) - start), Log::kv(T("mem"), kb),
+				Log::kv(T("rss"), psbuf.rss));
+			}
 			ret = 0;
 			break;
 		    }
@@ -1628,10 +1651,10 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 0);
 		if (!first) {
 		    dlogn(Log::mod(name), Log::cmd(T("start")),
-                        Log::kv(T("host"), Sockaddr::hostname()),
-                        Log::kv(T("dir"), installdir.c_str()),
+			Log::kv(T("host"), Sockaddr::hostname()),
+			Log::kv(T("dir"), installdir.c_str()),
 			Log::kv(T("instance"), instance),
-                        Log::kv(T("release"), ver));
+			Log::kv(T("release"), ver));
 		}
 		setpgid(0, getpid());
 		ret = Service::onStart(argc, argv);
@@ -1687,11 +1710,11 @@ void Daemon::onResume(void) {
     dlogn(Log::mod(name), Log::cmd(T("resume")));
 }
 
-bool Daemon::onRefresh() {
+bool Daemon::onRefresh(void) {
     cfg.lock();
     if (!cfgfile.empty() && !cfg.read(cfgfile.c_str())) {
-	dloga(Log::mod(name), T("mod=config file="), cfgfile, Log::error(
-            T("unable to read")));
+	dloga(Log::mod(name), Log::cmd(T("config")), Log::kv(T("file"),
+	    cfgfile), Log::error(tstrerror(errno)));
 	cfg.unlock();
 	return false;
     }
@@ -1703,7 +1726,8 @@ bool Daemon::onRefresh() {
     if (!cfgfile.empty())
 	dlog.set(cfg);
     cfg.unlock();
-    Service::Timer::dmsec = cfg.get("watch.timeout", Timer::dmsec / 1000) * 1000;
+    Service::Timer::dmsec = cfg.get(T("watch.timeout"), Timer::dmsec / 1000) *
+	1000;
     if (!child && refreshed)
 	dlog.note(Log::mod(name), Log::cmd(T("reload")));
     else
@@ -1713,11 +1737,11 @@ bool Daemon::onRefresh() {
 
 void Daemon::onStop(bool fast) {
     dlogn(Log::mod(name), Log::cmd(fast ? T("exit") : T("stop")),
-        Log::kv(T("duration"), time(NULL) - start));
+	Log::kv(T("duration"), (mticks() - msec) / 1000U));
     qflag = fast ? Fast : Slow;
 }
 
-void Daemon::onSigusr1() {
+void Daemon::onSigusr1(void) {
     dlogn(Log::mod(name), Log::cmd(T("rollover")));
     dlog.roll();
 }
@@ -1734,95 +1758,5 @@ void Daemon::watch_handler(int sig, siginfo_t *, void *) {
     else if (sig == SIGTERM)
 	daemon->qflag = Fast;
     kill(daemon->child, sig);
-}
-
-
-WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
-    *dname): Daemon(dname ? dname : T("")), interval(60), maxmem(0) {
-    int ac;
-
-    for (ac = 2; ac < argc; ac++) {
-	const tchar *p = argv[ac];
-
-	if (*p != '-')
-	    break;
-	while (*p == '-')
-	    p++;
-	if (!tstrcmp(p, T("check")))
-	    interval = tstrtoul(argv[++ac], NULL, 10);
-	else if (!tstrcmp(p, T("maxmem")))
-	    maxmem = tstrtoul(argv[++ac], NULL, 10);
-	else if (!tstrcmp(p, T("name")))
-	    name = argv[++ac];
-	else
-	    ac++;
-    }
-    if (ac >= argc) {
-	const tchar *prog = tstrrchr(argv[0], '/');
-
-	if (!prog && (prog = tstrrchr(argv[0], '\\')) == NULL)
-	    prog = argv[0];
-	else
-	    prog++;
-	cout << "usage:\t" << prog << endl <<
-	    T("\tstart [--check seconds] [--maxmem kb] [--name str] cmd ...") <<
-	    endl <<
-	    T("\tcontinue|exit|pause|refresh|status|stop [--name str] cmd") <<
-	    endl;
-	exit(1);
-    }
-    if (name.empty()) {
-	tstring::size_type i;
-
-	name = argv[ac];
-	if ((i = name.find_last_of(T('.'))) != name.npos)
-	    name.erase(i);
-    }
-}
-
-bool WatchDaemon::onRefresh(void) {
-    if (!Daemon::onRefresh())
-	return false;
-    if (interval)
-	cfg.set(T("watch.interval"), interval);
-    else
-	cfg.set(T("watch.enable"), false);
-    cfg.set(T("watch.maxmem"), maxmem);
-    return true;
-}
-
-int WatchDaemon::onStart(int argc, const tchar * const *argv) {
-    int ac;
-    tstring args;
-    int ret = Daemon::onStart(argc, argv);
-
-    if (ret)
-	return ret;
-    for (ac = 1; ac < argc; ac++) {
-	if (*argv[ac] == '-')
-	    ac++;
-	else
-	    break;
-    }
-    for (int i = ac + 1; i < argc; i++) {
-	if (!args.empty())
-	    args += ' ';
-	args += argv[i];
-    }
-#ifndef _WIN32
-    sigset_t sigs;
-
-    sigfillset(&sigs);
-    sigprocmask(SIG_UNBLOCK, &sigs, NULL);
-    pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
-#endif
-    running();
-    dlogi(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[ac]),
-	Log::kv(T("args"), args));
-    dlog.close();
-    texecvp(argv[ac], (tchar **)&argv[ac]);
-    dloge(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[ac]),
-	Log::error(errno));
-    return -1;
 }
 
