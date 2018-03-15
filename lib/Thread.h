@@ -24,7 +24,7 @@
 #include <process.h>
 #include <windows.h>
 
-typedef HANDLE thread_t;
+typedef HANDLE thread_hdl_t;
 typedef DWORD thread_id_t;
 
 #define THREAD_EQUAL(x, y)	((x) == (y))
@@ -64,7 +64,7 @@ typedef uint tlskey_t;
 
 #include <pthread.h>
 
-typedef pthread_t thread_t;
+typedef pthread_t thread_hdl_t;
 typedef pthread_t thread_id_t;
 
 #define INFINITE		(ulong)-1
@@ -575,11 +575,9 @@ protected:
 typedef Lock Mutex;
 
 #ifdef __APPLE__
-#define thread_t mach_thread_t
 #include <mach/mach_init.h>
 #include <mach/semaphore.h>
 #include <mach/task.h>
-#undef thread_t
 
 class Semaphore: nocopy {
 public:
@@ -1069,7 +1067,7 @@ enum ThreadState { Init, Running, Suspended, Terminated };
 /* manage OS native threads */
 class Thread: nocopy {
 public:
-    explicit Thread(thread_t handle, ThreadGroup *tg = NULL, bool autoterm =
+    explicit Thread(thread_hdl_t handle, ThreadGroup *tg = NULL, bool autoterm =
 	false);
     Thread(void);
     virtual ~Thread();
@@ -1077,15 +1075,15 @@ public:
     static Thread MainThread;
 
     int exitStatus(void) const { return retval; }
-    ThreadState getState(void) const { Locker lkr(lck); return state; }
+    thread_hdl_t getHandle(void) const { return hdl; }
     thread_id_t getId(void) const { return id; }
+    ThreadState getState(void) const { Locker lkr(lck); return state; }
     ThreadGroup *getThreadGroup(void) const { return group; }
-    thread_t handle(void) const { return hdl; }
     bool running(void) const { return getState() == Running; }
     bool suspended(void) const { return getState() == Suspended; }
     bool terminated(void) const { return getState() == Terminated; }
 
-    operator thread_t(void) const { return hdl; }
+    operator thread_hdl_t(void) const { return hdl; }
     bool operator ==(const Thread &t) const { return THREAD_EQUAL(id, t.id); }
     bool operator !=(const Thread &t) const { return !operator ==(t); }
 
@@ -1111,7 +1109,7 @@ private:
     void *argument;
     bool autoterm;
     ThreadGroup *group;
-    thread_t hdl;
+    thread_hdl_t hdl;
     thread_id_t id;
     ThreadRoutine main;
     int retval;

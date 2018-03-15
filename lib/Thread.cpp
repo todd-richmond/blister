@@ -201,7 +201,7 @@ bool Processor::affinity(ullong mask) {
 #endif
 }
 
-Thread::Thread(thread_t handle, ThreadGroup *tg, bool aterm): cv(lck),
+Thread::Thread(thread_hdl_t handle, ThreadGroup *tg, bool aterm): cv(lck),
     argument(NULL), autoterm(aterm), hdl(handle), id(NOID), main(NULL),
     retval(0), state(Running) {
     group = ThreadGroup::add(*this, tg);

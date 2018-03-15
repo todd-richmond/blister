@@ -56,3 +56,9 @@ if(WIN32)
 else()
     install(TARGETS blister blister_static DESTINATION lib)
 endif()
+
+if(NOT APPLE AND COMMAND cotire)
+    cotire(blister_lib)
+    set_target_properties(blister_lib PROPERTIES COTIRE_ADD_UNITY_BUILD FALSE)
+endif()
+

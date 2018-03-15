@@ -23,6 +23,8 @@ if(CMAKE_MAJOR_VERSION GREATER 3 OR CMAKE_MAJOR_VERSION EQUAL 3 AND CMAKE_MINOR_
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
     endif()
 endif()
+set (CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/build")
+include(cotire OPTIONAL)
 # CXX CMAKE_BUILD_TYPE flags are not always set
 if(NOT CMAKE_CXX_FLAGS_DEBUG AND NOT CMAKE_CXX_FLAGS_RELEASE)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
@@ -123,7 +125,7 @@ add_custom_target(distclean)
 add_custom_command(
     COMMENT "Cleaning distribution"
     COMMAND $(MAKE) clean
-    COMMAND find . -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name Makefile | xargs rm -rf
+    COMMAND find . -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name *_cotire.cmake -o -name Makefile | xargs rm -rf
     TARGET distclean)
 
 add_subdirectory(lib)
