@@ -50,6 +50,7 @@
   1999-05-03 lpd Original version.
  */
 
+#include "stdapi.h"
 #include "MD5.h"
 #include <string.h>
 

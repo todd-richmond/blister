@@ -21,7 +21,7 @@
 #include STL_UNORDERED_MAP_H
 #include "Socket.h"
 
-class URL {
+class STDAPI URL {
 public:
     URL() { set(NULL); }
     explicit URL(const tchar *url) { set(url); }
@@ -40,7 +40,7 @@ public:
     static void unescape(tstring &str, bool plus = true);
 };
 
-class HTTPClient: nocopy {
+class STDAPI HTTPClient: nocopy {
 public:
     typedef unordered_multimap<tstring, tstring, strihash<tchar>,
 	strieq<tchar> > attrmap;

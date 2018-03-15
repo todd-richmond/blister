@@ -47,7 +47,7 @@ const int SERVICE_CONTROL_EXIT = 130;
 const int SERVICE_CONTROL_SIGUSR1 = 131;
 const int SERVICE_CONTROL_SIGUSR2 = 132;
 
-class Service: nocopy {
+class STDAPI Service: nocopy {
 public:
     enum Status { Error, Pausing, Paused, Refreshing, Resuming, Running,
 	Starting, Stopping, Stopped };
@@ -169,7 +169,7 @@ protected:
 };
 
 #ifdef _WIN32
-class ServiceData: nocopy {
+class STDAPI ServiceData: nocopy {
 public:
     ServiceData(const tchar *service, uint ctrs, uint size);
 
@@ -193,7 +193,7 @@ private:
 };
 #endif
 
-class Daemon: public Service {
+class STDAPI Daemon: public Service {
 public:
     enum Quit { None, Slow, Fast };
 

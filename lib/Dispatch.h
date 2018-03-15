@@ -49,7 +49,7 @@ enum DispatchMsg {
 };
 
 // base classes for event objects
-class DispatchObj: nocopy {
+class STDAPI DispatchObj: nocopy {
 private:
     class Group {
     public:
@@ -104,7 +104,7 @@ private:
 #define DSP_PREVIOUS	(ulong)-2
 #define DSP_NEVER_DUE	(msec_t)-1
 
-class DispatchTimer: public DispatchObj {
+class STDAPI DispatchTimer: public DispatchObj {
 public:
     explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
 	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) { init(); }
@@ -139,7 +139,7 @@ private:
 };
 
 // handle socket events
-class DispatchSocket: public DispatchTimer, public Socket {
+class STDAPI DispatchSocket: public DispatchTimer, public Socket {
 public:
     explicit DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =
 	DSP_NEVER);
@@ -163,7 +163,7 @@ protected:
     friend class Dispatcher;
 };
 
-class DispatchIOSocket: public DispatchSocket {
+class STDAPI DispatchIOSocket: public DispatchSocket {
 public:
     explicit DispatchIOSocket(Dispatcher &d, int type = SOCK_STREAM,
 	ulong msec = DSP_NEVER): DispatchSocket(d, type, msec) {}
@@ -191,7 +191,7 @@ public:
     }
 };
 
-class DispatchClientSocket: public DispatchIOSocket {
+class STDAPI DispatchClientSocket: public DispatchIOSocket {
 public:
     explicit DispatchClientSocket(Dispatcher &d, int type = SOCK_STREAM,
 	ulong msec = DSP_NEVER): DispatchIOSocket(d, type, msec) {}
@@ -212,7 +212,7 @@ private:
     DSP_DECLARE(DispatchClientSocket, connected);
 };
 
-class DispatchServerSocket: public DispatchIOSocket {
+class STDAPI DispatchServerSocket: public DispatchIOSocket {
 public:
     DispatchServerSocket(Dispatcher &d, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(d, sock, msec) {}
@@ -220,7 +220,7 @@ public:
     virtual void start(void) = 0;
 };
 
-class DispatchListenSocket: public DispatchSocket {
+class STDAPI DispatchListenSocket: public DispatchSocket {
 public:
     explicit DispatchListenSocket(Dispatcher &d, int type = SOCK_STREAM):
 	DispatchSocket(d, type) {}
@@ -242,7 +242,7 @@ protected:
     DSP_DECLARE(DispatchListenSocket, connection);
 };
 
-class Dispatcher: public ThreadGroup {
+class STDAPI Dispatcher: public ThreadGroup {
 public:
     explicit Dispatcher(const Config &config);
     virtual ~Dispatcher() { stop(); }

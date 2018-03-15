@@ -54,7 +54,7 @@
  *   config.get("attr2", "default"); // return app shared value of "attr2"
  */
 
-class Config: nocopy {
+class STDAPI Config: nocopy {
 public:
     explicit Config(const tchar *file = NULL, const tchar *pre = NULL);
     explicit Config(tistream &is): ini(false), locker(0) { is >> *this; }

@@ -61,7 +61,7 @@ class Config;
  * DLOGW(T("value=") << value);
  */
 
-class Log: nocopy {
+class STDAPI Log: nocopy {
 public:
     enum Level {
 	None, Emerg, Alert, Crit, Err, Warn, Note, Info, Debug, Trace
@@ -424,7 +424,7 @@ template<size_t N> inline tostream &operator <<(tostream &os, const
 inline Log &operator <<(Log &l, Log &(*manip)(Log &)) { return manip(l); }
 inline Log &endlog(Log &l) { return l.endlog(); }
 
-extern Log &dlog;
+extern STDAPI Log &dlog;
 
 #define DLOGL(l, args)  { if (l <= dlog.level()) dlog << l << args << endlog; }
 #define DLOGM(args)	DLOGL(Log::Emerg, args)

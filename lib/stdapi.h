@@ -21,17 +21,29 @@
 // defines, typedefs and code to make non-UNIX systems support POSIX APIs
 #define CPP_STR(s)		#s
 #ifdef _MSC_VER
+#define DLL_EXPORT		__declspec(dllexport)
+#define DLL_IMPORT		__declspec(dllimport)
+#define DLL_LOCAL
 #define PRAGMA_WARN_DISABLE(e)	_Pragma(warning(disable: e))
 #define PRAGMA_WARN_ENABLE(e)	_Pragma(warning(enable: e))
 #define PRAGMA_WARN_POP		_Pragma(warning(pop))
 #define PRAGMA_WARN_PUSH	_Pragma(warning(push))
 #else
+#define DLL_EXPORT		__attribute__((visibility("default")))
+#define DLL_IMPORT		__attribute__((visibility("default")))
+#define DLL_LOCAL		__attribute__((visibility("hidden")))
 #define PRAGMA_WARN_POP		_Pragma(CPP_STR(GCC pop_options))
 #define PRAGMA_WARN_PUSH	_Pragma(CPP_STR(GCC push_options))
 #define PRAGMA_WARN_DISABLE(e)	_Pragma(CPP_STR(GCC diagnostic ignored #e))
 #define PRAGMA_WARN_ENABLE(e)	_Pragma(CPP_STR(GCC diagnostic warning #e))
 #endif
 #define PRAGMA_WARN_PUSH_DISABLE(e)	PRAGMA_WARN_PUSH PRAGMA_WARN_DISABLE(e)
+
+#ifdef STDAPI_BUILD
+#define STDAPI		DLL_EXPORT
+#else
+#define STDAPI		DLL_IMPORT
+#endif
 
 #ifdef __cplusplus
 #define EXTERNC		extern "C" {
@@ -294,58 +306,58 @@ struct timezone {
 #define fileno(stream)	(_get_osfhandle((stream)->_file))
 
 EXTERNC
-extern int access(const char *path, int mode);
-extern int chmod(const char *path, int mode);
-extern int chsize(int fd, long len);
-extern int close(int fd);
-extern void closedir(DIR *dir);
-extern int creat(const char *path, int mode);
-extern int copy_file(const char *from, const char *to, int check);
-extern int dup(int fd);
-extern int dup2(int from, int to);
-extern int eof(int fd);
-extern long filelength(int fd);
-extern int flock(int fd, int op);
-extern int fstat(int fd, struct stat *buf);
-extern int fsync(int fd);
-extern int ftruncate(int fd, long len);
-extern int gettimeofday(struct timeval *tv, struct timezone *tz);
-extern int isatty(int fd);
-extern int link(const char *from, const char *to);
-extern int lockf(int fd, int op, long len);
-extern long lseek(int, long, int);
-extern char *mktemp(char *path);
-extern int open(const char *path, int mode, ...);
-extern DIR *opendir(const char *path);
-extern int read(int, void *, unsigned int);
-extern dirent *readdir(DIR *dir);
-extern long readv(int fd, struct iovec *vec, int numvec);
-extern int rename(const char *from, const char *to);
-extern void seekdir(DIR *dir, long offset);
-extern int setmode(int fd, int mode);
-extern int sigsend(idtype_t idtype, id_t id, int sig);
-extern int stat(const char *path, struct stat *buf);
-extern int statvfs(const char *path, struct statvfs *buf);
-extern long tell(int fd);
-extern int umask(int mode);
-extern int unlink(const char *path);
-extern int waccess(const wchar *path, int mode);
-extern int wchmod(const wchar *path, int mode);
-extern void wclosedir(WDIR *dir);
-extern int wcopy_file(const wchar *from, const wchar *to, int check);
-extern int wcreat(const wchar *path, int mode);
-extern wchar *wmktemp(wchar *path);
-extern int wlink(const wchar *from, const wchar *to);
-extern int wopen(const wchar *path, int mode, ...);
-extern WDIR *wopendir(const wchar *path);
-extern wdirent *wreaddir(WDIR *dir);
-extern int wrename(const wchar *from, const wchar *to);
-extern int write(int, const void *, uint);
-extern long writev(int fd, const struct iovec *vec, int numvec);
-extern void wseekdir(WDIR *dir, long);
-extern int wstat(const wchar *wpath, struct stat *buf);
-extern int wstatvfs(const wchar *wpath, struct statvfs *buf);
-extern int wunlink(const wchar *path);
+extern STDAPI int access(const char *path, int mode);
+extern STDAPI int chmod(const char *path, int mode);
+extern STDAPI int chsize(int fd, long len);
+extern STDAPI int close(int fd);
+extern STDAPI void closedir(DIR *dir);
+extern STDAPI int creat(const char *path, int mode);
+extern STDAPI int copy_file(const char *from, const char *to, int check);
+extern STDAPI int dup(int fd);
+extern STDAPI int dup2(int from, int to);
+extern STDAPI int eof(int fd);
+extern STDAPI long filelength(int fd);
+extern STDAPI int flock(int fd, int op);
+extern STDAPI int fstat(int fd, struct stat *buf);
+extern STDAPI int fsync(int fd);
+extern STDAPI int ftruncate(int fd, long len);
+extern STDAPI int gettimeofday(struct timeval *tv, struct timezone *tz);
+extern STDAPI int isatty(int fd);
+extern STDAPI int link(const char *from, const char *to);
+extern STDAPI int lockf(int fd, int op, long len);
+extern STDAPI long lseek(int, long, int);
+extern STDAPI char *mktemp(char *path);
+extern STDAPI int open(const char *path, int mode, ...);
+extern STDAPI DIR *opendir(const char *path);
+extern STDAPI int read(int, void *, unsigned int);
+extern STDAPI dirent *readdir(DIR *dir);
+extern STDAPI long readv(int fd, struct iovec *vec, int numvec);
+extern STDAPI int rename(const char *from, const char *to);
+extern STDAPI void seekdir(DIR *dir, long offset);
+extern STDAPI int setmode(int fd, int mode);
+extern STDAPI int sigsend(idtype_t idtype, id_t id, int sig);
+extern STDAPI int stat(const char *path, struct stat *buf);
+extern STDAPI int statvfs(const char *path, struct statvfs *buf);
+extern STDAPI long tell(int fd);
+extern STDAPI int umask(int mode);
+extern STDAPI int unlink(const char *path);
+extern STDAPI int waccess(const wchar *path, int mode);
+extern STDAPI int wchmod(const wchar *path, int mode);
+extern STDAPI void wclosedir(WDIR *dir);
+extern STDAPI int wcopy_file(const wchar *from, const wchar *to, int check);
+extern STDAPI int wcreat(const wchar *path, int mode);
+extern STDAPI wchar *wmktemp(wchar *path);
+extern STDAPI int wlink(const wchar *from, const wchar *to);
+extern STDAPI int wopen(const wchar *path, int mode, ...);
+extern STDAPI WDIR *wopendir(const wchar *path);
+extern STDAPI wdirent *wreaddir(WDIR *dir);
+extern STDAPI int wrename(const wchar *from, const wchar *to);
+extern STDAPI int write(int, const void *, uint);
+extern STDAPI long writev(int fd, const struct iovec *vec, int numvec);
+extern STDAPI void wseekdir(WDIR *dir, long);
+extern STDAPI int wstat(const wchar *wpath, struct stat *buf);
+extern STDAPI int wstatvfs(const wchar *wpath, struct statvfs *buf);
+extern STDAPI int wunlink(const wchar *path);
 EXTERNC_
 
 #define asctime_r(tm, buf, len)	((void)(buf, len), asctime(tm))
@@ -426,7 +438,7 @@ typedef wchar_t wchar;
 #define CLOCK_MONOTONIC	1
 
 EXTERNC
-extern int clock_gettime(int, struct timespec *ts);
+extern STDAPI int clock_gettime(int, struct timespec *ts);
 EXTERNC_
 #endif
 #ifndef PATH_MAX
@@ -455,7 +467,7 @@ EXTERNC_
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun__)
 EXTERNC
-extern int wcscasecmp(const wchar_t *, const wchar_t *);
+extern STDAPI int wcscasecmp(const wchar_t *, const wchar_t *);
 EXTERNC_
 #endif
 #endif // _WIN32
@@ -783,13 +795,13 @@ inline void time_adjust_msec(struct timespec *ts, ulong msec) {
 #define millitime()	((msec_t)(microtime() / 1000))
 
 EXTERNC
-extern int lockfile(int fd, short type, short whence, ulong start, ulong len,
-    short test);
-extern msec_t mticks(void);
-extern usec_t uticks(void);
+extern STDAPI int lockfile(int fd, short type, short whence, ulong start, ulong
+    len, short test);
+extern STDAPI msec_t mticks(void);
+extern STDAPI usec_t uticks(void);
 #pragma GCC push_options
 #pragma GCC diagnostic ignored "-Wshadow"
-extern int pidstat(pid_t pid, struct pidstat *psbuf);
+extern STDAPI int pidstat(pid_t pid, struct pidstat *psbuf);
 #pragma GCC pop_options
 EXTERNC_
 
@@ -832,8 +844,8 @@ using namespace std::tr1;
 #endif
 
 // narrow / wide sring routines
-extern const wstring _achartowstring(const char *s, size_t len);
-extern const string _wchartoastring(const wchar *s, size_t len);
+extern STDAPI const wstring _achartowstring(const char *s, size_t len);
+extern STDAPI const string _wchartoastring(const wchar *s, size_t len);
 
 inline const wstring astringtowstring(const string &s) {
     return _achartowstring(s.c_str(), s.size() + 1);

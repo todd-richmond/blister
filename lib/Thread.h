@@ -226,7 +226,7 @@ private:
  * The DLLibrary class loads shared libraries and dynamically fetches function
  * pointers. Do not specify file extensions in the constructor
  */
-class DLLibrary: nocopy {
+class STDAPI DLLibrary: nocopy {
 public:
     explicit DLLibrary(const tchar *dll = NULL): hdl(0) { open(dll); }
     ~DLLibrary() { close(); }
@@ -246,7 +246,7 @@ private:
     tstring file;
 };
 
-class Processor: nocopy {
+class STDAPI Processor: nocopy {
 public:
     static ullong affinity(void);
     static bool affinity(ullong mask);
@@ -308,7 +308,7 @@ protected:
 
 #ifdef NO_ATOMIC_LOCK
 
-class SpinLock: nocopy {
+class STDAPI SpinLock: nocopy {
 public:
     SpinLock() { pthread_spin_init(&lck, 0); }
     ~SpinLock() { pthread_spin_destroy(&lck); }
@@ -327,7 +327,7 @@ protected:
 
 #define SPINLOCK_YIELD	1 << 6
 
-class SpinLock: nocopy {
+class STDAPI SpinLock: nocopy {
 public:
     SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U), lck(0) {}
 
@@ -368,7 +368,7 @@ typedef LockerTemplate<SpinLock> SpinLocker;
 #ifdef _WIN32
 #define msleep(msec)	Sleep(msec)
 
-class Lock: nocopy {
+class STDAPI Lock: nocopy {
 public:
     Lock() { InitializeCriticalSection(&csec); }
     ~Lock() { DeleteCriticalSection(&csec); }
@@ -382,7 +382,7 @@ protected:
     CRITICAL_SECTION csec;
 };
 
-class Mutex: nocopy {
+class STDAPI Mutex: nocopy {
 public:
     explicit Mutex(const tchar *name = NULL);
     ~Mutex() { if (hdl) CloseHandle(hdl); }
@@ -397,7 +397,7 @@ protected:
     HANDLE hdl;
 };
 
-class Event: nocopy {
+class STDAPI Event: nocopy {
 public:
     explicit Event(bool manual = false, bool set = false, const tchar *name =
 	NULL): hdl(NULL) { open(manual, set, name); }
@@ -462,14 +462,14 @@ protected:
     }
 };
 
-class Semaphore: public _Semaphore, private nocopy {
+class STDAPI Semaphore: public _Semaphore, private nocopy {
 public:
     explicit Semaphore(uint init = 0): _Semaphore(NULL, init) {}
 
     bool open(uint init = 0) { return _open(NULL, init); }
 };
 
-class SharedSemaphore: public _Semaphore, private nocopy {
+class STDAPI SharedSemaphore: public _Semaphore, private nocopy {
 public:
     explicit SharedSemaphore(const tchar *name, uint init = 0): _Semaphore(name,
 	init) {}
@@ -479,7 +479,7 @@ public:
     }
 };
 
-class Condvar: nocopy {
+class STDAPI Condvar: nocopy {
 public:
     explicit Condvar(Lock &lock): lck(lock), pending(0), waiting(0) {}
 
@@ -529,7 +529,7 @@ private:
     atomic_t waiting;
 };
 
-class Process {
+class STDAPI Process {
 public:
     explicit Process(HANDLE hproc): hdl(hproc) {}
     ~Process() { if (hdl) CloseHandle(hdl); }
@@ -557,7 +557,7 @@ inline void msleep(ulong msec) {
     nanosleep(&ts, NULL);
 }
 
-class Lock: nocopy {
+class STDAPI Lock: nocopy {
 public:
     Lock() { pthread_mutex_init(&mtx, NULL); }
     ~Lock() { pthread_mutex_destroy(&mtx); }
@@ -579,7 +579,7 @@ typedef Lock Mutex;
 #include <mach/semaphore.h>
 #include <mach/task.h>
 
-class Semaphore: nocopy {
+class STDAPI Semaphore: nocopy {
 public:
     explicit Semaphore(uint init = 0): hdl(0) {
 	if (init != (uint)-1)
@@ -635,7 +635,7 @@ protected:
 
 #include <semaphore.h>
 
-class Semaphore: nocopy {
+class STDAPI Semaphore: nocopy {
 public:
     explicit Semaphore(uint init = 0): valid(false) {
 	if (init != (uint)-1)
@@ -693,7 +693,7 @@ protected:
 #include <sys/ipc.h>
 #include <sys/sem.h>
 
-class SharedSemaphore: nocopy {
+class STDAPI SharedSemaphore: nocopy {
 public:
     explicit SharedSemaphore(const tchar *name = NULL, uint init = 0): hdl(-1) {
 	open(name, init);
@@ -754,7 +754,7 @@ protected:
     int hdl;
 };
 
-class Condvar: nocopy {
+class STDAPI Condvar: nocopy {
 public:
     explicit Condvar(Lock &lck): lock(lck) {
 #if defined(__APPLE__) || defined(__ANDROID__)
@@ -808,7 +808,7 @@ protected:
 typedef LockerTemplate<Lock> Locker;
 typedef FastLockerTemplate<Lock> FastLocker;
 
-class RWLock: nocopy {
+class STDAPI RWLock: nocopy {
 public:
     RWLock(): rcv(lck), wcv(lck), readers(0), wwaiting(0), writing(false) {}
 
@@ -885,7 +885,7 @@ typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker
 
 /* Fast reference counter class */
 #ifdef NO_ATOMIC_ADD
-class RefCount: nocopy {
+class STDAPI RefCount: nocopy {
 public:
     explicit RefCount(uint init = 1): cnt(init) {}
 
@@ -902,7 +902,7 @@ private:
 
 #else
 
-class RefCount: nocopy {
+class STDAPI RefCount: nocopy {
 public:
     explicit RefCount(uint init = 1): cnt((int)init) {}
 
@@ -975,7 +975,7 @@ protected:
 };
 
 /* Last-in-first-out queue useful for thread pools */
-class Lifo {
+class STDAPI Lifo {
 public:
     class Waiting {
     public:
@@ -1065,7 +1065,7 @@ typedef bool (Thread::*ThreadControlRoutine)(void);
 enum ThreadState { Init, Running, Suspended, Terminated };
 
 /* manage OS native threads */
-class Thread: nocopy {
+class STDAPI Thread: nocopy {
 public:
     explicit Thread(thread_hdl_t handle, ThreadGroup *tg = NULL, bool autoterm =
 	false);
@@ -1125,7 +1125,7 @@ private:
 /* manage a group of one or more, possibly dissimilar threads */
 typedef void (ThreadGroup::*ThreadGroupControlRoutine)(bool);
 
-class ThreadGroup: nocopy {
+class STDAPI ThreadGroup: nocopy {
 public:
     explicit ThreadGroup(bool autoterm = true);
     virtual ~ThreadGroup();

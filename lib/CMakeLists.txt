@@ -32,8 +32,13 @@ else()
     list(APPEND blister_LIB_SOURCE Unix.c)
 endif()
 
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden")
+endif()
+
 add_library(blister_lib OBJECT ${blister_LIB_SOURCE})
 set_target_properties(blister_lib PROPERTIES POSITION_INDEPENDENT_CODE 1)
+target_compile_definitions(blister_lib PRIVATE STDAPI_BUILD)
 target_include_directories(blister_lib PUBLIC .)
 target_cppcheck(blister_lib)
 
