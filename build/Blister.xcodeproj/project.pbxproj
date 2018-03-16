@@ -925,7 +925,11 @@
 				GCC_OPTIMIZATION_LEVEL = 1;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = ../lib/stdapi.h;
-				GCC_PREPROCESSOR_DEFINITIONS = DEBUG;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					DEBUG,
+					STDAPI_BUILD,
+				);
+				GCC_TREAT_IMPLICIT_FUNCTION_DECLARATIONS_AS_ERRORS = YES;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_MISSING_FIELD_INITIALIZERS = YES;
@@ -947,21 +951,28 @@
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
+					"-fno-standalone-debug",
+					"-fvisibility=hidden",
 					"-fno-omit-frame-pointer",
 					"-pipe",
 				);
+				OTHER_LDFLAGS = "-dead_strip";
 				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
 				WARNING_CFLAGS = (
 					"-Wall",
 					"-Wconversion",
+					"-Wdouble-promotion",
 					"-Wextra",
 					"-Wformat=2",
 					"-Wnull-dereference",
+					"-Wodr",
 					"-Wshadow",
 					"-Wsign-conversion",
 					"-Wstrict-aliasing=2",
+					"-Wstrict-overflow=2",
+					"-Wno-unknown-pragmas",
 					"-Wwrite-strings",
 				);
 			};
@@ -972,7 +983,6 @@
 			buildSettings = {
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER = YES;
-				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY = YES;
 				CLANG_USE_OPTIMIZATION_PROFILE = YES;
 				CLANG_WARN_ASSIGN_ENUM = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -1003,7 +1013,11 @@
 				GCC_OPTIMIZATION_LEVEL = fast;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = ../lib/stdapi.h;
-				GCC_PREPROCESSOR_DEFINITIONS = NDEBUG;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					NDEBUG,
+					STDAPI_BUILD,
+				);
+				GCC_TREAT_IMPLICIT_FUNCTION_DECLARATIONS_AS_ERRORS = YES;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
 				GCC_UNROLL_LOOPS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -1025,19 +1039,30 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LLVM_LTO = YES;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
-				OTHER_CFLAGS = "-pipe";
+				OTHER_CFLAGS = (
+					"-fdata-sections",
+					"-ffunction-sections",
+					"-fno-standalone-debug",
+					"-fvisibility=hidden",
+					"-pipe",
+				);
+				OTHER_LDFLAGS = "-dead_strip";
 				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
 				WARNING_CFLAGS = (
 					"-Wall",
 					"-Wconversion",
+					"-Wdouble-promotion",
 					"-Wextra",
 					"-Wformat=2",
 					"-Wnull-dereference",
+					"-Wodr",
 					"-Wshadow",
 					"-Wsign-conversion",
 					"-Wstrict-aliasing=2",
+					"-Wstrict-overflow=2",
+					"-Wno-unknown-pragmas",
 					"-Wwrite-strings",
 				);
 			};

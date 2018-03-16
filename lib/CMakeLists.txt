@@ -32,10 +32,6 @@ else()
     list(APPEND blister_LIB_SOURCE Unix.c)
 endif()
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden")
-endif()
-
 add_library(blister_lib OBJECT ${blister_LIB_SOURCE})
 set_target_properties(blister_lib PROPERTIES POSITION_INDEPENDENT_CODE 1)
 target_compile_definitions(blister_lib PRIVATE STDAPI_BUILD)
@@ -50,7 +46,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 add_library(blister_static STATIC $<TARGET_OBJECTS:blister_lib>)
-set_target_properties(blister_static PROPERTIES OUTPUT_NAME stdapi)
+set_target_properties(blister_static PROPERTIES OUTPUT_NAME blister)
 target_include_directories(blister_static PUBLIC $<TARGET_PROPERTY:blister_lib,INCLUDE_DIRECTORIES>)
 target_link_libraries(blister_static INTERFACE $<TARGET_PROPERTY:blister,INTERFACE_LINK_LIBRARIES>)
 
