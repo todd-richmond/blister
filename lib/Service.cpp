@@ -1712,11 +1712,9 @@ void Daemon::onResume(void) {
 }
 
 bool Daemon::onRefresh(void) {
-    cfg.lock();
     if (!cfgfile.empty() && !cfg.read(cfgfile.c_str())) {
 	dloga(Log::mod(name), Log::cmd(T("config")), Log::kv(T("file"),
 	    cfgfile), Log::error(tstrerror(errno)));
-	cfg.unlock();
 	return false;
     }
     if (cfg.get(T("installdir")).empty())
@@ -1726,7 +1724,6 @@ bool Daemon::onRefresh(void) {
     instance = cfg.get(T("instance"), T("default"));
     if (!cfgfile.empty())
 	dlog.set(cfg);
-    cfg.unlock();
     Service::Timer::dmsec = cfg.get(T("watch.timeout"), Timer::dmsec / 1000) *
 	1000;
     if (!child && refreshed)
