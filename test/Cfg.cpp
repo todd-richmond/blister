@@ -20,7 +20,7 @@
 
 int tmain(int argc, tchar *argv[]) {
     const tchar *attr = NULL, *file = NULL, *prefix = NULL, *section = NULL;
-    Config cfg;
+    ConfigFile cfg;
     bool boolean = false, check = false, integer = false, nonewline = false;
     bool exists;
     int i;

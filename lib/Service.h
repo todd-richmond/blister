@@ -206,7 +206,7 @@ public:
     Config &config(void) { return cfg; }
 
 protected:
-    Config cfg;
+    ConfigFile cfg;
     tstring cfgfile, instance;
     pid_t child;
     int lckfd;

@@ -96,7 +96,7 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		pre = argv[++i];
 
-	    Config cfg(file, pre);
+	    ConfigFile cfg(file, pre);
 
 	    dlog.set(cfg);
 	} else if (!tstricmp(argv[i], T("-d")) || !tstricmp(argv[i],

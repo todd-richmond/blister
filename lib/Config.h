@@ -56,9 +56,9 @@
 
 class STDAPI Config: nocopy {
 public:
-    explicit Config(const tchar *file = NULL, const tchar *pre = NULL);
+    explicit Config(const tchar *pre = NULL): ini(false) { prefix(pre); }
     explicit Config(tistream &is, const tchar *pre = NULL): ini(false) {
-        read(is, pre);
+	read(is, pre);
     }
     ~Config() { clear(); }
 
@@ -72,7 +72,7 @@ public:
     }
     void clear(void);
     void erase(const tchar *attr, const tchar *sect = NULL);
-    bool exists(const tchar *attr, const tchar *sect = NULL) {
+    bool exists(const tchar *attr, const tchar *sect = NULL) const {
 	RLocker lkr(lck);
 
 	return lookup(attr, sect) != NULL;
@@ -101,7 +101,6 @@ public:
     }
     ulong get(const tchar *attr, ulong def, const tchar *sect = NULL) const;
     void prefix(const tchar *str) { pre = str ? str : T(""); }
-    bool read(const tchar *file, const tchar *pre = NULL, bool append = false);
     bool read(tistream &is, const tchar *pre = NULL, bool append = false);
     void set(const tchar *attr, const tchar *val, const tchar *sect = NULL) {
 	WLocker lkr(lck);
@@ -135,14 +134,11 @@ public:
 	*sect = NULL, NULL */);
     bool write(tostream &os) const { return write(os, ini); }
     bool write(tostream &os, bool ini) const;
-    bool write(const tchar *file = NULL) const { return write(file, ini); }
-    bool write(const tchar *file, bool ini) const;
     friend tistream &operator >>(tistream &is, Config &cfg);
     friend tostream &operator <<(tostream &os, const Config &cfg);
 
 private:
-    class Value {
-    public:
+    struct Value {
 	Value(const tchar *val): expand(false), quote(0) { append(val); }
 
 	tstring value;
@@ -157,11 +153,10 @@ private:
 
     attrmap amap;
     mutable RWLock lck;
-    tstring path;
     tstring pre;
     bool ini;
 
-    bool expand(const Value *val, string &s) const;
+    bool expand(const Value *val, tstring &s) const;
     const Value *lookup(const tchar *attr, const tchar *sect) const;
     void trim(tstring &str) const;
 
@@ -180,5 +175,22 @@ inline tostream &operator <<(tostream &os, const Config &cfg) {
     cfg.write(os);
     return os;
 }
+
+class STDAPI ConfigFile: public Config {
+public:
+    explicit ConfigFile(const tchar *file = NULL, const tchar *pre = NULL);
+
+    bool read(tistream &is, const tchar *pre = NULL, bool append = false) {
+	return Config::read(is, pre, append);
+    }
+    bool read(const tchar *file = NULL, const tchar *pre = NULL, bool append =
+	false);
+    bool write(tostream &os, bool ini) const { return Config::write(os, ini); }
+    bool write(void) const { return write(NULL, iniformat()); }
+    bool write(const tchar *file, bool ini = false) const;
+
+private:
+    tstring path;
+};
 
 #endif // Config_h

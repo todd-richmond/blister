@@ -45,11 +45,6 @@ void Config::Value::append(const tchar *val) {
     }
 }
 
-Config::Config(const tchar *file, const tchar *str): ini(false) {
-    if (file)
-	read(file, str);
-}
-
 void Config::clear(void) {
     attrmap::iterator it;
     WLocker lkr(lck);
@@ -85,7 +80,7 @@ void Config::erase(const tchar *attr, const tchar *sect) {
     }
 }
 
-bool Config::expand(const Value *value, string &val) const {
+bool Config::expand(const Value *value, tstring &val) const {
     tstring::size_type epos, spos;
 
     val = value->value;
@@ -293,15 +288,6 @@ bool Config::read(tistream &is, const tchar *str, bool app) {
     return parse(is);
 }
 
-bool Config::read(const tchar *file, const tchar *str, bool app) {
-    if (file)
-	path = file;
-
-    tifstream is(path.c_str());
-
-    return read(is, str, app);
-}
-
 void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
     append) {
     attrmap::iterator it;
@@ -452,7 +438,21 @@ bool Config::write(tostream &os, bool inistyle) const {
     return os.good();
 }
 
-bool Config::write(const tchar *file, bool inistyle) const {
+ConfigFile::ConfigFile(const tchar *file, const tchar *str): Config(str) {
+    if (file)
+	read(file, str);
+}
+
+bool ConfigFile::read(const tchar *file, const tchar *str, bool app) {
+    if (file)
+	path = file;
+
+    tifstream is(path.c_str());
+
+    return read(is, str, app);
+}
+
+bool ConfigFile::write(const tchar *file, bool inistyle) const {
     if (file) {
 	tofstream os(tchartoachar(file));
 
@@ -469,4 +469,3 @@ bool Config::write(const tchar *file, bool inistyle) const {
 	return true;
     }
 }
-
