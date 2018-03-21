@@ -22,44 +22,52 @@
 #include <vector>
 #include "Config.h"
 
-void Config::Value::append(const tchar *val) {
-    size_t len = tstrlen(val);
+// 1 allocation for key, val, state
+const Config::KV *Config::newkv(const tchar *key, const tchar *val) const {
+    size_t klen = tstrlen(key);
+    size_t vlen = tstrlen(val);
+    char *ret = new char[sizeof (KV) + klen + vlen + 2];
+    KV *kv = (KV *)ret;
 
-    if (len > 1 && (val[0] == '"' || val[0] == '\'') && val[len - 1] == val[0]) {
-	if (!quote)
-	    quote = val[0];
-	value.append(val, 1, len - 2);
+    kv->expand = false;
+    if (vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen - 1] == val[0]) {
+	kv->quote = val[0];
+	++val;
+	vlen -= 2;
     } else {
-	value.append(val, 0, len);
+	kv->quote = '\0';
     }
-    if (!expand && quote != '\'') {
+    memcpy(kv->val, val, vlen);
+    kv->val[vlen] = '\0';
+    kv->key = (const tchar *)memcpy(kv->val + vlen + 1, key, klen + 1);
+    if (kv->quote != '\'') {
 	const tchar *p = val;
 
 	while ((p = tstrchr(p, '$')) != NULL && *++p) {
 	    if ((*p == '{' || *p == '(') && tstrchr(p, *p == '(' ? ')' : '}') !=
 		NULL) {
-		expand = true;
+		kv->expand = true;
 		break;
 	    }
 	}
     }
+    return kv;
 }
 
 void Config::clear(void) {
-    attrmap::iterator it;
+    kvmap::iterator it;
     WLocker lkr(lck);
 
     while ((it = amap.begin()) != amap.end()) {
-	const tchar *p = it->first;
+	const KV *kv = it->second;
 
-	delete it->second;
 	amap.erase(it);
-	delete [] p;
+	delkv(kv);
     }
 }
 
 void Config::erase(const tchar *attr, const tchar *sect) {
-    attrmap::iterator it;
+    kvmap::iterator it;
     WLocker lkr(lck);
 
     if (sect && *sect) {
@@ -72,25 +80,24 @@ void Config::erase(const tchar *attr, const tchar *sect) {
 	it = amap.find(attr);
     }
     if (it != amap.end()) {
-	const tchar *p = it->first;
+	const KV *kv = it->second;
 
-	delete it->second;
 	amap.erase(it);
-	delete [] p;
+	delkv(kv);
     }
 }
 
-bool Config::expand(const Value *value, tstring &val) const {
+bool Config::expandkv(const KV *kv, tstring &val) const {
     tstring::size_type epos, spos;
 
-    val = value->value;
+    val = kv->val;
     while ((spos = val.rfind(T("$("))) != val.npos ||
 	(spos = val.rfind(T("${"))) != val.npos) {
 	if ((epos = val.find(val[spos + 1] == '(' ? ')' : '}', spos + 2)) ==
 	    val.npos)
 	    break;
 
-	attrmap::const_iterator it;
+	kvmap::const_iterator it;
 	tstring s(val, spos + 2, epos - spos - 2);
 
 	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 && s.size() >
@@ -99,7 +106,7 @@ bool Config::expand(const Value *value, tstring &val) const {
 	it = amap.find(s.c_str());
 	if (it == amap.end())
 	    break;
-	val.replace(spos, epos - spos + 1, it->second->value);
+	val.replace(spos, epos - spos + 1, it->second->val);
     }
     return !val.empty();
 }
@@ -107,31 +114,31 @@ bool Config::expand(const Value *value, tstring &val) const {
 const tstring Config::get(const tchar *attr, const tchar *def,
     const tchar *sect) const {
     RLocker lkr(lck);
-    const Value *val = lookup(attr, sect);
+    const KV *kv = getkv(attr, sect);
     static tstring empty;
 
-    if (val && val->expand) {
+    if (kv && kv->expand) {
 	tstring s;
 
-	return expand(val, s) ? s.c_str() : def ? def : empty;
+	return expandkv(kv, s) ? s.c_str() : def ? def : empty;
     }
-    return val ? val->value : def ? def : empty;
+    return kv ? kv->val : def ? def : empty;
 }
 
 bool Config::get(const tchar *attr, bool def, const tchar *sect) const {
     RLocker lkr(lck);
-    const Value *val = lookup(attr, sect);
+    const KV *kv = getkv(attr, sect);
     tchar c;
 
-    if (val) {
-	if (val->expand) {
+    if (kv) {
+	if (kv->expand) {
 	    tstring s;
 
-	    if (!expand(val, s))
+	    if (!expandkv(kv, s))
 		return def;
 	    c = (tchar)totlower(s[0]);
 	} else {
-	    c = (tchar)totlower(val->value[0]);
+	    c = (tchar)totlower(kv->val[0]);
 	}
     } else {
 	return def;
@@ -141,42 +148,42 @@ bool Config::get(const tchar *attr, bool def, const tchar *sect) const {
 
 long Config::get(const tchar *attr, long def, const tchar *sect) const {
     RLocker lkr(lck);
-    const Value *val = lookup(attr, sect);
+    const KV *kv = getkv(attr, sect);
 
-    if (val && val->expand) {
+    if (kv && kv->expand) {
 	tstring s;
 
-	return expand(val, s) ? tstrtol(s.c_str(), NULL, 10) : def;
+	return expandkv(kv, s) ? tstrtol(s.c_str(), NULL, 10) : def;
     }
-    return val ? tstrtol(val->value.c_str(), NULL, 10) : def;
+    return kv ? tstrtol(kv->val, NULL, 10) : def;
 }
 
 ulong Config::get(const tchar *attr, ulong def, const tchar *sect) const {
     RLocker lkr(lck);
-    const Value *val = lookup(attr, sect);
+    const KV *kv = getkv(attr, sect);
 
-    if (val && val->expand) {
+    if (kv && kv->expand) {
 	tstring s;
 
-	return expand(val, s) ? tstrtoul(s.c_str(), NULL, 10) : def;
+	return expandkv(kv, s) ? tstrtoul(s.c_str(), NULL, 10) : def;
     }
-    return val ? tstrtoul(val->value.c_str(), NULL, 10) : def;
+    return kv ? tstrtoul(kv->val, NULL, 10) : def;
 }
 
 double Config::get(const tchar *attr, double def, const tchar *sect) const {
     RLocker lkr(lck);
-    const Value *val = lookup(attr, sect);
+    const KV *kv = getkv(attr, sect);
 
-    if (val && val->expand) {
+    if (kv && kv->expand) {
 	tstring s;
 
-	return expand(val, s) ? tstrtod(s.c_str(), NULL) : def;
+	return expandkv(kv, s) ? tstrtod(s.c_str(), NULL) : def;
     }
-    return val ? tstrtod(val->value.c_str(), NULL) : def;
+    return kv ? tstrtod(kv->val, NULL) : def;
 }
 
-const Config::Value *Config::lookup(const tchar *attr, const tchar *sect) const {
-    attrmap::const_iterator it;
+const Config::KV *Config::getkv(const tchar *attr, const tchar *sect) const {
+    kvmap::const_iterator it;
 
     if (sect && *sect) {
 	string s(sect);
@@ -275,14 +282,13 @@ bool Config::read(tistream &is, const tchar *str, bool app) {
 	return false;
     prefix(str);
     if (!app) {
-	attrmap::iterator it;
-	const tchar *p;
+	kvmap::iterator it;
 
 	while ((it = amap.begin()) != amap.end()) {
-	    p = it->first;
-	    delete it->second;
+	    const KV *kv = it->second;
+
 	    amap.erase(it);
-	    delete [] p;
+	    delkv(kv);
 	}
     }
     return parse(is);
@@ -290,10 +296,8 @@ bool Config::read(tistream &is, const tchar *str, bool app) {
 
 void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
     append) {
-    attrmap::iterator it;
-    char *key;
-    uint sz;
-    Value *value;
+    kvmap::iterator it;
+    const KV *kv, *oldkv;
 
     if (sect && *sect) {
 	tstring s(sect);
@@ -302,30 +306,39 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
 	s += attr;
 	it = amap.find(s.c_str());
 	if (it == amap.end()) {
-	    sz = (uint)s.size() + 1;
-	    key = new char[sz];
-	    amap.insert(make_pair((const char *)memcpy(key, s.c_str(), sz),
-		new Value(val)));
+	    kv = newkv(s.c_str(), val);
+	    addkv(kv);
 	    return;
 	}
     } else {
 	it = amap.find(attr);
 	if (it == amap.end()) {
-	    sz = (uint)tstrlen(attr) + 1;
-	    key = new char[sz];
-	    amap.insert(make_pair((const char *)memcpy(key, attr, sz),
-		new Value(val)));
+	    kv = newkv(attr, val);
+	    addkv(kv);
 	    return;
 	}
     }
-    attr = it->first;
-    value = it->second;
+    oldkv = it->second;
     if (append) {
-	value->append(val);
+	size_t len = strlen(val);
+	tstring s;
+
+	if (oldkv->quote)
+	    s += oldkv->quote;
+	s += oldkv->val;
+	if (len > 1 && (val[0] == '"' || val[0] == '\'') && val[len - 1] == val[0])
+	    s.append(val + 1, len - 2);
+	else
+	    s.append(val, len);
+	if (oldkv->quote)
+	    s += oldkv->quote;
+	kv = newkv(oldkv->key, s.c_str());
     } else {
-	delete value;
-	amap[attr] =  new Value(val);
+	kv = newkv(oldkv->key, val);
     }
+    amap.erase(it);
+    delkv(oldkv);
+    addkv(kv);
 }
 
 void Config::setv(const tchar *attr1, const tchar *val1, ...) {
@@ -369,7 +382,7 @@ void Config::trim(tstring &s) const {
 bool Config::write(tostream &os, bool inistyle) const {
     ulong cnt = 0;
     RLocker lkr(lck);
-    attrmap::const_iterator it;
+    kvmap::const_iterator it;
     vector<const tchar *> keys;
     vector<const tchar *>::const_iterator kit;
     tstring sect;
@@ -400,7 +413,7 @@ bool Config::write(tostream &os, bool inistyle) const {
     for (uint u = 0; u < keys.size(); ++u) {
 	const tchar *dot;
 	const tchar *key = keys[u];
-	const Value *val = amap.find(key)->second;
+	const KV *kv = amap.find(key)->second;
 
 	if ((dot = tstrchr(key, '.')) == NULL) {
 	    if (inistyle) {
@@ -428,11 +441,11 @@ bool Config::write(tostream &os, bool inistyle) const {
 	}
 	++cnt;
 	os << key << '=';
-	if (val->quote)
-	    os << val->quote;
-	os << val->value;
-	if (val->quote)
-	    os << val->quote;
+	if (kv->quote)
+	    os << kv->quote;
+	os << kv->val;
+	if (kv->quote)
+	    os << kv->quote;
 	os << endl;
     }
     return os.good();

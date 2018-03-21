@@ -75,7 +75,7 @@ public:
     bool exists(const tchar *attr, const tchar *sect = NULL) const {
 	RLocker lkr(lck);
 
-	return lookup(attr, sect) != NULL;
+	return getkv(attr, sect) != NULL;
     }
     const tstring get(const tchar *attr, const tchar *def = NULL, const tchar
 	*sect = NULL) const;
@@ -138,26 +138,26 @@ public:
     friend tostream &operator <<(tostream &os, const Config &cfg);
 
 private:
-    struct Value {
-	Value(const tchar *val): expand(false), quote(0) { append(val); }
-
-	tstring value;
+    struct KV {
+	const tchar *key;
 	bool expand;
 	tchar quote;
-
-	void append(const tchar *val);
+	tchar val[];
     };
 
-    typedef unordered_map<const tchar *, Value *, strhash<tchar>, streq<tchar> >
-	attrmap;
+    typedef unordered_map<const tchar *, const KV *, strhash<tchar>, streq<tchar> >
+	kvmap;
 
-    attrmap amap;
+    kvmap amap;
     mutable RWLock lck;
     tstring pre;
     bool ini;
 
-    bool expand(const Value *val, tstring &s) const;
-    const Value *lookup(const tchar *attr, const tchar *sect) const;
+    void addkv(const KV *kv) { amap.insert(make_pair(kv->key, kv)); }
+    void delkv(const KV *kv) const { delete [] (char *)kv; }
+    bool expandkv(const KV *val, tstring &s) const;
+    const KV *getkv(const tchar *attr, const tchar *sect) const;
+    const KV *newkv(const tchar *key, const tchar *val) const;
     void trim(tstring &str) const;
 
     bool parse(tistream &is);
