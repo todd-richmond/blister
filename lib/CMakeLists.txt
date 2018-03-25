@@ -34,7 +34,7 @@ endif()
 
 add_library(blister_lib OBJECT ${blister_LIB_SOURCE})
 set_target_properties(blister_lib PROPERTIES POSITION_INDEPENDENT_CODE 1)
-target_compile_definitions(blister_lib PRIVATE STDAPI_BUILD)
+target_compile_definitions(blister_lib PRIVATE BUILD_BLISTER)
 target_include_directories(blister_lib PUBLIC .)
 target_cppcheck(blister_lib)
 

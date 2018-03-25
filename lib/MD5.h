@@ -75,15 +75,15 @@ extern "C" {
 #endif
 
 /* Initialize the algorithm. */
-extern void STDAPI md5_init(md5_state_t *pms);
+extern void BLISTER md5_init(md5_state_t *pms);
 
 /* Append a string to the message. */
-extern void STDAPI md5_append(md5_state_t *pms, const md5_byte_t *data, unsigned nbytes);
+extern void BLISTER md5_append(md5_state_t *pms, const md5_byte_t *data, unsigned nbytes);
 
 /* Finish the message and return the digest. */
-extern void STDAPI md5_finish(md5_state_t *pms, md5_byte_t digest[16]);
+extern void BLISTER md5_finish(md5_state_t *pms, md5_byte_t digest[16]);
 
-extern void STDAPI md5_hmac(unsigned char *text,	/* data stream */
+extern void BLISTER md5_hmac(unsigned char *text,	/* data stream */
     unsigned textlen,			/* data stream length */
     unsigned char *key,			/* authentication key */
     unsigned keylen,			/* authentication key length */

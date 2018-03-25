@@ -21,7 +21,7 @@
 #include <time.h>
 #include "Socket.h"
 
-class STDAPI RFC821Addr: nocopy {
+class BLISTER RFC821Addr: nocopy {
 public:
     explicit RFC821Addr(const tchar *address = NULL) {
 	if (address)
@@ -50,7 +50,7 @@ private:
     void make_address(void);
 };
 
-class STDAPI RFC822Addr: nocopy {
+class BLISTER RFC822Addr: nocopy {
 public:
     explicit RFC822Addr(const tchar *addrs = NULL): buf(NULL) {
 	if (addrs)
@@ -88,7 +88,7 @@ private:
     static bool skip_whitespace(tchar *&in);
 };
 
-class STDAPI SMTPClient: nocopy {
+class BLISTER SMTPClient: nocopy {
 public:
     SMTPClient();
     virtual ~SMTPClient() {};

@@ -25,7 +25,7 @@
 const uint RTimeout = 30 * 1000;
 const uint WTimeout = 150 * 1000;
 
-class STDAPI HTTPServerSocket: public DispatchServerSocket {
+class BLISTER HTTPServerSocket: public DispatchServerSocket {
 public:
     typedef unordered_map<const char *, const char *, strihash<char>,
 	strieq<char> > attrmap;

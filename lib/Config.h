@@ -54,7 +54,7 @@
  *   config.get("attr2", "default");    // return app shared value of attr2
  */
 
-class STDAPI Config: nocopy {
+class BLISTER Config: nocopy {
 public:
     explicit Config(const tchar *pre = NULL): ini(false) { prefix(pre); }
     explicit Config(tistream &is, const tchar *pre = NULL): ini(false) {
@@ -176,7 +176,7 @@ inline tostream &operator <<(tostream &os, const Config &cfg) {
     return os;
 }
 
-class STDAPI ConfigFile: public Config {
+class BLISTER ConfigFile: public Config {
 public:
     explicit ConfigFile(const tchar *file = NULL, const tchar *pre = NULL);
 

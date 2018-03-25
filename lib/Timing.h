@@ -108,7 +108,7 @@ private:
     const tchar *key;
 };
 
-class STDAPI Timing: nocopy {
+class BLISTER Timing: nocopy {
 public:
     Timing() {}
     ~Timing() { clear(); }
@@ -182,10 +182,10 @@ private:
     }
 };
 
-extern STDAPI Timing &dtiming;
+extern BLISTER Timing &dtiming;
 
 // time a code block including destructors
-class STDAPI TimingEntry: nocopy {
+class BLISTER TimingEntry: nocopy {
 public:
     template<class C> __forceinline TimingEntry(const C &k, Timing &t =
 	dtiming): key(k), start(t.start()), timing(t) {}
@@ -205,7 +205,7 @@ private:
 };
 
 // time a function block including destructors
-class STDAPI TimingFrame: nocopy {
+class BLISTER TimingFrame: nocopy {
 public:
     template<class C> __forceinline TimingFrame(const C &k, Timing &t =
 	dtiming): key(k), started(true), timing(t) {

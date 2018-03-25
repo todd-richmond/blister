@@ -1606,7 +1606,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			ret = WIFEXITED(sts) ? WEXITSTATUS(sts) :
 			    WIFSIGNALED(sts) ? WTERMSIG(sts) : 0;
 			if (!qflag)
-			    dlogw(Log::mod(name), Log::cmd(T("watch")),
+			    dloga(Log::mod(name), Log::cmd(T("watch")),
 				Log::kv(T("pid"), child), Log::kv(T("sts"), ret),
 				Log::error(T("unexpected exit")),
 				Log::kv(T("duration"), time(NULL) - start));

@@ -278,7 +278,7 @@ typedef bufferstream<tchar> tbufferstream;
 /*
  * nullstream is a byte sink stream that ignores all writes
  */
-class STDAPI nullstream: public bufferstream<tchar> {
+class nullstream: public bufferstream<tchar> {
 public:
     nullstream() {}
 

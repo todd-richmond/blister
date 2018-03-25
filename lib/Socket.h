@@ -93,7 +93,7 @@ inline bool interrupted(int e) { return e == WSAEINTR; }
  * Socket address class to wrap sockaddr structures and deal with Win32 startup
  * requirements. Currently limited to IPV4/6 TCP or UDP addresses
  */
-class STDAPI Sockaddr {
+class BLISTER Sockaddr {
 public:
     enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNSPEC };
 
@@ -203,7 +203,7 @@ inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
 /*
  * CIDR/Network class to simplify IP range lookups
  */
-class STDAPI CIDR {
+class BLISTER CIDR {
 public:
     explicit CIDR(const tchar *addrs = NULL) { add(addrs); }
 
@@ -238,7 +238,7 @@ private:
  * automatically. Object copies are also supported by using a reference counted
  * subclass.
  */
-class STDAPI Socket {
+class BLISTER Socket {
 public:
     explicit Socket(int type = SOCK_STREAM, socket_t sock = SOCK_INVALID):
 	sbuf(new SocketBuf(type, sock, sock == SOCK_INVALID)) {}
@@ -400,7 +400,7 @@ protected:
  * SocketSet manages system dependent fd_set/select() and pollfd/poll()
  * differences and is optimized for very large file descriptor sets. 
  */
-class STDAPI SocketSet {
+class BLISTER SocketSet {
 public:
     explicit SocketSet(uint maxfds = 0);
     SocketSet(const SocketSet &ss): fds(NULL), maxsz(0), sz(0) { *this = ss; }
@@ -510,7 +510,7 @@ inline bool SocketSet::unset(socket_t fd) {
 // socket streams
 typedef faststreambuf<Socket> socketbuf;
 
-class STDAPI isockstream : public istream {
+class BLISTER isockstream : public istream {
 public:
     explicit isockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	istream(NULL), sb(sz, p) { ios::init(&sb); }
@@ -528,7 +528,7 @@ private:
     socketbuf sb;
 };
 
-class STDAPI osockstream: public ostream {
+class BLISTER osockstream: public ostream {
 public:
     explicit osockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	ostream(NULL), sb(sz, p) { ios::init(&sb); }
@@ -550,7 +550,7 @@ private:
     socketbuf sb;
 };
 
-class STDAPI sockstream: public iostream {
+class BLISTER sockstream: public iostream {
 public:
     explicit sockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	iostream(NULL), sb(sz, p) { ios::init(&sb); }
