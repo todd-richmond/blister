@@ -780,7 +780,7 @@ void Service::abort_handler(int) {
 	sa.sa_handler = abort_handler;
 	sigaction(SIGALRM, &sa, NULL);
 	alarm(5);
-	dlog << Log::Crit << Log::mod(service->name) << Log::cmd(T("abort")) << 
+	dlog << Log::Crit << Log::mod(service->name) << Log::cmd(T("abort")) <<
 	    Log::kv(T("err"), T("timeout")) << endlog;
 	alarm(0);
     }

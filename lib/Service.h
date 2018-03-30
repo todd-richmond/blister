@@ -62,11 +62,7 @@ public:
 	static ulong dmsec;
 
     private:
-#if defined(__APPLE__)
-	long timer;
-#elif defined(__linux__)
 	timer_t timer;
-#endif
     };
 
     Service(const tchar *name, const tchar *host);
@@ -83,8 +79,9 @@ public:
     bool uninstall(void);
     int execute(int argc, const tchar * const *argv);
     bool start(int argc, const tchar * const *argv);
-    bool stop(bool fast = false) { return send(fast ? SERVICE_CONTROL_EXIT :
-	SERVICE_CONTROL_STOP); }
+    bool stop(bool fast = false) {
+	return send(fast ? SERVICE_CONTROL_EXIT : SERVICE_CONTROL_STOP);
+    }
     bool abort(void) { return send(SERVICE_CONTROL_ABORT); }
     bool pause(void) { return send(SERVICE_CONTROL_PAUSE); }
     bool refresh(void) { return send(SERVICE_CONTROL_REFRESH); }

@@ -63,7 +63,7 @@
 #ifndef WIN32
 #define WIN32
 #endif
-#define NTDDI_VERSION	NTDDI_WIN8 
+#define NTDDI_VERSION	NTDDI_WIN8
 #define _WIN32_WINNT	_WIN32_WINNT_WIN8
 #define NOIME
 #define NOMCX
@@ -432,6 +432,8 @@ typedef unsigned long long ullong;
 typedef wchar_t wchar;
 
 #ifdef __APPLE__
+typedef long timer_t;
+
 #ifndef CLOCK_REALTIME
 #define APPLE_NO_CLOCK_GETTIME
 #define CLOCK_REALTIME	0
@@ -473,10 +475,14 @@ EXTERNC_
 #endif // _WIN32
 
 #ifdef __has_feature
-#define __no_sanitize(check)	 __attribute__((no_sanitize(check)))
+#define __no_sanitize(check)	__attribute__((no_sanitize(check)))
 #else
 #define __no_sanitize(check)
 #endif
+#define __no_sanitize_address	__no_sanitize("address")
+#define __no_sanitize_memory	__no_sanitize("memory")
+#define __no_sanitize_thread	__no_sanitize("thread")
+#define __no_sanitize_unsigned	__no_sanitize("unsigned-integer-overflow")
 
 // primitive type value limits
 #define MAXUCHAR	~(uchar)0
@@ -975,7 +981,7 @@ inline bool stringless(const C &a, const C &b) {
 }
 
 template<class C>
-__no_sanitize("unsigned-integer-overflow") inline size_t stringhash(const C *s) {
+inline size_t __no_sanitize_unsigned stringhash(const C *s) {
     size_t ret = 0;
 
     while (*s)
@@ -983,8 +989,7 @@ __no_sanitize("unsigned-integer-overflow") inline size_t stringhash(const C *s) 
     return ret;
 }
 
-__no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const char
-    *s) {
+inline size_t __no_sanitize_unsigned stringihash(const char *s) {
     size_t ret = 0;
 
     while (*s)
@@ -992,8 +997,7 @@ __no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const char
     return ret;
 }
 
-__no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const wchar
-    *s) {
+inline size_t __no_sanitize_unsigned stringihash(const wchar *s) {
     size_t ret = 0;
 
     while (*s)

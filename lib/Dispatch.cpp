@@ -154,15 +154,15 @@ bool Dispatcher::exec() {
 	running++;
 	lock.unlock();
 	obj->dcb(obj);
-	if (obj->flags & DSP_Freed && !(obj->flags & DSP_Socket)) {
-	    obj->flags &= ~DSP_Active;
-	    delete obj;
-	    obj = NULL;
-	}
 	lock.lock();
 	running--;
-	if (obj)
-	    obj->flags &= ~DSP_Active;
+	obj->flags &= ~DSP_Active;
+	if (obj->flags & DSP_Freed && !(obj->flags & DSP_Socket)) {
+	    lock.unlock();
+	    delete obj;
+	    obj = NULL;
+	    lock.lock();
+	}
 	group->active = false;
 	if (group->glist) {
 	    if (obj && obj->flags & DSP_Ready) {
@@ -813,12 +813,12 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
 }
 
 void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
-    if (ds.flags & DSP_Freed)
-	return;
-
-    socket_t fd = ds.fd();
+    socket_t fd;
     SpinLocker lkr(lock);
 
+    if (ds.flags & DSP_Freed)
+	return;
+    fd = ds.fd();
     if (ds.flags & DSP_ReadyAll) {
 	removeReady(ds);
     } else {

@@ -74,6 +74,9 @@ public:
     }
 
     Dispatcher &dispatcher(void) const { return dspr; }
+    bool error(void) const {
+	return msg == DispatchClose || msg == DispatchTimeout;
+    }
     DispatchMsg reason(void) const { return msg; }
 
     void detach(void);
@@ -88,7 +91,7 @@ protected:
 
     DispatchObjCB dcb;
     Dispatcher &dspr;
-    volatile uint flags;
+    uint flags;
     DispatchMsg msg;
 
 private:

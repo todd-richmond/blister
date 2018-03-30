@@ -1,24 +1,24 @@
 This is the list of current command line applications and test programs
 
 cfg - parser for ini or property style (group.attr=value) config files. Returns
-either the string value or integer return code
+either the string value or integer return code if value exists
 
 daemonize - simple wrapper to convert any program into a watched daemon
 
 dlog - logging utility that reads from stdin or cmd arguments. Supports most
-features of the Log class such as file rollover, multiprocess support, log
-format, syslog, mail and alerts
+features of the Log class such as file rollover, multi-process safety, prefix
+format, syslog and mail notifications and alert file
 
-dtiming - parse and manipulate timing results
+dtiming - parse and manipulate execution timing results
 
 echotest - scalable echo server and client used to stress test the Dispatch
-class as well as server as an example for Service and Timing classes
+class as well as serve as an example for Cfg, Log, Service, and Timing classes
 
 httpd - extremely simple, fast, example HTTP server that can serve files
 
 httpload - scriptable, multi-threaded HTTP load test with statistics reporting.
 Supports GET commands with optional keep-alives and POST commands with data from
-a single file or directory
+a file or directory
 
 smtpload - scriptable, multi-threaded SMTP load test with statistics reporting.
-Supports random RCPT TO addressess and DATA from a single file or directory
+Supports random RCPT TO addressess and DATA from a file or directory

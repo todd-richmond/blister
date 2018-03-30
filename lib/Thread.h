@@ -18,8 +18,6 @@
 #ifndef Thread_h
 #define Thread_h
 
-#include <set>
-
 #ifdef _WIN32
 #include <process.h>
 #include <windows.h>
@@ -76,10 +74,6 @@ typedef pthread_t thread_id_t;
 #define THREAD_BARRIER()	asm volatile("" ::: "memory")
 #define THREAD_FENCE()		asm volatile("mfence" ::: "memory")
 #define THREAD_PAUSE()  	asm volatile("pause" ::: "memory")
-#else
-#define NO_THREAD_BARRIER
-#define THREAD_FENCE()
-#define THREAD_PAUSE()
 #endif
 #define THREAD_YIELD()		sched_yield()
 
@@ -175,6 +169,10 @@ typedef pthread_key_t tlskey_t;
 #define THREAD_ISSELF(x)	((x) && THREAD_EQUAL(x, THREAD_SELF()))
 
 #define atomic_get(i)		atomic_add(i, 0)
+
+#ifdef __cplusplus
+
+#include <set>
 
 class Thread;
 class ThreadGroup;
@@ -315,9 +313,9 @@ public:
 
     operator pthread_spinlock_t *() { return &lck; }
 
-    __forceinline void lock(void) { pthread_spin_lock(&lck); }
-    __forceinline bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
-    __forceinline void unlock(void) { pthread_spin_unlock(&lck); }
+    void __forceinline lock(void) { pthread_spin_lock(&lck); }
+    bool __forceinline trylock(void) { return pthread_spin_trylock(&lck) == 0; }
+    void __forceinline unlock(void) { pthread_spin_unlock(&lck); }
 
 protected:
     pthread_spinlock_t lck;
@@ -327,39 +325,76 @@ protected:
 
 #define SPINLOCK_YIELD	1 << 6
 
+#if __cplusplus > 199711L
 class BLISTER SpinLock: nocopy {
 public:
-    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U), lck(0) {}
+    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) { unlock(); }
 
-    __forceinline void lock(void) {
-	while (atomic_lck(lck)) {
+    void __forceinline lock(void) {
+	while (!trylock()) {
 #ifdef THREAD_PAUSE
 	    uint pause = init;
 
 	    do {
 		if (pause == SPINLOCK_YIELD) {
-		    pause = init;
 		    THREAD_YIELD();
 		} else {
 		    for (uint u = 0; u < pause; ++u)
 			THREAD_PAUSE();
 		    pause <<= 1;
 		}
-		atomic_bar();
+	    } while (!trylock());
+	    break;
+#else
+	    THREAD_YIELD();
+#endif
+	}
+    }
+    bool __forceinline trylock(void) {
+	return !lck.test_and_set(std::memory_order_acquire);
+    }
+    void __forceinline unlock(void) { lck.clear(std::memory_order_release); }
+
+private:
+    const uint init;
+    atomic_flag lck;
+};
+
+#else
+
+class BLISTER SpinLock: nocopy {
+public:
+    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U), lck(0) {}
+
+    void __forceinline lock(void) {
+	while (atomic_lck(lck)) {
+#ifdef THREAD_PAUSE
+	    uint pause = init;
+
+	    do {
+		if (pause == SPINLOCK_YIELD) {
+		    THREAD_YIELD();
+		} else {
+		    for (uint u = 0; u < pause; ++u)
+			THREAD_PAUSE();
+		    pause <<= 1;
+		}
+		// atomic_bar();
 	    } while (lck);
 #else
 	    THREAD_YIELD();
 #endif
 	}
     }
-    __forceinline bool trylock(void) { return atomic_lck(lck) == 0; }
-    __forceinline void unlock(void) { atomic_clr(lck); }
+    bool __forceinline trylock(void) { return atomic_lck(lck) == 0; }
+    void __forceinline unlock(void) { atomic_clr(lck); }
 
 private:
     const uint init;
-    atomic_t lck;
+    volatile atomic_t lck;
 };
 
+#endif
 #endif
 
 typedef FastLockerTemplate<SpinLock> FastSpinLocker;
@@ -438,7 +473,7 @@ public:
     operator HANDLE(void) const { return hdl; }
     HANDLE handle(void) const { return hdl; }
 
-    bool close(void) {
+    bool __no_sanitize_thread close(void) {
 	HANDLE h = hdl;
 
 	hdl = NULL;
@@ -591,7 +626,7 @@ public:
     semaphore_t handle(void) const { return hdl; }
 
     bool broadcast(void) { return semaphore_signal_all(hdl) == KERN_SUCCESS; }
-    bool close(void) {
+    bool __no_sanitize_thread close(void) {
 	semaphore_t h = hdl;
 
 	hdl = 0;
@@ -757,7 +792,7 @@ protected:
 class BLISTER Condvar: nocopy {
 public:
     explicit Condvar(Lock &lck): lock(lck) {
-#if defined(__APPLE__) || defined(__ANDROID__)
+#ifdef __APPLE__
 	pthread_cond_init(&cv, NULL);
 #else
 	pthread_condattr_t attr;
@@ -789,11 +824,7 @@ public:
 #else
 	    clock_gettime(CLOCK_MONOTONIC, &ts);
 	    time_adjust_msec(&ts, msec);
-#ifdef __ANDROID__
-	    return !pthread_cond_timedwait_monotonic_np(cond, lock, &ts);
-#else
 	    return !pthread_cond_timedwait(&cv, lock, &ts);
-#endif
 #endif
 	}
     }
@@ -1053,9 +1084,9 @@ public:
     }
 
 private:
-    Waiting * volatile head;
+    Waiting *head;
     mutable SpinLock lck;
-    volatile uint sz;
+    uint sz;
 };
 
 // Thread routines
@@ -1076,8 +1107,8 @@ public:
 
     int exitStatus(void) const { return retval; }
     thread_hdl_t getHandle(void) const { return hdl; }
-    thread_id_t getId(void) const { return id; }
-    ThreadState getState(void) const { Locker lkr(lck); return state; }
+    thread_id_t getId(void) const { FastLocker lkr(lck); return id; }
+    ThreadState getState(void) const { FastLocker lkr(lck); return state; }
     ThreadGroup *getThreadGroup(void) const { return group; }
     bool running(void) const { return getState() == Running; }
     bool suspended(void) const { return getState() == Suspended; }
@@ -1177,4 +1208,5 @@ private:
     friend class Thread;
 };
 
+#endif
 #endif // Thread_h

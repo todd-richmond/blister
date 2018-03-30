@@ -391,18 +391,7 @@ bool Config::write(tostream &os, bool inistyle) const {
     for (it = amap.begin(); it != amap.end(); ++it)
 	keys.push_back(it->first);
     if (inistyle) {
-	struct {
-	    bool operator ()(const tchar *a, const tchar *b) const {
-		const tchar *ap = tstrchr(a, '.');
-		const tchar *bp = tstrchr(b, '.');
-
-		if (!ap)
-		    return bp ? true : stringless(a, b);
-		else if (!bp)
-		    return false;
-		return stringless(a, b);
-	    }
-	} cmp;
+	struct keyless cmp;
 
 	sort(keys.begin(), keys.end(), cmp);
     } else {
@@ -422,7 +411,7 @@ bool Config::write(tostream &os, bool inistyle) const {
 		sect.assign(key);
 		if (cnt > 1 || (cnt == 1 && u < keys.size() - 1 &&
 		    !tstrncmp(keys[u + 1], sect.c_str(), sect.size()) &&
-		    keys[u + 1][sect.size()] == '.' ))
+		    keys[u + 1][sect.size()] == '.'))
 		    os << endl;
 		cnt = 0;
 	    }
