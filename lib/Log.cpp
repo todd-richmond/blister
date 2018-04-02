@@ -116,7 +116,7 @@ bool Log::LogFile::reopen(void) {
 
     close();
     if ((fd = ::open(tstringtoachar(path), O_WRONLY | O_CREAT | O_BINARY |
-	O_SEQUENTIAL, 0640)) == -1) {
+	O_SEQUENTIAL | O_CLOEXEC, 0640)) == -1) {
 	tcerr << T("unable to open log ") << path << T(": ") <<
 	    tstrerror(errno) << endl;
 	fd = -3;
@@ -191,7 +191,7 @@ void Log::LogFile::roll(void) {
 		}
 		if ((s3 == path && path != file))
 		    continue;
-		files++;
+		++files;
 		if (tstat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
 		    (ulong)oldtime) {
 		    if ((pos = s3.rfind('.')) != s3.npos && pos < s3.size() -
@@ -211,7 +211,7 @@ void Log::LogFile::roll(void) {
 	    } else if ((cnt || sec) && (!sec || oldtime < ((ulong)now - sec)) &&
 		(!cnt || files >= cnt)) {
 		tunlink(oldfile.c_str());
-		files--;
+		--files;
 		trewinddir(dir);
 	    } else {
 		break;

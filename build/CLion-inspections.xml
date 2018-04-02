@@ -30,7 +30,7 @@
     <inspection_tool class="CheckValidXmlInScriptTagBody" enabled="true" level="ERROR" enabled_by_default="true" />
     <inspection_tool class="CheckXmlFileWithXercesValidator" enabled="true" level="ERROR" enabled_by_default="true" />
     <inspection_tool class="ClangTidyInspection" enabled="true" level="WARNING" enabled_by_default="true">
-      <option name="clangTidyChecks" value="*,-cert-env33-c,-cert-err34-c,-cert-err58-cpp,-cert-dcl50-cpp,-cert-dcl59-cpp,-cert-msc30-c,-cert-msc50-cpp,-clang-diagnostic-*,-clang-analyzer-*,-cppcoreguidelines-no-malloc,-cppcoreguidelines-pro-bounds-array-to-pointer-decay,-cppcoreguidelines-pro-bounds-constant-array-index,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-cppcoreguidelines-pro-type-const-cast,-cppcoreguidelines-pro-type-cstyle-cast,-cppcoreguidelines-pro-type-member-init,-cppcoreguidelines-pro-type-reinterpret-cast,-cppcoreguidelines-pro-type-static-cast-downcast,-cppcoreguidelines-pro-type-union-access,-cppcoreguidelines-pro-type-vararg,-cppcoreguidelines-special-member-functions,-google-*,google-runtime-member-string-references,google-runtime-memset,-hicpp-explicit-conversions,-hicpp-function-size,-hicpp-member-init,-hicpp-named-parameter,-hicpp-no-assembler,-hicpp-special-member-functions,-hicpp-use-equals-default,-hicpp-use-override,-llvm-*,-misc-bool-pointer-implicit-conversion,-misc-definitions-in-headers,-misc-incorrect-roundings,-misc-macro-parentheses,-misc-misplaced-widening-cast,-misc-unused-alias-decls,-misc-unused-parameters,-misc-unused-using-decls,-modernize-deprecated-headers,-modernize-loop-convert,-modernize-redundant-void-arg,-modernize-use-auto,-modernize-use-bool-literals,-modernize-use-default-member-init,-modernize-use-emplace,-modernize-use-equals-default,-modernize-use-nullptr,-modernize-use-override,-modernize-use-using,-readability-avoid-const-params-in-decls,-readability-braces-around-statements,-readability-else-after-return,-readability-function-size,-readability-identifier-naming,-readability-implicit-bool-cast,-readability-named-parameter,-readability-redundant-member-init,-readability-simplify-boolean-expr" />
+      <option name="clangTidyChecks" value="*,-cert-env33-c,-cert-err34-c,-cert-err58-cpp,-cert-dcl50-cpp,-cert-dcl59-cpp,-cert-msc30-c,-cert-msc50-cpp,-clang-diagnostic-*,-clang-analyzer-*,-cppcoreguidelines-no-malloc,-cppcoreguidelines-pro-bounds-array-to-pointer-decay,-cppcoreguidelines-pro-bounds-constant-array-index,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-cppcoreguidelines-pro-type-const-cast,-cppcoreguidelines-pro-type-cstyle-cast,-cppcoreguidelines-pro-type-member-init,-cppcoreguidelines-pro-type-reinterpret-cast,-cppcoreguidelines-pro-type-static-cast-downcast,-cppcoreguidelines-pro-type-union-access,-cppcoreguidelines-pro-type-vararg,-cppcoreguidelines-special-member-functions,-google-*,google-runtime-member-string-references,google-runtime-memset,-hicpp-explicit-conversions,-hicpp-function-size,-hicpp-member-init,-hicpp-named-parameter,-hicpp-no-assembler,-hicpp-special-member-functions,-hicpp-use-equals-default,-hicpp-use-override,-llvm-*,-misc-bool-pointer-implicit-conversion,-misc-definitions-in-headers,-misc-incorrect-roundings,-misc-macro-parentheses,-misc-misplaced-widening-cast,-misc-unused-alias-decls,-misc-unused-parameters,-misc-unused-using-decls,-modernize-deprecated-headers,-modernize-loop-convert,-modernize-redundant-void-arg,-modernize-use-auto,-modernize-use-bool-literals,-modernize-use-default-member-init,-modernize-use-emplace,-modernize-use-equals-default,-modernize-use-nullptr,-modernize-use-override,-modernize-use-using,-readability-avoid-const-params-in-decls,-readability-braces-around-statements,-readability-else-after-return,-readability-function-size,-readability-identifier-naming,-readability-implicit-bool-cast,-readability-named-parameter,-readability-redundant-member-init,-readability-simplify-boolean-expr,-hicpp-signed-bitwise,-fuchsia-default-arguments,-hicpp-use-auto,-hicpp-braces-around-statements,-readability-implicit-bool-conversion,-hicpp-vararg,-fuchsia-overloaded-operator,-cppcoreguidelines-owning-memory,-hicpp-no-array-decay,-readability-static-accessed-through-instance,-misc-suspicious-string-compare,-hicpp-deprecated-headers,-readability-redundant-declaration,-hicpp-use-emplace" />
     </inspection_tool>
     <inspection_tool class="CoffeeScriptArgumentsOutsideFunction" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="CoffeeScriptFunctionSignatures" enabled="true" level="WEAK WARNING" enabled_by_default="true" />
@@ -285,7 +285,7 @@
     <inspection_tool class="LessResolvedByNameOnly" enabled="true" level="WEAK WARNING" enabled_by_default="true" />
     <inspection_tool class="LessUnresolvedMixin" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="LessUnresolvedVariable" enabled="true" level="WARNING" enabled_by_default="true" />
-    <inspection_tool class="LocalValueEscapesScope" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="LocalValueEscapesScope" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="LocalVariableNamingConventionJS" enabled="false" level="WARNING" enabled_by_default="false">
       <option name="m_regex" value="[a-z][A-Za-z]*" />
       <option name="m_minLength" value="1" />
@@ -336,10 +336,12 @@
     <inspection_tool class="OCLoopDoesntUseConditionVariableInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="OCNotLocalizedStringInspection" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="OCNotReleasedIvarInspection" enabled="false" level="WARNING" enabled_by_default="false" />
-    <inspection_tool class="OCSimplifyInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="OCSimplifyInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="enableSimplifyIfWithConstantBranch" value="true" />
+    </inspection_tool>
     <inspection_tool class="OCUnusedClassInspection" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="OCUnusedGlobalDeclarationInspection" enabled="false" level="WARNING" enabled_by_default="false" />
-    <inspection_tool class="OCUnusedInstanceVariableInspection" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="OCUnusedInstanceVariableInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="OCUnusedMacroInspection" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="OCUnusedMethodInspection" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="OCUnusedPropertyInspection" enabled="false" level="WARNING" enabled_by_default="false" />
@@ -356,6 +358,7 @@
     </inspection_tool>
     <inspection_tool class="OverriddenAttributeMismatch" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="OverriddenTypeMismatch" enabled="false" level="WARNING" enabled_by_default="false" />
+    <inspection_tool class="PackageJsonMismatchedDependency" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="ParameterNamingConventionJS" enabled="false" level="WARNING" enabled_by_default="false">
       <option name="m_regex" value="[a-z][A-Za-z]*" />
       <option name="m_minLength" value="1" />
@@ -441,6 +444,7 @@
     <inspection_tool class="PyPropertyAccessInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyPropertyDefinitionInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyProtectedMemberInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true" />
+    <inspection_tool class="PyProtocolInspection" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="PyRaisingNewStyleClassInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyRedeclarationInspection" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="PyRedundantParenthesesInspection" enabled="true" level="WEAK WARNING" enabled_by_default="true" />
@@ -525,6 +529,7 @@
     <inspection_tool class="TodoComment" enabled="false" level="WARNING" enabled_by_default="false" />
     <inspection_tool class="TrivialConditionalJS" enabled="true" level="WARNING" enabled_by_default="true" />
     <inspection_tool class="TrivialIfJS" enabled="true" level="WARNING" enabled_by_default="true" />
+    <inspection_tool class="TsLint" enabled="false" level="ERROR" enabled_by_default="false" />
     <inspection_tool class="TypeScriptAbstractClassConstructorCanBeMadeProtected" enabled="false" level="WEAK WARNING" enabled_by_default="false" />
     <inspection_tool class="TypeScriptAccessibilityCheck" enabled="true" level="WEAK WARNING" enabled_by_default="true" />
     <inspection_tool class="TypeScriptCheckImport" enabled="true" level="ERROR" enabled_by_default="true" />

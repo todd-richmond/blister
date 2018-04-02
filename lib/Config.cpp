@@ -120,7 +120,7 @@ const tstring Config::get(const tchar *attr, const tchar *def,
     if (kv && kv->expand) {
 	tstring s;
 
-	return expandkv(kv, s) ? s.c_str() : def ? def : empty;
+	return expandkv(kv, s) ? s : def ? def : empty;
     }
     return kv ? kv->val : def ? def : empty;
 }
@@ -384,7 +384,6 @@ bool Config::write(tostream &os, bool inistyle) const {
     RLocker lkr(lck);
     kvmap::const_iterator it;
     vector<const tchar *> keys;
-    vector<const tchar *>::const_iterator kit;
     tstring sect;
 
     keys.reserve(amap.size());
