@@ -168,7 +168,7 @@ private:
 
     void addkv(const KV *kv) { amap.insert(make_pair(kv->key, kv)); }
     void delkv(const KV *kv) const { delete [] (char *)kv; }
-    bool expandkv(const KV *val, tstring &s) const;
+    bool expandkv(const KV *kv, tstring &val) const;
     const KV *getkv(const tchar *attr, const tchar *sect) const;
     const KV *newkv(const tchar *key, const tchar *val) const;
     void trim(tstring &str) const;

@@ -56,12 +56,11 @@ tstring Service::ver(T(__DATE__) T(" ") T(__TIME__));
 void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
     tstring &prog) {
     tchar buf[PATH_MAX + 2];
-    const tchar *p = NULL;
+    const tchar *p = tgetenv(T("installdir"));
     tstring::size_type pos;
     const tchar *sep;
 
     (void)id;
-    p = tgetenv(T("installdir"));
     if (p) {
 	root = p;
     } else {

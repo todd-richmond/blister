@@ -50,18 +50,6 @@ enum DispatchMsg {
 
 // base classes for event objects
 class BLISTER DispatchObj: nocopy {
-private:
-    class Group {
-    public:
-	Group(): active(false) {}
-
-	ObjectList<DispatchObj> glist;
-	RefCount refcount;
-	bool active;
-
-	Group &add() { refcount.reference(); return *this; }
-    };
-
 public:
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(new Group), next(NULL) {}
@@ -95,9 +83,21 @@ protected:
     DispatchMsg msg;
 
 private:
+    class Group {
+    public:
+	Group(): active(false) {}
+
+	ObjectList<DispatchObj> glist;
+	RefCount refcount;
+	bool active;
+
+	Group &add() { refcount.reference(); return *this; }
+    };
+
     Group *group;
     DispatchObj *next;
 
+    DispatchObj &operator =(const DispatchObj &obj);
     friend class Dispatcher;
     friend class ObjectList<DispatchObj>;
 };
@@ -358,11 +358,6 @@ private:
 	timers.insert(dt);
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
-    void delTimer(DispatchTimer &dt) {
-	FastSpinLocker lkr(lock);
-
-	timers.erase(dt);
-    }
     void removeTimer(DispatchTimer &dt) { timers.set(dt, DSP_NEVER_DUE); }
     void setTimer(DispatchTimer &dt, ulong tm);
 
