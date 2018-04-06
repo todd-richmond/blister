@@ -18,6 +18,10 @@
 #ifndef Thread_h
 #define Thread_h
 
+#if __cplusplus > 199711L
+#include <atomic>
+#endif
+
 #ifdef _WIN32
 #include <process.h>
 #include <windows.h>
@@ -182,14 +186,19 @@ template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
     &C::unlock>
 class LockerTemplate: nocopy {
 public:
-    explicit LockerTemplate(C &lock, bool lockit = true): lck(lock), locked(
-	lockit) {
+    explicit __forceinline LockerTemplate(C &lock, bool lockit = true):
+	lck(lock), locked(lockit) {
 	if (lockit)
 	    (lck.*LOCK)();
     }
-    ~LockerTemplate() { if (locked) (lck.*UNLOCK)(); }
+    __forceinline ~LockerTemplate() { if (locked) (lck.*UNLOCK)(); }
 
-    void lock(void) { if (!locked) { locked = true; (lck.*LOCK)(); } }
+    void __forceinline lock(void) {
+	if (!locked) {
+	    locked = true;
+	    (lck.*LOCK)();
+	}
+    }
     void relock(void) {
 	if (locked) {
 	    (lck.*UNLOCK)();
@@ -199,7 +208,12 @@ public:
 	}
 	(lck.*LOCK)();
     }
-    void unlock(void) { if (locked) { (lck.*UNLOCK)(); locked = false; } }
+    void __forceinline unlock(void) {
+	if (locked) {
+	    (lck.*UNLOCK)();
+	    locked = false;
+	}
+    }
 
 private:
     C &lck;
@@ -303,8 +317,44 @@ protected:
  * RWLock: reader/writer lock
  * Condvar: condition variable around a Lock
  */
+#define SPINLOCK_YIELD	(1 << 6)
 
-#ifdef NO_ATOMIC_LOCK
+#if __cplusplus > 199711L
+
+class BLISTER SpinLock: nocopy {
+public:
+    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) { unlock(); }
+
+    void __forceinline lock(void) {
+	if (!trylock()) {
+#ifdef THREAD_PAUSE
+	    uint pause = init;
+
+	    do {
+		if (pause == SPINLOCK_YIELD) {
+		    THREAD_YIELD();
+		} else {
+		    for (uint u = 0; u < pause; ++u)
+			THREAD_PAUSE();
+		    pause <<= 1;
+		}
+	    } while (!trylock());
+#else
+	    THREAD_YIELD();
+#endif
+	}
+    }
+    bool __forceinline trylock(void) {
+	return !lck.test_and_set(std::memory_order_acquire);
+    }
+    void __forceinline unlock(void) { lck.clear(std::memory_order_release); }
+
+private:
+    const uint init;
+    atomic_flag lck;
+};
+
+#elif defined(NO_ATOMIC_LOCK)
 
 class BLISTER SpinLock: nocopy {
 public:
@@ -319,45 +369,6 @@ public:
 
 protected:
     pthread_spinlock_t lck;
-};
-
-#else
-
-#define SPINLOCK_YIELD	1 << 6
-
-#if __cplusplus > 199711L
-class BLISTER SpinLock: nocopy {
-public:
-    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) { unlock(); }
-
-    void __forceinline lock(void) {
-	while (!trylock()) {
-#ifdef THREAD_PAUSE
-	    uint pause = init;
-
-	    do {
-		if (pause == SPINLOCK_YIELD) {
-		    THREAD_YIELD();
-		} else {
-		    for (uint u = 0; u < pause; ++u)
-			THREAD_PAUSE();
-		    pause <<= 1;
-		}
-	    } while (!trylock());
-	    break;
-#else
-	    THREAD_YIELD();
-#endif
-	}
-    }
-    bool __forceinline trylock(void) {
-	return !lck.test_and_set(std::memory_order_acquire);
-    }
-    void __forceinline unlock(void) { lck.clear(std::memory_order_release); }
-
-private:
-    const uint init;
-    atomic_flag lck;
 };
 
 #else
@@ -379,7 +390,6 @@ public:
 			THREAD_PAUSE();
 		    pause <<= 1;
 		}
-		// atomic_bar();
 	    } while (lck);
 #else
 	    THREAD_YIELD();
@@ -394,7 +404,6 @@ private:
     volatile atomic_t lck;
 };
 
-#endif
 #endif
 
 typedef FastLockerTemplate<SpinLock> FastSpinLocker;
