@@ -28,6 +28,7 @@ set(blister_LIB_SOURCE
 
 if(WIN32)
     list(APPEND blister_LIB_SOURCE Windows.c WindowsCPP.cpp)
+    add_definitions("-DNOMINMAX")
 else()
     list(APPEND blister_LIB_SOURCE Unix.c)
 endif()
@@ -58,8 +59,5 @@ else()
     install(TARGETS blister blister_static DESTINATION lib)
 endif()
 
-if(NOT APPLE AND COMMAND cotire)
-    cotire(blister_lib)
-    set_target_properties(blister_lib PROPERTIES COTIRE_ADD_UNITY_BUILD FALSE)
-endif()
+cotire(blister_lib)
 

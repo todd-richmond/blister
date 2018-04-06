@@ -29,7 +29,21 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.9)
 endif()
 
 # compile optimizers
-include(cotire OPTIONAL)
+if(NOT APPLE)
+    include(cotire OPTIONAL)
+endif()
+if(COMMAND cotire)
+    if (WIN32)
+        add_definitions(-DNOIME -DNOMCX -DNOSERVICE -DWIN32_LEAN_AND_MEAN)
+    endif()
+    set(COTIRE_MAXIMUM_NUMBER_OF_UNITY_INCLUDES -j)
+    set(COTIRE_MINIMUM_NUMBER_OF_TARGET_SOURCES 4)
+    set(CLEAN_COTIRE clean_cotire)
+    set_property(DIRECTORY PROPERTY COTIRE_ADD_UNITY_BUILD FALSE)
+else()
+    function(cotire)
+    endfunction()
+endif()
 if(PROGRAM_CCACHE)
     if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.4)
         set(CMAKE_C_COMPILER_LAUNCHER "${PROGRAM_CCACHE}")
@@ -141,7 +155,7 @@ set_target_properties(cppcheck PROPERTIES EXCLUDE_FROM_ALL TRUE)
 add_custom_target(distclean)
 add_custom_command(
     COMMENT "Cleaning distribution"
-    COMMAND $(MAKE) clean
+    COMMAND $(MAKE) ${CLEAN_COTIRE} clean
     COMMAND find . -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name *_cotire.cmake -o -name *.ninja -o -name Makefile | xargs rm -rf
     TARGET distclean)
 
