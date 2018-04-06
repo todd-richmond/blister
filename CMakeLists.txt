@@ -38,7 +38,9 @@ if(COMMAND cotire)
     endif()
     set(COTIRE_MAXIMUM_NUMBER_OF_UNITY_INCLUDES -j)
     set(COTIRE_MINIMUM_NUMBER_OF_TARGET_SOURCES 4)
-    set(CLEAN_COTIRE clean_cotire)
+    if(TARGET clean_cotire)
+        set(CLEAN_COTIRE clean_cotire)
+    endif()
     set_property(DIRECTORY PROPERTY COTIRE_ADD_UNITY_BUILD FALSE)
 else()
     function(cotire)
@@ -156,7 +158,7 @@ add_custom_target(distclean)
 add_custom_command(
     COMMENT "Cleaning distribution"
     COMMAND $(MAKE) ${CLEAN_COTIRE} clean
-    COMMAND find . -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name *_cotire.cmake -o -name *.ninja -o -name Makefile | xargs rm -rf
+    COMMAND find . -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name \\*_cotire.cmake -o -name \\*.ninja -o -name Makefile | xargs rm -rf
     TARGET distclean)
 
 add_subdirectory(lib)

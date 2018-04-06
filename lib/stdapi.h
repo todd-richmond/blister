@@ -124,7 +124,6 @@ typedef __int64 _ino_t;
 #define EWOULDBLOCK	WSAEWOULDBLOCK
 #endif
 
-#define O_CLOEXEC	0
 #define O_COMPRESSED	0x010000
 #define O_POSIX		0x020000
 #define O_SYNC		0x040000
@@ -405,6 +404,9 @@ EXTERNC_
 
 #ifndef O_BINARY
 #define O_BINARY	0
+#endif
+#ifndef O_CLOEXEC
+#define O_CLOEXEC	0
 #endif
 #define O_COMPRESSED	0
 #ifndef O_DIRECT
