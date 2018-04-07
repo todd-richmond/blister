@@ -689,10 +689,10 @@ public:
 
     operator sem_t(void) const { return hdl; }
     sem_t handle(void) const { return hdl; }
-    int get(void) const {
+    uint get(void) const {
 	int ret;
 
-	return !valid || sem_getvalue((sem_t *)&hdl, &ret) ? -1 : ret;
+	return (uint)(!valid || sem_getvalue((sem_t *)&hdl, &ret) ? -1 : ret);
     }
 
     bool close(void) {
@@ -967,14 +967,14 @@ public:
     operator C() const { TSLocker lkr(lck); return c; }
     template<class N> bool operator ==(N n) const { TSLocker lkr(lck); return c == n; }
     template<class N> bool operator !=(N n) const { TSLocker lkr(lck); return c != n; }
-    C operator ++(void) { TSLocker lkr(lck); return ++c; }
+    TSNumber<C> &operator ++(void) { TSLocker lkr(lck); ++c; return *this; }
     C operator ++(int) { TSLocker lkr(lck); return c++; }
-    C operator --(void) { TSLocker lkr(lck); return --c; }
+    TSNumber<C> &operator --(void) { TSLocker lkr(lck); --c; return *this; }
     C operator --(int) { TSLocker lkr(lck); return c--; }
     template<class N> TSNumber<C> &operator =(const N &n) {
 	TSLocker lkr(lck); c = (C)n; return *this;
     }
-    TSNumber<C> &operator =(const TSNumber<C> &n) { return operator=((C)n); }
+    TSNumber<C> &operator =(const TSNumber<C> &n) { return operator =((C)n); }
     template<class N> C operator +=(N n) { TSLocker lkr(lck); return c += (C)n; }
     template<class N> C operator -=(N n) { TSLocker lkr(lck); return c -= (C)n; }
     template<class N> C operator *=(N n) { TSLocker lkr(lck); return c *= (C)n; }
@@ -1017,7 +1017,7 @@ protected:
 /* Last-in-first-out queue useful for thread pools */
 class BLISTER Lifo {
 public:
-    class Waiting {
+    class Waiting: nocopy {
     public:
 	Waiting *next;
 	Semaphore sema4;

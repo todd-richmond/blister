@@ -825,9 +825,18 @@ using namespace std;
 using namespace stdext;
 #endif
 
+#if __cplusplus < 201103L
+#define CPP_DEFAULT		{}
+#define CPP_DELETE
+#define nullptr			NULL
+#else
+#define CPP_DEFAULT		= default
+#define CPP_DELETE		= delete
+#endif
+
 // cross-compiler support for unordered maps and sets
-#if defined(__GNUC__) && (!defined(__clang_major__) || __clang_major__ < 5) && \
-    __cplusplus < 201103L
+#if __cplusplus < 201103L && defined(__GNUC__) && \
+    (!defined(__clang_major__) || __clang_major__ < 5)
 #if GNUC_VERSION < 40300
 #define STL_UNORDERED_MAP_H	<ext/hash_map>
 #define STL_UNORDERED_SET_H	<ext/hash_set>
@@ -1131,11 +1140,11 @@ private:
 // prohibit object copies by subclassing this
 class nocopy {
 protected:
-    nocopy() {}
+    nocopy() CPP_DEFAULT;
 
 private:
-    nocopy(const nocopy &);
-    const nocopy & operator =(const nocopy &);
+    nocopy(const nocopy &) CPP_DELETE;
+    const nocopy & operator =(const nocopy &) CPP_DELETE;
 };
 
 // fast single linked object list
