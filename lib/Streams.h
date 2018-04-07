@@ -200,7 +200,7 @@ public:
 		    setg(buf, buf + sz, buf + in);
 		    break;
 		}
-	    };
+	    }
 	}
 	return size;
     }
