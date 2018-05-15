@@ -106,6 +106,13 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${COMMON_CXX_FLAGS_DEBUG}")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} ${COMMON_CXX_FLAGS_RELEASE}")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${COMMON_CXX_FLAGS_RELWITHDEBINFO}")
 
+set(PROFILE_FLAGS "-pg -O0 -U_FORTIFY_SOURCE")
+set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_DEBUG} ${PROFILE_FLAGS}")
+set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_DEBUG} ${PROFILE_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS_PROFILE "${CMAKE_EXE_LINKER_FLAGS_DEBUG} ${PROFILE_FLAGS}")
+set(CMAKE_SHARED_LINKER_FLAGS_PROFILE "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} ${PROFILE_FLAGS}")
+MARK_AS_ADVANCED(CMAKE_C_FLAGS_PROFILE CMAKE_CXX_FLAGS_PROFILE CMAKE_EXE_LINKER_FLAGS_PROFILE CMAKE_SHARED_LINKER_FLAGS_PROFILE)
+
 # cppcheck support
 list(APPEND cppcheck_args --enable=warning,style,performance,portability,information,missingInclude --force --inline-suppr -j 4 -q --template="{file}:{line} {severity}={id} {message}")
 list(APPEND cppcheck_suppressions ConfigurationNotChecked cstyleCast noExplicitConstructor postfixOperator preprocessorErrorDirective uninitMemberVar unmatchedSuppression unreadVariable variableScope)
