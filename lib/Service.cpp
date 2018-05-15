@@ -768,7 +768,7 @@ bool Service::close(void) {
     return true;
 }
 
-void Service::abort_handler(int) {
+void Service::abort_handler(void) {
     static bool aborting;
 
     if (!aborting) {
@@ -794,14 +794,13 @@ void Service::signal_handler(int sig, siginfo_t *si, void *) {
     if (aborted)
 	_exit(sig);
 #ifdef __linux__
-    typedef void (*sigev_handler_t)(sigval_t sig);
     itimerspec its;
     sigevent se;
     timer_t timer;
 
     ZERO(se);
     se.sigev_notify = SIGEV_THREAD;
-    se.sigev_notify_function = (sigev_handler_t)abort_handler;
+    se.sigev_notify_function = abort_handler;
     se.sigev_value.sival_ptr = &timer;
     if (timer_create(CLOCK_MONOTONIC, &se, &timer)) {
 	timer = NULL;
