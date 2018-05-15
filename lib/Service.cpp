@@ -946,8 +946,7 @@ int Service::ctrl_handler(void *) {
 	tchar buf[16];
 	siginfo_t si;
 	const tchar *str;
-#ifdef linux
-
+#ifdef __linux__
 	sig = sigwaitinfo(&sigs, &si);
 #else
 	ZERO(si);

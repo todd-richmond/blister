@@ -164,7 +164,9 @@ protected:
 
     static void abort_handler(void);
     static void abort_handler(int) { abort_handler(); }
+#ifdef __linux__
     static void abort_handler(sigval_t) { abort_handler(); }
+#endif
     static int ctrl_handler(void *);
     static void init_sigset(sigset_t &sigs);
     static void signal_handler(int sig, siginfo_t *si, void *context);
