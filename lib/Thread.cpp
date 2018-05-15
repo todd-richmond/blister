@@ -571,9 +571,9 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 		    return thread;
 		}
 	    } else {
-		thread_id_t id = thread->getId();
+		thread_id_t tid = thread->getId();
 
-		if (id != NOID && !THREAD_ISSELF(id))
+		if (tid != NOID && !THREAD_ISSELF(tid))
 		    running = true;
 	    }
 	    ++it;

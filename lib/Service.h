@@ -57,7 +57,7 @@ public:
 	explicit Timer(ulong msec = 0);
 	~Timer() { cancel(); }
 
-	void cancel();
+	void cancel(void);
 
 	static ulong dmsec;
 

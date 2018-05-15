@@ -50,18 +50,6 @@ enum DispatchMsg {
 
 // base classes for event objects
 class BLISTER DispatchObj: nocopy {
-private:
-    class Group {
-    public:
-	Group(): active(false) {}
-
-	ObjectList<DispatchObj> glist;
-	RefCount refcount;
-	bool active;
-
-	Group &add() { refcount.reference(); return *this; }
-    };
-
 public:
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(new Group), next(NULL) {}

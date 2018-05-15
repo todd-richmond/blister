@@ -199,8 +199,8 @@ void Log::LogFile::roll(void) {
 			ext = tstrtoul(s3.c_str() + pos, NULL, 10);
 			// ensure older logs were not touched
 			if ((ext < oldext && path == file) || (ext > oldext &&
-			    file.size() > 12 && !strcmp(file.c_str() - 12,
-			    "%Y%m%d%H%M%S")))
+			    file.size() > 12 && !tstrcmp(file.c_str() - 12,
+			    T("%Y%m%d%H%M%S"))))
 			    continue;
 			oldext = ext;
 		    }

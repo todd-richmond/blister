@@ -136,6 +136,7 @@ typedef __int64 _ino_t;	//-V677
 #define O_OVERLAPPED	0x100000
 #define O_BACKUP	0x200000
 #define O_NONBLOCK	0x400000
+#define O_CLOEXEC	0
 #define O_DSYNC		O_SYNC
 #define O_SHORT_LIVED	_O_SHORT_LIVED
 #define O_TMPFILE	O_TEMPORARY
@@ -225,6 +226,7 @@ typedef int id_t;
 typedef llong ino_t;	//-V677
 typedef short nlink_t;
 typedef long pid_t;
+typedef long timer_t;
 typedef ushort uid_t;
 
 typedef enum idtype {
