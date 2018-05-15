@@ -26,6 +26,7 @@
 #include <mach/mach_init.h>
 #include <mach/mach_time.h>
 #include <sys/sysctl.h>
+#include "Thread.h"
 
 #ifdef APPLE_NO_CLOCK_GETTIME
 int clock_gettime(int id, struct timespec *ts) {
@@ -63,13 +64,22 @@ msec_t mticks(void) {
 #endif
 }
 
-usec_t uticks(void) {
+usec_t __no_sanitize("thread") uticks(void) {
 #if defined(__APPLE__)
+    static atomic_t lck;
     static struct mach_timebase_info mti;
 
     if (!mti.denom) {
-	mach_timebase_info(&mti);
-	mti.denom *= 1000;
+        if (atomic_lck(lck)) {
+	    struct mach_timebase_info mti2;
+
+	    mach_timebase_info(&mti2);
+	    return mach_absolute_time() * mti2.numer / mti2.denom / 1000;
+	} else {
+	    mach_timebase_info(&mti);
+	    mti.denom *= 1000;
+	}
+	atomic_clr(lck);
     }
     return mach_absolute_time() * mti.numer / mti.denom;
 #elif defined(CLOCK_BOOTTIME)
@@ -89,7 +99,7 @@ usec_t uticks(void) {
     if (lastusec - now < 1000000) {
 	return lastutick;
     } else if (diff > 1000000 && save == lastutick) {
-	/* check for system time change */
+	// check for system time change
 	struct tms tbuf;
 	ulong ticks = times(&tbuf);
 	usec_t ticksdiff;

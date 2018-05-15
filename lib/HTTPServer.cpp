@@ -730,9 +730,6 @@ void HTTPServerSocket::get(bool head) {
 	    }
 	}
     }
-#ifndef O_CLOEXEC
-#define O_CLOEXEC 0
-#endif
     if ((fd = ::open(s.c_str(), O_RDONLY|O_CLOEXEC|O_SEQUENTIAL, 0666)) == -1) {
 	error(404);
 	return;

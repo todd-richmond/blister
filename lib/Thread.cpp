@@ -383,7 +383,7 @@ bool Thread::stop(void) {
 	onStop();
 	if (state == Suspended)
 	    resume();
-	state = Terminated; 
+	state = Terminated;
     }
     return true;
 }
@@ -570,8 +570,11 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 		} else {
 		    return thread;
 		}
-	    } else if (thread->id != NOID && !THREAD_ISSELF(thread->id)) {
-		running = true;
+	    } else {
+		thread_id_t id = thread->getId();
+
+		if (id != NOID && !THREAD_ISSELF(id))
+		    running = true;
 	    }
 	    ++it;
 	}

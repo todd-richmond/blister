@@ -84,6 +84,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     uint u;
     SpinLocker lkr(lck);
 
+    sorted.reserve(tmap.size());
     for (it = tmap.begin(); it != tmap.end(); ++it)
 	sorted.push_back(it->second);
     sort(sorted.begin(), sorted.end(), sort_key ? less_key : greater_time);

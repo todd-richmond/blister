@@ -55,11 +55,11 @@ private:
     public:
 	Group(): active(false) {}
 
-	Group &add(void) { refcount.reference(); return *this; }
-
 	ObjectList<DispatchObj> glist;
 	RefCount refcount;
 	bool active;
+
+	Group &add() { refcount.reference(); return *this; }
     };
 
 public:
@@ -74,6 +74,9 @@ public:
     }
 
     Dispatcher &dispatcher(void) const { return dspr; }
+    bool error(void) const {
+	return msg == DispatchClose || msg == DispatchTimeout;
+    }
     DispatchMsg reason(void) const { return msg; }
 
     void detach(void);
@@ -88,13 +91,25 @@ protected:
 
     DispatchObjCB dcb;
     Dispatcher &dspr;
-    volatile uint flags;
+    uint flags;
     DispatchMsg msg;
 
 private:
+    class Group {
+    public:
+	Group(): active(false) {}
+
+	ObjectList<DispatchObj> glist;
+	RefCount refcount;
+	bool active;
+
+	Group &add() { refcount.reference(); return *this; }
+    };
+
     Group *group;
     DispatchObj *next;
 
+    DispatchObj &operator =(const DispatchObj &obj);
     friend class Dispatcher;
     friend class ObjectList<DispatchObj>;
 };
@@ -356,11 +371,6 @@ private:
 	timers.insert(dt);
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
-    void delTimer(DispatchTimer &dt) {
-	FastSpinLocker lkr(lock);
-
-	timers.erase(dt);
-    }
     void removeTimer(DispatchTimer &dt) { timers.set(dt, DSP_NEVER_DUE); }
     void setTimer(DispatchTimer &dt, ulong tm);
 

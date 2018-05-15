@@ -68,7 +68,7 @@
 #ifndef WIN32
 #define WIN32
 #endif
-#define NTDDI_VERSION	NTDDI_WIN8 
+#define NTDDI_VERSION	NTDDI_WIN8
 #define _WIN32_WINNT	_WIN32_WINNT_WIN8
 #define NOIME
 #define NOMCX
@@ -129,7 +129,6 @@ typedef __int64 _ino_t;	//-V677
 #define EWOULDBLOCK	WSAEWOULDBLOCK
 #endif
 
-#define O_CLOEXEC	0
 #define O_COMPRESSED	0x010000
 #define O_POSIX		0x020000
 #define O_SYNC		0x040000
@@ -411,6 +410,9 @@ EXTERNC_
 #ifndef O_BINARY
 #define O_BINARY	0
 #endif
+#ifndef O_CLOEXEC
+#define O_CLOEXEC	0
+#endif
 #define O_COMPRESSED	0
 #ifndef O_DIRECT
 #define O_DIRECT	0
@@ -437,6 +439,8 @@ typedef unsigned long long ullong;
 typedef wchar_t wchar;
 
 #ifdef __APPLE__
+typedef long timer_t;
+
 #ifndef CLOCK_REALTIME
 #define APPLE_NO_CLOCK_GETTIME
 #define CLOCK_REALTIME	0
@@ -478,10 +482,14 @@ EXTERNC_
 #endif // _WIN32
 
 #ifdef __has_feature
-#define __no_sanitize(check)	 __attribute__((no_sanitize(check)))
+#define __no_sanitize(check)	__attribute__((no_sanitize(check)))
 #else
 #define __no_sanitize(check)
 #endif
+#define __no_sanitize_address	__no_sanitize("address")
+#define __no_sanitize_memory	__no_sanitize("memory")
+#define __no_sanitize_thread	__no_sanitize("thread")
+#define __no_sanitize_unsigned	__no_sanitize("unsigned-integer-overflow")
 
 // primitive type value limits
 #define MAXUCHAR	~(uchar)0
@@ -840,9 +848,18 @@ using namespace std;
 using namespace stdext;
 #endif
 
+#if __cplusplus < 201103L
+#define CPP_DEFAULT		{}
+#define CPP_DELETE
+#define nullptr			NULL
+#else
+#define CPP_DEFAULT		= default
+#define CPP_DELETE		= delete
+#endif
+
 // cross-compiler support for unordered maps and sets
-#if defined(__GNUC__) && (!defined(__clang_major__) || __clang_major__ < 5) && \
-    __cplusplus < 201103L
+#if __cplusplus < 201103L && defined(__GNUC__) && \
+    (!defined(__clang_major__) || __clang_major__ < 5)
 #if GNUC_VERSION < 40300
 #define STL_UNORDERED_MAP_H	<ext/hash_map>
 #define STL_UNORDERED_SET_H	<ext/hash_set>
@@ -998,7 +1015,7 @@ inline bool stringless(const C &a, const C &b) {
 }
 
 template<class C>
-__no_sanitize("unsigned-integer-overflow") inline size_t stringhash(const C *s) {
+inline size_t __no_sanitize_unsigned stringhash(const C *s) {
     size_t ret = 0;
 
     while (*s)
@@ -1006,8 +1023,7 @@ __no_sanitize("unsigned-integer-overflow") inline size_t stringhash(const C *s) 
     return ret;
 }
 
-__no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const char
-    *s) {
+inline size_t __no_sanitize_unsigned stringihash(const char *s) {
     size_t ret = 0;
 
     while (*s)
@@ -1015,8 +1031,7 @@ __no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const char
     return ret;
 }
 
-__no_sanitize("unsigned-integer-overflow") inline size_t stringihash(const wchar
-    *s) {
+inline size_t __no_sanitize_unsigned stringihash(const wchar *s) {
     size_t ret = 0;
 
     while (*s)
@@ -1148,11 +1163,11 @@ private:
 // prohibit object copies by subclassing this
 class BLISTER nocopy {
 protected:
-    nocopy() {}
+    nocopy() CPP_DEFAULT;
 
 private:
-    nocopy(const nocopy &);
-    const nocopy & operator =(const nocopy &);
+    nocopy(const nocopy &) CPP_DELETE;
+    const nocopy & operator =(const nocopy &) CPP_DELETE;
 };
 
 // fast single linked object list

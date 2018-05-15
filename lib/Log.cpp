@@ -116,7 +116,7 @@ bool Log::LogFile::reopen(void) {
 
     close();
     if ((fd = ::open(tstringtoachar(path), O_WRONLY | O_CREAT | O_BINARY |
-	O_SEQUENTIAL, 0640)) == -1) {
+	O_SEQUENTIAL | O_CLOEXEC, 0640)) == -1) {
 	tcerr << T("unable to open log ") << path << T(": ") <<
 	    tstrerror(errno) << endl;
 	fd = -3;
@@ -173,8 +173,8 @@ void Log::LogFile::roll(void) {
     }
     if ((dir = topendir(s1.empty() ? T(".") : s1.c_str())) != NULL) {
 	for (;;) {
-	    uint ext;
-	    uint oldext = 0;
+	    ulong ext;
+	    ulong oldext = 0;
 	    ulong oldtime = (ulong)-1;
 
 	    files = 0;
@@ -191,16 +191,18 @@ void Log::LogFile::roll(void) {
 		}
 		if ((s3 == path && path != file))
 		    continue;
-		files++;
+		++files;
 		if (tstat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
 		    (ulong)oldtime) {
 		    if ((pos = s3.rfind('.')) != s3.npos && pos < s3.size() -
 			1 && isdigit((int)s3[++pos])) {
-			ext = (uint)ttoi(s3.c_str() + pos);
-			if (ext < oldext)
+			ext = tstrtoul(s3.c_str() + pos, NULL, 10);
+			// ensure older logs were not touched
+			if ((ext < oldext && path == file) || (ext > oldext &&
+			    file.size() > 12 && !strcmp(file.c_str() - 12,
+			    "%Y%m%d%H%M%S")))
 			    continue;
-			else
-			    oldext = ext;
+			oldext = ext;
 		    }
 		    oldfile = s3;
 		    oldtime = (ulong)sbuf.st_mtime;
@@ -210,8 +212,9 @@ void Log::LogFile::roll(void) {
 		break;
 	    } else if ((cnt || sec) && (!sec || oldtime < ((ulong)now - sec)) &&
 		(!cnt || files >= cnt)) {
-		tunlink(oldfile.c_str());
-		files--;
+		if (tunlink(oldfile.c_str()))
+		    break;
+		--files;
 		trewinddir(dir);
 	    } else {
 		break;

@@ -145,6 +145,19 @@ private:
 	tchar val[];
     };
 
+    struct keyless {
+	bool operator ()(const tchar *a, const tchar *b) const {
+	    const tchar *ap = tstrchr(a, '.');
+	    const tchar *bp = tstrchr(b, '.');
+
+	    if (!ap)
+		return bp ? true : stringless(a, b);
+	    else if (!bp)
+		return false;
+	    return stringless(a, b);
+	}
+    };
+
     typedef unordered_map<const tchar *, const KV *, strhash<tchar>, streq<tchar> >
 	kvmap;
 
@@ -155,7 +168,7 @@ private:
 
     void addkv(const KV *kv) { amap.insert(make_pair(kv->key, kv)); }
     void delkv(const KV *kv) const { delete [] (char *)kv; }
-    bool expandkv(const KV *val, tstring &s) const;
+    bool expandkv(const KV *kv, tstring &val) const;
     const KV *getkv(const tchar *attr, const tchar *sect) const;
     const KV *newkv(const tchar *key, const tchar *val) const;
     void trim(tstring &str) const;

@@ -56,12 +56,11 @@ tstring Service::ver(T(__DATE__) T(" ") T(__TIME__));
 void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
     tstring &prog) {
     tchar buf[PATH_MAX + 2];
-    const tchar *p = NULL;
+    const tchar *p = tgetenv(T("installdir"));
     tstring::size_type pos;
     const tchar *sep;
 
     (void)id;
-    p = tgetenv(T("installdir"));
     if (p) {
 	root = p;
     } else {
@@ -780,7 +779,7 @@ void Service::abort_handler(int) {
 	sa.sa_handler = abort_handler;
 	sigaction(SIGALRM, &sa, NULL);
 	alarm(5);
-	dlog << Log::Crit << Log::mod(service->name) << Log::cmd(T("abort")) << 
+	dlog << Log::Crit << Log::mod(service->name) << Log::cmd(T("abort")) <<
 	    Log::kv(T("err"), T("timeout")) << endlog;
 	alarm(0);
     }

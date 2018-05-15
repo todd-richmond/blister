@@ -102,7 +102,7 @@ public:
     TIMING_KEY(61) TIMING_KEY(62) TIMING_KEY(63) TIMING_KEY(64)
 
     __forceinline operator const tchar *(void) const { return key; }
-    __forceinline size_t hash(void) const { return operator size_t(); }
+    size_t __forceinline hash(void) const { return operator size_t(); }
 
 private:
     const tchar *key;
@@ -115,7 +115,7 @@ public:
 
     vector<tstring>::size_type depth(void) const { return tls->callers.size(); }
 
-    template<class C> __forceinline void add(const C &key, timing_t diff) {
+    template<class C> void __forceinline add(const C &key, timing_t diff) {
 	add(TimingKey(key), diff);
     }
     void add(const TimingKey &key, timing_t diff);
@@ -124,27 +124,27 @@ public:
 	const;
     template<class C> void erase(const C &key) { erase(TimingKey(key)); }
     void record(void);
-    template<class C> __forceinline void record(const C &key) {
+    template<class C> void __forceinline record(const C &key) {
 	record(TimingKey(key));
     }
-    template<class C> __forceinline timing_t record(const C &key, timing_t
+    template<class C> timing_t __forceinline record(const C &key, timing_t
 	begin) {
 	return record(TimingKey(key), begin);
     }
-    __forceinline timing_t record(const TimingKey &key, timing_t begin) {
+    timing_t __forceinline record(const TimingKey &key, timing_t begin) {
 	timing_t n = now();
 
 	add(key, n - begin);
 	return n;
     }
     void restart(void);
-    __forceinline timing_t start(void) const { return now(); }
+    timing_t __forceinline start(void) const { return now(); }
     void start(const TimingKey &key);
-    template<class C> __forceinline void start(const C &key) {
+    template<class C> void __forceinline start(const C &key) {
 	start(TimingKey(key));
     }
     void stop(uint lvl = (uint)-1);
-    static __forceinline timing_t now(void) { return uticks(); }
+    static timing_t __forceinline now(void) { return uticks(); }
 
 private:
     struct BLISTER Stats {
@@ -194,7 +194,7 @@ public:
 	    timing.add(key, timing.now() - start);
     }
 
-    __forceinline void record(void) { start = timing.record(key, start); }
+    void __forceinline record(void) { start = timing.record(key, start); }
     void restart(void) { start = timing.start(); }
     void stop(void) { start = (timing_t)-1; }
 
@@ -216,7 +216,7 @@ public:
 	    timing.record();
     }
 
-    __forceinline void record(void) { timing.record(); started = false; }
+    void __forceinline record(void) { timing.record(); started = false; }
     void restart(void) {
 	if (started) {
 	    timing.restart();
