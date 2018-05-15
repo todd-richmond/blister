@@ -458,7 +458,7 @@ int SMTPLoad::onStart(void) {
 		ret = sc.helo(buf);
 	    } else if (cmd->cmd == T("lhlo")) {
 		ret = sc.lhlo(buf);
-	    } else if (cmd->cmd == "xclient") {
+	    } else if (cmd->cmd == T("xclient")) {
 		ret = sc.xclient(buf);
 	    } else if (cmd->cmd == T("from")) {
 		ret = sc.from(buf);
@@ -515,16 +515,17 @@ int SMTPLoad::onStart(void) {
 	    cmd->complete(ret, diff);
 	    lock.unlock();
 	    if (!ret) {
-		dlog << Log::Err << Log::cmd(cmd->cmd) << Log::kv("arg", buf) <<
-		    Log::kv("status", sc.code()) << Log::kv("message",
-		    sc.message()) << Log::kv("duration", (diff / 1000)) <<
-		    Log::kv("result", sc.result()) << endlog;
+		dlog << Log::Err << Log::cmd(cmd->cmd) << Log::kv(T("arg"),
+		    buf) << Log::kv(T("status"), sc.code()) <<
+		    Log::kv(T("message"), sc.message()) <<
+		    Log::kv(T("duration"), (diff / 1000)) <<
+		    Log::kv(T("result"), sc.result()) << endlog;
 		break;
 	    } else if (dlog.level() >= Log::Info) {
-		dlog << Log::Info << Log::cmd(cmd->cmd) << Log::kv("arg",
-		    buf) << Log::kv("status", sc.code()) << Log::kv("message",
-		    sc.message()) << Log::kv("duration", (diff / 1000)) <<
-		    endlog;
+		dlog << Log::Info << Log::cmd(cmd->cmd) << Log::kv(T("arg"),
+		    buf) << Log::kv(T("status"), sc.code()) <<
+		    Log::kv(T("message"), sc.message()) <<
+		    Log::kv(T("duration"), (diff / 1000)) << endlog;
 	    }
 	}
 	sc.close();

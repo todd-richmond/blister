@@ -76,10 +76,10 @@
 
 typedef usec_t timing_t;
 
-#define TIMING_KEY(i) __forceinline TimingKey(const char (&k)[i]): \
+#define TIMING_KEY(i) __forceinline TimingKey(const tchar (&k)[i]): \
     StringHash(k), key(k) {}
 
-class TimingKey: public StringHash {
+class BLISTER TimingKey: public StringHash {
 public:
     __forceinline TimingKey(const DynamicString &ds): StringHash(ds),
 	key(ds.s) {}
@@ -147,7 +147,7 @@ public:
     static __forceinline timing_t now(void) { return uticks(); }
 
 private:
-    struct Stats {
+    struct BLISTER Stats {
 	explicit Stats(const tchar *k): cnt(0), key(tstrdup(k)), tot(0) {
 	    ZERO(cnts);
 	}
@@ -159,7 +159,7 @@ private:
 	timing_t tot;
     };
 
-    struct Tlsdata {
+    struct BLISTER Tlsdata {
 	vector<tstring> callers;
 	vector<timing_t> starts;
     };
@@ -234,4 +234,3 @@ private:
 };
 
 #endif // _Timing_h
-

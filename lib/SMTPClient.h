@@ -155,16 +155,16 @@ protected:
     static const char crlf[];
 
 private:
+    bool add(vector<tstring> &v, const tchar *id);
+    bool add(vector<tstring> &v, const RFC822Addr &addrs);
+    void recip(const tchar *hdr, const vector<tstring> &v);
+    bool stuff(const void *p, size_t sz);
+
     string boundary;
     tstring frm, sub;
     bool datasent, lmtp, mime;
     uint parts;
     vector<tstring> tov, ccv, bccv, hdrv;
-
-    bool add(vector<tstring> &v, const tchar *id);
-    bool add(vector<string> &v, const RFC822Addr &addrs);
-    void recip(const tchar *hdr, const vector<tstring> &v);
-    bool stuff(const void *p, size_t sz);
 };
 
 bool base64encode(const void *in, size_t len, char *&out, size_t &outsz);

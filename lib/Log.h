@@ -266,7 +266,7 @@ public:
     static Level str2enum(const tchar *lvl);
 
 private:
-    class FlushThread: public Thread {
+    class BLISTER FlushThread: public Thread {
     public:
 	explicit FlushThread(Log &lg): l(lg), qflag(false) {}
 
@@ -279,7 +279,7 @@ private:
 	int onStart(void);
     };
 
-    class LogFile {
+    class BLISTER LogFile {
     public:
 	uint cnt;
 	bool enable;
@@ -319,7 +319,7 @@ private:
 	tstring path;
     };
 
-    struct Tlsdata {
+    struct BLISTER Tlsdata {
 	tstring prefix;
 	tstring strbuf;
 	tbufferstream strm;

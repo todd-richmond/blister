@@ -52,7 +52,7 @@ public:
     enum Status { Error, Pausing, Paused, Refreshing, Resuming, Running,
 	Starting, Stopping, Stopped };
 
-    class Timer: nocopy {
+    class BLISTER Timer: nocopy {
     public:
 	explicit Timer(ulong msec = 0);
 	~Timer() { cancel(); }
@@ -107,10 +107,14 @@ protected:
     pid_t pid;
     Status stStatus;
     uid_t uid;
-    static bool aborted, console, exiting, restart;
+    static bool aborted;
+    static bool console;
+    static bool exiting;
+    static bool restart;
     static Service *service;
     static volatile pid_t sigpid;
-    static tstring ver, srvcpath;
+    static tstring srvcpath;
+    static tstring ver;
 
     void *open(uint mapsz);
     void exit(int code);
@@ -228,12 +232,9 @@ protected:
     static ulong addTimer(ulong msec = 0);
 
 private:
-#ifdef _WIN32
-    static void __stdcall watch_handler(int sig);
-#else
+#ifndef _WIN32
     static void watch_handler(int sig, siginfo_t *si, void *context);
 #endif
 };
 
 #endif // Service_h
-

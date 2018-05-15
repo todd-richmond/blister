@@ -24,7 +24,7 @@
  * buffer copies when possible
  */
 template<class C>
-class faststreambuf: public streambuf {
+class BLISTER faststreambuf: public streambuf {
 public:
     explicit faststreambuf(streamsize sz = 4096, char *p = NULL):
 	alloced(false), buf(NULL), bufsz(0), fd(-1) { setbuf(p, sz); }
@@ -248,7 +248,7 @@ private:
 #include <sstream>
 
 template <class C>
-class bufferstream: public basic_ostream<C> {
+class BLISTER bufferstream: public basic_ostream<C> {
 public:
     bufferstream(): basic_ostream<C>(&sb), sb(ios::out) {}
     virtual ~bufferstream() {}
@@ -260,7 +260,7 @@ public:
     void reset(void) { if (sb.pcount()) basic_ostream<C>::seekp(0, ios::beg); }
 
 private:
-    class bufferbuf: public basic_stringbuf<C> {
+    class BLISTER bufferbuf: public basic_stringbuf<C> {
     public:
 	explicit bufferbuf(ios::openmode m): basic_stringbuf<C>(m) {}
 
@@ -278,7 +278,7 @@ typedef bufferstream<tchar> tbufferstream;
 /*
  * nullstream is a byte sink stream that ignores all writes
  */
-class nullstream: public bufferstream<tchar> {
+class BLISTER nullstream: public bufferstream<tchar> {
 public:
     nullstream() {}
 
@@ -294,4 +294,3 @@ template<class C> nullstream &operator <<(nullstream &os, const C &) {
 }
 
 #endif // Streams_h
-

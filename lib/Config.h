@@ -56,9 +56,9 @@
 
 class BLISTER Config: nocopy {
 public:
-    explicit Config(const tchar *pre = NULL): ini(false) { prefix(pre); }
-    explicit Config(tistream &is, const tchar *pre = NULL): ini(false) {
-	read(is, pre);
+    explicit Config(const tchar *prestr = NULL): ini(false) { prefix(prestr); }
+    explicit Config(tistream &is, const tchar *prestr = NULL): ini(false) {
+	read(is, prestr);
     }
     ~Config() { clear(); }
 
@@ -138,7 +138,7 @@ public:
     friend tostream &operator <<(tostream &os, const Config &cfg);
 
 private:
-    struct KV {
+    struct BLISTER KV {
 	const tchar *key;
 	bool expand;
 	tchar quote;
@@ -180,12 +180,12 @@ class BLISTER ConfigFile: public Config {
 public:
     explicit ConfigFile(const tchar *file = NULL, const tchar *pre = NULL);
 
-    bool read(tistream &is, const tchar *pre = NULL, bool append = false) {
-	return Config::read(is, pre, append);
+    bool read(tistream &is, const tchar *_pre = NULL, bool append = false) {
+	return Config::read(is, _pre, append);
     }
     bool read(const tchar *file = NULL, const tchar *pre = NULL, bool append =
 	false);
-    bool write(tostream &os, bool ini) const { return Config::write(os, ini); }
+    bool write(tostream &os, bool inf) const { return Config::write(os, inf); }
     bool write(void) const { return write(NULL, iniformat()); }
     bool write(const tchar *file, bool ini = false) const;
 

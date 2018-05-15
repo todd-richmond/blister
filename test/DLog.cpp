@@ -247,12 +247,12 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[[-w|--write] logstr]*\n") << endl;
 	    return 1;
     }
-    while (!out) {
+    while (!out) {  //-V776
 	while (getline(ifs.is_open() ? ifs : tcin, s)) {
 	    if (!s.empty())
 		log(lvl, s.c_str());
 	}
-	if (ka) {
+	if (ka) {   //-V776
 	    tcin.clear();
 	    msleep(ka);
 	} else {

@@ -397,7 +397,7 @@ bool Thread::suspend() {
 	state = Suspended;
 	lkr.unlock();
 #ifdef _WIN32
-	if (SuspendThread(hdl) != (DWORD)-1)
+	if (SuspendThread(hdl) != (DWORD)-1)	//-V720
 	    return true;
 #endif
 	lkr.lock();

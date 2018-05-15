@@ -167,7 +167,7 @@ static void md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/) {
 	     */
 	    if (!((data - (const md5_byte_t *)0) & 3)) {
 		/* data are properly aligned */
-		X = (const md5_word_t *)data;
+		X = (const md5_word_t *)data;	// -V::206
 #ifdef DEBUG	// static code analysis warning
 		if (!X)
 		    return;
@@ -385,8 +385,8 @@ void md5_finish(md5_state_t *pms, md5_byte_t digest[16]) {
 	digest[i] = (md5_byte_t)(pms->abcd[i >> 2] >> ((i & 3) << 3));
 }
 
-void md5_hmac(unsigned char *text, unsigned textlen, unsigned char *key,
-    unsigned keylen, md5_byte_t digest[16]) {
+void md5_hmac(const unsigned char *text, unsigned textlen, const unsigned char
+    *key, unsigned keylen, md5_byte_t digest[16]) {
     unsigned char k_ipad[65];    /* inner padding - key XORd with ipad */
     unsigned char k_opad[65];    /* outer padding - key XORd with opad */
     md5_state_t state;
@@ -435,4 +435,3 @@ void md5_hmac(unsigned char *text, unsigned textlen, unsigned char *key,
     md5_append(&state, digest, 16);	/* then results of 1st hash */
     md5_finish(&state, digest);		/* finish up 2nd pass */
 }
-

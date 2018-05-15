@@ -21,8 +21,13 @@
 // defines, typedefs and code to make non-UNIX systems support POSIX APIs
 #define CPP_STR(s)		#s
 #ifdef _MSC_VER
+#ifdef _USRDLL
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
+#else
+#define DLL_EXPORT
+#define DLL_IMPORT
+#endif
 #define DLL_LOCAL
 #define PRAGMA_WARN_DISABLE(e)	_Pragma(warning(disable: e))
 #define PRAGMA_WARN_ENABLE(e)	_Pragma(warning(enable: e))
@@ -56,9 +61,9 @@
 #ifdef _WIN32
 
 #pragma inline_depth(69)
-#pragma warning(disable: 4018 4068 4097 4100 4103 4127 4146 4201 4250 4335 4503)
-#pragma warning(disable: 4511 4512 4530 4577 4619 4625 4626 4668 4710 4711 4786)
-#pragma warning(disable: 4820 4996 5026 5027 26135 28125)
+#pragma warning(disable: 4018 4068 4097 4100 4103 4127 4146 4200 4201 4250 4251)
+#pragma warning(disable: 4335 4503 4511 4512 4530 4577 4619 4625 4626 4668 4710)
+#pragma warning(disable: 4711 4786 4820 4996 5026 5027 26135 28125)
 
 #ifndef WIN32
 #define WIN32
@@ -83,7 +88,7 @@
 #define _WSTATVFS_DEFINED
 
 #if _MSC_VER >= 1900
-typedef __int64 _ino_t;
+typedef __int64 _ino_t;	//-V677
 #endif
 #define __STDC__ 1
 #include <direct.h>
@@ -218,7 +223,7 @@ typedef wchar_t wchar;
 
 typedef ushort gid_t;
 typedef int id_t;
-typedef llong ino_t;
+typedef llong ino_t;	//-V677
 typedef short nlink_t;
 typedef long pid_t;
 typedef ushort uid_t;
@@ -673,6 +678,15 @@ EXTERNC_
 #define tstatvfs	wstatvfs
 #define tunlink		_wunlink
 
+#define tspawnl		_wspawnvl
+#define tspawnle	_wspawnle
+#define tspawnlp	_wspawnlp
+#define tspawnlpe	_wspawnlpe
+#define tspawnv		_wspawnv
+#define tspawnve	_wspawnve
+#define tspawnvp	_wspawnvp
+#define tspawnvpe	_wspawnvpe
+
 typedef wchar tchar;
 typedef wchar tuchar;
 
@@ -751,6 +765,15 @@ typedef wchar tuchar;
 #define tstat		stat
 #define tstatvfs	statvfs
 #define tunlink		unlink
+
+#define tspawnl		_spawnvl
+#define tspawnle	_spawnle
+#define tspawnlp	_spawnlp
+#define tspawnlpe	_spawnlpe
+#define tspawnv		_spawnv
+#define tspawnve	_spawnve
+#define tspawnvp	_spawnvp
+#define tspawnvpe	_spawnvpe
 
 typedef char tchar;
 typedef unsigned char tuchar;
@@ -856,11 +879,11 @@ inline const string wstringtoastring(const wstring &s) {
 }
 
 #define achartowchar(s)		achartowstring(s).c_str()
-#define achartowstring(s)	_achartowstring((s), -1)
+#define achartowstring(s)	_achartowstring((s), (size_t)-1)
 #define astringtoachar(s)	(s).c_str()
 #define astringtowchar(s)	astringtowstring(s).c_str()
 #define wchartoachar(s)		wchartoastring(s).c_str()
-#define wchartoastring(s)	_wchartoastring((s), -1)
+#define wchartoastring(s)	_wchartoastring((s), (size_t)-1)
 #define wstringtoachar(s)	wstringtoastring(s).c_str()
 #define wstringtowchar(s)	(s).c_str()
 
@@ -1089,7 +1112,7 @@ struct striless {
     hash(STDAPI_REPEAT(i, STRING_HASH_PRE, ~) 0 STDAPI_REPEAT(i, \
 	STRING_HASH_POST, ~)) {}
 
-class StringHash {
+class BLISTER StringHash {
 public:
     struct DynamicString {
 	__forceinline DynamicString(const tchar *str): s(str) {}
@@ -1123,7 +1146,7 @@ private:
 };
 
 // prohibit object copies by subclassing this
-class nocopy {
+class BLISTER nocopy {
 protected:
     nocopy() {}
 

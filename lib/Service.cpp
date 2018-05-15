@@ -1262,7 +1262,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     av[ac] = NULL;
     splitpath(argv[0], name.c_str(), installdir, prog);
     if (name.empty())
-	name = prog;
+	name = prog;	// -V::820
     dlog.source(name.c_str());
     set_files();
     if ((ret = command(cmd, ac, av)) != -1) {
@@ -1687,8 +1687,8 @@ void Daemon::onAbort() {
     update(Stopped);
     if (restart && !exiting) {
 #ifdef _WIN32
-	if (spawnlp(P_NOWAIT, tstringtoachar(srvcpath),
-	    tstringtoachar(srvcpath), "restart", NULL) < 0)
+	if (tspawnlp(P_NOWAIT, srvcpath.c_str(), srvcpath.c_str(), T("restart"),
+	    NULL) < 0)
 #else
 	string s(srvcpath + " restart");
 
@@ -1744,6 +1744,7 @@ void Daemon::onSigusr1(void) {
     dlog.roll();
 }
 
+#ifndef _WIN32
 void Daemon::watch_handler(int sig, siginfo_t *, void *) {
     Daemon *daemon = (Daemon *)service;
 
@@ -1757,4 +1758,4 @@ void Daemon::watch_handler(int sig, siginfo_t *, void *) {
 	daemon->qflag = Fast;
     kill(daemon->child, sig);
 }
-
+#endif

@@ -241,7 +241,7 @@ void HTTPServerSocket::readpost() {
 		}
 	    }
 	    ++lf;
-	    memmove(postdata + chunkin, lf, (ulong)(postdata + postin - lf));
+	    memmove(postdata + chunkin, lf, (size_t)(postdata + postin - lf));
 	    postin -= (ulong)(lf - (postdata + chunkin));
 	    if (!postdatasz)
 		datasz -= (ulong)(lf - (postdata + chunkin));
@@ -669,7 +669,7 @@ void HTTPServerSocket::error(uint sts) {
 	"Service Unavailable", "Gateway Timeout", "Version Not Supported"
     };
 #pragma warning(push)
-#pragma warning(disable: 6385)
+#pragma warning(disable: 6385)	// -V::557
     if (sts >= 200 && sts < 200 + sizeof (err2xx) / sizeof (char *))
 	p = err2xx[sts % 200];
     else if (sts >= 300 && sts < 300 + sizeof (err3xx) / sizeof (char *))
@@ -680,7 +680,7 @@ void HTTPServerSocket::error(uint sts) {
 	p = err5xx[sts % 500];
     else
 	p = "HTTP error";
-#pragma warning(pop)
+#pragma warning(pop)		// +V::557
     status(sts, "text", "plain");
     ss << sts << ' ' << p << CRLF;
     _status = sts;
@@ -760,4 +760,3 @@ void HTTPServerSocket::get(bool head) {
 	reply((const char *)NULL);
     ::close(fd);
 }
-

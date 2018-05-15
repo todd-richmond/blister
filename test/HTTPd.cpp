@@ -72,7 +72,7 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     running();
     dspr.waitForMain();
     // cppcheck-suppress memleak
-    return 0;
+    return 0;	//-V773
 }
 
 bool HTTPDaemonSocket::paused = false;

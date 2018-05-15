@@ -27,6 +27,7 @@
 #include <time.h>
 #include <windows.h>
 
+ //-V::303
 #pragma comment(lib, "winmm.lib")
 #pragma warning(disable: 4305)
 #pragma warning(disable: 4306)
@@ -615,7 +616,7 @@ int wlink(const wchar *from, const wchar *to) {
     ZERO(sid);
     sid.dwStreamId = BACKUP_LINK;
     sid.Size.LowPart = (DWORD)((sz + 1) * sizeof (wchar));
-    out = (DWORD)((LPBYTE)&sid.cStreamName - (LPBYTE)&sid);
+    out = (DWORD)((LPBYTE)&sid.cStreamName - (LPBYTE)&sid); //-V206
     if (!BackupWrite(hdl, (LPBYTE)&sid, out, &out, FALSE, FALSE, &lpContext)) {
 	_dosmaperr(GetLastError());
 	CloseHandle(hdl);

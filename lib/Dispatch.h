@@ -55,11 +55,11 @@ private:
     public:
 	Group(): active(false) {}
 
+	Group &add(void) { refcount.reference(); return *this; }
+
 	ObjectList<DispatchObj> glist;
 	RefCount refcount;
 	bool active;
-
-	Group &add() { refcount.reference(); return *this; }
     };
 
 public:
@@ -132,9 +132,10 @@ protected:
     ulong to;
 
 private:
+    void init(void);
+
     msec_t due;
 
-    void init(void);
     friend class Dispatcher;
 };
 
@@ -167,10 +168,10 @@ class BLISTER DispatchIOSocket: public DispatchSocket {
 public:
     explicit DispatchIOSocket(Dispatcher &d, int type = SOCK_STREAM,
 	ulong msec = DSP_NEVER): DispatchSocket(d, type, msec) {}
-    explicit DispatchIOSocket(DispatchObj &parent, int type = SOCK_STREAM,
-	ulong msec = DSP_NEVER): DispatchSocket(parent, type, msec) {}
     DispatchIOSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER):
 	DispatchSocket(d, sock, msec) {}
+    explicit DispatchIOSocket(DispatchObj &parent, int type = SOCK_STREAM,
+	ulong msec = DSP_NEVER) : DispatchSocket(parent, type, msec) {}
     DispatchIOSocket(DispatchObj &parent, const Socket &sock, ulong msec =
 	DSP_NEVER): DispatchSocket(parent, sock, msec) {}
 
@@ -195,15 +196,15 @@ class BLISTER DispatchClientSocket: public DispatchIOSocket {
 public:
     explicit DispatchClientSocket(Dispatcher &d, int type = SOCK_STREAM,
 	ulong msec = DSP_NEVER): DispatchIOSocket(d, type, msec) {}
-    explicit DispatchClientSocket(DispatchObj &parent, int type = SOCK_STREAM,
-	ulong msec = DSP_NEVER): DispatchIOSocket(parent, type, msec) {}
     DispatchClientSocket(Dispatcher &d, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(d, sock, msec) {}
+    explicit DispatchClientSocket(DispatchObj &parent, int type = SOCK_STREAM,
+	ulong msec = DSP_NEVER) : DispatchIOSocket(parent, type, msec) {}
     DispatchClientSocket(DispatchObj &parent, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(parent, sock, msec) {}
 
     void connect(const Sockaddr &addr, ulong msec = 30000, DispatchObjCB cb =
-	NULL);
+	connected);
 
 protected:
     virtual void onConnect(void) = 0;
@@ -231,7 +232,7 @@ public:
     const Sockaddr address(void) { return addr; }
     bool listen(const Sockaddr &addr, bool reuse = true, int backlog =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL);
-    void relisten() { poll(NULL, DSP_PREVIOUS, DispatchAccept); }
+    void relisten(void) { poll(NULL, DSP_PREVIOUS, DispatchAccept); }
 
 protected:
     virtual void onAccept(Socket &sock) = 0;
@@ -260,7 +261,7 @@ protected:
 private:
     typedef unordered_map<socket_t, DispatchSocket *> socketmap;
 
-    class TimerSet {
+    class BLISTER TimerSet {
     public:
 	typedef ::set<DispatchTimer *, DispatchTimer::compare> sorted_timerset;
 	typedef unordered_set<DispatchTimer *, ptrhash<DispatchTimer> >

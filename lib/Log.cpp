@@ -492,7 +492,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	sprintf(buf, "<%u>%.15s.%06u ", u, ctime_r(&now_sec, cbuf) + 4,
 	    (uint)now_usec);
 	ss = buf;
-	ss += hostname;
+	ss += tstringtoastring(hostname);
 	if (!mailfrom.empty()) {
 	    ss += ' ';
 	    if (_type == KeyVal)

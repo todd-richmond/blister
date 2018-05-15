@@ -181,7 +181,7 @@ private:
     } sockaddr_any;
 
 #ifdef _WIN32
-    class SockInit {
+    class BLISTER SockInit {
     public:
 	SockInit() { WSADATA w; (void)WSAStartup(2 | (0 << 8), &w); }
 	~SockInit() { WSACleanup(); }
@@ -217,7 +217,7 @@ public:
     }
 
 private:
-    struct Range {
+    struct BLISTER Range {
 	bool operator ()(const Range &a, const Range &b) const {
 	    return a.rmax < b.rmin;
 	}
@@ -349,7 +349,7 @@ public:
     long writev(const iovec *iov, int count, const Sockaddr &sa) const;
 
 protected:
-    class SocketBuf {
+    class BLISTER SocketBuf {
     public:
 	SocketBuf(int t, socket_t s, bool o): sock(s), count(1), err(0),
 	    rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE), blck(true), own(o) {}

@@ -182,7 +182,7 @@ class ThreadGroup;
 /* Locking templates that unlock upon destruction */
 template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
     &C::unlock>
-class LockerTemplate: nocopy {
+class BLISTER LockerTemplate: nocopy {
 public:
     explicit LockerTemplate(C &lock, bool lockit = true): lck(lock), locked(
 	lockit) {
@@ -209,7 +209,7 @@ private:
 };
 
 template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
-class FastLockerTemplate: nocopy {
+class BLISTER FastLockerTemplate: nocopy {
 public:
     explicit __forceinline FastLockerTemplate(C &lock): lck(lock) {
 	(lck.*LOCK)();
@@ -255,7 +255,7 @@ public:
 
 /* Thread local storage for simple types */
 template<class C>
-class ThreadLocal: nocopy {
+class BLISTER ThreadLocal: nocopy {
 public:
     ThreadLocal() { tls_init(key); }
     ~ThreadLocal() { tls_free(key); }
@@ -273,7 +273,7 @@ protected:
 
 /* Thread local storage for classes with proper destruction when theads exit */
 template<class C>
-class ThreadLocalClass: nocopy {
+class BLISTER ThreadLocalClass: nocopy {
 public:
     ThreadLocalClass() { tls_init(key); }
     ~ThreadLocalClass() { tls_free(key); }
@@ -427,7 +427,7 @@ protected:
     HANDLE hdl;
 };
 
-class _Semaphore {
+class BLISTER _Semaphore {
 public:
     explicit _Semaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
 	if (init != (uint)-1)

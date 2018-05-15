@@ -18,7 +18,9 @@
 #include "stdapi.h"
 #include <errno.h>
 #include <signal.h>
+#ifndef _WIN32
 #include <sys/wait.h>
+#endif
 #include "Log.h"
 #include "Service.h"
 
@@ -28,7 +30,7 @@ public:
 
 protected:
     ulong interval, maxmem;
-    pid_t pid;
+    pid_t cpid;
 
     virtual bool onRefresh(void);
     virtual int onStart(int argc, const tchar * const *argv);
@@ -36,7 +38,7 @@ protected:
 };
 
 WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
-    *dname): Daemon(dname ? dname : T("")), interval(60), maxmem(0) {
+    *dname): Daemon(dname ? dname : T("")), interval(60), maxmem(0), cpid(0) {
     int ac;
 
     for (ac = 2; ac < argc; ++ac) {
@@ -52,7 +54,7 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
 	    maxmem = tstrtoul(argv[++ac], NULL, 10);
 	else if (!tstrcmp(p, T("name")))
 	    name = argv[++ac];
-	else if (strcmp(p, "console") && strcmp(p, "daemon"))
+	else if (tstrcmp(p, T("console")) && tstrcmp(p, T("daemon")))
 	    ++ac;
     }
     if (ac >= argc) {
@@ -109,24 +111,29 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     dlogi(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[0]),
 	Log::kv(T("args"), args));
     dlog.close();
-    pid = fork();
-    if (pid == 0) {
+#ifdef _WIN32
+    if (tspawnvp(P_WAIT, argv[ac], (tchar **)&argv[ac]) == 0)
+	return 0;
+#else
+    cpid = fork();
+    if (cpid == 0) {
 	unsetsignal();
         texecvp(argv[ac], (tchar **)&argv[ac]);
-    } else if (pid > 0) {
+    } else if (cpid > 0) {
         int sts;
 
-	waitpid(pid, &sts, 0);
+	waitpid(cpid, &sts, 0);
 	return WEXITSTATUS(sts);
     }
+#endif
     dloge(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[0]),
 	Log::error(tstrerror(errno)));
     return -1;
 }
 
 void WatchDaemon::onStop(bool fast) {
-    if (pid)
-	kill(pid, fast ? SIGTERM : SIGINT);
+    if (cpid)
+	kill(cpid, fast ? SIGTERM : SIGINT);
 }
 
 int tmain(int argc, const tchar *argv[]) {
@@ -134,4 +141,3 @@ int tmain(int argc, const tchar *argv[]) {
 
     return wd.execute(argc, argv);
 }
-

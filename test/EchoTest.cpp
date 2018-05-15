@@ -280,7 +280,7 @@ bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
 
     if (els->listen(sa)) {
 	els->detach();
-	return true;
+	return true;	// -V::773
     } else {
 	delete els;
 	return false;

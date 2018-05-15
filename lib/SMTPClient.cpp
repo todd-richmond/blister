@@ -27,19 +27,19 @@ const char SMTPClient::crlf[] = "\r\n";
 SMTPClient::SMTPClient(): sstrm(sock), datasent(false), lmtp(false),
     mime(false), parts(0) {}
 
-bool SMTPClient::add(vector<string> &v, const RFC822Addr &addrs) {
+bool SMTPClient::add(vector<tstring> &v, const RFC822Addr &addrs) {
     bool ret = true;
 
     if (!addrs.size())
 	return false;
     for (uint u = 0; u < addrs.size(); u++) {
-	ret = cmd("RCPT TO:", addrs.address(u).c_str()) && ret;
+	ret = cmd(T("RCPT TO:"), addrs.address(u).c_str()) && ret;
 	v.push_back(addrs.address(u, true));
     }
     return ret;
 }
 
-bool SMTPClient::add(vector<string> &v, const char *id) {
+bool SMTPClient::add(vector<tstring> &v, const tchar *id) {
     bool ret = cmd(T("RCPT TO:"), id);
     v.push_back(id);
     return ret;
@@ -80,13 +80,12 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
 	ret = cmd(T("AUTH LOGIN"), achartotchar(uubuf), 334);
-	delete[] uubuf;
 	if (ret && (ret = base64encode(pass, passlen, uubuf, uusz)) == true) {
 	    while (isspace(uubuf[uusz - 1]))
 		uubuf[--uusz] = '\0';
 	    ret = cmd(achartotchar(uubuf), NULL, 235);
-	    delete[] uubuf;
 	}
+	delete[] uubuf;
     }
     return ret;
 }
@@ -185,7 +184,7 @@ bool SMTPClient::from(const tchar *id) {
     mime = false;
     parts = 0;
     if (!*id)
-	id = "<>";
+	id = T("<>");
     frm = id;
     return cmd(T("MAIL FROM:"), id);
 }
@@ -1009,7 +1008,7 @@ bool RFC822Addr::skip_whitespace(tchar *&in) {
 }
 
 const tstring RFC822Addr::address(uint u, bool n, bool b) const {
-    char c;
+    tchar c;
     uint pos = 0;
     tstring s;
 
@@ -1026,7 +1025,7 @@ const tstring RFC822Addr::address(uint u, bool n, bool b) const {
 	s += routes[u];
 	s += ':';
     }
-    while ((c = locals[u][pos]) != '\0') {
+    while ((c = locals[u][pos]) != (tchar)0) {
 	if (c == '.') {
 	    if (pos == 0 || !locals[u][pos + 1] || locals[u][pos + 1] == '.')
 		break;
@@ -1037,7 +1036,7 @@ const tstring RFC822Addr::address(uint u, bool n, bool b) const {
     }
     if (locals[u][pos]) {
 	s += '"';
-	for (pos = 0; (c = locals[u][pos]) != '\0'; ++pos) {
+	for (pos = 0; (c = locals[u][pos]) != (tchar)0; ++pos) {
 	    if (c == '"' || c == '\\') {
 		s += '\\';
 	    }
@@ -1290,7 +1289,7 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
 		continue;
 	}
 	out_byte = (out_byte << 6) + add_bits;
-	out_bits += 6;
+	out_bits += 6;	//-V127
 	if (out_bits == 24) {
 	    out[0] = (char)((out_byte & 0xFF0000) >> 16);
 	    out[1] = (char)((out_byte & 0x00FF00) >> 8);

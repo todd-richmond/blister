@@ -186,7 +186,7 @@ const Config::KV *Config::getkv(const tchar *attr, const tchar *sect) const {
     kvmap::const_iterator it;
 
     if (sect && *sect) {
-	string s(sect);
+	tstring s(sect);
 
 	s += '.';
 	s += attr;
@@ -320,7 +320,7 @@ void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
     }
     oldkv = it->second;
     if (append) {
-	size_t len = strlen(val);
+	size_t len = tstrlen(val);
 	tstring s;
 
 	if (oldkv->quote)
@@ -384,7 +384,6 @@ bool Config::write(tostream &os, bool inistyle) const {
     RLocker lkr(lck);
     kvmap::const_iterator it;
     vector<const tchar *> keys;
-    vector<const tchar *>::const_iterator kit;
     tstring sect;
 
     keys.reserve(amap.size());
@@ -420,14 +419,14 @@ bool Config::write(tostream &os, bool inistyle) const {
 		sect = '.';
 	    } else {
 		sect.assign(key);
-		if (cnt > 1 || (cnt == 1 && u < keys.size() - 1 &&
+		if (cnt > 1 || (cnt == 1 && u + 1 < keys.size() &&
 		    !tstrncmp(keys[u + 1], sect.c_str(), sect.size()) &&
 		    keys[u + 1][sect.size()] == '.' ))
 		    os << endl;
 		cnt = 0;
 	    }
 	} else {
-	    if (tstrncmp(key, sect.c_str(), (size_t)(dot - key))) {
+	    if (tstrncmp(key, sect.c_str(), (size_t)(dot - key)) != 0) {
 		sect.assign(key, (size_t)(dot - key));
 		if (cnt) {
 		    os << endl;
@@ -471,8 +470,8 @@ bool ConfigFile::write(const tchar *file, bool inistyle) const {
 
 	return write(os, inistyle);
     } else {
-	string tmp(path + T(".tmp"));
-	tofstream os(tchartoachar(tmp));
+	tstring tmp(path + T(".tmp"));
+	tofstream os(tstringtoachar(tmp));
 
 	if (!write(os, inistyle) || !rename(tstringtoachar(tmp),
 	    tstringtoachar(path))) {
