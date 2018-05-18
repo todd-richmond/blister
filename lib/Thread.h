@@ -18,7 +18,7 @@
 #ifndef Thread_h
 #define Thread_h
 
-#if __cplusplus > 199711L
+#if CPLUSPLUS >= 11
 #include <atomic>
 #endif
 
@@ -77,7 +77,7 @@ typedef pthread_t thread_id_t;
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 #define THREAD_BARRIER()	asm volatile("" ::: "memory")
 #define THREAD_FENCE()		asm volatile("mfence" ::: "memory")
-#define THREAD_PAUSE()  	asm volatile("pause" ::: "memory")
+#define THREAD_PAUSE()  	__builtin_ia32_pause()
 #endif
 #define THREAD_YIELD()		sched_yield()
 
@@ -158,6 +158,10 @@ typedef volatile int atomic_t;
 #define NO_ATOMIC_ADD
 #define NO_ATOMIC_LOCK
 
+#endif
+
+#if CPLUSPLUS > 0 && CPLUSPLUS < 11
+typedef volatile atomic_t atomic_flag;
 #endif
 
 typedef pthread_key_t tlskey_t;
@@ -317,44 +321,9 @@ protected:
  * RWLock: reader/writer lock
  * Condvar: condition variable around a Lock
  */
-#define SPINLOCK_YIELD	(1 << 6)
+#define SPINLOCK_YIELD	(1 << 5)
 
-#if __cplusplus > 199711L
-
-class BLISTER SpinLock: nocopy {
-public:
-    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) { unlock(); }
-
-    void __forceinline lock(void) {
-	if (!trylock()) {
-#ifdef THREAD_PAUSE
-	    uint pause = init;
-
-	    do {
-		if (pause == SPINLOCK_YIELD) {
-		    THREAD_YIELD();
-		} else {
-		    for (uint u = 0; u < pause; ++u)
-			THREAD_PAUSE();
-		    pause <<= 1;
-		}
-	    } while (!trylock());
-#else
-	    THREAD_YIELD();
-#endif
-	}
-    }
-    bool __forceinline trylock(void) {
-	return !lck.test_and_set(std::memory_order_acquire);
-    }
-    void __forceinline unlock(void) { lck.clear(std::memory_order_release); }
-
-private:
-    const uint init;
-    atomic_flag lck;
-};
-
-#elif defined(NO_ATOMIC_LOCK)
+#if defined(NO_ATOMIC_LOCK)
 
 class BLISTER SpinLock: nocopy {
 public:
@@ -375,11 +344,17 @@ protected:
 
 class BLISTER SpinLock: nocopy {
 public:
-    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U), lck(0) {}
+    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) {
+#if __cplusplus > 199711L
+	lck.clear();
+#else
+	lck = 0;
+#endif
+    }
 
     void __forceinline lock(void) {
-	while (atomic_lck(lck)) {
 #ifdef THREAD_PAUSE
+	if (!trylock()) {
 	    uint pause = init;
 
 	    do {
@@ -390,18 +365,26 @@ public:
 			THREAD_PAUSE();
 		    pause <<= 1;
 		}
-	    } while (lck);
+	    } while (!trylock());
+	}
 #else
+	while (!trylock())
 	    THREAD_YIELD();
 #endif
-	}
     }
+#if CPLUSPLUS >= 11
+    bool __forceinline trylock(void) {
+	return !lck.test_and_set(std::memory_order_acquire);
+    }
+    void __forceinline unlock(void) { lck.clear(std::memory_order_release); }
+#else
     bool __forceinline trylock(void) { return atomic_lck(lck) == 0; }
     void __forceinline unlock(void) { atomic_clr(lck); }
+#endif
 
 private:
     const uint init;
-    volatile atomic_t lck;
+    atomic_flag lck;
 };
 
 #endif
@@ -721,7 +704,7 @@ public:
 	} else {
 	    timespec ts;
 
-	    clock_gettime(CLOCK_REALTIME, &ts);
+	    clock_gettime(CLOCK_REALTIME_COARSE, &ts);
 	    time_adjust_msec(&ts, msec);
 	    return sem_timedwait(&hdl, &ts) == 0;
 	}
@@ -787,7 +770,7 @@ public:
 	} else {
 	    timespec ts;
 
-	    clock_gettime(CLOCK_REALTIME, &ts);
+	    clock_gettime(CLOCK_REALTIME_COARSE, &ts);
 	    time_adjust_msec(&ts, msec);
 	    return semtimedop(hdl, &op, 1, &ts) == 0;
 	}
@@ -831,7 +814,7 @@ public:
 	    ts.tv_nsec = (msec % 1000) * 1000000;
 	    return !pthread_cond_timedwait_relative_np(&cv, lock, &ts);
 #else
-	    clock_gettime(CLOCK_MONOTONIC, &ts);
+	    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
 	    time_adjust_msec(&ts, msec);
 	    return !pthread_cond_timedwait(&cv, lock, &ts);
 #endif

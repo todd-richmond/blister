@@ -16,7 +16,6 @@
  */
 
 #include "stdapi.h"
-#include <assert.h>
 #include <algorithm>
 #include "Timing.h"
 
@@ -55,7 +54,6 @@ void Timing::add(const TimingKey &key, timing_t diff) {
     } else {
 	stats = it->second;
     }
-    assert(tstreq(key, stats->key));
     ++stats->cnt;
     ++stats->cnts[slot];
     stats->tot += diff;

@@ -19,30 +19,29 @@
 #define stdapi_h
 
 // defines, typedefs and code to make non-UNIX systems support POSIX APIs
-#define CPP_STR(s)		#s
 #ifdef _MSC_VER
 #ifdef _USRDLL
-#define DLL_EXPORT		__declspec(dllexport)
-#define DLL_IMPORT		__declspec(dllimport)
+#define DLL_EXPORT	__declspec(dllexport)
+#define DLL_IMPORT	__declspec(dllimport)
 #else
 #define DLL_EXPORT
 #define DLL_IMPORT
 #endif
 #define DLL_LOCAL
-#define PRAGMA_WARN_DISABLE(e)	_Pragma(warning(disable: e))
-#define PRAGMA_WARN_ENABLE(e)	_Pragma(warning(enable: e))
-#define PRAGMA_WARN_POP		_Pragma(warning(pop))
-#define PRAGMA_WARN_PUSH	_Pragma(warning(push))
+#define WARN_DISABLE(e)	_Pragma(warning(disable: e))
+#define WARN_ENABLE(e)	_Pragma(warning(enable: e))
+#define WARN_POP	_Pragma(warning(pop))
+#define WARN_PUSH	_Pragma(warning(push))
 #else
-#define DLL_EXPORT		__attribute__((visibility("default")))
-#define DLL_IMPORT		__attribute__((visibility("default")))
-#define DLL_LOCAL		__attribute__((visibility("hidden")))
-#define PRAGMA_WARN_POP		_Pragma(CPP_STR(GCC pop_options))
-#define PRAGMA_WARN_PUSH	_Pragma(CPP_STR(GCC push_options))
-#define PRAGMA_WARN_DISABLE(e)	_Pragma(CPP_STR(GCC diagnostic ignored #e))
-#define PRAGMA_WARN_ENABLE(e)	_Pragma(CPP_STR(GCC diagnostic warning #e))
+#define DLL_EXPORT	__attribute__((visibility("default")))
+#define DLL_IMPORT	__attribute__((visibility("default")))
+#define DLL_LOCAL	__attribute__((visibility("hidden")))
+#define WARN_POP	_Pragma(CPP_STR(GCC pop_options))
+#define WARN_PUSH	_Pragma(CPP_STR(GCC push_options))
+#define WARN_DISABLE(e)	_Pragma(CPP_STR(GCC diagnostic ignored #e))
+#define WARN_ENABLE(e)	_Pragma(CPP_STR(GCC diagnostic warning #e))
 #endif
-#define PRAGMA_WARN_PUSH_DISABLE(e)	PRAGMA_WARN_PUSH PRAGMA_WARN_DISABLE(e)
+#define WARN_PUSH_DISABLE(e)	WARN_PUSH WARN_DISABLE(e)
 
 #ifdef BUILD_BLISTER
 #define BLISTER		DLL_EXPORT
@@ -50,10 +49,24 @@
 #define BLISTER		DLL_IMPORT
 #endif
 
+#define CPP_STR(s)	#s
+
 #ifdef __cplusplus
+#if __cplusplus <= 199711
+#define CPLUSPLUS	8
+#elif __cplusplus <= 201103
+#define CPLUSPLUS	11
+#elif __cplusplus <= 201402
+#define CPLUSPLUS	14
+#elif __cplusplus <= 201703
+#define CPLUSPLUS	17
+#else
+#define CPLUSPLUS	20
+#endif
 #define EXTERNC		extern "C" {
 #define EXTERNC_	}
 #else
+#define CPLUSPLUS	0
 #define EXTERNC
 #define EXTERNC_
 #endif
@@ -475,10 +488,13 @@ EXTERNC_
 #ifndef CLOCK_MONOTONIC_RAW
 #define CLOCK_MONOTONIC_RAW	CLOCK_MONOTONIC
 #endif
+#ifndef CLOCK_REALTIME_COARSE
+#define CLOCK_REALTIME_COARSE	CLOCK_REALTIME
+#endif
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun__)
 EXTERNC
-extern BLISTER int wcscasecmp(const wchar_t *, const wchar_t *);
+extern int wcscasecmp(const wchar_t *, const wchar_t *);
 EXTERNC_
 #endif
 #endif // _WIN32
