@@ -77,7 +77,11 @@ typedef pthread_t thread_id_t;
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 #define THREAD_BARRIER()	asm volatile("" ::: "memory")
 #define THREAD_FENCE()		asm volatile("mfence" ::: "memory")
+#if __GNUC_MAJOR__ < 5
+#define THREAD_PAUSE()		asm volatile("pause" ::: "memory")
+#else
 #define THREAD_PAUSE()  	__builtin_ia32_pause()
+#endif
 #endif
 #define THREAD_YIELD()		sched_yield()
 
