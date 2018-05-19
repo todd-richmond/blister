@@ -349,7 +349,7 @@ protected:
 class BLISTER SpinLock: nocopy {
 public:
     SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) {
-#if __cplusplus > 199711L
+#if CPLUSPLUS >= 11
 	lck.clear();
 #else
 	lck = 0;

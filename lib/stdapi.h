@@ -19,37 +19,51 @@
 #define stdapi_h
 
 // defines, typedefs and code to make non-UNIX systems support POSIX APIs
+#define CPP_STR(s)		#s
+
 #ifdef _MSC_VER
 #ifdef _USRDLL
-#define DLL_EXPORT	__declspec(dllexport)
-#define DLL_IMPORT	__declspec(dllimport)
+#define DLL_EXPORT		__declspec(dllexport)
+#define DLL_IMPORT		__declspec(dllimport)
 #else
 #define DLL_EXPORT
 #define DLL_IMPORT
 #endif
 #define DLL_LOCAL
-#define WARN_DISABLE(e)	_Pragma(warning(disable: e))
-#define WARN_ENABLE(e)	_Pragma(warning(enable: e))
-#define WARN_POP	_Pragma(warning(pop))
-#define WARN_PUSH	_Pragma(warning(push))
+#define __no_sanitize(check)
+#define WARN_DISABLE(e)		_Pragma(warning(disable: e))
+#define WARN_ENABLE(e)		_Pragma(warning(enable: e))
+#define WARN_POP		_Pragma(warning(pop))
+#define WARN_PUSH		_Pragma(warning(push))
+#elif defined(__GNUC__)
+#define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
+    __GNUC_PATCHLEVEL__)
+#define __forceinline		__attribute__((always_inline))
+#ifdef __has_feature
+#define __no_sanitize(check)	__attribute__((no_sanitize(check)))
 #else
-#define DLL_EXPORT	__attribute__((visibility("default")))
-#define DLL_IMPORT	__attribute__((visibility("default")))
-#define DLL_LOCAL	__attribute__((visibility("hidden")))
-#define WARN_POP	_Pragma(CPP_STR(GCC pop_options))
-#define WARN_PUSH	_Pragma(CPP_STR(GCC push_options))
-#define WARN_DISABLE(e)	_Pragma(CPP_STR(GCC diagnostic ignored #e))
-#define WARN_ENABLE(e)	_Pragma(CPP_STR(GCC diagnostic warning #e))
+#define __no_sanitize(check)
+#endif
+#define __no_sanitize_address	__no_sanitize("address")
+#define __no_sanitize_memory	__no_sanitize("memory")
+#define __no_sanitize_thread	__no_sanitize("thread")
+#define __no_sanitize_unsigned	__no_sanitize("unsigned-integer-overflow")
+
+#define DLL_EXPORT		__attribute__((visibility("default")))
+#define DLL_IMPORT		__attribute__((visibility("default")))
+#define DLL_LOCAL		__attribute__((visibility("hidden")))
+#define WARN_POP		_Pragma(CPP_STR(GCC pop_options))
+#define WARN_PUSH		_Pragma(CPP_STR(GCC push_options))
+#define WARN_DISABLE(e)		_Pragma(CPP_STR(GCC diagnostic ignored #e))
+#define WARN_ENABLE(e)		_Pragma(CPP_STR(GCC diagnostic warning #e))
 #endif
 #define WARN_PUSH_DISABLE(e)	WARN_PUSH WARN_DISABLE(e)
 
 #ifdef BUILD_BLISTER
-#define BLISTER		DLL_EXPORT
+#define BLISTER			DLL_EXPORT
 #else
-#define BLISTER		DLL_IMPORT
+#define BLISTER			DLL_IMPORT
 #endif
-
-#define CPP_STR(s)	#s
 
 #ifdef __cplusplus
 #if __cplusplus <= 199711
@@ -403,16 +417,10 @@ EXTERNC_
 #include <sys/time.h>
 #include <sys/uio.h>
 
-#define __declspec(x)
 #define __cdecl
+#define __declspec(x)
 #define __fastcall
 #define __stdcall
-
-#if defined(__GNUC__)
-#define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
-    __GNUC_PATCHLEVEL__)
-#define __forceinline	__attribute__((always_inline))
-#endif
 
 #ifndef __DBL_EPSILON__
 #define DBL_EPSILON	2.2204460492503131e-016
@@ -498,16 +506,6 @@ extern int wcscasecmp(const wchar_t *, const wchar_t *);
 EXTERNC_
 #endif
 #endif // _WIN32
-
-#ifdef __has_feature
-#define __no_sanitize(check)	__attribute__((no_sanitize(check)))
-#else
-#define __no_sanitize(check)
-#endif
-#define __no_sanitize_address	__no_sanitize("address")
-#define __no_sanitize_memory	__no_sanitize("memory")
-#define __no_sanitize_thread	__no_sanitize("thread")
-#define __no_sanitize_unsigned	__no_sanitize("unsigned-integer-overflow")
 
 // primitive type value limits
 #define MAXUCHAR	~(uchar)0
@@ -866,7 +864,7 @@ using namespace std;
 using namespace stdext;
 #endif
 
-#if __cplusplus < 201103L
+#if CPLUSPLUs < 11
 #define CPP_DEFAULT		{}
 #define CPP_DELETE
 #define nullptr			NULL
@@ -876,8 +874,8 @@ using namespace stdext;
 #endif
 
 // cross-compiler support for unordered maps and sets
-#if __cplusplus < 201103L && defined(__GNUC__) && \
-    (!defined(__clang_major__) || __clang_major__ < 5)
+#if CPLUSPLUS < 11 && defined(__GNUC__) && (!defined(__clang_major__) || \
+    __clang_major__ < 5)
 #if GNUC_VERSION < 40300
 #define STL_UNORDERED_MAP_H	<ext/hash_map>
 #define STL_UNORDERED_SET_H	<ext/hash_set>
