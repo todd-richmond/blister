@@ -470,16 +470,17 @@ inline SocketSet &SocketSet::operator =(const SocketSet &ss) {
 	if (maxsz < sz) {
 	    maxsz = ss.maxsz;
 	    delete [] fds;
-	    fds = new pollfd[maxsz];
+	    fds = maxsz ? new pollfd[maxsz] : NULL;
 	}
-	memcpy(fds, ss.fds, sz * sizeof (pollfd));
+	if (fds)
+	    memcpy(fds, ss.fds, sz * sizeof (pollfd));
 #endif
     }
     return *this;
 }
 
 inline bool SocketSet::set(socket_t fd) {
-    if (sz == maxsz) {
+    if (!fds || sz == maxsz) {
 	maxsz = maxsz ? maxsz * 2 : 32;
 #ifdef _WIN32
 	fd_set *p = (fd_set *)new socket_t[maxsz + 1];

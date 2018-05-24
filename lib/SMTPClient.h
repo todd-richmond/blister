@@ -82,9 +82,9 @@ private:
 
     void parse_append(const tchar *name, const tchar *route,
 	const tchar *mailbox, const tchar *domain);
-    int parse_domain(tchar *&in, tchar *&domain, tchar *&commment);
-    int parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials);
-    int parse_route(tchar *&in, tchar *&route);
+    tchar parse_domain(tchar *&in, tchar *&domain, tchar *&commment);
+    tchar parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials);
+    tchar parse_route(tchar *&in, tchar *&route);
     static bool skip_whitespace(tchar *&in);
 };
 

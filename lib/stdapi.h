@@ -66,13 +66,13 @@
 #endif
 
 #ifdef __cplusplus
-#if __cplusplus <= 199711
+#if __cplusplus <= 199711L && !defined(__clang__)
 #define CPLUSPLUS	8
-#elif __cplusplus <= 201103
+#elif __cplusplus <= 201103L
 #define CPLUSPLUS	11
-#elif __cplusplus <= 201402
+#elif __cplusplus <= 201402L
 #define CPLUSPLUS	14
-#elif __cplusplus <= 201703
+#elif __cplusplus <= 201703L
 #define CPLUSPLUS	17
 #else
 #define CPLUSPLUS	20
@@ -864,10 +864,12 @@ using namespace std;
 using namespace stdext;
 #endif
 
-#if CPLUSPLUs < 11
+#if CPLUSPLUS < 11
 #define CPP_DEFAULT		{}
 #define CPP_DELETE
+#ifndef nullptr
 #define nullptr			NULL
+#endif
 #else
 #define CPP_DEFAULT		= default
 #define CPP_DELETE		= delete

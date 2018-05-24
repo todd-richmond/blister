@@ -301,7 +301,8 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	tstringtoastring(Sockaddr::hostname()) << '>' << crlf;
     delete [] encbuf;
     time(&now);
-    tm = localtime_r(&now, &tmbuf);
+    if ((tm = localtime_r(&now, &tmbuf)) == NULL)
+	return false;
     tm2 = gmtime_r(&now, &tm2buf);
     strftime(buf, sizeof (buf), "%a, %d %b %Y %H:%M:%S ", tm);
     diff = (tm->tm_hour - tm2->tm_hour) * 100 + tm->tm_min - tm2->tm_min;
@@ -328,7 +329,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	    "This is a multi-part message in MIME format." << crlf << crlf;
 	if (txt) {
 	    sstrm << "--" << boundary << crlf;
-	    sstrm << "Content-Type: " << "txt/plain" << crlf << crlf;
+	    sstrm << "Content-Type: " << "text/plain" << crlf << crlf;
 	}
     } else {
 	sstrm << crlf;
@@ -858,7 +859,8 @@ void RFC822Addr::parse_append(const tchar *p, const tchar *r, const tchar *l,
     routes.push_back(r ? r : T(""));
 }
 
-int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials) {
+tchar RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
+    *specials) {
     tchar c;
     tchar *dst, *src = in;
 
@@ -897,7 +899,7 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials) 
     return c;
 }
 
-int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
+tchar RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
     tchar c;
     tchar *cdst;
     uint cnt;
@@ -947,7 +949,7 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
     return c;
 }
 
-int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
+tchar RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
     tchar c;
     tchar *dst, *src = in;
 
@@ -975,9 +977,9 @@ int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
 }
 
 bool RFC822Addr::skip_whitespace(tchar *&in) {
-    tchar *s = in;
     tchar c;
     uint cmt = 0;
+    tchar *s = in;
 
     while ((c = *s) != 0) {
 	if (c == '(') {
@@ -1555,7 +1557,7 @@ time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {
 	if (istdigit(hdr[2]))
 	    hour = hour * 10 + *hdr++ - '0';
 	min = (*hdr++ - '0') * 10;
-	min += *hdr++ - '0';
+	min += *hdr - '0';
 	if (neg) {
 	    hour *= -1;
 	    min *= -1;
