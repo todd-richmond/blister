@@ -67,7 +67,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	if (full[0] == '/' || full[1] == ':') {
 	    root = full;
 	} else {
-	    (void)tgetcwd(buf, sizeof(buf) / sizeof(tchar));
+	    (void)tgetcwd(buf, sizeof (buf) / sizeof (tchar));
 	    root = buf;
 	    root += '/';
 	    root += full;
@@ -1208,7 +1208,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];
 
-	(void)tgetcwd(buf, sizeof(buf) / sizeof(tchar));
+	(void)tgetcwd(buf, sizeof (buf) / sizeof (tchar));
 	path = buf;
 	path += '/';
 	path += argv[0];

@@ -55,7 +55,7 @@ const tstring &Sockaddr::host(void) const {
     if (name.empty()) {
 	char buf[NI_MAXHOST];
 
-	if (getnameinfo(&addr.sa, sizeof(addr), buf, sizeof (buf), NULL, 0,
+	if (getnameinfo(&addr.sa, sizeof (addr), buf, sizeof (buf), NULL, 0,
 	    NI_NAMEREQD))
 	    name = ipstr();
 	else

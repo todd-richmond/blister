@@ -163,12 +163,13 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	return -1;
 	psbuf->sz = sbuf.st_size / 1024;
 #else
-    char buf[PATH_MAX * 2];
+    char buf[PATH_MAX * 2], fbuf[4096];
     FILE *f;
 
     sprintf(buf, "/proc/%ld/smaps", (long)pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
+    setvbuf(f, fbuf, _IOFBF, sizeof (fbuf));
     while (fgets(buf, sizeof (buf), f) != NULL) {
 	char *end;
 	ulong val;
