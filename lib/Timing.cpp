@@ -81,7 +81,13 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     const Stats *stats;
     uint u;
     SpinLocker lkr(lck);
+    static const tchar *hdrs[TIMINGSLOTS] = {
+	T("10u"), T(".1m"), T("1m"), T("10m"), T(".1s"), T("1s"),
+	T("5s"), T("10s"), T("30s"), T("...")
+    };
 
+    if (columns > TIMINGSLOTS)
+	columns = TIMINGSLOTS;
     sorted.reserve(tmap.size());
     for (it = tmap.begin(); it != tmap.end(); ++it)
 	sorted.push_back(it->second);
@@ -95,22 +101,21 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    }
 	}
     }
-    if (columns) {
-	static const tchar *hdrs[TIMINGSLOTS] = {
-	    T("10u"), T(".1m"), T(" 1m"), T("10m"), T(".1s"), T(" 1s"),
-	    T(" 5s"), T("10s"), T("30s"), T("...")
-	};
+    begin = !columns || last < columns ? 0 : last - columns + 1;
+    s = columns ? T("key                            msec   cnt   avg") :
+	T("key,msec,cnt,avg");
+    for (u = begin; u <= last; u++) {
+	if (columns) {
+	    tchar buf[8]; 
 
-	if (columns > TIMINGSLOTS)
-	    columns = TIMINGSLOTS;
-	begin = last < columns ? 0 : last - columns + 1;
-	s = T("key                            msec   cnt   avg");
-	for (u = begin; u <= last; u++) {
-	    s += (tchar)' ';
+	    tsprintf(buf, T("%4s"), hdrs[u]);
+	    s += buf;
+	} else {
+	    s += (tchar)',';
 	    s += hdrs[u];
 	}
-	s += (tchar)'\n';
     }
+    s += (tchar)'\n';
     for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
 	tchar buf[128], sbuf[16];
 	ulong sum = 0;
@@ -138,8 +143,6 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 		tsprintf(buf, T("%-35s%6s"), stats->key, cbuf);
 	    }
 	} else {
-	    if (!s.empty())
-		s += (tchar)',';
 	    s += (tchar)'"';
 	    for (const tchar *p = stats->key; *p; ++p) {
 		if (*p == T('"') || *p == T('\\'))
@@ -169,8 +172,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 		s += buf;
 	    }
 	}
-	if (columns)
-	    s += (tchar)'\n';
+	s += (tchar)'\n';
     }
     return s;
 }

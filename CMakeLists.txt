@@ -117,7 +117,7 @@ MARK_AS_ADVANCED(CMAKE_C_FLAGS_PROFILE CMAKE_CXX_FLAGS_PROFILE CMAKE_EXE_LINKER_
 
 # cppcheck support
 list(APPEND cppcheck_args --enable=warning,style,performance,portability,information,missingInclude --force --inline-suppr -j 4 -q --template="{file}:{line} {severity}={id} {message}")
-list(APPEND cppcheck_suppressions ConfigurationNotChecked cstyleCast noExplicitConstructor postfixOperator preprocessorErrorDirective uninitMemberVar unmatchedSuppression unreadVariable variableScope)
+list(APPEND cppcheck_suppressions class_X_Y ConfigurationNotChecked cstyleCast missingOverride noExplicitConstructor postfixOperator preprocessorErrorDirective uninitMemberVar unmatchedSuppression unreadVariable variableScope)
 foreach(suppression ${cppcheck_suppressions})
     list(APPEND cppcheck_args --suppress=${suppression})
 endforeach()

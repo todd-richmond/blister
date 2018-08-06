@@ -401,12 +401,20 @@ EXTERNC_
 
 #else // _WIN32
 
+#define _DARWIN_C_SOURCE
+#define _FILE_OFFSET_BITS 64
+#define _LARGEFILE_SOURCE
+#define _LARGEFILE64_SOURCE
 #ifndef _POSIX_PTHREAD_SEMANTICS
 #define _POSIX_PTHREAD_SEMANTICS
 #endif
 #ifndef _REENTRANT
 #define _REENTRANT
 #endif
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 700
+#endif
+#define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_9
 
 #include <unistd.h>
 #include <limits.h>
@@ -414,6 +422,7 @@ EXTERNC_
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/time.h>
 #include <sys/uio.h>
 

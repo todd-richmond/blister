@@ -80,7 +80,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[-n|--sortbyname]\n")
 	    T("\t[-s|--sec]\n")
 	    T("\t[-u|--usec]\n")
-	    T("\t<key duration>*\n") << endl;
+	    T("\t<key[= ]duration>\\n*") << endl;
 	    return 1;
     }
     if (!out) {
@@ -92,7 +92,7 @@ int tmain(int argc, tchar *argv[]) {
 		while (istspace(*p))
 		    p++;
 		pp = p;
-		while (!istspace(*pp))
+		while (*pp != '=' && !istspace(*pp))
 		    pp++;
 		key.assign(p, (tstring::size_type)(pp - p));
 		timing(key.c_str(), tstrtoul(pp, NULL, 10) * mult);

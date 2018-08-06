@@ -33,10 +33,11 @@ public:
     HTTPServerSocket(Dispatcher &dspr, Socket &sock);
     virtual ~HTTPServerSocket();
 
-    const attrmap &attributes(void) const { return attrs; }
     const attrmap &arguments(void) const { return args; }
+    const attrmap &attributes(void) const { return attrs; }
     const attrmap &postarguments(void) const { return postargs; }
     void urldecode(char *data, attrmap &amap) const;
+    virtual const string mimetype(const char *ext) const;
     static void senddate(bool b) { date = b; }
     static const tchar *section(void) { return T("http"); }
 
@@ -47,6 +48,7 @@ protected:
     const char *path, *prot;
     char *postdata;
     ulong postsz;
+    static const char CRLF[];
 
     template<class C> ostream &operator <<(const C &c) const { return ss << c; }
     const char *arg(const char *name) const { return find(args, name); }
@@ -59,8 +61,8 @@ protected:
     void reply(const char *data = NULL, ulong len = (ulong)-1);
     void reply(int fd, ulong sz);
     void reply(uint sts) { status(sts, NULL); reply(); }
-    void status(uint sts, const char *type = "text", const char *subtype =
-	"plain", time_t mtime = 0, const char *errstr = "OK");
+    void status(uint sts, const char *mime = "text/plain", time_t mtime = 0,
+	const char *errstr = "OK", bool close = false);
     virtual void del(void) { error(501); }
     virtual void disconnect(DispatchObjCB cb = done) { ready(cb); }
     virtual void exec(void);

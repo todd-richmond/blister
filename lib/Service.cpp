@@ -998,6 +998,9 @@ int Service::ctrl_handler(void *) {
 	case SIGUSR2:
 	    str = T("user");
 	    break;
+	case -1:
+	    if (errno == EINTR)
+		continue;
 	default:
 	    tsprintf(buf, T("%i"), sig);
 	    str = buf;
@@ -1393,8 +1396,8 @@ const tchar *Service::status(Status s) {
 
 
 Daemon::Daemon(const tchar *svc_name, const tchar *display, bool pauseable):
-    Service(svc_name, pauseable), qflag(None), child(0), lckfd(-1), msec(mticks()),
-    refreshed(false), watch(false) {
+    Service(svc_name, pauseable), qflag(None), child(0), lckfd(-1),
+    msec(mticks()), refreshed(false), watch(false) {
     (void)display;
 }
 
@@ -1450,7 +1453,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	lckfd = ::open(tstringtoachar(lckfile), O_CREAT | O_WRONLY, S_IREAD |
 	    S_IWRITE);
 	if (lckfd == -1 || lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 1)) {
-	    dlogw(Log::mod(name), T("sts=running"));
+	    dloge(Log::mod(name), Log::cmd(T("start")), T("sts=running"));
 	    if (lckfd != -1)
 		::close(lckfd);
 	    lckfd = -1;

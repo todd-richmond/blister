@@ -25,86 +25,7 @@
 #include "Log.h"
 #include "SMTPClient.h"
 
-typedef struct mimemap {
-    const char *ext;
-    const char *type;
-    const char *subtype;
-} mimemap;
-
-static const mimemap mime[] = {
-    { "html", "text", "html" },
-    { "js", "application", "x-javascript" },
-    { "htm", "text", "html" },
-    { "shtml", "text", "html" },
-    { "htx", "text", "html" },
-    { "gif", "image", "gif" },
-    { "jpeg", "image", "jpeg" },
-    { "jpg", "image", "jpeg" },
-    { "jpe", "image", "jpeg" },
-    { "jpfif", "image", "jpeg" },
-    { "pjpeg", "image", "jpeg" },
-    { "pjp", "image", "jpeg" },
-    { "aif", "audio", "aiff" },
-    { "aiff", "audio", "aiff" },
-    { "art", "image", "x-jg" },
-    { "au", "audio", "basic" },
-    { "avi", "video", "x-msvideo" },
-    { "bmp", "image", "bmp" },
-    { "cs", "text", "css" },
-    { "enc", "application", "pre-encrypted" },
-    { "hqx", "application", "mac-binhex40" },
-    { "doc", "application", "msword" },
-    { "dot", "application", "msword" },
-    { "mid", "application", "mid" },
-    { "mov", "video", "quicktime" },
-    { "mpa", "audio", "x-mpeg" },
-    { "abs", "audio", "x-mpeg" },
-    { "mpega", "audio", "x-mpeg" },
-    { "mpeg", "video", "mpeg" },
-    { "mpg", "video", "mpeg" },
-    { "mpe", "video", "mpeg" },
-    { "mpv", "video", "mpeg" },
-    { "mpegv", "video", "mpeg" },
-    { "m1v", "video", "mpeg" },
-    { "mpeg", "video", "mpeg" },
-    { "mp2", "video", "mpeg" },
-    { "ra", "audio", "x-pn-realaudio" },
-    { "ram", "audio", "x-pn-realaudio" },
-    { "rtf", "application", "rtf" },
-    { "spl", "application", "futuresplash" },
-    { "swf", "application", "x-shockwave-flash" },
-    { "tiff", "image", "tiff" },
-    { "tif", "image", "tiff" },
-    { "txt", "text", "plain" },
-    { "text", "text", "plain" },
-    { "vcf", "text", "x-vcard" },
-    { "wav", "audio", "x-wav" },
-    { "xbm", "image", "x-bitmap" },
-    { "zip", "application", "x-zip-compressed" },
-    { NULL, NULL, NULL }
-};
-
-static const char CRLF[] = "\r\n";
-
-static const signed char chunkmap[256] = {
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -1, -1, -2, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -2, -1, -1, -1, -1,
-    -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-};
-
-
+const char HTTPServerSocket::CRLF[] = "\r\n";
 bool HTTPServerSocket::date;
 
 HTTPServerSocket::HTTPServerSocket(Dispatcher &d, Socket &sock):
@@ -181,6 +102,23 @@ void HTTPServerSocket::readpost() {
     ulong in = 0;
     ulong room = postdatasz ? postdatasz - postin : sz - datasz;
     ulong left = room > 100 && postsz == (ulong)-1 ? room : postsz - postin;
+    static const int chunkmap[256] = {
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -1, -1, -2, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -2, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    };
 
     if (msg == DispatchTimeout || msg == DispatchClose) {
 	disconnect();
@@ -232,7 +170,7 @@ void HTTPServerSocket::readpost() {
 		}
 	    } else {
 		while ((c = chunkmap[(uchar)postdata[pos]]) >= 0) {
-		    chunksize = chunksize * 16 + (uint)c;
+		    chunksize = (chunksize * 16 + (unsigned)c);
 		    ++pos;
 		}
 		if (c != -2 || pos == chunkin) {
@@ -600,7 +538,8 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 	}
 	CloseHandle(hdl);
 #else
-	if ((fmap = new char[len]) == NULL || (ulong)::read(fd, fmap, len) != len) {
+	if ((fmap = new char[len]) == NULL || (ulong)::read(fd, fmap, len) !=
+	    len) {
 	    error(404);
 	    return;
 	}
@@ -609,11 +548,11 @@ void HTTPServerSocket::reply(int fd, ulong len) {
     reply(fmap, len);
 }
 
-void HTTPServerSocket::status(uint sts, const char *type, const char *subtype,
-    time_t mtime, const char *errstr) {
-    struct tm tmbuf, *tmptr;
+void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime,
+    const char *errstr, bool close) {
     char buf[128];
     int i;
+    struct tm tmbuf, *tmptr;
 
     hdrs.reset();
     ss.reset();
@@ -628,8 +567,8 @@ void HTTPServerSocket::status(uint sts, const char *type, const char *subtype,
 	    "Date: %a, %d %b %Y %H:%M:%S UTC\r\n", tmptr);
 	hdrs.write(buf, i);
     }
-    if (type)
-	hdrs << "Content-Type: " << type << '/' << subtype << CRLF;
+    if (mime)
+	hdrs << "Content-Type: " << mime << CRLF;
     if (mtime) {
 	tmptr = gmtime_r(&mtime, &tmbuf);
 	i = (int)strftime(buf, sizeof (buf),
@@ -637,7 +576,10 @@ void HTTPServerSocket::status(uint sts, const char *type, const char *subtype,
 	hdrs.write(buf, i);
     }
     _status = sts;
-    keepalive();
+    if (close)
+	hdrs << "Connection: close\r\n";
+    else
+	keepalive();
 }
 
 void HTTPServerSocket::header(const char *attr, const char *val) {
@@ -681,14 +623,14 @@ void HTTPServerSocket::error(uint sts) {
     else
 	p = "HTTP error";
 #pragma warning(pop)		// +V::557
-    status(sts, "text", "plain");
+    status(sts, "text/plain");
     ss << sts << ' ' << p << CRLF;
     _status = sts;
     reply();
 }
 
 void HTTPServerSocket::error(uint sts, const char *errstr) {
-    status(sts, "text", "plain", 0, errstr);
+    status(sts, "text/plain", 0, errstr);
     ss << sts << ' ' << errstr << CRLF;
     _status = sts;
     reply();
@@ -699,14 +641,12 @@ void HTTPServerSocket::done() {
 }
 
 void HTTPServerSocket::get(bool head) {
-    const char *type = "application";
-    const char *subtype = "octet-stream";
-    struct stat statbuf;
-    const char *p;
+    const char *ext = NULL;
     int fd;
+    string s;
+    struct stat statbuf;
     uint sts = 200;
     const char *val;
-    string s;
 
     if (*path == '/')
 	s = '.';
@@ -716,18 +656,11 @@ void HTTPServerSocket::get(bool head) {
 	s += path;
     else
 	s += "/default.html";		    // deal w/ language later
-    if ((p = strrchr(s.c_str(), '.')) != NULL) {
-	p++;
-	if (!stricmp(p, "./")) {
+    if ((ext = strrchr(s.c_str(), '.')) != NULL) {
+	ext++;
+	if (!stricmp(ext, "./")) {
 	    error(403);
 	    return;
-	}
-	for (int i = 0; mime[i].ext; i++) {
-	    if (!stricmp(p, mime[i].ext)) {
-		type = mime[i].type;
-		subtype = mime[i].subtype;
-		break;
-	    }
 	}
     }
     if ((fd = ::open(s.c_str(), O_RDONLY|O_CLOEXEC|O_SEQUENTIAL, 0666)) == -1) {
@@ -750,10 +683,74 @@ void HTTPServerSocket::get(bool head) {
 	!strnicmp(val + 1, "length=", 7) &&
 	(ulong)atol(val + 8) != (ulong)statbuf.st_size)
 	sts = 200;
-    status(sts, type, subtype, statbuf.st_mtime);
+    status(sts, ext ? mimetype(ext).c_str() : "application/octet-stream",
+	statbuf.st_mtime);
     if (sts == 200 && !head)
 	reply(fd, (ulong)statbuf.st_size);
     else
 	reply((const char *)NULL);
     ::close(fd);
+}
+
+const string HTTPServerSocket::mimetype(const char *ext) const {
+    static const struct mimemap {
+	const char *ext;
+	const char *mime;
+    } mime[] = {
+	{ "html", "text/html" },
+	{ "js", "application/x-javascript" },
+	{ "htm", "text/html" },
+	{ "shtml", "text/html" },
+	{ "htx", "text/html" },
+	{ "gif", "image/gif" },
+	{ "jpeg", "image/jpeg" },
+	{ "jpg", "image/jpeg" },
+	{ "jpe", "image/jpeg" },
+	{ "pjpeg", "image/jpeg" },
+	{ "pjp", "image/jpeg" },
+	{ "aif", "audio/aiff" },
+	{ "aiff", "audio/aiff" },
+	{ "art", "image/x-jg" },
+	{ "au", "audio/basic" },
+	{ "avi", "video/x-msvideo" },
+	{ "bmp", "image/bmp" },
+	{ "css", "text/css" },
+	{ "enc", "application/pre-encrypted" },
+	{ "hqx", "application/mac-binhex40" },
+	{ "doc", "application/msword" },
+	{ "dot", "application/msword" },
+	{ "mid", "application/mid" },
+	{ "mov", "video/quicktime" },
+	{ "mpa", "audio/x-mpeg" },
+	{ "abs", "audio/x-mpeg" },
+	{ "mpega", "audio/x-mpeg" },
+	{ "mpeg", "video/mpeg" },
+	{ "mpg", "video/mpeg" },
+	{ "mpe", "video/mpeg" },
+	{ "mpv", "video/mpeg" },
+	{ "mpegv", "video/mpeg" },
+	{ "m1v", "video/mpeg" },
+	{ "mpeg", "video/mpeg" },
+	{ "mp2", "video/mpeg" },
+	{ "ra", "audio/x-pn-realaudio" },
+	{ "ram", "audio/x-pn-realaudio" },
+	{ "rtf", "application/rtf" },
+	{ "spl", "application/futuresplash" },
+	{ "swf", "application/x-shockwave-flash" },
+	{ "tiff", "image/tiff" },
+	{ "tif", "image/tiff" },
+	{ "txt", "text/plain" },
+	{ "text", "text/plain" },
+	{ "vcf", "text/x-vcard" },
+	{ "wav", "audio/x-wav" },
+	{ "xbm", "image/x-bitmap" },
+	{ "zip", "application/x-zip-compressed" },
+	{ NULL, NULL }
+    };
+
+    for (uint u = 0; mime[u].ext; ++u) {
+	if (!stricmp(ext, mime[u].ext))
+	    return mime[u].mime;
+    }
+    return "application/octet-stream";
 }

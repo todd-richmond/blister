@@ -235,6 +235,10 @@ public:
     const Sockaddr address(void) { return addr; }
     bool listen(const Sockaddr &addr, bool reuse = true, int backlog =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL);
+    bool listen(const tchar *addr, bool reuse = true, int backlog =
+	SOCK_BACKLOG, DispatchObjCB cb = NULL) {
+	return listen(Sockaddr(addr), reuse, backlog, cb);
+    }
     void relisten(void) { poll(NULL, DSP_PREVIOUS, DispatchAccept); }
 
 protected:
@@ -401,7 +405,7 @@ private:
 #endif
 };
 
-template<class D, class S>
+template<class D, class C>
 class SimpleDispatchListenSocket: public DispatchListenSocket {
 public:
     explicit SimpleDispatchListenSocket(D &d, int type = SOCK_STREAM):
@@ -409,39 +413,39 @@ public:
 
     bool listen(const Sockaddr &sa, bool enable = true) {
 	const Config &cfg = dspr.config();
-	int backlog = cfg.get(T("socket.backlog"), SOCK_BACKLOG, S::section());
-	bool reuse = cfg.get(T("socket.reuse"), true, S::section());
+	int backlog = cfg.get(T("socket.backlog"), SOCK_BACKLOG, C::section());
+	bool reuse = cfg.get(T("socket.reuse"), true, C::section());
 
-	if (!cfg.get(T("enable"), enable, S::section())) {
+	if (!cfg.get(T("enable"), enable, C::section())) {
 	    return true;
 	} else if (!DispatchListenSocket::listen(sa, reuse, backlog)) {
-	    dloge(Log::mod(S::section()), Log::cmd(T("listen")),
+	    dloge(Log::mod(C::section()), Log::cmd(T("listen")),
 		Log::kv(T("addr"), sa.str()), Log::error(errstr()));
 	    return false;
 	}
-	dlogi(Log::mod(S::section()), Log::cmd(T("listen")), Log::kv(T("addr"),
+	dlogi(Log::mod(C::section()), Log::cmd(T("listen")), Log::kv(T("addr"),
 	    sa.str()));
 	return true;
     }
     bool listen(const tchar *host = NULL, bool enable = true) {
-	tstring s(dspr.config().get(T("host"), host, S::section()));
+	tstring s(dspr.config().get(T("host"), host, C::section()));
 
 	return listen(Sockaddr(s.c_str()), enable);
     }
 
 protected:
     virtual void onAccept(Socket &sock) {
-	S *s = new(nothrow) S(static_cast<D &>(dspr), sock);
+	C *c = new(nothrow) C(static_cast<D &>(dspr), sock);
 
-	if (s == NULL) {
+	if (c == NULL) {
 	    sock.close();
 	} else {
-	    s->detach();
-	    start(*s);
+	    c->detach();
+	    start(*c);
 	}
     }
 
-    virtual void start(S &ssock) { ssock.start(); }
+    virtual void start(C &ssock) { ssock.start(); }
 };
 
 inline void DispatchObj::cancel(void) { dspr.cancelReady(*this); }

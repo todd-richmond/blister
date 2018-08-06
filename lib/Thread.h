@@ -37,7 +37,7 @@ typedef DWORD thread_id_t;
 #define THREAD_PAUSE()		YieldProcessor()
 #define THREAD_YIELD()		Sleep(0)
 
-typedef volatile long atomic_t;
+typedef volatile LONG atomic_t;
 
 // atomic functions that return updated value
 #define atomic_ref(i)		InterlockedIncrement(&i)
@@ -55,7 +55,7 @@ typedef volatile long atomic_t;
 #define atomic_or(i, j)		InterlockedOr(&i, j)
 #define atomic_xor(i, j)	InterlockedXor(&i, j)
 
-typedef uint tlskey_t;
+typedef DWORD tlskey_t;
 
 #define tls_init(k)		k = TlsAlloc()
 #define tls_free(k)		TlsFree(k)
