@@ -716,8 +716,10 @@ void Dispatcher::wake(uint tasks, bool main) {
     while (tasks && rlist && !shutdown) {
 	uint wake = workers - running - lifo.size();
 
-	wake = wake >= rlist.size() ? 0 : rlist.size() - wake;
-	if (wake && wake < tasks)
+	if (wake >= rlist.size())
+	    break;
+	wake = rlist.size() - wake;
+	if (wake < tasks)
 	    tasks = wake;
 	if (lifo && (tasks / 2 + 1) >= lifo.size()) {
 	    lock.unlock();
@@ -728,19 +730,17 @@ void Dispatcher::wake(uint tasks, bool main) {
 
 	    lock.unlock();
 	    if (b || lifo.set()) {
+		Thread *t;
+
 		lock.lock();
 		if (workers >= maxthreads || shutdown)
 		    break;
 		workers++;
 		lock.unlock();
-
-		Thread *t = new Thread();
-
+		t = new Thread();
 		t->start(worker, this, stacksz, this);
 		while ((t = wait(0)) != NULL)
 		    delete t;
-	    } else if (tasks > 1) {
-		THREAD_PAUSE();
 	    }
 	    tasks--;
 	}

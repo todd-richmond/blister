@@ -951,9 +951,11 @@ int Service::ctrl_handler(void *) {
 #else
 	ZERO(si);
 	if (sigwait(&sigs, &sig))
-	    sig = 0;
+	    sig = -1;
 #endif
 	switch (sig) {
+	case -1:
+	    continue;
 	case SIGABRT:
 	    quit = true;
 	    str = T("abort");
@@ -998,9 +1000,6 @@ int Service::ctrl_handler(void *) {
 	case SIGUSR2:
 	    str = T("user");
 	    break;
-	case -1:
-	    if (errno == EINTR)
-		continue;
 	default:
 	    tsprintf(buf, T("%i"), sig);
 	    str = buf;

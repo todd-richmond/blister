@@ -803,10 +803,8 @@ public:
 
     void broadcast(void) { pthread_cond_broadcast(&cv); }
     void set(uint count = 1) {
-	while (count) {
+	while (count--)
 	    pthread_cond_signal(&cv);
-	    --count;
-	}
     }
     bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {

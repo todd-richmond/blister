@@ -463,10 +463,10 @@ EXTERNC_
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 typedef unsigned short ushort;
 typedef unsigned int uint;
-typedef unsigned long ulong;
 #endif
 
 typedef long long llong;
+typedef unsigned long ulong;
 typedef unsigned long long ullong;
 typedef wchar_t wchar;
 
