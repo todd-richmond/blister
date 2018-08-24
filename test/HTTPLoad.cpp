@@ -593,7 +593,7 @@ inline tstring format(float f) {
     else if (f >= 100)
 	tsprintf(buf, T(" %7u"), (unsigned)(f + .5f));
     else
-	tsprintf(buf, T(" %7.2f"), (double)f);
+	tsprintf(buf, T(" %7.2g"), (double)f);
     return buf;
 }
 

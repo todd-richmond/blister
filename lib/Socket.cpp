@@ -193,6 +193,8 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 	hints.ai_flags = AI_CANONNAME;
     }
     hints.ai_flags |= AI_ADDRCONFIG | AI_V4MAPPED;
+    if (service && istdigit(*service))
+	hints.ai_flags |= AI_NUMERICSERV;
     name.erase();
     if (getaddrinfo(host ? tchartoachar(host) : NULL, service ?
 	tchartoachar(service) : NULL, &hints, &ai))

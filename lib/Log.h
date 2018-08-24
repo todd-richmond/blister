@@ -205,15 +205,15 @@ public:
 	const C &c, const D &d, const E &e, const F &f, const G &g, const H \
 	&h) { log(l, c, d, e, f, g, h); }
 
-    _func_(emerg, Emerg);
-    _func_(alert, Alert);
-    _func_(crit, Crit);
-    _func_(err, Err);
-    _func_(warn, Warn);
-    _func_(note, Note);
-    _func_(info, Info);
-    _func_(debug, Debug);
-    _func_(trace, Trace);
+    _func_(emerg, Emerg)
+    _func_(alert, Alert)
+    _func_(crit, Crit)
+    _func_(err, Err)
+    _func_(warn, Warn)
+    _func_(note, Note)
+    _func_(info, Info)
+    _func_(debug, Debug)
+    _func_(trace, Trace)
 
 #undef _func_
 #define _log_(s) \

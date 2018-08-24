@@ -150,7 +150,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 		s += *p;
 	    }
 	    s += (tchar)'"';
-	    tsprintf(buf, T(",%.3f,%lu"), (double)stats->tot / 1000000.0,
+	    tsprintf(buf, T(",%.3g,%lu"), (double)stats->tot / 1000000.0,
 		stats->cnt);
 	}
 	s += buf;

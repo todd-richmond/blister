@@ -91,7 +91,7 @@ private:
 class BLISTER SMTPClient: nocopy {
 public:
     SMTPClient();
-    virtual ~SMTPClient() {};
+    virtual ~SMTPClient() {}
 
     const tstring &extensions(void) const { return exts; }
     int code(void) const { return ttoi(sts.c_str()); }

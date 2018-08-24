@@ -352,7 +352,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     usec_t now_usec;
     tstring &strbuf(tlsd.strbuf);
     size_t sz = (size_t)tlsd.strm.size();
-    tchar tmp[8];
+    tchar tmp[16];
 
     if (tlsd.suppress)
 	return;
@@ -623,7 +623,7 @@ tostream &Log::quote(tostream &os, const tchar *s) {
 		} else if (c == '\r') {
 		    os << '\\' << 'r';
 		} else if ((uchar)c < ' ' && c != '\t') {
-		    tchar tmp[8];
+		    tchar tmp[16];
 
 		    tsprintf(tmp, T("\\%03o"), (uint)c);
 		    os << tmp;

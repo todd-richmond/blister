@@ -129,7 +129,7 @@ public:
     operator const sockaddr_in6 *() const { return &addr.sa6; }
 
     const void *address(void) const;
-    void clear() { ZERO(addr); name.clear(); }
+    void clear(void) { ZERO(addr); name.clear(); }
     sockaddr *data(void) { name.clear(); return &addr.sa; }
     ushort family(void) const { return addr.sa.sa_family; }
     void family(sa_family_t fam) { addr.sa.sa_family = fam; }
@@ -138,7 +138,7 @@ public:
     bool host(const tchar *host, Proto proto = TCP) {
 	return port() ? set(host, port(), proto) : set(host, proto);
     }
-    bool is_v4mapped() const {
+    bool is_v4mapped(void) const {
 	const in6_addr &sa6 = addr.sa6.sin6_addr;
 
 	return ipv6() && sa6.s6_addr16[0] == 0 && sa6.s6_addr16[1] == 0 &&
@@ -147,8 +147,8 @@ public:
     }
     const tstring ip(void) const;
     const tstring ipstr(void) const { return str(ip()); }
-    bool ipv4() const { return family() == AF_INET; }
-    bool ipv6() const { return family() == AF_INET6; }
+    bool ipv4(void) const { return family() == AF_INET; }
+    bool ipv6(void) const { return family() == AF_INET6; }
     ushort port(void) const;
     void port(ushort port);
     bool service(const tchar *service, Proto proto = TCP);
