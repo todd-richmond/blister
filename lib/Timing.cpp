@@ -124,7 +124,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	stats = *sit;
 	tot = stats->tot;
 	if (columns) {
-	    tchar cbuf[16];
+	    tchar cbuf[24];
 
 	    for (u = 0; u <= begin; u++)
 		sum += stats->cnts[u];

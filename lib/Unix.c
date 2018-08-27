@@ -163,7 +163,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	return -1;
 	psbuf->sz = sbuf.st_size / 1024;
 #else
-    char buf[PATH_MAX * 2], fbuf[4096];
+    char buf[PATH_MAX + 128], fbuf[4096];
     FILE *f;
 
     sprintf(buf, "/proc/%ld/smaps", (long)pid);

@@ -28,7 +28,7 @@
 #include "Timing.h"
 
 const int TIMEOUT = 10 * 1000;
-const int MAXREAD = 12 * 1024;
+const int MAXREAD = 8 * 1024;
 
 class EchoTest: public Dispatcher {
 public:
@@ -206,7 +206,9 @@ void EchoTest::EchoClientSocket::repeat() {
     ready(output);
 }
 
+
 void EchoTest::EchoServerSocket::input() {
+#pragma GCC diagnostic ignored "-Wstack-usage="
     char tmp[MAXREAD];
 
     if (error()) {

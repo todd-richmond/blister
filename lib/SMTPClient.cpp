@@ -321,7 +321,8 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     for (it = hdrv.begin(); it != hdrv.end(); ++it)
 	sstrm << tstringtoastring(*it) << crlf;
     if (mime) {
-	sprintf(buf, "--%x%x%x%x", rand(), rand(), rand(), rand());
+	sprintf(buf, "--%x%x%x%x", (uint)rand(), (uint)rand(), (uint)rand(),
+	    (uint)rand());
 	boundary = buf;
 	sstrm << "MIME-Version: 1.0" << crlf;
 	sstrm << "Content-Type: multipart/mixed; boundary=\"" << boundary <<

@@ -445,7 +445,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 		} else if (*p == '\r') {
 		    strbuf += T("\\r");
 		} else {
-		    tsprintf(tmp, T("\\%03o"), *p);
+		    tsprintf(tmp, T("\\%03o"), (uint)*p);
 		    strbuf += tmp;
 		}
 	    } else {
