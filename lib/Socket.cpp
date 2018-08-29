@@ -243,13 +243,11 @@ ushort Sockaddr::service_port(const tchar *svc, Proto proto) {
 }
 
 ushort Sockaddr::size(ushort family) {
-#pragma GCC diagnostic ignored "-Wduplicated-branches"
-    if (family == AF_INET)
-	return sizeof (sockaddr_in);
-    else if (family == AF_INET6)
-	return sizeof (sockaddr_in6);
-    else
-	return sizeof (sockaddr_any);
+    switch (family) {
+    case AF_INET: return sizeof (sockaddr_in);
+    case AF_INET6: return sizeof (sockaddr_in6);
+    default: return sizeof (sockaddr_any);
+    }
 }
 
 const tstring Sockaddr::str(const tstring &val) const {
