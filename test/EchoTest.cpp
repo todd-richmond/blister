@@ -206,9 +206,8 @@ void EchoTest::EchoClientSocket::repeat() {
     ready(output);
 }
 
-
-void EchoTest::EchoServerSocket::input() {
 #pragma GCC diagnostic ignored "-Wstack-usage="
+void EchoTest::EchoServerSocket::input() {
     char tmp[MAXREAD];
 
     if (error()) {

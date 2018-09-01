@@ -33,8 +33,6 @@
 #define DWORD_MULTIPLE(x) ((((x) + sizeof (DWORD) - 1 ) / sizeof (DWORD)) * \
     sizeof (DWORD))
 #define SERVICE_PREFIX T("service_")
-#else
-#pragma GCC diagnostic ignored "-Wunused-result"
 #endif
 
 #ifndef OPEN_MAX
@@ -67,10 +65,11 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	if (full[0] == '/' || full[1] == ':') {
 	    root = full;
 	} else {
-	    (void)tgetcwd(buf, sizeof (buf) / sizeof (tchar));
-	    root = buf;
-	    root += '/';
-	    root += full;
+	    if (!tgetcwd(buf, sizeof (buf) / sizeof (tchar))) {
+		root = buf;
+		root += '/';
+		root += full;
+	    }
 	}
 	if ((pos = root.find_last_of('/')) == root.npos)
 	    pos = root.find_last_of('\\');
@@ -1210,10 +1209,11 @@ int Service::execute(int argc, const tchar * const *argv) {
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];
 
-	(void)tgetcwd(buf, sizeof (buf) / sizeof (tchar));
-	path = buf;
-	path += '/';
-	path += argv[0];
+	if (!tgetcwd(buf, sizeof (buf) / sizeof (tchar))) {
+	    path = buf;
+	    path += '/';
+	    path += argv[0];
+	}
     }
     av[0] = path.c_str();
     for (int i = 1; i < argc; i++) {
@@ -1524,7 +1524,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    uid = pwd->pw_uid;
 	    uidname = pwd->pw_name;
 	    dlog.setids(uid, gid);
-	    (void)fchown(lckfd, uid, gid);
+	    if (fchown(lckfd, uid, gid))
+		dloge(Log::mod(name), T(" unable to chown to uid "), uidname);
 	} else {
 	    dloge(Log::mod(name), T(" unknown uid "), uidname);
 	}

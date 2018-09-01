@@ -38,6 +38,7 @@ typedef SOCKET socket_t;
 inline int sockerrno(void) { return WSAGetLastError(); }
 
 #else
+#include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
@@ -66,7 +67,6 @@ inline int closesocket(socket_t fd) { return ::close(fd); }
 inline int sockerrno(void) { return errno; }
 #endif
 
-#include <errno.h>
 #include <vector>
 #include "Streams.h"
 
