@@ -383,7 +383,7 @@ private:
     ObjectList<DispatchObj> flist, rlist;
     Lifo lifo;
     uint maxthreads;
-    volatile uint running;
+    atomic_t running;
     volatile bool shutdown;
     socketmap smap;
     uint stacksz;

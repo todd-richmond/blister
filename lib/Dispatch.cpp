@@ -151,11 +151,19 @@ bool Dispatcher::exec() {
 	    group->active = true;
 	}
 	obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
+#ifdef NO_ATOMIC_ADD
 	running++;
 	lock.unlock();
 	obj->dcb(obj);
 	lock.lock();
 	running--;
+#else
+	lock.unlock();
+	atomic_inc(running);
+	obj->dcb(obj);
+	atomic_dec(running);
+	lock.lock();
+#endif
 	obj->flags &= ~DSP_Active;
 	if (obj->flags & DSP_Freed && !(obj->flags & DSP_Socket)) {
 	    lock.unlock();
@@ -314,6 +322,8 @@ int Dispatcher::onStart() {
 
 int Dispatcher::onStart() {
     msec_t now;
+    SocketSet irset, iwset, orset, owset, oeset;
+    socketmap::const_iterator sit;
     uint u = 0;
 
 #ifdef DSP_POLL
@@ -400,16 +410,9 @@ int Dispatcher::onStart() {
     now = mticks();
     while (!shutdown) {
 	uint count = 0;
-	DispatchTimer *dt = NULL;
-	SocketSet irset, iwset, orset, owset, oeset;
+	DispatchTimer *dt = timers.peek();
 	uint msec;
-	socketmap::const_iterator sit;
 
-	if (evtfd == -1) {
-	    irset = rset;
-	    iwset = wset;
-	}
-	dt = timers.peek();
 	if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
 	    timers.reorder(now + MAX_IDLE_TIMER);
 	    dt = timers.peek();
@@ -425,6 +428,10 @@ int Dispatcher::onStart() {
 	} else {
 	    msec = dt->due > now ? (uint)(dt->due - now) : 0;
 	    due = now + msec;
+	}
+	if (evtfd == -1) {
+	    irset = rset;
+	    iwset = wset;
 	}
 	polling = true;
 	lock.unlock();
@@ -522,8 +529,8 @@ int Dispatcher::onStart() {
 		}
 		removeTimer(*ds);
 	    }
-	} else {
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
+	} else {
 	    count += handleEvents(evts, (uint)nevts);
 #endif
 	}
@@ -708,30 +715,34 @@ void Dispatcher::onStop() {
 }
 
 void Dispatcher::wake(uint tasks, bool main) {
+    uint woke = 0;
+
     if (maxthreads == 0) {
 	if (main)
 	    exec();
 	return;
     }
     while (tasks && rlist && !shutdown) {
-	uint wake = workers - running - lifo.size();
+	uint u = lifo.size();
+	uint wake = workers - (uint)running - u;
+	static uint cpus = Processor::count();
 
 	if (wake >= rlist.size())
 	    break;
 	wake = rlist.size() - wake;
+	lock.unlock();
 	if (wake < tasks)
 	    tasks = wake;
-	if (lifo && (tasks / 2 + 1) >= lifo.size()) {
-	    lock.unlock();
+	if (u && (tasks / 2 + 1) >= u) {
 	    wake = lifo.broadcast();
 	    tasks = wake >= tasks ? 0 : tasks - wake;
 	} else {
-	    bool b = workers == 0;
-
-	    lock.unlock();
-	    if (b || lifo.set()) {
+	    wake = woke ? 1 : tasks > cpus ? cpus : tasks;
+	    if ((u = lifo.set(wake)) == wake) {
 		Thread *t;
 
+		tasks--;
+		wake = 1;
 		lock.lock();
 		if (workers >= maxthreads || shutdown)
 		    break;
@@ -741,9 +752,14 @@ void Dispatcher::wake(uint tasks, bool main) {
 		t->start(worker, this, stacksz, this);
 		while ((t = wait(0)) != NULL)
 		    delete t;
+	    } else {
+		wake -= u;
+		tasks -= wake;
 	    }
-	    tasks--;
 	}
+	if (wake)
+	    THREAD_YIELD();
+	woke += wake;
 	lock.lock();
     }
 }
