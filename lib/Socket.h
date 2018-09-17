@@ -93,10 +93,13 @@ inline bool interrupted(int e) { return e == WSAEINTR; }
  * Socket address class to wrap sockaddr structures and deal with Win32 startup
  * requirements. Currently limited to IPV4/6 TCP or UDP addresses
  */
+WARN_PUSH_DISABLE(26495)
+//WARN_PUSH
 class BLISTER Sockaddr {
 public:
     enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNSPEC };
 
+    Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
     explicit Sockaddr(const addrinfo *ai) { set(ai); }
     explicit Sockaddr(const hostent *h) { set(h); }
     explicit Sockaddr(Proto proto = TCP) {
@@ -104,7 +107,6 @@ public:
         family(proto);
     }
     explicit Sockaddr(const sockaddr &sa) { set(sa); }
-    Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
     explicit Sockaddr(const tchar *host, Proto proto = TCP) {
 	set(host, proto);
     }
@@ -195,6 +197,7 @@ private:
 
     const tstring str(const tstring &val) const;
 };
+//WARN_POP
 
 inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
     return os << addr.str();
@@ -243,7 +246,7 @@ public:
     explicit Socket(int type = SOCK_STREAM, socket_t sock = SOCK_INVALID):
 	sbuf(new SocketBuf(type, sock, sock == SOCK_INVALID)) {}
     // cppcheck-suppress copyCtorPointerCopying
-    Socket(const Socket &r) { r.sbuf->count++; sbuf = r.sbuf; }
+    Socket(const Socket &r): sbuf(r.sbuf) { r.sbuf->count++; }
     ~Socket() { if (--sbuf->count == 0) delete sbuf; }
 
     Socket &operator =(socket_t sock);
@@ -443,7 +446,7 @@ inline SocketSet::SocketSet(uint maxfds): maxsz(maxfds), sz(0) {
 #ifdef _WIN32
     if (!maxsz)
 	maxsz = 32;
-    fds = (fd_set *)new socket_t[maxsz + 1];
+    fds = (fd_set *)new socket_t[(size_t)maxsz + 1];
 #else
     fds = maxsz ? new pollfd[maxsz] : NULL;
 #endif
@@ -463,9 +466,9 @@ inline SocketSet &SocketSet::operator =(const SocketSet &ss) {
 	if (maxsz < sz) {
 	    maxsz = ss.maxsz;
 	    delete [] fds;
-	    fds = (fd_set *)new socket_t[maxsz + 1];
+	    fds = (fd_set *)new socket_t[(size_t)maxsz + 1];
 	}
-	memcpy(fds, ss.fds, (sz + 1) * sizeof (socket_t));
+	memcpy(fds, ss.fds, ((size_t)sz + 1) * sizeof (socket_t));
 #else
 	if (maxsz < sz) {
 	    maxsz = ss.maxsz;
@@ -483,12 +486,16 @@ inline bool SocketSet::set(socket_t fd) {
     if (!fds || sz == maxsz) {
 	maxsz = maxsz ? maxsz * 2 : 32;
 #ifdef _WIN32
-	fd_set *p = (fd_set *)new socket_t[maxsz + 1];
+	fd_set *p = (fd_set *)new socket_t[(size_t)maxsz + 1];
 
-	memcpy(p, fds, (sz + 1) * sizeof (socket_t));
+	if (!p)
+	    return false;
+	memcpy(p, fds, ((size_t)sz + 1) * sizeof (socket_t));
 #else
 	pollfd *p = new pollfd[maxsz];
 
+	if (!p)
+	    return false;
 	memcpy(p, fds, sz * sizeof (pollfd));
 #endif
 	delete [] fds;

@@ -22,19 +22,19 @@
 #define CPP_STR(s)		#s
 
 #ifdef _MSC_VER
-#ifdef _USRDLL
+#define PRAGMA_STR(s)		__pragma(s)
+#define __no_sanitize(check)
+#define __no_sanitize_address
+#define __no_sanitize_memory
+#define __no_sanitize_thread
+#define __no_sanitize_unsigned
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
-#else
-#define DLL_EXPORT
-#define DLL_IMPORT
-#endif
 #define DLL_LOCAL
-#define __no_sanitize(check)
-#define WARN_DISABLE(e)		_Pragma(warning(disable: e))
-#define WARN_ENABLE(e)		_Pragma(warning(enable: e))
-#define WARN_POP		_Pragma(warning(pop))
-#define WARN_PUSH		_Pragma(warning(push))
+#define WARN_DISABLE(w)		PRAGMA_STR(warning(disable: w))
+#define WARN_ENABLE(w)		PRAGMA_STR(warning(enable: w))
+#define WARN_POP		PRAGMA_STR(warning(pop))
+#define WARN_PUSH		PRAGMA_STR(warning(push))
 #elif defined(__GNUC__)
 #define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
     __GNUC_PATCHLEVEL__)
@@ -52,18 +52,14 @@
 #define DLL_EXPORT		__attribute__((visibility("default")))
 #define DLL_IMPORT		__attribute__((visibility("default")))
 #define DLL_LOCAL		__attribute__((visibility("hidden")))
-#define WARN_POP		_Pragma(CPP_STR(GCC pop_options))
-#define WARN_PUSH		_Pragma(CPP_STR(GCC push_options))
-#define WARN_DISABLE(e)		_Pragma(CPP_STR(GCC diagnostic ignored #e))
-#define WARN_ENABLE(e)		_Pragma(CPP_STR(GCC diagnostic warning #e))
+#define PRAGMA_STR(s)		_Pragma (#s)
+#define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored #w)
+#define WARN_ENABLE(w)		PRAGMA_STR(GCC diagnostic warning #w)
+#define WARN_POP		PRAGMA_STR(GCC pop_options)
+#define WARN_PUSH		PRAGMA_STR(GCC push_options)
 #endif
-#define WARN_PUSH_DISABLE(e)	WARN_PUSH WARN_DISABLE(e)
-
-#ifdef BUILD_BLISTER
-#define BLISTER			DLL_EXPORT
-#else
-#define BLISTER			DLL_IMPORT
-#endif
+#define WARN_PUSH_DISABLE(w)	WARN_PUSH \
+				WARN_DISABLE(w)
 
 #ifdef __cplusplus
 #if __cplusplus <= 199711L && !defined(__clang__)
@@ -85,7 +81,17 @@
 #define EXTERNC_
 #endif
 
+#ifdef BUILD_BLISTER
+#define BLISTER			DLL_EXPORT
+#else
+#define BLISTER			DLL_IMPORT
+#endif
+
 #ifdef _WIN32
+#ifndef BLISTER_DLL
+#undef BLISTER
+#define BLISTER
+#endif
 
 #pragma inline_depth(69)
 #pragma warning(disable: 4018 4068 4097 4100 4103 4127 4146 4200 4201 4250 4251)

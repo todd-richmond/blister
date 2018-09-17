@@ -111,6 +111,14 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 }
 
 #ifdef _WIN32
+
+Service::Timer::Timer(ulong msec): timer(NULL) {
+    (void)msec;
+}
+
+void Service::Timer::cancel() {
+}
+
 Service::Service(const tchar *servicename, const tchar *h): name(servicename),
     bPause(false), errnum(0), ctrlfunc(NULL), gid(0), hStatus(0), hSCManager(0),
     hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0), pid(0),
@@ -1204,7 +1212,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	return 1;
     }
 #endif
-    av = new const tchar *[argc + 1];
+    av = new const tchar *[(size_t)argc + 1];
     path = argv[0];
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];

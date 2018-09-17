@@ -398,7 +398,7 @@ bool Config::write(tostream &os, bool inistyle) const {
 
 	sort(keys.begin(), keys.end(), cmp);
     }
-    for (uint u = 0; u < keys.size(); ++u) {
+    for (vector<const tchar *>::size_type u = 0; u < keys.size(); ++u) {
 	const tchar *dot;
 	const tchar *key = keys[u];
 	const KV *kv = amap.find(key)->second;

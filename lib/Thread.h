@@ -38,6 +38,7 @@ typedef DWORD thread_id_t;
 #define THREAD_YIELD()		Sleep(0)
 
 typedef volatile LONG atomic_t;
+typedef volatile atomic_t atomic_flag;
 
 // atomic functions that return updated value
 #define atomic_ref(i)		InterlockedIncrement(&i)
@@ -469,7 +470,7 @@ public:
     operator HANDLE(void) const { return hdl; }
     HANDLE handle(void) const { return hdl; }
 
-    bool __no_sanitize_thread close(void) {
+    bool close(void) {
 	HANDLE h = hdl;
 
 	hdl = NULL;

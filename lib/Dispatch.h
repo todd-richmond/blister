@@ -53,8 +53,8 @@ class BLISTER DispatchObj: nocopy {
 public:
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(new Group), next(NULL) {}
-    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),
-	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
+    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): dcb(cb),
+	dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()), next(NULL) {}
     virtual ~DispatchObj() {
 	if (!group->refcount.release())
@@ -109,10 +109,11 @@ private:
 
 class BLISTER DispatchTimer: public DispatchObj {
 public:
+    DispatchTimer(const DispatchTimer &ds): DispatchTimer((DispatchObj &)ds) {}
     explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
 	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
-	DispatchObj(d), due(DSP_NEVER_DUE) {  init(); timeout(cb, msec); }
+	DispatchObj(d), due(DSP_NEVER_DUE) { init(); timeout(cb, msec); }
     explicit DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
 	DispatchObj(parent), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(DispatchObj &parent, ulong msec, DispatchObjCB cb):
@@ -145,6 +146,7 @@ private:
 // handle socket events
 class BLISTER DispatchSocket: public DispatchTimer, public Socket {
 public:
+    DispatchSocket(const DispatchSocket &ds): DispatchSocket((DispatchObj &)ds) {}
     explicit DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =
 	DSP_NEVER);
     DispatchSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER);
@@ -275,6 +277,7 @@ private:
 	    unsorted_timerset;
 
 	TimerSet(): split(0) {}
+	TimerSet(const TimerSet &) CPP_DELETE;
 
 	bool empty(void) const { return unsorted.empty() && sorted.empty(); }
 	msec_t half(void) const { return split; }

@@ -279,7 +279,7 @@ private:
 	int onStart(void);
     };
 
-    class BLISTER LogFile {
+    class BLISTER LogFile: nocopy {
     public:
 	uint cnt;
 	bool enable;

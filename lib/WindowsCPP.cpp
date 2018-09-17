@@ -47,7 +47,7 @@ const wstring _achartowstring(const char *s, size_t len) {
     wstring ret;
 
     MultiByteToWideChar(CP_UTF8, 0, s, (int)len, buf, sz);
-    ret.assign(buf, sz - 1);
+    ret.assign(buf, (size_t)sz - 1);
     delete [] buf;
     return ret;
 }
@@ -69,7 +69,7 @@ const string _wchartoastring(const wchar *s, size_t len) {
     string ret;
 
     WideCharToMultiByte(CP_UTF8, 0, s, (int)len, buf, (int)len, NULL, NULL);
-    ret.assign(buf, sz - 1);
+    ret.assign(buf, (size_t)sz - 1);
     delete [] buf;
     return ret;
 }

@@ -24,7 +24,7 @@
  * buffer copies when possible
  */
 template<class C>
-class BLISTER faststreambuf: public streambuf {
+class BLISTER faststreambuf: public streambuf, private nocopy {
 public:
     explicit faststreambuf(streamsize sz = 4096, char *p = NULL):
 	alloced(false), buf(NULL), bufsz(0), fd(-1) {
@@ -224,7 +224,7 @@ public:
 	    out = fd.writev(iov, 2);
 	    setp(pb, pb + bufsz);
 	    return out == -1 || (ulong)out < (ulong)iov[0].iov_len ? -1 :
-		(streamsize)((ulong)out - (ulong)iov[0].iov_len);
+		(streamsize)((streamsize)out - (streamsize)iov[0].iov_len);
 	} else if (sz) {
 	    memcpy(pp, p, (size_t)sz);
 	    pbump((int)sz);

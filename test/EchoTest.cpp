@@ -394,7 +394,7 @@ int tmain(int argc, tchar *argv[]) {
 	    ec.waitForMain(1000);
 	    now = uticks();
 	    tcout << ((uint64_t)(ops + errs) * 1000000 / (now - last)) <<
-		T("\t\t") << (ulong)(usecs / (ops ? (uint)ops : (uint)errs +
+		T("\t\t") << (ulong)(usecs / (ops ? (ulong)ops : (ulong)errs +
 		1)) << '\t' << errs << endl;
 	    last = now;
 	} while (!qflag && loops);

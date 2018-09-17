@@ -296,7 +296,7 @@ loop:
 	if (ressz > sz) {
 	    delete [] result;
 	    sz = ressz;
-	    result = new char[sz + 1];
+	    result = new char[(size_t)sz + 1];
 	}
 	ret = (ulong)sstrm.read(result, (streamsize)ressz) == ressz;
     } else if (ressz) {
@@ -310,7 +310,7 @@ loop:
 	    if (!room) {
 		room = ressz ? ressz : 12 * 1024;
 		sz = ressz + room;
-		newres = new char[sz + 1];
+		newres = new char[(size_t)sz + 1];
 		memcpy(newres, result, ressz);
 		delete [] result;
 		result = newres;
