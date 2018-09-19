@@ -53,8 +53,8 @@ class BLISTER DispatchObj: nocopy {
 public:
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(new Group), next(NULL) {}
-    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): dcb(cb),
-	dspr(parent.dspr), flags(0), msg(DispatchNone),
+    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),
+	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()), next(NULL) {}
     virtual ~DispatchObj() {
 	if (!group->refcount.release())
