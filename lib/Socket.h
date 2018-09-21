@@ -94,7 +94,6 @@ inline bool interrupted(int e) { return e == WSAEINTR; }
  * requirements. Currently limited to IPV4/6 TCP or UDP addresses
  */
 WARN_PUSH_DISABLE(26495)
-//WARN_PUSH
 class BLISTER Sockaddr {
 public:
     enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNSPEC };
@@ -197,7 +196,7 @@ private:
 
     const tstring str(const tstring &val) const;
 };
-//WARN_POP
+WARN_POP
 
 inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
     return os << addr.str();
