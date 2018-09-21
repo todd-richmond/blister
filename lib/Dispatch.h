@@ -234,12 +234,12 @@ public:
 	int type = SOCK_STREAM, bool reuse = true, int backlog = SOCK_BACKLOG,
 	DispatchObjCB cb = connection);
 
-    const Sockaddr address(void) { return addr; }
+    const Sockaddr address(void) const { return addr; }
     bool listen(const Sockaddr &addr, bool reuse = true, int backlog =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL);
-    bool listen(const tchar *addr, bool reuse = true, int backlog =
+    bool listen(const tchar *addrstr, bool reuse = true, int backlog =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL) {
-	return listen(Sockaddr(addr), reuse, backlog, cb);
+	return listen(Sockaddr(addrstr), reuse, backlog, cb);
     }
     void relisten(void) { poll(NULL, DSP_PREVIOUS, DispatchAccept); }
 

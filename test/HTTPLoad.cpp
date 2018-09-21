@@ -323,7 +323,7 @@ char *HTTPLoad::read(uint idx, usec_t &iousec) {
     }
     iousec = uticks();
     if ((fd = open(tchartoachar(file), O_RDONLY|O_BINARY|O_SEQUENTIAL)) != -1) {
-	ret = new char[filelen + 1];
+	ret = new char[(size_t)filelen + 1];
 	if (::read(fd, ret, filelen) == (int)filelen) {
 	    ret[filelen] = '\0';
 	    if (filelen <= bodycachesz) {
@@ -833,7 +833,7 @@ int tmain(int argc, tchar *argv[]) {
     dlog.level(Log::None);
     if (fs.is_open())
 	fs.close();
-    while ((thread = static_cast<HTTPLoad *>(ThreadGroup::MainThreadGroup.wait(
+    while ((thread = (HTTPLoad *)(ThreadGroup::MainThreadGroup.wait(
 	3000))) != NULL)
 	delete thread;
     HTTPLoad::uninit();

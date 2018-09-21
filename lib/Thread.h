@@ -985,7 +985,10 @@ public:
 	    n = static_cast<N>(c);
 	    c = 0;
 	} else {
+	    C oldc = c;
+
 	    c -= static_cast<C>(n);
+	    n = static_cast<N>(oldc);
 	}
 	return n;
     }

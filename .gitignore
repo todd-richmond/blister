@@ -69,3 +69,5 @@ xcuserdata
 Win32
 x64
 
+/.vs/VSWorkspaceState.json
+/build/.vs/Blister/v15/.suo

@@ -490,13 +490,15 @@ inline bool SocketSet::set(socket_t fd) {
 
 	if (!p)
 	    return false;
-	memcpy(p, fds, ((size_t)sz + 1) * sizeof (socket_t));
+	else if (fds)
+	    memcpy(p, fds, ((size_t)sz + 1) * sizeof (socket_t));
 #else
 	pollfd *p = new pollfd[maxsz];
 
 	if (!p)
 	    return false;
-	memcpy(p, fds, sz * sizeof (pollfd));
+	else if (fds)
+	    memcpy(p, fds, sz * sizeof (pollfd));
 #endif
 	delete [] fds;
 	fds = p;

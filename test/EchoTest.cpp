@@ -286,7 +286,7 @@ bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
 
 static void signal_handler(int) { qflag = true; }
 
-int tmain(int argc, tchar *argv[]) {
+int tmain(int argc, const tchar * const argv[]) {
     Sockaddr sa;
     bool client = true, server = true;
     EchoTest ec;
@@ -393,9 +393,9 @@ int tmain(int argc, tchar *argv[]) {
 	    usecs = 0U;
 	    ec.waitForMain(1000);
 	    now = uticks();
-	    tcout << ((uint64_t)(ops + errs) * 1000000 / (now - last)) <<
-		T("\t\t") << (ulong)(usecs / (ops ? (ulong)ops : (ulong)errs +
-		1)) << '\t' << errs << endl;
+	    tcout << (((uint64_t)ops + (uint64_t)errs) * 1000000 / (now -
+		last)) << T("\t\t") << (usecs / (ops ? ops : errs + 1)) <<
+		'\t' << errs << endl;
 	    last = now;
 	} while (!qflag && loops);
     } else {

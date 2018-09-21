@@ -271,7 +271,9 @@ private:
 	streamsize pcount(void) const {
 	    return basic_stringbuf<C>::pptr() - basic_stringbuf<C>::pbase();
 	}
+	WARN_PUSH_DISABLE(26434)
 	const C *str(void) const { return basic_stringbuf<C>::pbase(); }
+	WARN_POP
     };
 
     bufferbuf sb;

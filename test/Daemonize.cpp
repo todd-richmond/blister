@@ -136,7 +136,7 @@ void WatchDaemon::onStop(bool fast) {
 	kill(cpid, fast ? SIGTERM : SIGINT);
 }
 
-int tmain(int argc, const tchar *argv[]) {
+int tmain(int argc, const tchar * const argv[]) {
     WatchDaemon wd(argc, argv);
 
     return wd.execute(argc, argv);

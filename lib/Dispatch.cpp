@@ -131,6 +131,7 @@ Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
 #endif
 }
 
+WARN_DISABLE(26430)
 bool Dispatcher::exec() {
     while (rlist && !shutdown) {
 	DispatchObj::Group *group;
@@ -206,7 +207,7 @@ int Dispatcher::run() {
 }
 
 int Dispatcher::worker(void *parm) {
-    return (reinterpret_cast<Dispatcher *>(parm))->run();
+    return (static_cast<Dispatcher *>(parm))->run();
 }
 
 #ifdef DSP_WIN32_ASYNC

@@ -106,7 +106,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	T("key,msec,cnt,avg");
     for (u = begin; u <= last; u++) {
 	if (columns) {
-	    tchar buf[8]; 
+	    tchar buf[8];
 
 	    tsprintf(buf, T("%4s"), hdrs[u]);
 	    s += buf;

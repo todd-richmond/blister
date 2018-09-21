@@ -286,10 +286,10 @@ loop:
     }
     if (sts == 204 || sts == 304)
 	ressz = 0;
-    else if ((resp = response(contentlen)) == NULL)
-	ressz = (ulong)-1;
-    else
+    else if ((resp = response(contentlen)) != NULL)
 	ressz = tstrtoul(resp, NULL, 10);
+    else
+	ressz = (ulong)-1;
     if (keep && !sz && ressz != (ulong)-1)
 	sock.nodelay(true);
     if (ressz && ressz != (ulong)-1) {

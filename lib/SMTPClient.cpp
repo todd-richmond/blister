@@ -1125,7 +1125,7 @@ bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
     };
 
     outsz = 0;
-    if ((out = new char[(len + 2) * 4 / 3 + (len / maxlen * 2) + 8]) == NULL)
+    if ((out = new char[(len + 2) * 4 / 3 + (len / maxlen * 2) + 8]) == NULL) //-V668
 	return false;
     encode(input, len, out, outsz, table, true);
     return true;
@@ -1147,7 +1147,7 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
     };
 
     outsz = (size_t)tstrlen(file);
-    if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) == NULL)
+    if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) == NULL) //-V668
 	return false;
     memcpy(out, begin, sizeof (begin) - 1);
     memcpy(out + sizeof (begin) - 1, tchartoachar(file), outsz);
@@ -1175,7 +1175,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     while (isspace(*p))
 	p++;
     perm = (uint)strtoul(p, &out, 8);
-    if (!isspace(*out))
+    if (!out || !isspace(*out))
 	return false;
     while (!isspace(*p))
 	p++;

@@ -23,7 +23,7 @@ static void timing(const tchar *key, usec_t usec) {
     dtiming.add(key, usec);
 }
 
-int tmain(int argc, tchar *argv[]) {
+int tmain(int argc, const tchar * const argv[]) {
     bool byname = false;
     uint columns = TIMINGCOLUMNS;
     int i;
@@ -66,7 +66,7 @@ int tmain(int argc, tchar *argv[]) {
 	} else if (argv[i][0] != '-') {
 	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
-	    timing(argv[i], tstrtoul(argv[i + 1], NULL, 10) * mult);
+	    timing(argv[i], (usec_t)tstrtoul(argv[i + 1], NULL, 10) * mult);
 	    i++;
 	    out = true;
 	} else {
@@ -95,7 +95,7 @@ int tmain(int argc, tchar *argv[]) {
 		while (*pp != '=' && !istspace(*pp))
 		    pp++;
 		key.assign(p, (tstring::size_type)(pp - p));
-		timing(key.c_str(), tstrtoul(pp, NULL, 10) * mult);
+		timing(key.c_str(), (usec_t)tstrtoul(pp, NULL, 10) * mult);
 	    }
 	}
     }

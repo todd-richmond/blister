@@ -386,9 +386,6 @@ void HTTPServerSocket::exec(void) {
 }
 
 void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
-#ifdef UNICODE // TODO
-    (void)buf; (void)amap;
-#else
     char *p = buf, *pp;
 
     amap.clear();
@@ -406,7 +403,6 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 	    amap[buf] = pp;
 	}
     }
-#endif
 }
 
 void HTTPServerSocket::keepalive(void) {

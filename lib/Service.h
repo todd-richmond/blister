@@ -157,7 +157,7 @@ protected:
     static int __stdcall ctrl_handler(ulong sig);
     static long __stdcall exception_handler(_EXCEPTION_POINTERS *info);
     static void __stdcall service_handler(ulong sig);
-    static void __stdcall signal_handler(int sig);
+    static void signal_handler(int sig);
     static void __stdcall srv_main(ulong argc, tchar **argv);
 #else
     Thread sigthread;
@@ -177,6 +177,7 @@ protected:
 class BLISTER ServiceData: nocopy {
 public:
     ServiceData(const tchar *service, uint ctrs, uint size);
+    virtual ~ServiceData() {}
 
     virtual DWORD open(LPWSTR lpDeviceNames);
     virtual DWORD close(void);
