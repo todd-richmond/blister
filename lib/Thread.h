@@ -18,10 +18,6 @@
 #ifndef Thread_h
 #define Thread_h
 
-#if CPLUSPLUS >= 11
-#include <atomic>
-#endif
-
 #ifdef _WIN32
 #include <process.h>
 #include <windows.h>
@@ -165,10 +161,6 @@ typedef volatile int atomic_t;
 
 #endif
 
-#if CPLUSPLUS > 0 && CPLUSPLUS < 11
-typedef volatile atomic_t atomic_flag;
-#endif
-
 typedef pthread_key_t tlskey_t;
 
 #define tls_init(k)		ZERO(k); pthread_key_create(&k, NULL)
@@ -185,6 +177,11 @@ typedef pthread_key_t tlskey_t;
 
 #ifdef __cplusplus
 
+#if CPLUSPLUS >= 11
+#include <atomic>
+#else
+typedef volatile atomic_t atomic_flag;
+#endif
 #include <set>
 
 class Thread;
@@ -326,8 +323,6 @@ protected:
  * RWLock: reader/writer lock
  * Condvar: condition variable around a Lock
  */
-#define SPINLOCK_YIELD	(1 << 5)
-
 #if defined(NO_ATOMIC_LOCK)
 
 class BLISTER SpinLock: nocopy {
@@ -348,6 +343,8 @@ protected:
 #else
 
 class BLISTER SpinLock: nocopy {
+    static const int SPINLOCK_YIELD = 1 << 5;
+
 public:
     SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) {
 #if CPLUSPLUS >= 11
@@ -592,13 +589,13 @@ inline void msleep(ulong msec) {
 class BLISTER Lock: nocopy {
 public:
     Lock() { pthread_mutex_init(&mtx, NULL); }
-    ~Lock() { pthread_mutex_destroy(&mtx); }
+    ~Lock() { (void)pthread_mutex_destroy(&mtx); }
 
     operator pthread_mutex_t *() { return &mtx; }
 
-    void lock(void) { pthread_mutex_lock(&mtx); }
+    void lock(void) { (void)pthread_mutex_lock(&mtx); }
     bool trylock(void) { return pthread_mutex_trylock(&mtx) == 0; }
-    void unlock(void) { pthread_mutex_unlock(&mtx); }
+    void unlock(void) { (void)pthread_mutex_unlock(&mtx); }
 
 protected:
     pthread_mutex_t mtx;
@@ -947,8 +944,8 @@ private:
 template<class C>
 class TSNumber: nocopy {
 public:
-    explicit TSNumber(C init = 0) { c = init; }
-    TSNumber(const TSNumber<C> &init) { c = init; }
+    explicit TSNumber(C init = 0): c(init) {}
+    TSNumber(const TSNumber<C> &init): c(init) {}
 
     operator C() const { TSLocker lkr(lck); return c; }
     template<class N> bool operator ==(N n) const { TSLocker lkr(lck); return c == n; }

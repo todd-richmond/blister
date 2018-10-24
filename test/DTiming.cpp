@@ -25,7 +25,7 @@ static void timing(const tchar *key, usec_t usec) {
 
 int tmain(int argc, const tchar * const argv[]) {
     bool byname = false;
-    uint columns = TIMINGCOLUMNS;
+    uint columns = Timing::TIMINGSLOTS - 2;
     int i;
     uint mult = 1;
     bool out = false;

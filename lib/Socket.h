@@ -370,12 +370,16 @@ protected:
 	bool __no_sanitize_thread close(void) {
 	    if (sock == SOCK_INVALID) {
 		err = EINVAL;
-		return false;
 	    } else {
-		bool b = check(::closesocket(sock));
+		int ret = ::closesocket(sock);
+
 		sock = SOCK_INVALID;
-		return b;
+		if (ret)
+		    err = sockerrno();
+		else
+		    return true;
 	    }
+	    return false;
 	}
 	bool interrupted(void) const { return ::interrupted(err); }
 

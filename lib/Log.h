@@ -68,6 +68,21 @@ public:
     };
     enum Type { Simple, Syslog, KeyVal, NoLevel, NoTime };
 
+    class Escalator {
+    public:
+	Escalator(Level level1, Level level2, ulong period, ulong mincount,
+	    ulong timeout): count(0), mincount(mincount), period(period),
+	    timeout( timeout), level1(level1), level2(level2), start(0) {}
+
+    private:
+	friend class Log;
+
+	ulong count, mincount, period, timeout;
+	SpinLock lck;
+	Level level1, level2;
+	msec_t start;
+    };
+
     template<class C>
     class KV {
     public:
@@ -157,6 +172,7 @@ public:
     void stop(void);
     static tostream &quote(tostream &os, const tchar *s);
 
+    Log &operator <<(Escalator &escalator);
     template<class C> Log &operator <<(const C &c) {
 	Tlsdata &tlsd(*tls);
 

@@ -33,15 +33,20 @@
 #endif
 
 static const tchar *USubst = T("\001\001");
+#if !defined(__APPLE__) && !defined(__linux__)
+#define NO_PERCENT_Z
 static const tchar *ZSubst = T("\002\002");
+#endif
 
-const tchar * const Log::LevelStr[] = { T("none"), T("emrg"), T("alrt"),
-    T("crit"), T("err"), T("warn"), T("note"), T("info"), T("debg"), T("trce"),
-    T("sprs") };
-const tchar * const Log::LevelStr2[] = { T("nothing"), T("emergency"),
-    T("alert"), T("critical"), T("error"), T("warning"), T("notice"),
-    T("information"), T("debug"), T("trace"), T("suppress") };
-
+const tchar * const Log::LevelStr[] = {
+    T("none"), T("emrg"), T("alrt"), T("crit"), T("err"), T("warn"), T("note"),
+    T("info"), T("debg"), T("trce"), T("sprs")
+};
+const tchar * const Log::LevelStr2[] = {
+    T("nothing"), T("emergency"), T("alert"), T("critical"), T("error"),
+    T("warning"), T("notice"), T("information"), T("debug"), T("trace"),
+    T("suppress")
+};
 
 // UNIX loaders may try to construct static objects > 1 time
 static Log &_dlog(void) {
@@ -50,7 +55,51 @@ static Log &_dlog(void) {
     return __dlog;
 }
 
-Log &dlog = _dlog();
+Log &dlog(_dlog());
+
+Log &Log::operator <<(Log::Escalator &escalator) {
+    FastSpinLocker lkr(escalator.lck);
+    ulong count;
+    msec_t now = mticks() / 1000, start;
+    Tlsdata &tlsd(*tls);
+
+    count = escalator.count;
+    start = escalator.start;
+    tlsd.clvl = escalator.level1;
+    if (escalator.period && start + escalator.period < now) {
+	count = 0;
+	if (escalator.count >= escalator.mincount) {
+	    tlsd.clvl = escalator.level2;
+	    if (escalator.timeout > escalator.period)
+		start = now + escalator.timeout - escalator.period;
+	    else
+		start = now + 1;
+	} else {
+	    start = now;
+	}
+    }
+    if (start <= now) {
+	if (count == 0)
+	    start = now;
+	++count;
+	if (escalator.period == 0) {
+	    if (start + escalator.timeout < now) {
+		count = 1;
+		start = now;
+	    }
+	    if (!escalator.mincount)
+		escalator.mincount = 1;
+	    if (count == escalator.mincount) {
+		tlsd.clvl = escalator.level2;
+		count = 0;
+		start = now + escalator.timeout;
+	    }
+	}
+    }
+    escalator.count = count;
+    escalator.start = start;
+    return *this;
+}
 
 int Log::FlushThread::onStart(void) {
     Locker lkr(l.lck);
@@ -311,13 +360,11 @@ void Log::LogFile::unlock(void) {
 	lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
 }
 
-Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true),
-    ffd(true, Info, T("stdout"), true),
-    bufenable(false), mailenable(false), syslogenable(false),
-    bufsz(32 * 1024), buftm(1000), ft(*this), gmt(false), mp(true),
-    last_sec(0), lvl(level), maillvl(None),
-    sysloglvl(None), syslogfac(1), syslogsock(SOCK_DGRAM), _type(Simple),
-    upos(0) {
+Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true), ffd(true,
+    Info, T("stdout"), true), bufenable(false), mailenable(false),
+    syslogenable(false), bufsz(32 * 1024), buftm(1000), ft(*this), gmt(false),
+    mp(true), last_sec(0), lvl(level), maillvl(None), sysloglvl(None),
+    syslogfac(1), syslogsock(SOCK_DGRAM), _type(Simple), upos(0) {
     format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
 }
 
@@ -375,12 +422,14 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     if (now_sec != last_sec) {
 	tchar tbuf[128];
 	struct tm tmbuf, *tm;
-	tstring::size_type zpos;
 
 	tm = gmt ? gmtime_r(&now_sec, &tmbuf) : localtime_r(&now_sec, &tmbuf);
 	tstrftime(tbuf, sizeof (tbuf) / sizeof (tchar), fmt.c_str(), tm);
 	last_format = tbuf;
 	last_sec = now_sec;
+#ifdef NO_PERCENT_Z
+	tstring::size_type zpos;
+
 	if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
 	    int diff;
 	    tchar gmtoff[16];
@@ -400,6 +449,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 		tsprintf(gmtoff, T("+%04d"), diff);
 	    last_format.replace(zpos, 2, gmtoff);
 	}
+#endif
 	upos = last_format.find(USubst);
     }
     if (_type == NoTime) {
@@ -556,7 +606,7 @@ void Log::format(const tchar *s) {
     last_sec = 0;
     if ((pos = fmt.find(T("%#"))) != fmt.npos)
 	fmt.replace(pos, 2, USubst);
-#if !defined(__APPLE__) && !defined(__linux__)
+#ifdef NO_PERCENT_Z
     if ((pos = fmt.find(T("%z"))) != fmt.npos)
 	fmt.replace(pos, 2, ZSubst);
 #endif

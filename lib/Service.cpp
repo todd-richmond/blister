@@ -1587,7 +1587,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		    dlogd(Log::mod(name), Log::cmd(T("watch")),
 			Log::kv(T("pid"), child));
 		}
-		lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
+		(void)lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 		ZERO(fl);
 		fl.l_type = F_WRLCK;
 		fl.l_whence = SEEK_SET;
@@ -1654,10 +1654,10 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			break;
 		    }
 		}
-		lockfile(lckfd, F_WRLCK, SEEK_SET, 0, qflag ? Stopping :
+		(void)lockfile(lckfd, F_WRLCK, SEEK_SET, 0, qflag ? Stopping :
 		    Starting, 0);
 	    } else {
-		lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 0);
+		(void)lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 0);
 		if (!first) {
 		    dlogn(Log::mod(name), Log::cmd(T("start")),
 			Log::kv(T("host"), Sockaddr::hostname()),
@@ -1672,7 +1672,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	} while (!qflag && child && !ret);
 	if (child) {
 	    tunlink(lckfile.c_str());
-	    lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
+	    (void)lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 	    ::close(lckfd);
 	    exit(ret);
 	}
