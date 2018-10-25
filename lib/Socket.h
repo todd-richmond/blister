@@ -109,6 +109,7 @@ public:
     explicit Sockaddr(const tchar *host, Proto proto = TCP) {
 	set(host, proto);
     }
+    // cppcheck-suppress syntaxError
     Sockaddr(const tchar *host, ushort port, Proto proto = TCP) {
 	set(host, port, proto);
     }

@@ -275,10 +275,12 @@ public:
 template<class C>
 class BLISTER ThreadLocal: nocopy {
 public:
+    // cppcheck-suppress useInitializationList
     ThreadLocal() { tls_init(key); }
     ~ThreadLocal() { tls_free(key); }
 
     ThreadLocal &operator =(C c) { set(c); return *this; }
+    C *operator ->(void) const { return &get(); }
     operator bool() const { return tls_get(key) != NULL; }
     operator C() const { return (C)tls_get(key); }
 
@@ -293,6 +295,7 @@ protected:
 template<class C>
 class BLISTER ThreadLocalClass: nocopy {
 public:
+    // cppcheck-suppress useInitializationList
     ThreadLocalClass() { tls_init(key); }
     ~ThreadLocalClass() { tls_free(key); }
 
@@ -350,6 +353,7 @@ public:
 #if CPLUSPLUS >= 11
 	lck.clear();
 #else
+	// cppcheck-suppress useInitializationList
 	lck = 0;
 #endif
     }
