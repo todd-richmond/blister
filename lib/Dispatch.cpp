@@ -192,6 +192,7 @@ bool Dispatcher::exec() {
 int Dispatcher::run() {
     Lifo::Waiting waiting;
 
+    priority(-1);
     lock.lock();
     while (exec()) {
 	bool b = workers == lifo.size() + 1;

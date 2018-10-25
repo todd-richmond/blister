@@ -30,6 +30,7 @@ typedef DWORD thread_id_t;
 #define THREAD_FUNC		uint __stdcall
 #define THREAD_HDL()		GetCurrentThread()
 #define THREAD_ID()		GetCurrentThreadId()
+#define THREAD_BARRIER()	_ReadWriteBarrier()
 #define THREAD_PAUSE()		YieldProcessor()
 #define THREAD_YIELD()		Sleep(0)
 
@@ -367,8 +368,10 @@ public:
 		if (pause == SPINLOCK_YIELD) {
 		    THREAD_YIELD();
 		} else {
-		    for (uint u = 0; u < pause; ++u)
+		    for (uint u = 0; u < pause; ++u) {
+			THREAD_BARRIER();
 			THREAD_PAUSE();
+		    }
 		    pause <<= 1;
 		}
 	    } while (!trylock());
