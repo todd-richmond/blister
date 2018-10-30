@@ -1109,8 +1109,8 @@ struct strihash {
 
 template<class C>
 struct streq {
-    bool operator()(const C *a, const C *b) const { return stringeq(a, b); }
-    bool operator()(const basic_string<C> &a, const basic_string<C> &b) const {
+    bool operator ()(const C *a, const C *b) const { return stringeq(a, b); }
+    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
 	return stringeq(a, b);
     }
     static bool equal(const C *a, const C *b) { return stringeq(a, b); }
@@ -1121,10 +1121,10 @@ struct streq {
 
 template<class C>
 struct strieq {
-    bool operator()(const C *a, const C *b) const {
+    bool operator ()(const C *a, const C *b) const {
 	return stringicmp(a, b) == 0;
     }
-    bool operator()(const basic_string<C> &a, const basic_string<C> &b) const {
+    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
 	return stringicmp(a.c_str(), b.c_str()) == 0;
     }
     static bool equal(const C *a, const C *b) { return stringicmp(a, b) == 0; }

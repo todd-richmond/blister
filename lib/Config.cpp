@@ -56,7 +56,7 @@ const Config::KV *Config::newkv(const tchar *key, const tchar *val) const {
 
 void Config::clear(void) {
     kvmap::iterator it;
-    WLocker lkr(lck);
+    WLocker lkr(lck, !THREAD_ISSELF(locker));
 
     while ((it = amap.begin()) != amap.end()) {
 	const KV *kv = it->second;
@@ -68,7 +68,7 @@ void Config::clear(void) {
 
 void Config::erase(const tchar *attr, const tchar *sect) {
     kvmap::iterator it;
-    WLocker lkr(lck);
+    WLocker lkr(lck, !THREAD_ISSELF(locker));
 
     if (sect && *sect) {
 	tstring s(sect);
@@ -113,7 +113,7 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 
 const tstring Config::get(const tchar *attr, const tchar *def,
     const tchar *sect) const {
-    RLocker lkr(lck);
+    RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(attr, sect);
     static tstring empty;
 
@@ -126,7 +126,7 @@ const tstring Config::get(const tchar *attr, const tchar *def,
 }
 
 bool Config::get(const tchar *attr, bool def, const tchar *sect) const {
-    RLocker lkr(lck);
+    RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(attr, sect);
     tchar c;
 
@@ -147,7 +147,7 @@ bool Config::get(const tchar *attr, bool def, const tchar *sect) const {
 }
 
 long Config::get(const tchar *attr, long def, const tchar *sect) const {
-    RLocker lkr(lck);
+    RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(attr, sect);
 
     if (kv && kv->expand) {
@@ -159,7 +159,7 @@ long Config::get(const tchar *attr, long def, const tchar *sect) const {
 }
 
 ulong Config::get(const tchar *attr, ulong def, const tchar *sect) const {
-    RLocker lkr(lck);
+    RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(attr, sect);
 
     if (kv && kv->expand) {
@@ -171,7 +171,7 @@ ulong Config::get(const tchar *attr, ulong def, const tchar *sect) const {
 }
 
 double Config::get(const tchar *attr, double def, const tchar *sect) const {
-    RLocker lkr(lck);
+    RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(attr, sect);
 
     if (kv && kv->expand) {
@@ -276,7 +276,7 @@ bool Config::parse(tistream &is) {
 }
 
 bool Config::read(tistream &is, const tchar *str, bool app) {
-    WLocker lkr(lck);
+    WLocker lkr(lck, !THREAD_ISSELF(locker));
 
     if (!is)
 	return false;
@@ -349,7 +349,7 @@ void Config::setv(const tchar *attr1, const tchar *val1, ...) {
     while ((arg = va_arg(vl, const tchar *)) != NULL)
 	sect = sect == NULL ? arg : NULL;
     va_end(vl);
-    lck.wlock();
+    lock();
     set(attr1, val1, sect, false);
     va_start(vl, val1);
     while ((arg = va_arg(vl, const tchar *)) != NULL) {
@@ -360,7 +360,7 @@ void Config::setv(const tchar *attr1, const tchar *val1, ...) {
 	    attr = arg;
 	}
     }
-    lck.wunlock();
+    unlock();
     va_end(vl);
 }
 
@@ -381,7 +381,7 @@ void Config::trim(tstring &s) const {
 
 bool Config::write(tostream &os, bool inistyle) const {
     ulong cnt = 0;
-    RLocker lkr(lck);
+    RLocker lkr(lck, !THREAD_ISSELF(locker));
     kvmap::const_iterator it;
     vector<const tchar *> keys;
     tstring sect;
