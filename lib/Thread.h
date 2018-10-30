@@ -65,13 +65,25 @@ typedef DWORD tlskey_t;
 #include <pthread.h>
 
 typedef pthread_t thread_hdl_t;
+#if defined(__FreeBSD__) || defined(__OpenBSD__)
+#include <pthread_np.h>
+typedef ulong thread_id_t;
+#define THREAD_EQUAL(x, y)	(x == y)
+#define THREAD_ID()		(thread_id_t)pthread_getthreadid_np()
+#elif defined(__linux__)
+#include <sys/syscall.h>
+typedef pid_t thread_id_t;
+#define THREAD_EQUAL(x, y)	(x == y)
+#define THREAD_ID()		(thread_id_t)syscall(__NR_gettid)
+#else
 typedef pthread_t thread_id_t;
+#define THREAD_EQUAL(x, y)	(pthread_equal(x, y) != 0)
+#define THREAD_ID()		pthread_self()
+#endif
 
 #define INFINITE		(ulong)-1
-#define THREAD_EQUAL(x, y)	(pthread_equal(x, y) != 0)
 #define THREAD_FUNC		void *
 #define THREAD_HDL()		pthread_self()
-#define THREAD_ID()		pthread_self()
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 #define THREAD_BARRIER()	asm volatile("" ::: "memory")
 #define THREAD_FENCE()		asm volatile("mfence" ::: "memory")
@@ -171,8 +183,7 @@ typedef pthread_key_t tlskey_t;
 
 #endif
 
-#define THREAD_SELF()		THREAD_ID()
-#define THREAD_ISSELF(x)	((x) && THREAD_EQUAL(x, THREAD_SELF()))
+#define THREAD_ISSELF(x)	THREAD_EQUAL(x, THREAD_ID())
 
 #define atomic_get(i)		atomic_add(i, 0)
 
