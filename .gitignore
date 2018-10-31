@@ -2,8 +2,11 @@
 .deps
 .libs
 .ninja_*
+.vs
 *.ninja
 *.dSYM
+*.vcxproj.filters
+*.vcxproj.user
 aclocal.m4
 ar-lib
 autom4te.cache
@@ -28,6 +31,8 @@ Makefile*
 *.lo
 *.obj
 *.slo
+Win32
+x64
 
 # Compiled Dynamic libraries
 *.dll
@@ -66,8 +71,3 @@ Makefile*
 .ruby-version
 cov-int
 xcuserdata
-Win32
-x64
-
-/.vs/VSWorkspaceState.json
-/build/.vs/Blister/v15/.suo
