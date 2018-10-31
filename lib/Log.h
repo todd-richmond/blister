@@ -72,7 +72,7 @@ public:
     public:
 	Escalator(Level level1, Level level2, ulong period, ulong mincount,
 	    ulong timeout): count(0), mincount(mincount), period(period),
-	    timeout( timeout), level1(level1), level2(level2), start(0) {}
+	    timeout(timeout), level1(level1), level2(level2), start(0) {}
 
     private:
 	friend class Log;
