@@ -71,9 +71,6 @@
  *   dtiming.record();
  */
 
-#define TIMINGCOLUMNS	8
-#define TIMINGSLOTS	10
-
 typedef usec_t timing_t;
 
 #define TIMING_KEY(i) __forceinline TimingKey(const tchar (&k)[i]): \
@@ -113,6 +110,8 @@ public:
     Timing() {}
     ~Timing() { clear(); }
 
+    static const int TIMINGSLOTS = 10;
+
     vector<tstring>::size_type depth(void) const { return tls->callers.size(); }
 
     template<class C> void __forceinline add(const C &key, timing_t diff) {
@@ -120,7 +119,7 @@ public:
     }
     void add(const TimingKey &key, timing_t diff);
     void clear(void);
-    const tstring data(bool sort_by_key = false, uint columns = TIMINGCOLUMNS)
+    const tstring data(bool sort_by_key = false, uint columns = TIMINGSLOTS - 2)
 	const;
     template<class C> void erase(const C &key) { erase(TimingKey(key)); }
     void record(void);

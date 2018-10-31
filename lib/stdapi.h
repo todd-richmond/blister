@@ -412,9 +412,11 @@ EXTERNC_
 #else // _WIN32
 
 #define _DARWIN_C_SOURCE
-#define _FILE_OFFSET_BITS 64
-#define _LARGEFILE_SOURCE
-#define _LARGEFILE64_SOURCE
+#define _FILE_OFFSET_BITS	64
+#ifndef _LARGEFILE_SOURCE
+#define _LARGEFILE_SOURCE	1
+#define _LARGEFILE64_SOURCE	1
+#endif
 #ifndef _POSIX_PTHREAD_SEMANTICS
 #define _POSIX_PTHREAD_SEMANTICS
 #endif
@@ -422,7 +424,7 @@ EXTERNC_
 #define _REENTRANT
 #endif
 #ifndef _XOPEN_SOURCE
-#define _XOPEN_SOURCE 700
+#define _XOPEN_SOURCE		700
 #endif
 #define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_9
 
@@ -1107,8 +1109,8 @@ struct strihash {
 
 template<class C>
 struct streq {
-    bool operator()(const C *a, const C *b) const { return stringeq(a, b); }
-    bool operator()(const basic_string<C> &a, const basic_string<C> &b) const {
+    bool operator ()(const C *a, const C *b) const { return stringeq(a, b); }
+    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
 	return stringeq(a, b);
     }
     static bool equal(const C *a, const C *b) { return stringeq(a, b); }
@@ -1119,10 +1121,10 @@ struct streq {
 
 template<class C>
 struct strieq {
-    bool operator()(const C *a, const C *b) const {
+    bool operator ()(const C *a, const C *b) const {
 	return stringicmp(a, b) == 0;
     }
-    bool operator()(const basic_string<C> &a, const basic_string<C> &b) const {
+    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
 	return stringicmp(a.c_str(), b.c_str()) == 0;
     }
     static bool equal(const C *a, const C *b) { return stringicmp(a, b) == 0; }

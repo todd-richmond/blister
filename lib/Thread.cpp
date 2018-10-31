@@ -478,18 +478,18 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 	grouplck.lock();
 	for (i = groups.begin(); i != groups.end(); ++i) {
 	    tg = *i;
-	    tg->cvlck.lock();
-	    if (THREAD_ISSELF(tg->master.id))
-		break;
-	    for (ii = tg->threads.begin(); ii != tg->threads.end(); ++ii) {
-		if (THREAD_ISSELF((*ii)->id))
+	    if (!THREAD_ISSELF(tg->master.id)) {
+		tg->cvlck.lock();
+		for (ii = tg->threads.begin(); ii != tg->threads.end(); ++ii) {
+		    if (THREAD_ISSELF((*ii)->id))
+			break;
+		}
+		tg->cvlck.unlock();
+		if (ii == tg->threads.end())
+		    tg = NULL;
+		else
 		    break;
 	    }
-	    tg->cvlck.unlock();
-	    if (ii == tg->threads.end())
-		tg = NULL;
-	    else
-		break;
 	}
 	grouplck.unlock();
 	if (tg == NULL)

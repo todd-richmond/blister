@@ -108,10 +108,11 @@ typedef struct pollfd event_t;
 
 #endif
 
-Dispatcher::Dispatcher(const Config &config): cfg(config), due(DSP_NEVER_DUE),
-    maxthreads(0), running(0), shutdown(true), stacksz(0), workers(0),
+Dispatcher::Dispatcher(const Config &config): cfg(config),
+    due(DispatchTimer::DSP_NEVER_DUE), maxthreads(0), running(0),
+    shutdown(true), stacksz(0), workers(0),
 #ifdef DSP_WIN32_ASYNC
-    interval(DSP_NEVER), wnd(0)
+    interval(DispatchTimer::DSP_NEVER), wnd(0)
 #else
     evtfd(-1), wfd(-1), isock(SOCK_STREAM), polling(false), wsock(SOCK_STREAM)
 #endif
@@ -191,6 +192,7 @@ bool Dispatcher::exec() {
 int Dispatcher::run() {
     Lifo::Waiting waiting;
 
+    priority(-1);
     lock.lock();
     while (exec()) {
 	bool b = workers == lifo.size() + 1;
@@ -224,7 +226,7 @@ int Dispatcher::onStart() {
 	shutdown = true;
 	return -1;
     }
-    due = DSP_NEVER_DUE;
+    due = DispatchTimer::DSP_NEVER_DUE;
     lifo.open();
     running = 0;
     shutdown = false;
@@ -288,8 +290,8 @@ int Dispatcher::onStart() {
 	    }
 	    if (dt == NULL) {
 		if (timers.empty()) {
-		    due = DSP_NEVER_DUE;
-		    interval = DSP_NEVER;
+		    due = DispatchTimer::DSP_NEVER_DUE;
+		    interval = DispatchTimer::DSP_NEVER;
 		    KillTimer(wnd, DSP_TimerID);
 		} else {
 		    due = now + MAX_IDLE_TIMER;
@@ -403,7 +405,7 @@ int Dispatcher::onStart() {
 #endif
     }
     lock.lock();
-    due = DSP_NEVER_DUE;
+    due = DispatchTimer::DSP_NEVER_DUE;
     lifo.open();
     running = 0;
     shutdown = false;
@@ -421,7 +423,7 @@ int Dispatcher::onStart() {
 	if (dt == NULL) {
 	    if (timers.empty()) {
 		msec = SOCK_INFINITE;
-		due = DSP_NEVER_DUE;
+		due = DispatchTimer::DSP_NEVER_DUE;
 	    } else {
 		msec = MAX_IDLE_TIMER;
 		due = now + MAX_IDLE_TIMER;
@@ -811,7 +813,8 @@ void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
 
 void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
     msec_t now = tm ? mticks() : 0;
-    msec_t tmt = tm == DSP_NEVER ? DSP_NEVER_DUE : now + tm;
+    msec_t tmt = tm == DispatchTimer::DSP_NEVER ? DispatchTimer::DSP_NEVER_DUE :
+	now + tm;
 
     lock.lock();
     if (tm) {
@@ -909,7 +912,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
     uint flags;
     msec_t now = mticks();
     bool resched = false;
-    msec_t tmt = tm == DSP_NEVER ? DSP_NEVER_DUE : now + tm;
+    msec_t tmt = tm == DispatchTimer::DSP_NEVER ? DispatchTimer::DSP_NEVER_DUE :
+	now + tm;
     static uint ioarray[] = {
 	DSP_Readable | DSP_Closeable, DSP_Writeable | DSP_Closeable,
 	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable,
@@ -1169,7 +1173,7 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
     blocking(false);
     CLOEXEC(fd());
     msleep(1);
-    poll(cb, DSP_NEVER, DispatchAccept);
+    poll(cb, DispatchTimer::DSP_NEVER, DispatchAccept);
     return true;
 }
 

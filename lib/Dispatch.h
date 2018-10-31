@@ -103,12 +103,12 @@ private:
 };
 
 // handle objects with timeouts
-#define DSP_NEVER	(ulong)-1
-#define DSP_PREVIOUS	(ulong)-2
-#define DSP_NEVER_DUE	(msec_t)-1
-
 class BLISTER DispatchTimer: public DispatchObj {
 public:
+    static const ulong DSP_NEVER = (ulong)-1;
+    static const ulong DSP_PREVIOUS = (ulong)-2;
+    static const msec_t DSP_NEVER_DUE = (msec_t)-1;
+
 #if CPLUSPLUS >= 11
     DispatchTimer(const DispatchTimer &dt): DispatchTimer((DispatchObj &)dt) {}
 #endif
@@ -302,7 +302,7 @@ private:
 		if (dt->due <= split)
 		    sorted.erase(dt);
 		unsorted.erase(it);
-		dt->due = DSP_NEVER_DUE;
+		dt->due = DispatchTimer::DSP_NEVER_DUE;
 		return dt;
 	    }
 	    return NULL;
@@ -315,7 +315,7 @@ private:
 
 		if (dt->due <= when) {
 		    sorted.erase(it);
-		    dt->due = DSP_NEVER_DUE;
+		    dt->due = DispatchTimer::DSP_NEVER_DUE;
 		    return dt;
 		}
 	    }
@@ -332,7 +332,7 @@ private:
 		unsorted.end(); ++it) {
 		DispatchTimer *dt = *it;
 
-		if (dt->due != DSP_NEVER_DUE) {
+		if (dt->due != DispatchTimer::DSP_NEVER_DUE) {
 		    ret = true;
 		    if (dt->due > split && dt->due < when)
 			sorted.insert(dt);
@@ -370,7 +370,7 @@ private:
 	timers.insert(dt);
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
-    void removeTimer(DispatchTimer &dt) { timers.set(dt, DSP_NEVER_DUE); }
+    void removeTimer(DispatchTimer &dt) { timers.set(dt, DispatchTimer::DSP_NEVER_DUE); }
     void setTimer(DispatchTimer &dt, ulong tm);
 
     friend class DispatchSocket;

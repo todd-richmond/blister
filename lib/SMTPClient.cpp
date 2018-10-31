@@ -1106,21 +1106,18 @@ static inline void encode(const void *input, size_t len, void *output, size_t
 	out[3] = base64 ? '=' : ENC('\0');
 	out[4] = '\r';
 	out[5] = '\n';
-	outsz += 5;
-	out += 5;
+	outsz += 6;
+	out += 6;
     }
     *out = '\0';
 }
 
 bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
     static const uchar table[64] = {
-	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
-	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
-	'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
-	'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
-	'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
-	'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-	'w', 'x', 'y', 'z', '0', '1', '2', '3',
+	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
+	'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b',
+	'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+	'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3',
 	'4', '5', '6', '7', '8', '9', '+', '/'
     };
 
@@ -1136,13 +1133,10 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
     static const char begin[] = "begin 644 ";
     static const char end[] = "\r\nend\r\n";
     static const uchar table[64] = {
-	'`', '!', '"', '#', '$', '%', '&', '\'',
-	'(', ')', '*', '+', ',', '-', '.', '/',
-	'0', '1', '2', '3', '4', '5', '6', '7',
-	'8', '9', ':', ';', '<', '=', '>', '?',
-	'@', 'A', 'B', 'C', 'D', 'E', 'F', 'G',
-	'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
-	'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
+	'`', '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-',
+	'.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';',
+	'<', '=', '>', '?', '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
+	'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
 	'X', 'Y', 'Z', '[', '\\', ']', '^', '_'
     };
 

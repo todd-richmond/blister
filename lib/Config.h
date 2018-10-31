@@ -56,8 +56,11 @@
 
 class BLISTER Config: nocopy {
 public:
-    explicit Config(const tchar *prestr = NULL): ini(false) { prefix(prestr); }
-    explicit Config(tistream &is, const tchar *prestr = NULL): ini(false) {
+    explicit Config(const tchar *prestr = NULL): locker(0), ini(false) {
+	prefix(prestr);
+    }
+    explicit Config(tistream &is, const tchar *prestr = NULL): locker(0),
+	ini(false) {
 	read(is, prestr);
     }
     ~Config() { clear(); }
@@ -66,14 +69,14 @@ public:
     const tstring &prefix(void) const { return pre; }
 
     void append(const tchar *attr, const tchar *val, const tchar *sect = NULL) {
-	WLocker lkr(lck);
+	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	set(attr, val, sect, true);
     }
     void clear(void);
     void erase(const tchar *attr, const tchar *sect = NULL);
     bool exists(const tchar *attr, const tchar *sect = NULL) const {
-	RLocker lkr(lck);
+	RLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	return getkv(attr, sect) != NULL;
     }
@@ -103,7 +106,7 @@ public:
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = NULL, bool append = false);
     void set(const tchar *attr, const tchar *val, const tchar *sect = NULL) {
-	WLocker lkr(lck);
+	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	set(attr, val, sect, false);
     }
@@ -134,6 +137,8 @@ public:
 	*sect = NULL, NULL */);
     bool write(tostream &os) const { return write(os, ini); }
     bool write(tostream &os, bool ini) const;
+    void lock(void) { lck.wlock(); locker = THREAD_ID(); }
+    void unlock(void) { locker = 0; lck.wunlock(); }
     friend tistream &operator >>(tistream &is, Config &cfg);
     friend tostream &operator <<(tostream &os, const Config &cfg);
 
@@ -163,6 +168,7 @@ private:
 
     kvmap amap;
     mutable RWLock lck;
+    thread_id_t locker;
     tstring pre;
     bool ini;
 

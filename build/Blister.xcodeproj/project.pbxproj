@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 48;
+	objectVersion = 50;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -578,10 +578,10 @@
 		F7AA211013149F2C00272F6A /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0900;
+				LastUpgradeCheck = 1000;
 			};
 			buildConfigurationList = F7AA211313149F2C00272F6A /* Build configuration list for PBXProject "Blister" */;
-			compatibilityVersion = "Xcode 8.0";
+			compatibilityVersion = "Xcode 9.3";
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -738,6 +738,7 @@
 		9079E31D1FDB1261008FA996 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -749,6 +750,7 @@
 		9079E31E1FDB1261008FA996 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -760,6 +762,7 @@
 		9079E33C1FDB1B9A008FA996 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -771,6 +774,7 @@
 		9079E33D1FDB1B9A008FA996 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -782,6 +786,7 @@
 		9079E3491FDB1BAA008FA996 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -793,6 +798,7 @@
 		9079E34A1FDB1BAA008FA996 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -804,6 +810,7 @@
 		9079E3561FDB1BB8008FA996 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -815,6 +822,7 @@
 		9079E3571FDB1BB8008FA996 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -826,6 +834,7 @@
 		9079E3631FDB1BC3008FA996 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -837,6 +846,7 @@
 		9079E3641FDB1BC3008FA996 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -848,6 +858,7 @@
 		9079E3701FDB1BCD008FA996 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -859,6 +870,7 @@
 		9079E3711FDB1BCD008FA996 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -870,6 +882,7 @@
 		9079E3821FDB1C1F008FA996 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -881,6 +894,7 @@
 		9079E3831FDB1C1F008FA996 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -892,9 +906,11 @@
 		F7AA212513149F2C00272F6A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ADDRESS_SANITIZER_CONTAINER_OVERFLOW = YES;
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_OPTIMIZATION_PROFILE_FILE = "";
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER = YES;
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY = YES;
 				CLANG_WARN_ASSIGN_ENUM = YES;
@@ -910,6 +926,7 @@
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
@@ -927,8 +944,8 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = ../lib/stdapi.h;
 				GCC_PREPROCESSOR_DEFINITIONS = (
+					BUILD_BLISTER,
 					DEBUG,
-					STDAPI_BUILD,
 				);
 				GCC_TREAT_IMPLICIT_FUNCTION_DECLARATIONS_AS_ERRORS = YES;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -949,13 +966,13 @@
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_PARAMETER = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-fno-standalone-debug",
 					"-fvisibility=hidden",
-					"-fno-omit-frame-pointer",
 					"-pipe",
+					"-fno-omit-frame-pointer",
 				);
 				OTHER_LDFLAGS = "-dead_strip";
 				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
@@ -967,13 +984,16 @@
 					"-Wdouble-promotion",
 					"-Wextra",
 					"-Wformat=2",
+					"-Wmultichar",
 					"-Wnull-dereference",
 					"-Wodr",
+					"-Wredundant-decls",
 					"-Wshadow",
 					"-Wsign-conversion",
-					"-Wstrict-aliasing=2",
+					"-Wstrict-aliasing",
 					"-Wstrict-overflow=2",
 					"-Wno-unknown-pragmas",
+					"-Wno-unknown-warning-option",
 					"-Wwrite-strings",
 				);
 			};
@@ -982,8 +1002,10 @@
 		F7AA212613149F2C00272F6A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++0x";
+				CLANG_OPTIMIZATION_PROFILE_FILE = "";
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER = YES;
 				CLANG_USE_OPTIMIZATION_PROFILE = YES;
 				CLANG_WARN_ASSIGN_ENUM = YES;
@@ -999,6 +1021,7 @@
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
@@ -1016,8 +1039,8 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = ../lib/stdapi.h;
 				GCC_PREPROCESSOR_DEFINITIONS = (
+					BUILD_BLISTER,
 					NDEBUG,
-					STDAPI_BUILD,
 				);
 				GCC_TREAT_IMPLICIT_FUNCTION_DECLARATIONS_AS_ERRORS = YES;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -1040,13 +1063,13 @@
 				GCC_WARN_UNUSED_PARAMETER = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LLVM_LTO = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				OTHER_CFLAGS = (
-					"-fdata-sections",
-					"-ffunction-sections",
 					"-fno-standalone-debug",
 					"-fvisibility=hidden",
 					"-pipe",
+					"-fdata-sections",
+					"-ffunction-sections",
 				);
 				OTHER_LDFLAGS = "-dead_strip";
 				SHARED_PRECOMPS_DIR = "$(PROJECT_TEMP_DIR)/SharedPrecompiledHeaders";
@@ -1058,13 +1081,16 @@
 					"-Wdouble-promotion",
 					"-Wextra",
 					"-Wformat=2",
+					"-Wmultichar",
 					"-Wnull-dereference",
 					"-Wodr",
+					"-Wredundant-decls",
 					"-Wshadow",
 					"-Wsign-conversion",
-					"-Wstrict-aliasing=2",
+					"-Wstrict-aliasing",
 					"-Wstrict-overflow=2",
 					"-Wno-unknown-pragmas",
+					"-Wno-unknown-warning-option",
 					"-Wwrite-strings",
 				);
 			};
@@ -1073,6 +1099,7 @@
 		F7AA212813149F2C00272F6A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				COMBINE_HIDPI_IMAGES = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -1081,6 +1108,7 @@
 		F7AA212913149F2C00272F6A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				CLANG_USE_OPTIMIZATION_PROFILE = YES;
 				COMBINE_HIDPI_IMAGES = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1090,6 +1118,7 @@
 		F7AA2186131C246200272F6A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;
@@ -1101,6 +1130,7 @@
 		F7AA2187131C246200272F6A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
 				MACOSX_DEPLOYMENT_TARGET = 10.10;

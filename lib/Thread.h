@@ -18,10 +18,6 @@
 #ifndef Thread_h
 #define Thread_h
 
-#if CPLUSPLUS >= 11
-#include <atomic>
-#endif
-
 #ifdef _WIN32
 #include <process.h>
 #include <windows.h>
@@ -34,6 +30,7 @@ typedef DWORD thread_id_t;
 #define THREAD_FUNC		uint __stdcall
 #define THREAD_HDL()		GetCurrentThread()
 #define THREAD_ID()		GetCurrentThreadId()
+#define THREAD_BARRIER()	_ReadWriteBarrier()
 #define THREAD_PAUSE()		YieldProcessor()
 #define THREAD_YIELD()		Sleep(0)
 
@@ -68,13 +65,25 @@ typedef DWORD tlskey_t;
 #include <pthread.h>
 
 typedef pthread_t thread_hdl_t;
+#if defined(__FreeBSD__) || defined(__OpenBSD__)
+#include <pthread_np.h>
+typedef ulong thread_id_t;
+#define THREAD_EQUAL(x, y)	(x == y)
+#define THREAD_ID()		(thread_id_t)pthread_getthreadid_np()
+#elif defined(__linux__)
+#include <sys/syscall.h>
+typedef pid_t thread_id_t;
+#define THREAD_EQUAL(x, y)	(x == y)
+#define THREAD_ID()		(thread_id_t)syscall(__NR_gettid)
+#else
 typedef pthread_t thread_id_t;
+#define THREAD_EQUAL(x, y)	(pthread_equal(x, y) != 0)
+#define THREAD_ID()		pthread_self()
+#endif
 
 #define INFINITE		(ulong)-1
-#define THREAD_EQUAL(x, y)	(pthread_equal(x, y) != 0)
 #define THREAD_FUNC		void *
 #define THREAD_HDL()		pthread_self()
-#define THREAD_ID()		pthread_self()
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 #define THREAD_BARRIER()	asm volatile("" ::: "memory")
 #define THREAD_FENCE()		asm volatile("mfence" ::: "memory")
@@ -165,10 +174,6 @@ typedef volatile int atomic_t;
 
 #endif
 
-#if CPLUSPLUS > 0 && CPLUSPLUS < 11
-typedef volatile atomic_t atomic_flag;
-#endif
-
 typedef pthread_key_t tlskey_t;
 
 #define tls_init(k)		ZERO(k); pthread_key_create(&k, NULL)
@@ -178,13 +183,17 @@ typedef pthread_key_t tlskey_t;
 
 #endif
 
-#define THREAD_SELF()		THREAD_ID()
-#define THREAD_ISSELF(x)	((x) && THREAD_EQUAL(x, THREAD_SELF()))
+#define THREAD_ISSELF(x)	THREAD_EQUAL(x, THREAD_ID())
 
 #define atomic_get(i)		atomic_add(i, 0)
 
 #ifdef __cplusplus
 
+#if CPLUSPLUS >= 11
+#include <atomic>
+#else
+typedef volatile atomic_t atomic_flag;
+#endif
 #include <set>
 
 class Thread;
@@ -278,10 +287,12 @@ public:
 template<class C>
 class BLISTER ThreadLocal: nocopy {
 public:
+    // cppcheck-suppress useInitializationList
     ThreadLocal() { tls_init(key); }
     ~ThreadLocal() { tls_free(key); }
 
     ThreadLocal &operator =(C c) { set(c); return *this; }
+    C *operator ->(void) const { return &get(); }
     operator bool() const { return tls_get(key) != NULL; }
     operator C() const { return (C)tls_get(key); }
 
@@ -296,6 +307,7 @@ protected:
 template<class C>
 class BLISTER ThreadLocalClass: nocopy {
 public:
+    // cppcheck-suppress useInitializationList
     ThreadLocalClass() { tls_init(key); }
     ~ThreadLocalClass() { tls_free(key); }
 
@@ -326,8 +338,6 @@ protected:
  * RWLock: reader/writer lock
  * Condvar: condition variable around a Lock
  */
-#define SPINLOCK_YIELD	(1 << 5)
-
 #if defined(NO_ATOMIC_LOCK)
 
 class BLISTER SpinLock: nocopy {
@@ -348,11 +358,14 @@ protected:
 #else
 
 class BLISTER SpinLock: nocopy {
+    static const int SPINLOCK_YIELD = 1 << 5;
+
 public:
     SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) {
 #if CPLUSPLUS >= 11
 	lck.clear();
 #else
+	// cppcheck-suppress useInitializationList
 	lck = 0;
 #endif
     }
@@ -366,8 +379,10 @@ public:
 		if (pause == SPINLOCK_YIELD) {
 		    THREAD_YIELD();
 		} else {
-		    for (uint u = 0; u < pause; ++u)
+		    for (uint u = 0; u < pause; ++u) {
+			THREAD_BARRIER();
 			THREAD_PAUSE();
+		    }
 		    pause <<= 1;
 		}
 	    } while (!trylock());
@@ -592,13 +607,13 @@ inline void msleep(ulong msec) {
 class BLISTER Lock: nocopy {
 public:
     Lock() { pthread_mutex_init(&mtx, NULL); }
-    ~Lock() { pthread_mutex_destroy(&mtx); }
+    ~Lock() { (void)pthread_mutex_destroy(&mtx); }
 
     operator pthread_mutex_t *() { return &mtx; }
 
-    void lock(void) { pthread_mutex_lock(&mtx); }
+    void lock(void) { (void)pthread_mutex_lock(&mtx); }
     bool trylock(void) { return pthread_mutex_trylock(&mtx) == 0; }
-    void unlock(void) { pthread_mutex_unlock(&mtx); }
+    void unlock(void) { (void)pthread_mutex_unlock(&mtx); }
 
 protected:
     pthread_mutex_t mtx;
@@ -947,8 +962,8 @@ private:
 template<class C>
 class TSNumber: nocopy {
 public:
-    explicit TSNumber(C init = 0) { c = init; }
-    TSNumber(const TSNumber<C> &init) { c = init; }
+    explicit TSNumber(C init = 0): c(init) {}
+    TSNumber(const TSNumber<C> &init): c(init) {}
 
     operator C() const { TSLocker lkr(lck); return c; }
     template<class N> bool operator ==(N n) const { TSLocker lkr(lck); return c == n; }

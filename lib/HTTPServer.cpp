@@ -504,7 +504,7 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
 }
 
 void HTTPServerSocket::reply(int fd, ulong len) {
-    char buf[1024];
+    char buf[2048];
 
     if (len <= sizeof (buf)) {
 #ifdef _FORTIFY_SOURCE

@@ -72,5 +72,5 @@ else()
     install(TARGETS blister blister_static DESTINATION lib)
 endif()
 
-cotire(blister_lib)
+cotire(blister_obj)
 

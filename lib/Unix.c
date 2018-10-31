@@ -58,9 +58,9 @@ msec_t mticks(void) {
     struct timespec ts;
 
     clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-    return (msec_t)ts.tv_sec * 1000 + (msec_t)ts.tv_nsec / 1000000;
+    return (msec_t)ts.tv_sec * 1000 + (msec_t)(ts.tv_nsec + 500000) / 1000000;
 #else
-    return (msec_t)(uticks() / 1000);
+    return (msec_t)((uticks() + 500) / 1000);
 #endif
 }
 
