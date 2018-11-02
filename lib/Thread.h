@@ -199,7 +199,7 @@ typedef volatile atomic_t atomic_flag;
 class Thread;
 class ThreadGroup;
 
-/* Locking templates that unlock upon destruction */
+/* RAII locking templates */
 template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
     &C::unlock>
 class BLISTER LockerTemplate: nocopy {
@@ -211,13 +211,13 @@ public:
     }
     __forceinline ~LockerTemplate() { if (locked) (lck.*UNLOCK)(); }
 
-    void __forceinline lock(void) {
+    __forceinline void lock(void) {
 	if (!locked) {
 	    locked = true;
 	    (lck.*LOCK)();
 	}
     }
-    void relock(void) {
+    __forceinline void relock(void) {
 	if (locked) {
 	    (lck.*UNLOCK)();
 	    THREAD_YIELD();
@@ -226,7 +226,7 @@ public:
 	}
 	(lck.*LOCK)();
     }
-    void __forceinline unlock(void) {
+    __forceinline void unlock(void) {
 	if (locked) {
 	    (lck.*UNLOCK)();
 	    locked = false;
@@ -246,7 +246,11 @@ public:
     }
     __forceinline ~FastLockerTemplate() { (lck.*UNLOCK)(); }
 
-    void relock(void) { (lck.*UNLOCK)(); THREAD_YIELD(); (lck.*LOCK)(); }
+    __forceinline void relock(void) {
+	(lck.*UNLOCK)();
+	THREAD_YIELD();
+	(lck.*LOCK)();
+    }
 
 private:
     C &lck;
@@ -271,9 +275,9 @@ public:
     bool open(const tchar *dll);
 
 private:
-    void *hdl;
     tstring err;
     tstring file;
+    void *hdl;
 };
 
 class BLISTER Processor: nocopy {
@@ -331,12 +335,12 @@ protected:
 
 /*
  * Thread synchronization classes
- *
- * SpinLock: fastest lock with exponential backoff but no sleep
+ * Condvar: condition variable around a Lock
  * Lock: fast lock that may spin before sleeping
  * Mutex: lock that does not spin before sleeping
- * RWLock: reader/writer lock
- * Condvar: condition variable around a Lock
+ * RWLock: reader/writer lock. r->w uplock allow intervening writers
+ * SpinLock: fastest lock with exponential backoff but no sleep
+ * SpinRWLock: fast spinning reader/writer lock
  */
 #if defined(NO_ATOMIC_LOCK)
 
@@ -345,11 +349,11 @@ public:
     SpinLock() { pthread_spin_init(&lck, 0); }
     ~SpinLock() { pthread_spin_destroy(&lck); }
 
-    operator pthread_spinlock_t *() { return &lck; }
+    __forceinline operator pthread_spinlock_t *() { return &lck; }
 
-    void __forceinline lock(void) { pthread_spin_lock(&lck); }
-    bool __forceinline trylock(void) { return pthread_spin_trylock(&lck) == 0; }
-    void __forceinline unlock(void) { pthread_spin_unlock(&lck); }
+    __forceinline void lock(void) { pthread_spin_lock(&lck); }
+    __forceinline bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
+    __forceinline void unlock(void) { pthread_spin_unlock(&lck); }
 
 protected:
     pthread_spinlock_t lck;
@@ -369,8 +373,7 @@ public:
 	lck = 0;
 #endif
     }
-
-    void __forceinline lock(void) {
+    __forceinline void lock(void) {
 #ifdef THREAD_PAUSE
 	if (!trylock()) {
 	    uint pause = init;
@@ -393,13 +396,13 @@ public:
 #endif
     }
 #if CPLUSPLUS >= 11
-    bool __forceinline trylock(void) {
+    __forceinline bool trylock(void) {
 	return !lck.test_and_set(std::memory_order_acquire);
     }
-    void __forceinline unlock(void) { lck.clear(std::memory_order_release); }
+    __forceinline void unlock(void) { lck.clear(std::memory_order_release); }
 #else
-    bool __forceinline trylock(void) { return atomic_lck(lck) == 0; }
-    void __forceinline unlock(void) { atomic_clr(lck); }
+    __forceinline bool trylock(void) { return atomic_lck(lck) == 0; }
+    __forceinline void unlock(void) { atomic_clr(lck); }
 #endif
 
 private:
@@ -417,16 +420,18 @@ typedef LockerTemplate<SpinLock> SpinLocker;
 
 class BLISTER Lock: nocopy {
 public:
-    Lock() { InitializeCriticalSection(&csec); }
-    ~Lock() { DeleteCriticalSection(&csec); }
+    Lock() { InitializeCriticalSection(&cs); }
+    ~Lock() { DeleteCriticalSection(&cs); }
 
-    void lock(void) { EnterCriticalSection(&csec); }
-    void spin(uint cnt) { SetCriticalSectionSpinCount(&csec, cnt); }
-    bool trylock(void) { return TryEnterCriticalSection(&csec) != 0; }
-    void unlock(void) { LeaveCriticalSection(&csec); }
+    __forceinline void lock(void) { EnterCriticalSection(&cs); }
+    __forceinline void spin(uint cnt) { SetCriticalSectionSpinCount(&cs, cnt); }
+    __forceinline bool trylock(void) {
+	return TryEnterCriticalSection(&cs) != 0;
+    }
+    __forceinline void unlock(void) { LeaveCriticalSection(&cs); }
 
 protected:
-    CRITICAL_SECTION csec;
+    CRITICAL_SECTION cs;
 };
 
 class BLISTER Mutex: nocopy {
@@ -434,11 +439,11 @@ public:
     explicit Mutex(const tchar *name = NULL);
     ~Mutex() { if (hdl) CloseHandle(hdl); }
 
-    void lock(void) { WaitForSingleObject(hdl, INFINITE); }
-    bool trylock(ulong msec = 0) {
+    __forceinline void lock(void) { WaitForSingleObject(hdl, INFINITE); }
+    __forceinline bool trylock(ulong msec = 0) {
 	return WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0;
     }
-    void unlock(void) { ReleaseMutex(hdl); }
+    __forceinline void unlock(void) { ReleaseMutex(hdl); }
 
 protected:
     HANDLE hdl;
@@ -450,8 +455,8 @@ public:
 	NULL): hdl(NULL) { open(manual, set, name); }
     ~Event() { close(); }
 
-    operator HANDLE(void) const { return hdl; }
-    HANDLE handle(void) const { return hdl; }
+    __forceinline operator HANDLE(void) const { return hdl; }
+    __forceinline HANDLE handle(void) const { return hdl; }
 
     bool close(void) {
 	HANDLE h = hdl;
@@ -463,10 +468,10 @@ public:
 	close();
 	return (hdl = CreateEvent(NULL, manual, set, name)) != NULL;
     }
-    bool pulse(void) { return PulseEvent(hdl) != 0; }
-    bool reset(void) { return ResetEvent(hdl) != 0; }
-    bool set(void) { return SetEvent(hdl) != 0; }
-    bool wait(ulong msec = INFINITE) {
+    __forceinline bool pulse(void) { return PulseEvent(hdl) != 0; }
+    __forceinline bool reset(void) { return ResetEvent(hdl) != 0; }
+    __forceinline bool set(void) { return SetEvent(hdl) != 0; }
+    __forceinline bool wait(ulong msec = INFINITE) {
 	return WaitForSingleObject(hdl, msec) != WAIT_TIMEOUT;
     }
 
@@ -482,8 +487,8 @@ public:
     }
     ~_Semaphore() { close(); }
 
-    operator HANDLE(void) const { return hdl; }
-    HANDLE handle(void) const { return hdl; }
+    __forceinline operator HANDLE(void) const { return hdl; }
+    __forceinline HANDLE handle(void) const { return hdl; }
 
     bool close(void) {
 	HANDLE h = hdl;
@@ -491,9 +496,13 @@ public:
 	hdl = NULL;
 	return h == NULL || CloseHandle(h) != 0;
     }
-    bool set(uint cnt = 1) { return ReleaseSemaphore(hdl, (LONG)cnt, NULL) != 0; }
-    bool trywait(void) { return WaitForSingleObject(hdl, 0) == WAIT_OBJECT_0; }
-    bool wait(ulong msec = INFINITE) {
+    __forceinline bool set(uint cnt = 1) {
+	return ReleaseSemaphore(hdl, (LONG)cnt, NULL) != 0;
+    }
+    __forceinline bool trywait(void) {
+	return WaitForSingleObject(hdl, 0) == WAIT_OBJECT_0;
+    }
+    __forceinline bool wait(ulong msec = INFINITE) {
 	return WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0;
     }
 
@@ -530,8 +539,8 @@ class BLISTER Condvar: nocopy {
 public:
     explicit Condvar(Lock &lock): lck(lock), pending(0), waiting(0) {}
 
-    void broadcast(void) { set((uint)-1); }
-    void set(uint count = 1) {
+    __forceinline void broadcast(void) { set((uint)-1); }
+    __forceinline void set(uint count = 1) {
 	uint cnt;
 
 	olck.lock();
@@ -548,8 +557,7 @@ public:
 	}
 	olck.unlock();
     }
-
-    bool wait(ulong msec = INFINITE) {
+    __forceinline bool wait(ulong msec = INFINITE) {
 	bool ret;
 
 	ilck.lock();
@@ -609,11 +617,11 @@ public:
     Lock() { pthread_mutex_init(&mtx, NULL); }
     ~Lock() { (void)pthread_mutex_destroy(&mtx); }
 
-    operator pthread_mutex_t *() { return &mtx; }
+    __forceinline operator pthread_mutex_t *() { return &mtx; }
 
-    void lock(void) { (void)pthread_mutex_lock(&mtx); }
-    bool trylock(void) { return pthread_mutex_trylock(&mtx) == 0; }
-    void unlock(void) { (void)pthread_mutex_unlock(&mtx); }
+    __forceinline void lock(void) { (void)pthread_mutex_lock(&mtx); }
+    __forceinline bool trylock(void) { return pthread_mutex_trylock(&mtx) == 0; }
+    __forceinline void unlock(void) { (void)pthread_mutex_unlock(&mtx); }
 
 protected:
     pthread_mutex_t mtx;
@@ -634,10 +642,12 @@ public:
     }
     ~Semaphore() { close(); }
 
-    operator semaphore_t(void) const { return hdl; }
-    semaphore_t handle(void) const { return hdl; }
+    __forceinline operator semaphore_t(void) const { return hdl; }
+    __forceinline semaphore_t handle(void) const { return hdl; }
 
-    bool broadcast(void) { return semaphore_signal_all(hdl) == KERN_SUCCESS; }
+    __forceinline bool broadcast(void) {
+	return semaphore_signal_all(hdl) == KERN_SUCCESS;
+    }
     bool __no_sanitize_thread close(void) {
 	semaphore_t h = hdl;
 
@@ -649,7 +659,7 @@ public:
 	return semaphore_create(mach_task_self(), &hdl, fifo ?
 	    SYNC_POLICY_FIFO : SYNC_POLICY_LIFO, (int)init) == KERN_SUCCESS;
     }
-    bool set(uint cnt = 1) {
+    __forceinline bool set(uint cnt = 1) {
 	while (cnt) {
 	    if (semaphore_signal(hdl) != KERN_SUCCESS)
 		return false;
@@ -657,12 +667,12 @@ public:
 	}
 	return true;
     }
-    bool trywait(void) {
+    __forceinline bool trywait(void) {
 	mach_timespec ts = { 0, 0 };
 
 	return semaphore_timedwait(hdl, ts) == KERN_SUCCESS;
     }
-    bool wait(ulong msec = INFINITE) {
+    __forceinline bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {
 	    return semaphore_wait(hdl) == KERN_SUCCESS;
 	} else {
@@ -690,9 +700,9 @@ public:
     }
     ~Semaphore() { close(); }
 
-    operator sem_t(void) const { return hdl; }
-    sem_t handle(void) const { return hdl; }
-    uint get(void) const {
+    __forceinline operator sem_t(void) const { return hdl; }
+    __forceinline sem_t handle(void) const { return hdl; }
+    __forceinline uint get(void) const {
 	int ret;
 
 	return (uint)(!valid || sem_getvalue((sem_t *)&hdl, &ret) ? -1 : ret);
@@ -709,7 +719,7 @@ public:
 	close();
 	return valid = (sem_init(&hdl, 0, init) == 0);
     }
-    bool set(uint cnt = 1) {
+    __forceinline bool set(uint cnt = 1) {
 	while (cnt) {
 	    if (sem_post(&hdl))
 		return false;
@@ -717,8 +727,8 @@ public:
 	}
 	return true;
     }
-    bool trywait(void) { return sem_trywait(&hdl) == 0; }
-    bool wait(ulong msec = INFINITE) {
+    __forceinline bool trywait(void) { return sem_trywait(&hdl) == 0; }
+    __forceinline bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {
 	    return sem_wait(&hdl) == 0;
 	} else {
@@ -747,9 +757,9 @@ public:
     }
     ~SharedSemaphore() { close(); }
 
-    operator int(void) const { return hdl; }
-    int handle(void) const { return hdl; }
-    int get(void) const { return semctl(hdl, 0, GETVAL); }
+    __forceinline operator int(void) const { return hdl; }
+    __forceinline int handle(void) const { return hdl; }
+    __forceinline int get(void) const { return semctl(hdl, 0, GETVAL); }
 
     bool close(void) { return true; }
     bool erase(void) {
@@ -759,7 +769,7 @@ public:
 	return h == -1 || semctl(h, 0, IPC_RMID) == 0;
     }
     bool open(const tchar *name = NULL, uint init = 0, bool exclusive = false);
-    bool set(uint cnt = 1) {
+    __forceinline bool set(uint cnt = 1) {
 	sembuf op;
 
 	op.sem_num = 0;
@@ -767,7 +777,7 @@ public:
 	op.sem_flg = 0;
 	return semop(hdl, &op, 1) == 0;
     }
-    bool trywait(void) {
+    __forceinline bool trywait(void) {
 	sembuf op;
 
 	op.sem_num = 0;
@@ -775,7 +785,7 @@ public:
 	op.sem_flg = IPC_NOWAIT;
 	return semop(hdl, &op, 1) == 0;
     }
-    bool wait(ulong msec = INFINITE) {
+    __forceinline bool wait(ulong msec = INFINITE) {
 	sembuf op;
 
 	op.sem_num = 0;
@@ -817,12 +827,12 @@ public:
     }
     ~Condvar() { pthread_cond_destroy(&cv); }
 
-    void broadcast(void) { pthread_cond_broadcast(&cv); }
-    void set(uint count = 1) {
+    __forceinline void broadcast(void) { pthread_cond_broadcast(&cv); }
+    __forceinline void set(uint count = 1) {
 	while (count--)
 	    pthread_cond_signal(&cv);
     }
-    bool wait(ulong msec = INFINITE) {
+    __forceinline bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {
 	    return pthread_cond_wait(&cv, lock) == 0;
 	} else {
@@ -849,60 +859,202 @@ protected:
 typedef LockerTemplate<Lock> Locker;
 typedef FastLockerTemplate<Lock> FastLocker;
 
+class BLISTER SpinRWLock: nocopy {
+public:
+    SpinRWLock(): readers(0), wwaiting(0), writing(false) {}
+
+    __forceinline void downlock(void) {
+	FastSpinLocker lckr(lck);
+
+	++readers;
+	writing = false;
+    }
+    __forceinline void rlock(void) {
+	FastSpinLocker lckr(lck);
+
+	while (writing || wwaiting)
+	    lckr.relock();
+	++readers;
+    }
+    __forceinline bool rtrylock(ulong spins = 0) {
+	FastSpinLocker lckr(lck);
+
+	while (true) {
+	    if (!writing && !wwaiting) {
+		++readers;
+		return true;
+	    } else if (!spins--) {
+		break;
+	    }
+	    lckr.relock();
+	}
+	return false;
+    }
+    __forceinline void runlock(void) {
+	FastSpinLocker lckr(lck);
+
+	--readers;
+    }
+    __forceinline bool tryuplock(ulong spins = 0) {
+	FastSpinLocker lckr(lck);
+
+	--readers;
+	if (readers) {
+	    ++wwaiting;
+	    do {
+		if (!spins--) {
+		    --wwaiting;
+		    return false;
+		}
+		lckr.relock();
+	    } while (readers || writing);
+	    --wwaiting;
+	}
+	writing = true;
+	return true;
+    }
+    __forceinline void uplock(void) {
+	FastSpinLocker lckr(lck);
+
+	--readers;
+	if (readers) {
+	    ++wwaiting;
+	    do {
+		lckr.relock();
+	    } while (readers || writing);
+	    --wwaiting;
+	}
+	writing = true;
+    }
+    __forceinline void wlock(void) {
+	FastSpinLocker lckr(lck);
+
+	if (readers || writing) {
+	    ++wwaiting;
+	    do {
+		lckr.relock();
+	    } while (readers || writing);
+	    --wwaiting;
+	}
+	writing = true;
+    }
+    __forceinline bool wtrylock(ulong spins = 0) {
+	FastSpinLocker lckr(lck);
+
+	if (readers || writing) {
+	    if (!spins)
+		return false;
+	    ++wwaiting;
+	    while (spins--) {
+		if (!readers && !writing) {
+		    --wwaiting;
+		    writing = true;
+		    return true;
+		}
+		lckr.relock();
+	    }
+	    --wwaiting;
+	}
+	return false;
+    }
+    __forceinline void wunlock(void) {
+	FastSpinLocker lckr(lck);
+
+	writing = false;
+    }
+
+private:
+    SpinLock lck;
+    volatile ulong readers, wwaiting;
+    volatile bool writing;
+};
+
+typedef LockerTemplate<SpinRWLock, &SpinRWLock::rlock, &SpinRWLock::runlock>
+    SpinRLocker;
+typedef LockerTemplate<SpinRWLock, &SpinRWLock::wlock, &SpinRWLock::wunlock>
+    SpinWLocker;
+typedef FastLockerTemplate<SpinRWLock, &SpinRWLock::rlock, &SpinRWLock::runlock>
+    FastSpinRLocker;
+typedef FastLockerTemplate<SpinRWLock, &SpinRWLock::wlock, &SpinRWLock::wunlock>
+    FastSpinWLocker;
+
 class BLISTER RWLock: nocopy {
 public:
     RWLock(): rcv(lck), wcv(lck), readers(0), wwaiting(0), writing(false) {}
 
-    void rlock(void) {
+    __forceinline void downlock(void) {
+	FastLocker lckr(lck);
+
+	++readers;
+	writing = false;
+	if (wwaiting)
+	    wcv.set();
+	else
+	    rcv.broadcast();
+    }
+    __forceinline void rlock(void) {
 	FastLocker lckr(lck);
 
 	while (writing || wwaiting)
 	    rcv.wait();
-	readers++;
+	++readers;
     }
-    bool rtrylock(ulong msec = 0) {
+    __forceinline bool rtrylock(ulong msec = 0) {
 	FastLocker lckr(lck);
 
 	if (writing || wwaiting) {
 	    if (!msec || !rcv.wait(msec))
 		return false;
 	}
-	readers++;
+	++readers;
 	return true;
     }
-    void runlock(void) {
+    __forceinline void runlock(void) {
 	FastLocker lckr(lck);
 
 	if (!--readers && wwaiting)
 	    wcv.set();
     }
-    void wlock(void) {
+    __forceinline void uplock(void) {
 	FastLocker lckr(lck);
 
-	while (readers || writing) {
-	    wwaiting++;
-	    wcv.wait();
-	    wwaiting--;
+	--readers;
+	if (readers) {
+	    ++wwaiting;
+	    do {
+		wcv.wait();
+	    } while (readers || writing);
+	    --wwaiting;
 	}
 	writing = true;
     }
-    bool wtrylock(ulong msec = 0) {
+    __forceinline void wlock(void) {
+	FastLocker lckr(lck);
+
+	while (readers || writing) {
+	    ++wwaiting;
+	    wcv.wait();
+	    --wwaiting;
+	}
+	writing = true;
+    }
+    __forceinline bool wtrylock(ulong msec = 0) {
 	FastLocker lckr(lck);
 
 	if (readers || writing) {
 	    if (!msec)
 		return false;
-	    wwaiting++;
+	    ++wwaiting;
 	    if (!wcv.wait(msec)) {
-		wwaiting--;
+		--wwaiting;
 		return false;
 	    }
-	    wwaiting--;
+	    --wwaiting;
 	}
 	writing = true;
 	return true;
     }
-    void wunlock(void) {
+    __forceinline void wunlock(void) {
 	FastLocker lckr(lck);
 
 	writing = false;
@@ -930,11 +1082,19 @@ class BLISTER RefCount: nocopy {
 public:
     explicit RefCount(uint init = 1): cnt(init) {}
 
-    operator bool(void) const { return referenced(); }
-    bool referenced(void) const { FastSpinLocker lkr(lck); return cnt != 0; }
+    __forceinline operator bool(void) const { return referenced(); }
+    __forceinline bool referenced(void) const {
+	FastSpinLocker lkr(lck);
 
-    void reference(void) { FastSpinLocker lkr(lck); ++cnt; }
-    bool release(void) { FastSpinLocker lkr(lck); return --cnt != 0; }
+	return cnt != 0;
+    }
+
+    __forceinline void reference(void) { FastSpinLocker lkr(lck); ++cnt; }
+    __forceinline bool release(void) {
+	FastSpinLocker lkr(lck);
+
+	return --cnt != 0;
+    }
 
 private:
     uint cnt;
@@ -947,11 +1107,11 @@ class BLISTER RefCount: nocopy {
 public:
     explicit RefCount(uint init = 1): cnt((int)init) {}
 
-    operator bool(void) const { return referenced(); }
-    bool referenced(void) const { return atomic_get(cnt) != 0; }
+    __forceinline operator bool(void) const { return referenced(); }
+    __forceinline bool referenced(void) const { return atomic_get(cnt) != 0; }
 
-    void reference(void) { atomic_ref(cnt); }
-    bool release(void) { return atomic_rel(cnt) != 0; }
+    __forceinline void reference(void) { atomic_ref(cnt); }
+    __forceinline bool release(void) { return atomic_rel(cnt) != 0; }
 
 private:
     mutable atomic_t cnt;
@@ -1032,11 +1192,23 @@ public:
     Lifo(): head(NULL), sz(0) {}
     ~Lifo() { close(); }
 
-    operator bool(void) const { FastSpinLocker lkr(lck); return sz != 0; }
-    bool empty(void) const { FastSpinLocker lkr(lck); return sz == 0; }
-    uint size(void) const { FastSpinLocker lkr(lck); return sz; }
+    __forceinline operator bool(void) const {
+	FastSpinLocker lkr(lck);
 
-    uint broadcast(void) {
+	return sz != 0;
+    }
+    __forceinline bool empty(void) const {
+	FastSpinLocker lkr(lck);
+
+	return sz == 0;
+    }
+    __forceinline uint size(void) const {
+	FastSpinLocker lkr(lck);
+
+	return sz;
+    }
+
+    __forceinline uint broadcast(void) {
 	Waiting *w, *next;
 	uint ret;
 
@@ -1059,7 +1231,7 @@ public:
 	sz = 0;
 	return true;
     }
-    uint set(uint count = 1) {
+    __forceinline uint set(uint count = 1) {
 	lck.lock();
 	while (head && count) {
 	    Waiting *w = head;
@@ -1075,7 +1247,7 @@ public:
 	lck.unlock();
 	return count;
     }
-    bool wait(Waiting &w, ulong msec = INFINITE) {
+    __forceinline bool wait(Waiting &w, ulong msec = INFINITE) {
 	lck.lock();
 	w.next = head;
 	head = &w;
