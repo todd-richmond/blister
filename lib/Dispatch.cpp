@@ -79,7 +79,7 @@ uint Dispatcher::socketmsg;
 
 typedef epoll_event event_t;
 
-#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+#elif defined(BSD_BASE)
 
 #define DSP_KQUEUE
 
@@ -399,7 +399,7 @@ int Dispatcher::onStart() {
 
 	RETRY(pwrite(evtfd, &evts[0], sizeof (evts[0]), 0));
 #elif defined(DSP_EPOLL)
-	wfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+	wfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE);
 	evts[0].events = EPOLLIN;
 	RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, wfd, evts));
 #endif
@@ -713,7 +713,6 @@ void Dispatcher::onStop() {
     lock.lock();
     shutdown = true;
     wakeup(0);
-    lock.unlock();
     waitForMain();
 }
 
@@ -767,9 +766,11 @@ void Dispatcher::wake(uint tasks, bool main) {
     }
 }
 
+// enter locked, leave unlocked for performance
 void Dispatcher::wakeup(ulong msec) {
 #ifdef DSP_WIN32_ASYNC
     interval = msec;
+    lock.unlock();
     do {
 	SetTimer(wnd, DSP_TimerID, msec, NULL);
     } while (interval > msec);
@@ -777,23 +778,22 @@ void Dispatcher::wakeup(ulong msec) {
     (void)msec;
     if (polling) {
 	polling = false;
+	lock.unlock();
 	if (wsock.open()) {
 	    wsock.write("", 1);
 	} else {
 #ifdef DSP_EPOLL
-	    eventfd_t inc = 1;
-
-	    RETRY(eventfd_write(wfd, inc));
+	    RETRY(eventfd_write(wfd, 1));
 #elif defined(DSP_KQUEUE)
 	    event_t evt;
-	    timespec ts = {
-		(long)(msec / 1000), (long)((msec % 1000) * 1000000)
-	    };
+	    static timespec ts = { 0, 0 };
 
-	    EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, 0, NULL);
+	    EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, msec, NULL);
 	    RETRY(kevent(evtfd, &evt, 1, NULL, 0, &ts));
 #endif
 	}
+    } else {
+	lock.unlock();
     }
 #endif
 }
@@ -821,7 +821,6 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
 	timers.set(dt, tmt);
 	if (tmt < due) {
 	    due = tmt;
-	    lock.unlock();
 	    wakeup((ulong)(due - now));
 	    return;
 	}
@@ -887,7 +886,8 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 		EV_SET(&chgs[nevts++], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
 	    ds.flags &= ~DSP_SelectAll;
 	    lkr.unlock();
-	    RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS, &ts));
+	    RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts,
+		MIN_EVENTS, &ts));
 	    if (nevts > 0) {
 		lkr.lock();
 		nevts = handleEvents(evts, nevts);
@@ -941,10 +941,9 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT, EPOLLIN, EPOLLOUT, 0, 0, 0
     };
 #endif
-    SpinLocker lkr(lock);
-
+    lock.lock();
     flags = ds.flags & DSP_IO;
-    if (ioarray[m] & flags) {
+    if (flags & ioarray[m]) {
 	if ((flags & DSP_Writeable) &&
 	    (m == DispatchWrite || m == DispatchReadWrite || m ==
 	    DispatchConnect)) {
@@ -962,20 +961,21 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	    ds.msg = DispatchClose;
 	}
 	ready(ds, m == DispatchAccept);
+	lock.unlock();
 	return;
     }
+    ds.flags |= DSP_Scheduled;
+    ds.msg = DispatchNone;
     timers.set(ds, tmt);
     if (tmt < due) {
 	due = tmt;
 	resched = true;
     }
-    ds.flags |= DSP_Scheduled;
-    ds.msg = DispatchNone;
     if (sarray[m] == (ds.flags & DSP_SelectAll)) {
-	if (resched) {
-	    lkr.unlock();
+	if (resched)
 	    wakeup((ulong)(due - now));
-	}
+	else
+	    lock.unlock();
 	return;
     }
     if (!ds.mapped) {
@@ -994,14 +994,25 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
     ds.flags &= ~(DSP_SelectAll | DSP_IO);
     ds.flags |= sarray[m];
 #ifdef DSP_WIN32_ASYNC
-    lkr.unlock();
+    lock.unlock();
     if (WSAAsyncSelect(ds.fd(), wnd, socketmsg, sockevts[(int)m])) {
-	lkr.lock();
+	lock.lock();
 	ds.msg = DispatchClose;
 	ready(ds);
 	removeTimer(ds);
+	if (resched)
+	    wakeup((ulong)(due - now));
+    } else if (resched) {
+	lock.lock();
+	wakeup((ulong)(due - now));
     }
 #else
+    if (resched) {
+	if (polling)
+	    polling = false;
+	else
+	    resched = false;
+    }
     if (evtfd == -1) {
 	if (m == DispatchRead || m == DispatchReadWrite || m ==
 	    DispatchAccept || m == DispatchClose)
@@ -1009,22 +1020,27 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	if (m == DispatchWrite || m == DispatchReadWrite || m ==
 	    DispatchConnect)
 	    wset.set(ds.fd());
-	if (polling)
-	    resched = true;
+	lock.unlock();
+	if (resched)
+	    wsock.write("", 1);
     } else {
-	lkr.unlock();
+	lock.unlock();
 #ifdef DSP_DEVPOLL
 	event_t evt = { ds.fd(), sockevts[m] | POLLERR | POLLHUP, 0 };
 
 	RETRY(pwrite(evtfd, &evt, sizeof (evt), 0));
+	if (resched)
+	    wsock.write("", 1);
 #elif defined(DSP_EPOLL)
 	event_t evt;
 
 	evt.data.ptr = &ds;
 	evt.events = sockevts[m] | EPOLLERR | EPOLLHUP;
 	RETRY(epoll_ctl(evtfd, op, ds.fd(), &evt));
+	if (resched)
+	    RETRY(eventfd_write(wfd, 1));
 #elif defined(DSP_KQUEUE)
-	event_t chgs[4], evts[MIN_EVENTS];
+	event_t chgs[6], evts[MIN_EVENTS];
 	uint nevts = 0;
 	static timespec ts = { 0, 0 };
 
@@ -1046,9 +1062,13 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 		    &ds);
 	    }
 	}
-	RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS, &ts));
-	if (nevts > 0) {
-	    lkr.lock();
+	if (resched)
+	    EV_SET(&chgs[nevts++], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0,
+		(ulong)(due - now), NULL);
+	RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS,
+	    &ts));
+	if (nevts) {
+	    lock.lock();
 	    nevts = handleEvents(evts, nevts);
 	    if (nevts > 1)
 		wake(nevts, false);
@@ -1056,10 +1076,6 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 #endif
     }
 #endif
-    if (resched) {
-	lkr.unlock();
-	wakeup((ulong)(due - now));
-    }
 }
 
 void Dispatcher::addReady(DispatchObj &obj, bool hipri, DispatchMsg reason) {

@@ -80,6 +80,7 @@ Process Process::start(tchar *const *args, const int *fds) {
 #else
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 bool SharedSemaphore::open(const tchar *name, uint init, bool exclusive) {
     int key = (int)(name ? stringhash(name) : IPC_PRIVATE);

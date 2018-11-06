@@ -700,7 +700,7 @@ void ServiceData::add(uint size, uint type, uint level) {
 #include <sys/wait.h>
 
 Service::Timer::Timer(ulong msec): timer(NULL) {
-#if defined(__APPLE__)
+#ifdef BSD_BASE
     (void)msec;
 #elif defined(__linux__)
     itimerspec its;
@@ -726,7 +726,7 @@ Service::Timer::Timer(ulong msec): timer(NULL) {
 
 void Service::Timer::cancel() {
     if (timer) {
-#if defined(__APPLE__)
+#ifdef BSD_BASE
 #elif defined(__linux__)
 	timer_delete(timer);
 #endif

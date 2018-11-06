@@ -84,7 +84,13 @@ typedef pthread_t thread_id_t;
 #define INFINITE		(ulong)-1
 #define THREAD_FUNC		void *
 #define THREAD_HDL()		pthread_self()
-#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+#if CPLUSPLUS >= 11
+#define THREAD_BARRIER()	atomic_signal_fence(memory_order_acquire);
+#define THREAD_FENCE()		atomic_thread_fence(memory_order_relaxed);
+#if defined(__i386__) || defined(__x86_64__)
+#define THREAD_PAUSE()  	__builtin_ia32_pause()
+#endif
+#elif (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 #define THREAD_BARRIER()	asm volatile("" ::: "memory")
 #define THREAD_FENCE()		asm volatile("mfence" ::: "memory")
 #if __GNUC_MAJOR__ < 5
@@ -211,6 +217,8 @@ public:
     }
     __forceinline ~LockerTemplate() { if (locked) (lck.*UNLOCK)(); }
 
+    __forceinline operator bool(void) const { return locked; }
+
     __forceinline void lock(void) {
 	if (!locked) {
 	    locked = true;
@@ -268,7 +276,7 @@ public:
     operator void *(void) const { return hdl; }
     bool operator !(void) const { return hdl == NULL; }
 
-    const tstring &error() const { return err; }
+    const tstring &error(void) const { return err; }
     const tstring &name(void) const { return file; }
     bool close(void);
     void *get(const tchar *symbol) const;
@@ -295,13 +303,13 @@ public:
     ThreadLocal() { tls_init(key); }
     ~ThreadLocal() { tls_free(key); }
 
-    ThreadLocal &operator =(C c) { set(c); return *this; }
-    C *operator ->(void) const { return &get(); }
-    operator bool() const { return tls_get(key) != NULL; }
-    operator C() const { return (C)tls_get(key); }
+    __forceinline ThreadLocal &operator =(C c) { set(c); return *this; }
+    __forceinline C *operator ->(void) const { return &get(); }
+    __forceinline operator bool(void) const { return tls_get(key) != NULL; }
+    __forceinline operator C() const { return (C)tls_get(key); }
 
-    C get(void) const { return (C)tls_get(key); }
-    void set(const C c) const { tls_set(key, c); }
+    __forceinline C get(void) const { return (C)tls_get(key); }
+    __forceinline void set(const C c) const { tls_set(key, c); }
 
 protected:
     tlskey_t key;
@@ -315,10 +323,10 @@ public:
     ThreadLocalClass() { tls_init(key); }
     ~ThreadLocalClass() { tls_free(key); }
 
-    C &operator *(void) const { return get(); }
-    C *operator ->(void) const { return &get(); }
+    __forceinline C &operator *(void) const { return get(); }
+    __forceinline C *operator ->(void) const { return &get(); }
     void erase(void) { delete (C *)tls_get(key); tls_set(key, 0); }
-    C &get(void) const {
+    __forceinline C &get(void) const {
 	C *c = (C *)tls_get(key);
 
 	if (!c) {
@@ -327,7 +335,7 @@ public:
 	}
 	return *c;
     }
-    void set(C *c) const { tls_set(key, c); }
+    __forceinline void set(C *c) const { tls_set(key, c); }
 
 protected:
     tlskey_t key;
@@ -349,7 +357,7 @@ public:
     SpinLock() { pthread_spin_init(&lck, 0); }
     ~SpinLock() { pthread_spin_destroy(&lck); }
 
-    __forceinline operator pthread_spinlock_t *() { return &lck; }
+    __forceinline operator pthread_spinlock_t *(void) { return &lck; }
 
     __forceinline void lock(void) { pthread_spin_lock(&lck); }
     __forceinline bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
@@ -383,8 +391,8 @@ public:
 		    THREAD_YIELD();
 		} else {
 		    for (uint u = 0; u < pause; ++u) {
-			THREAD_BARRIER();
 			THREAD_PAUSE();
+			THREAD_BARRIER();
 		    }
 		    pause <<= 1;
 		}
@@ -397,9 +405,9 @@ public:
     }
 #if CPLUSPLUS >= 11
     __forceinline bool trylock(void) {
-	return !lck.test_and_set(std::memory_order_acquire);
+	return !lck.test_and_set(memory_order_acquire);
     }
-    __forceinline void unlock(void) { lck.clear(std::memory_order_release); }
+    __forceinline void unlock(void) { lck.clear(memory_order_release); }
 #else
     __forceinline bool trylock(void) { return atomic_lck(lck) == 0; }
     __forceinline void unlock(void) { atomic_clr(lck); }
@@ -594,7 +602,7 @@ public:
     static tchar **envv;
     static Process self;
 
-    operator HANDLE() const { return hdl; }
+    operator HANDLE(void) const { return hdl; }
     bool mask(ulong m) { return SetProcessAffinityMask(hdl, m) != 0; }
     static Process start(tchar * const *args, const int *fds = NULL);
 
@@ -617,7 +625,7 @@ public:
     Lock() { pthread_mutex_init(&mtx, NULL); }
     ~Lock() { (void)pthread_mutex_destroy(&mtx); }
 
-    __forceinline operator pthread_mutex_t *() { return &mtx; }
+    __forceinline operator pthread_mutex_t *(void) { return &mtx; }
 
     __forceinline void lock(void) { (void)pthread_mutex_lock(&mtx); }
     __forceinline bool trylock(void) { return pthread_mutex_trylock(&mtx) == 0; }
@@ -701,12 +709,12 @@ public:
     ~Semaphore() { close(); }
 
     __forceinline operator sem_t(void) const { return hdl; }
-    __forceinline sem_t handle(void) const { return hdl; }
     __forceinline uint get(void) const {
 	int ret;
 
 	return (uint)(!valid || sem_getvalue((sem_t *)&hdl, &ret) ? -1 : ret);
     }
+    __forceinline sem_t handle(void) const { return hdl; }
 
     bool close(void) {
 	if (valid) {
@@ -758,8 +766,8 @@ public:
     ~SharedSemaphore() { close(); }
 
     __forceinline operator int(void) const { return hdl; }
-    __forceinline int handle(void) const { return hdl; }
     __forceinline int get(void) const { return semctl(hdl, 0, GETVAL); }
+    __forceinline int handle(void) const { return hdl; }
 
     bool close(void) { return true; }
     bool erase(void) {
@@ -791,7 +799,7 @@ public:
 	op.sem_num = 0;
 	op.sem_op = -1;
 	op.sem_flg = 0;
-#ifdef __APPLE__
+#ifdef BSD_BASE
 	(void)msec;
 	return semop(hdl, &op, 1) == 0;
 #else
@@ -1119,6 +1127,9 @@ private:
 #endif
 
 /* Thread safe # template */
+#if CPLUSPLUS >= 11
+#define TSNumber atomic
+#else
 template<class C>
 class TSNumber: nocopy {
 public:
@@ -1147,25 +1158,42 @@ public:
     template<class N> C operator >>=(N n) { TSLocker lkr(lck); return c >>= n; }
     template<class N> C operator <<=(N n) { TSLocker lkr(lck); return c <<= n; }
 
-    // dangerous - do not operate on class directly if using these functions
-    C get(void) const { return c; }
-    template<class N> C set(N n) { return c = n; }
-    C test_and_decr() { return test_and_sub(1); }
-    template<class N> N test_and_sub(N n) {
+    C load(void) const { TSLocker lkr(lck); return c; }
+    template<class N> C store(N n) { TSLocker lkr(lck); return c = (C)n; }
+    template<class N> C fetch_add(N n) {
 	TSLocker lkr(lck);
+	C ret = c;
 
-	if (c <= 0) {
-	    n = 0;
-	} else if (n > c) {
-	    n = static_cast<N>(c);
-	    c = 0;
-	} else {
-	    C oldc = c;
+	c += (C)(n);
+	return ret;
+    }
+    template<class N> C fetch_and(N n) {
+	TSLocker lkr(lck);
+	C ret = c;
 
-	    c -= static_cast<C>(n);
-	    n = static_cast<N>(oldc);
-	}
-	return n;
+	c &= (C)(n);
+	return ret;
+    }
+    template<class N> C fetch_or(N n) {
+	TSLocker lkr(lck);
+	C ret = c;
+
+	c |= (C)(n);
+	return ret;
+    }
+    template<class N> C fetch_sub(N n) {
+	TSLocker lkr(lck);
+	C ret = c;
+
+	c -= (C)(n);
+	return ret;
+    }
+    template<class N> C fetch_xor(N n) {
+	TSLocker lkr(lck);
+	C ret = c;
+
+	c ^= (C)(n);
+	return ret;
     }
     void lock(void) { lck.lock(); }
     void unlock(void) { lck.unlock(); }
@@ -1177,6 +1205,7 @@ protected:
 
     C *operator &();	// NOLINT
 };
+#endif
 
 /* Last-in-first-out queue useful for thread pools */
 class BLISTER Lifo {

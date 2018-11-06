@@ -427,6 +427,7 @@ EXTERNC_
 #define _XOPEN_SOURCE		700
 #endif
 #define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_9
+#define __BSD_VISIBLE		1
 
 #include <unistd.h>
 #include <limits.h>
@@ -440,7 +441,9 @@ EXTERNC_
 
 #define __cdecl
 #define __declspec(x)
+#ifndef __fastcall
 #define __fastcall
+#endif
 #define __stdcall
 
 #ifndef __DBL_EPSILON__
@@ -473,6 +476,7 @@ EXTERNC_
 #define wcsicmp		wcscasecmp
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+#define BSD_BASE
 typedef unsigned short ushort;
 typedef unsigned int uint;
 #endif
@@ -521,7 +525,7 @@ EXTERNC_
 #define CLOCK_REALTIME_COARSE	CLOCK_REALTIME
 #endif
 
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__sun__)
+#if defined(BSD_BASE) || defined(__sun__)
 EXTERNC
 extern int wcscasecmp(const wchar_t *, const wchar_t *);
 EXTERNC_

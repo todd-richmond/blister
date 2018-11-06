@@ -165,7 +165,7 @@ private:
 
     typedef unordered_map<size_t, Stats *> timingmap;
 
-    mutable SpinLock lck;
+    mutable SpinRWLock lck;
     ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
 

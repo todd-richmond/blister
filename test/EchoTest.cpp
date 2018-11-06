@@ -44,7 +44,7 @@ public:
 
     protected:
 	const Sockaddr &sa;
-	usec_t begin;
+	timing_t begin;
 	uint in, out;
 	ulong tmt, wait;
 
@@ -104,62 +104,55 @@ private:
 static char *dbuf;
 static uint dsz;
 static TSNumber<uint> errs, ops;
-static TSNumber<long> loops(-1);
+static TSNumber<long long> loops(MAXLLONG);
 static volatile bool qflag;
 static TSNumber<usec_t> usecs;
 
 void EchoTest::EchoClientSocket::onConnect(void) {
     if (error()) {
-	++errs;
-	loops.test_and_decr();
-	dloge(T("client connect"), msg == DispatchTimeout ? T("timeout") :
-	    T("close"));
-	if (!loops || qflag) {
+	if (loops.fetch_sub(1) <= 0 || qflag) {
 	    erase();
-	    return;
+	} else {
+	    ++errs;
+	    dtiming.add(T("error"), 0);
+	    dloge(T("client connect"), msg == DispatchTimeout ? T("timeout") :
+		T("close"));
+	    timeout(start, wait);
 	}
-	timeout(start, wait);
     } else {
 	nodelay(true);
-	begin = uticks();
+	begin = Timing::now();
 	ready(output);
     }
-}
-
-void EchoTest::EchoClientSocket::start() {
-    close();
-    out = 0;
-    dlogd(T("connecting"));
-    connect(sa, tmt);
 }
 
 void EchoTest::EchoClientSocket::input() {
     uint len;
 
-    if (error()) {
-	++errs;
-	loops.test_and_decr();
-	dloge(T("client read"), msg == DispatchTimeout ? T("timeout") :
-	    T("close"));
-	timeout(start, wait);
-	dtiming.add(T("error"), 0);
-	return;
-    } else if ((len = (uint)read(dbuf + in, dsz - in)) == (uint)-1) {
-	++errs;
-	loops.test_and_decr();
-	dloge(T("client read failed:"), errstr());
-	timeout(start, wait);
-	return;
-    }
-    in += len;
-    if (in == dsz) {
-	usec_t usec = uticks() - begin;
+    if (error() || ((len = (uint)read(dbuf + in, dsz - in)) == (uint)-1)) {
+	if (loops.fetch_sub(1) <= 0 || qflag) {
+	    erase();
+	} else {
+	    ++errs;
+	    dtiming.add(T("error"), 0);
+	    dloge(T("client read"), msg == DispatchTimeout ? T("timeout") :
+		T("close"));
+	    timeout(start, wait);
+	}
+    } else if ((in += len) == dsz) {
+	timing_t usec = Timing::now() - begin;
 
-	++ops;
-	usecs += usec;
-	dtiming.add(T("echo"), usec);
-	dlogt(T("client read"), len);
-	timeout(repeat, wait + (wait < 2000 ? 0 : (uint)rand() % 50));
+	if (loops.fetch_sub(1) <= 0 || qflag) {
+	    erase();
+	} else {
+	    ++ops;
+	    usecs += usec;
+	    dtiming.add(T("echo"), usec);
+	    dlogt(T("client read"), len);
+	    timeout(repeat, wait + (wait < 2000 ? 0 : (uint)rand() % 50));
+	}
+    } else if (loops.load() <= 0 || qflag) {
+	erase();
     } else {
 	dlogd(T("client partial read"), len);
 	readable(input, tmt);
@@ -169,30 +162,23 @@ void EchoTest::EchoClientSocket::input() {
 void EchoTest::EchoClientSocket::output() {
     uint len;
 
-    if (!loops || qflag) {
+    if (loops.load() <= 0 || qflag) {
 	write("", 1);
 	erase();
-	return;
-    }
-    if (error()) {
-	++errs;
-	loops.test_and_decr();
-	dloge(T("client write"), msg == DispatchTimeout ? T("timeout") :
-	    T("close"));
-	timeout(start, wait);
-	return;
-    } else if ((len = (uint)write(dbuf + out, dsz - out)) == (uint)-1) {
-	++errs;
-	loops.test_and_decr();
-	dloge(T("client write failed:"), errstr());
-	timeout(start, wait);
-	return;
-    }
-    out += len;
-    if (out == dsz) {
-	loops.test_and_decr();
-	dlogt(T("client write"), len);
+    } else if (error() || ((len = (uint)write(dbuf + out, dsz - out)) ==
+	(uint)-1)) {
+	if (loops.fetch_sub(1) <= 0 || qflag) {
+	    erase();
+	} else {
+	    ++errs;
+	    dtiming.add(T("error"), 0);
+	    dloge(T("client write"), msg == DispatchTimeout ? T("timeout") :
+		T("close"));
+	    timeout(start, wait);
+	}
+    } else if ((out += len) == dsz) {
 	in = 0;
+	dlogt(T("client write"), len);
 	readable(input, tmt);
     } else {
 	dlogd(T("client partial write"), len);
@@ -202,22 +188,25 @@ void EchoTest::EchoClientSocket::output() {
 
 void EchoTest::EchoClientSocket::repeat() {
     in = out = 0;
-    begin = uticks();
+    begin = Timing::now();
     ready(output);
+}
+
+void EchoTest::EchoClientSocket::start() {
+    in = out = 0;
+    close();
+    dlogd(T("connecting"));
+    connect(sa, tmt);
 }
 
 #pragma GCC diagnostic ignored "-Wstack-usage="
 void EchoTest::EchoServerSocket::input() {
     char tmp[MAXREAD];
 
-    if (error()) {
-	if (loops && !qflag)
+    if (error() || ((in = (uint)read(tmp, sizeof (tmp))) == (uint)-1)) {
+	if (loops.load() > 0 && !qflag)
 	    dloge(T("server read"), msg == DispatchTimeout ? T("timeout") :
 		T("close"));
-	erase();
-    } else if ((in = (uint)read(tmp, sizeof (tmp))) == (uint)-1) {
-	if (loops && !qflag)
-	    dloge(T("server read failed:"), errstr());
 	erase();
     } else if (in == 0) {
 	readable(input);
@@ -242,23 +231,19 @@ void EchoTest::EchoServerSocket::input() {
 void EchoTest::EchoServerSocket::output() {
     int len;
 
-    if (error()) {
+    if (error() || ((len = write(buf + out, (uint)(in - out))) < 0)) {
 	dloge(T("server write"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	erase();
 	return;
-    } else if ((len = write(buf + out, (uint)(in - out))) < 0) {
-	dloge(T("server write failed:"), errstr());
-	erase();
-	return;
     }
     out += (uint)len;
-    if (out != in) {
-	dlogd(T("server partial write"), len);
-	writeable(output);
-    } else {
+    if (out == in) {
 	dlogt(T("server write"), len);
 	readable(input);
+    } else {
+	dlogd(T("server partial write"), len);
+	writeable(output);
     }
 }
 
@@ -299,36 +284,22 @@ int tmain(int argc, const tchar * const argv[]) {
     ulong delay = 20, tmt = TIMEOUT, wait = 0;
     uint sockets = 20, threads = 20;
 
-    if (argc == 1 || !tstrcmp(argv[1], T("-?"))) {
-	tcerr << T("Usage: echotest\n")
-	    T("\t[-c]\n")
-	    T("\t[-d delay]\n")
-	    T("\t[-h host[:port]]\n")
-	    T("\t[-e sockets]\n")
-	    T("\t[-l loops]\n")
-	    T("\t[-p threads]\n")
-	    T("\t[-s]\n")
-	    T("\t[-v*]\n")
-	    T("\t[-t timeout]\n")
-	    T("\t[-w wait]\n")
-	    T("\tdatafile | datastr") << endl;
-	return 1;
-    }
-    signal(SIGINT, signal_handler);
-#ifndef _WIN32
-    struct rlimit rl;
-    struct sigaction sig;
-
-    if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
-	rl.rlim_cur = rl.rlim_max;
-	setrlimit(RLIMIT_NOFILE, &rl);
-    }
-    ZERO(sig);
-    sig.sa_handler = SIG_IGN;
-    sigaction(SIGPIPE, &sig, NULL);
-#endif
     for (i = 1; i < argc; i++) {
-	if (!tstricmp(argv[i], T("-c"))) {
+	if (!tstricmp(argv[i], T("-?"))) {
+	    tcerr << T("Usage: echotest\n")
+		T("\t[-c]\n")
+		T("\t[-d delay]\n")
+		T("\t[-h host[:port]]\n")
+		T("\t[-e sockets]\n")
+		T("\t[-l loops]\n")
+		T("\t[-p threads]\n")
+		T("\t[-s]\n")
+		T("\t[-v*]\n")
+		T("\t[-t timeout]\n")
+		T("\t[-w wait]\n")
+		T("\tdatafile | datastr") << endl;
+	    return 1;
+	} else if (!tstricmp(argv[i], T("-c"))) {
 	    server = false;
 	} else if (!tstricmp(argv[i], T("-d"))) {
 	    delay = (ulong)ttol(argv[++i]);
@@ -376,6 +347,19 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     if (!sa.port())
 	sa.port(8888);
+    signal(SIGINT, signal_handler);
+#ifndef _WIN32
+    struct rlimit rl;
+    struct sigaction sig;
+
+    if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
+	rl.rlim_cur = rl.rlim_max;
+	setrlimit(RLIMIT_NOFILE, &rl);
+    }
+    ZERO(sig);
+    sig.sa_handler = SIG_IGN;
+    sigaction(SIGPIPE, &sig, NULL);
+#endif
     if (!ec.start(threads, 32 * 1024)) {
 	tcerr << T("echo: unable to start ") << host << endl;
 	return 1;
@@ -387,20 +371,21 @@ int tmain(int argc, const tchar * const argv[]) {
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	ec.connect(sa, sockets, delay, tmt, wait);
 	Thread::MainThread.priority(10);
-	last = uticks();
+	last = Timing::now();
 	do {
+	    ulong cnt;
+
 	    ops = errs = 0U;
 	    usecs = 0U;
 	    ec.waitForMain(1000);
-	    now = uticks();
-	    tcout << (((uint64_t)ops + (uint64_t)errs) * 1000000 / (now -
-		last)) << T("\t\t") << (usecs / (ops ? ops : errs + 1)) <<
-		'\t' << errs << endl;
+	    now = Timing::now();
+	    cnt = ops + errs;
+	    tcout << (timing_t)cnt * 1000000 / (now - last) << T("\t\t") <<
+		(usecs / (cnt ? cnt : 1)) << '\t' << errs << endl;
 	    last = now;
-	} while (!qflag && loops);
+	} while (!qflag && loops.load() > 0);
     } else {
-	while (!qflag)
-	    ec.waitForMain(1000);
+	ec.waitForMain();
     }
     ec.stop();
     delete [] dbuf;

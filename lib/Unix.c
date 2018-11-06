@@ -152,7 +152,6 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	(ulong)tinfo.system_time.microseconds / 1000;;
     psbuf->utime = (ulong)tinfo.user_time.seconds * 1000 +
 	(ulong)tinfo.user_time.microseconds / 1000;;
-    return 0;
 #elif defined(sun)
     // TODO incomplete
     char buf[PATH_MAX];
@@ -161,8 +160,8 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     sprintf(buf, "/proc/%ld/as", (long)pid);
     if (stat(buf, &sbuf) = -1)
 	return -1;
-	psbuf->sz = sbuf.st_size / 1024;
-#else
+    psbuf->sz = sbuf.st_size / 1024;
+#elif defined(__linux__)
     char buf[PATH_MAX + 128], fbuf[4096];
     FILE *f;
 
@@ -205,6 +204,6 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	psbuf->utime = utime / HZ * 1000 + (utime % HZ) * (1000L / HZ);
     }
     fclose(f);
-    return 0;
 #endif
+    return 0;
 }

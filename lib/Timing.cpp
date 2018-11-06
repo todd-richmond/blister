@@ -40,11 +40,11 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 	if (diff <= limits[slot])
 	    break;
     }
-    lck.lock();
+    lck.rlock();
     if ((it = tmap.find(key.hash())) == tmap.end()) {
-	lck.unlock();
+	lck.runlock();
 	stats = new Stats(key);
-	lck.lock();
+	lck.wlock();
 	if ((it = tmap.find(key.hash())) == tmap.end()) {
 	    tmap[key] = stats;
 	} else {
@@ -53,16 +53,19 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 	}
     } else {
 	stats = it->second;
+//lck.runlock();
+//lck.wlock();
+	lck.uplock();
     }
     ++stats->cnt;
     ++stats->cnts[slot];
     stats->tot += diff;
-    lck.unlock();
+    lck.wunlock();
 }
 
 void Timing::clear() {
     timingmap::iterator it;
-    FastSpinLocker lkr(lck);
+    FastSpinWLocker lkr(lck);
 
     while ((it = tmap.begin()) != tmap.end()) {
 	Stats *stats = it->second;
@@ -80,7 +83,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     vector<const Stats *> sorted;
     const Stats *stats;
     uint u;
-    SpinLocker lkr(lck);
+    FastSpinRLocker lkr(lck);
     static const tchar *hdrs[TIMINGSLOTS] = {
 	T("10u"), T(".1m"), T("1m"), T("10m"), T(".1s"), T("1s"),
 	T("5s"), T("10s"), T("30s"), T("...")
@@ -178,7 +181,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 }
 
 void Timing::erase(const TimingKey &key) {
-    FastSpinLocker lkr(lck);
+    FastSpinWLocker lkr(lck);
     timingmap::iterator it = tmap.find(key.hash());
 
     if (it != tmap.end()) {

@@ -56,7 +56,7 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #define WSAEINTR	EINTR
 #define WSAEWOULDBLOCK	EWOULDBLOCK
 
-#ifdef __APPLE__
+#ifdef BSD_BASE
 #define s6_addr16	__u6_addr.__u6_addr16
 #define s6_addr32	__u6_addr.__u6_addr32
 #endif
