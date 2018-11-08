@@ -142,11 +142,11 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 		tchar abuf[16];
 
 		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key + (klen < sizeof
-		    (buf) - 51 ? 0 : klen - sizeof (buf) + 51), format(tot,
+		    (buf) - 19 ? 0 : klen - sizeof (buf) + 19), format(tot,
 		    sbuf), cbuf, format(tot / stats->cnt, abuf));
 	    } else {
-		tsprintf(buf, T("%-35s%6s"), stats->key + (klen < sizeof
-                    (buf) - 57 ? 0 : klen - sizeof (buf) + 57), cbuf);
+		tsprintf(buf, T("%-35s%6s"), stats->key + (klen < sizeof (buf) -
+		    7 ? 0 : klen - sizeof (buf) + 7), cbuf);
 	    }
 	} else {
 	    s += (tchar)'"';
