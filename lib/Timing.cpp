@@ -128,6 +128,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	tot = stats->tot;
 	if (columns) {
 	    tchar cbuf[24];
+	    size_t klen = tstrlen(stats->key);
 
 	    for (u = 0; u <= begin; u++)
 		sum += stats->cnts[u];
@@ -140,10 +141,12 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    if (tot) {
 		tchar abuf[16];
 
-		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key, format(tot,
+		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key + (klen < sizeof
+		    (buf) - 51 ? 0 : klen - sizeof (buf) + 51), format(tot,
 		    sbuf), cbuf, format(tot / stats->cnt, abuf));
 	    } else {
-		tsprintf(buf, T("%-35s%6s"), stats->key, cbuf);
+		tsprintf(buf, T("%-35s%6s"), stats->key + (klen < sizeof
+                    (buf) - 57 ? 0 : klen - sizeof (buf) + 57), cbuf);
 	    }
 	} else {
 	    s += (tchar)'"';

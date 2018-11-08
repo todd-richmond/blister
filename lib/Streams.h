@@ -128,9 +128,10 @@ public:
 	const char *p = gptr();
 
 	if (p == NULL) {
-	    char c;
+	    uchar c;
 
-	    return fd.read(&c, sizeof (c)) == (int)sizeof (c) ? c : -1;
+	    return fd.read((char *)&c, sizeof (c)) == (int)sizeof (c) ? (int)c :
+		-1;
 	} else if (p >= egptr()) {
 	    char *pb = pbase();
 	    streamsize left = (streamsize)(pptr() - pb);
@@ -150,15 +151,15 @@ public:
     }
 
     virtual int overflow(int i) {
-	char c = (char)i;
+	uchar c = (uchar)i;
 
 	if (pptr() == NULL) {
-	    return i == -1 || fd.write(&c, sizeof (c)) == (int)sizeof (c) ? i :
-		-1;
+	    return i == -1 || fd.write((const char *)&c, sizeof (c)) ==
+		(int)sizeof (c) ? i : -1;
 	} else {
 	    int sz = i == -1 ? 0 : 1;
 
-	    return xsputn(&c, sz) == sz ? i : -1;
+	    return xsputn((const char *)&c, sz) == sz ? i : -1;
 	}
     }
 
