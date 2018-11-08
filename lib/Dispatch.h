@@ -382,6 +382,7 @@ private:
     uint handleEvents(const void *evts, uint cnt);
     int run(void);
     void wake(uint tasks, bool master);
+    // enter locked, leave unlocked for performance
     void wakeup(ulong msec);
     static int worker(void *parm);
 

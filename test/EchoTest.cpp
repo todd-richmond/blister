@@ -110,7 +110,7 @@ static TSNumber<usec_t> usecs;
 
 void EchoTest::EchoClientSocket::onConnect(void) {
     if (error()) {
-	if (loops.fetch_sub(1) <= 0 || qflag) {
+	if (--loops <= 0 || qflag) {
 	    erase();
 	} else {
 	    ++errs;
@@ -130,7 +130,7 @@ void EchoTest::EchoClientSocket::input() {
     uint len;
 
     if (error() || ((len = (uint)read(dbuf + in, dsz - in)) == (uint)-1)) {
-	if (loops.fetch_sub(1) <= 0 || qflag) {
+	if (--loops <= 0 || qflag) {
 	    erase();
 	} else {
 	    ++errs;
@@ -142,7 +142,7 @@ void EchoTest::EchoClientSocket::input() {
     } else if ((in += len) == dsz) {
 	timing_t usec = Timing::now() - begin;
 
-	if (loops.fetch_sub(1) <= 0 || qflag) {
+	if (--loops <= 0 || qflag) {
 	    erase();
 	} else {
 	    ++ops;
@@ -167,7 +167,7 @@ void EchoTest::EchoClientSocket::output() {
 	erase();
     } else if (error() || ((len = (uint)write(dbuf + out, dsz - out)) ==
 	(uint)-1)) {
-	if (loops.fetch_sub(1) <= 0 || qflag) {
+	if (--loops <= 0 || qflag) {
 	    erase();
 	} else {
 	    ++errs;
@@ -272,34 +272,20 @@ bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
 static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
-    Sockaddr sa;
     bool client = true, server = true;
-    EchoTest ec;
+    ulong delay = 20, tmt = TIMEOUT, wait = 0;
+    EchoTest et;
     int fd;
     const tchar *host = NULL;
     int i;
-    const tchar *path = T("echo this short test string as quickly as possible");
     msec_t last, now;
+    const tchar *path = T("echo this short test string as quickly as possible");
+    Sockaddr sa;
     struct stat sbuf;
-    ulong delay = 20, tmt = TIMEOUT, wait = 0;
     uint sockets = 20, threads = 20;
 
     for (i = 1; i < argc; i++) {
-	if (!tstricmp(argv[i], T("-?"))) {
-	    tcerr << T("Usage: echotest\n")
-		T("\t[-c]\n")
-		T("\t[-d delay]\n")
-		T("\t[-h host[:port]]\n")
-		T("\t[-e sockets]\n")
-		T("\t[-l loops]\n")
-		T("\t[-p threads]\n")
-		T("\t[-s]\n")
-		T("\t[-v*]\n")
-		T("\t[-t timeout]\n")
-		T("\t[-w wait]\n")
-		T("\tdatafile | datastr") << endl;
-	    return 1;
-	} else if (!tstricmp(argv[i], T("-c"))) {
+	if (!tstricmp(argv[i], T("-c"))) {
 	    server = false;
 	} else if (!tstricmp(argv[i], T("-d"))) {
 	    delay = (ulong)ttol(argv[++i]);
@@ -321,6 +307,20 @@ int tmain(int argc, const tchar * const argv[]) {
 	    wait = (ulong)ttol(argv[++i]);
 	} else if (*argv[i] != '-') {
 	    path = argv[i];
+	} else {
+	    tcerr << T("Usage: echotest\n")
+		T("\t[-c]\n")
+		T("\t[-d delay]\n")
+		T("\t[-h host[:port]]\n")
+		T("\t[-e sockets]\n")
+		T("\t[-l loops]\n")
+		T("\t[-p threads]\n")
+		T("\t[-s]\n")
+		T("\t[-v*]\n")
+		T("\t[-t timeout]\n")
+		T("\t[-w wait]\n")
+		T("\tdatafile | datastr") << endl;
+	    return 1;
 	}
     }
     if ((fd = open(tchartoachar(path), O_RDONLY)) == -1) {
@@ -360,16 +360,16 @@ int tmain(int argc, const tchar * const argv[]) {
     sig.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sig, NULL);
 #endif
-    if (!ec.start(threads, 32 * 1024)) {
+    if (!et.start(threads, 32 * 1024)) {
 	tcerr << T("echo: unable to start ") << host << endl;
 	return 1;
     }
-    if (server && !ec.listen(sa, tmt))
+    if (server && !et.listen(sa, tmt))
 	return 1;
     if (client) {
 	dlogi(T("echo"), sa.str(), path);
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
-	ec.connect(sa, sockets, delay, tmt, wait);
+	et.connect(sa, sockets, delay, tmt, wait);
 	Thread::MainThread.priority(10);
 	last = Timing::now();
 	do {
@@ -377,7 +377,7 @@ int tmain(int argc, const tchar * const argv[]) {
 
 	    ops = errs = 0U;
 	    usecs = 0U;
-	    ec.waitForMain(1000);
+	    et.waitForMain(1000);
 	    now = Timing::now();
 	    cnt = ops + errs;
 	    tcout << (timing_t)cnt * 1000000 / (now - last) << T("\t\t") <<
@@ -385,9 +385,9 @@ int tmain(int argc, const tchar * const argv[]) {
 	    last = now;
 	} while (!qflag && loops.load() > 0);
     } else {
-	ec.waitForMain();
+	et.waitForMain();
     }
-    ec.stop();
+    et.stop();
     delete [] dbuf;
     tcout << dtiming.data() << endl;
     return qflag ? -1 : 0;

@@ -309,7 +309,8 @@ int Dispatcher::onStart() {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
 	}
-	wake(count, true);
+	if (count)
+	    wake(count, true);
 	lock.unlock();
     }
     lock.lock();
@@ -349,7 +350,7 @@ int Dispatcher::onStart() {
 #elif defined(DSP_KQUEUE)
     evtfd = kqueue();
     // ensure kqueue functions properly
-    EV_SET(&evts[0], -1, EVFILT_READ, EV_ADD, 0, 0, NULL);
+    EV_SET(&evts[0], -1, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, NULL);
     if (kevent(evtfd, &evts[0], 1, &evts[0], 1, NULL) != 1 || evts[0].ident !=
 	(uintptr_t)-1 || !(evts[0].flags & EV_ERROR)) {
 	close(evtfd);
@@ -542,7 +543,8 @@ int Dispatcher::onStart() {
 	    if (ready(*dt, false))
 		count++;
 	}
-	wake(count, true);
+	if (count)
+	    wake(count, true);
     }
     cleanup();
     lock.unlock();
@@ -639,6 +641,7 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 #endif
 	if (!ds) {
 	    reset();
+	    count++;
 	    continue;
 	} else if (ds->flags & DSP_Freed) {
 	    continue;
@@ -716,11 +719,11 @@ void Dispatcher::onStop() {
     waitForMain();
 }
 
-void Dispatcher::wake(uint tasks, bool main) {
+void Dispatcher::wake(uint tasks, bool master) {
     uint woke = 0;
 
     if (maxthreads == 0) {
-	if (main)
+	if (master)
 	    exec();
 	return;
     }
@@ -766,7 +769,6 @@ void Dispatcher::wake(uint tasks, bool main) {
     }
 }
 
-// enter locked, leave unlocked for performance
 void Dispatcher::wakeup(ulong msec) {
 #ifdef DSP_WIN32_ASYNC
     interval = msec;
@@ -788,7 +790,11 @@ void Dispatcher::wakeup(ulong msec) {
 	    event_t evt;
 	    static timespec ts = { 0, 0 };
 
-	    EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, msec, NULL);
+	    if (msec)
+		EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, msec,
+		    NULL);
+	    else
+		EV_SET(&evt, 1, EVFILT_USER, EV_ADD, NOTE_TRIGGER, 0, NULL);
 	    RETRY(kevent(evtfd, &evt, 1, NULL, 0, &ts));
 #endif
 	}
@@ -826,7 +832,10 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
 	}
     } else {
 	removeTimer(dt);
-	ready(dt);
+	if (ready(dt) && !workers) {
+	    wakeup(0);
+	    return;
+	}
     }
     lock.unlock();
 }
@@ -892,7 +901,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 		lkr.lock();
 		nevts = handleEvents(evts, nevts);
 		if (nevts > 1)
-		    wake(nevts, false);
+		    wake(nevts - 1, false);
 	    }
 #endif
 	}
@@ -1046,7 +1055,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 
 	if (m == DispatchRead || m == DispatchReadWrite || m ==
 	    DispatchAccept || m == DispatchClose) {
-	    EV_SET(&chgs[nevts++], ds.fd(), EVFILT_READ, EV_ADD,
+	    EV_SET(&chgs[nevts++], ds.fd(), EVFILT_READ, EV_ADD | EV_CLEAR,
 		NOTE_EOF, 0, &ds);
 	    if ((flags & DSP_SelectWrite) && m != DispatchReadWrite) {
 		EV_SET(&chgs[nevts++], ds.fd(), EVFILT_WRITE, EV_DISABLE, 0, 0,
@@ -1055,7 +1064,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	}
 	if (m == DispatchWrite || m == DispatchReadWrite || m ==
 	    DispatchConnect) {
-	    EV_SET(&chgs[nevts++], ds.fd(), EVFILT_WRITE, EV_ADD,
+	    EV_SET(&chgs[nevts++], ds.fd(), EVFILT_WRITE, EV_ADD | EV_CLEAR,
 		NOTE_EOF, 0, &ds);
 	    if ((flags & DSP_SelectRead) && m != DispatchReadWrite) {
 		EV_SET(&chgs[nevts++], ds.fd(), EVFILT_READ, EV_DISABLE, 0, 0,
@@ -1067,11 +1076,12 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 		(ulong)(due - now), NULL);
 	RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS,
 	    &ts));
-	if (nevts) {
+	if (nevts > 0) {
 	    lock.lock();
 	    nevts = handleEvents(evts, nevts);
 	    if (nevts > 1)
-		wake(nevts, false);
+		wake(nevts - 1, false);
+	    lock.unlock();
 	}
 #endif
     }
@@ -1081,8 +1091,10 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 void Dispatcher::addReady(DispatchObj &obj, bool hipri, DispatchMsg reason) {
     lock.lock();
     obj.msg = reason;
-    ready(obj, hipri);
-    lock.unlock();
+    if (ready(obj, hipri) && !workers)
+	wakeup(0);
+    else
+	lock.unlock();
 }
 
 void Dispatcher::cancelReady(DispatchObj &obj) {
@@ -1119,8 +1131,6 @@ bool Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    rlist.push_front(obj);
 	else
 	    rlist.push_back(obj);
-	if (!workers)
-	    wake(1, false);
 	return true;
     }
 }
