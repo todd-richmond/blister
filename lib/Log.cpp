@@ -636,7 +636,6 @@ void Log::logv(int il, ...) {
 }
 
 void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {
-    mailenable = true;
     maillvl = l;
     if (to) {
 	mailfrom = from;
@@ -704,20 +703,20 @@ void Log::set(const Config &cfg, const tchar *sect) {
 	hostname = s;
     else
 	hostname = s.substr(0, pos);
+    mailenable = cfg.get(T("mail.enable"), false, sect);
     mail(str2enum(cfg.get(T("mail.level"), T("err"), sect).c_str()),
 	cfg.get(T("mail.to"), T("logger"), sect).c_str(),
 	cfg.get(T("mail.from"), T("<>"), sect).c_str(),
 	cfg.get(T("mail.host"), T("mail:25"), sect).c_str());
-    mailenable = cfg.get(T("mail.enable"), false, sect);
     if (src.empty()) {
 	src = cfg.prefix();
 	if ((pos = src.find_last_of(T('.'))) != src.npos)
 	    src.erase(0, pos + 1);
     }
+    syslogenable = cfg.get(T("syslog.enable"), false, sect);
     syslog(str2enum(cfg.get(T("syslog.level"), T("err"), sect).c_str()),
 	cfg.get(T("syslog.host"), T("localhost"), sect).c_str(),
 	cfg.get(T("syslog.facility"), 1U, sect));
-    syslogenable = cfg.get(T("syslog.enable"), false, sect);
     format(cfg.get(T("format"), T("[%Y-%m-%d %H:%M:%S.%# %z]"), sect).c_str());
     s = cfg.get(T("type"), T("simple"), sect);
     _type = s == T("nolevel") ? NoLevel : s == T("notime") ? NoTime :
@@ -775,23 +774,18 @@ Log::Level Log::str2enum(const tchar *l) {
 
 void Log::syslog(Level l, const tchar *host, uint fac) {
     sysloglvl = l;
-    if (!host) {
-	syslogenable = !sysloghost.empty();
+    if (!host)
 	return;
-    }
     syslogfac = fac;
     if (sysloghost != host) {
 	sysloghost = host;
 	syslogsock.close();
     }
-    if (sysloghost.empty() ||
+    if (!syslogenable || sysloghost.empty() ||
 	!syslogaddr.set(sysloghost.c_str(), T("syslog"), Sockaddr::UDP) ||
 	!syslogsock.open(AF_INET)) {
 	syslogenable = false;
-	sysloghost.erase();
 	syslogsock.close();
-    } else {
-	syslogenable = true;
     }
 }
 

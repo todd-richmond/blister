@@ -418,17 +418,17 @@ bool Socket::listen(int queue) {
 
 bool Socket::movehigh(void) {
 #ifndef _WIN32
-    if (sbuf->sock <= 1024) {
+    if (sbuf->sock > 2 && sbuf->sock < 1024) {
 	int fd;
 
 #ifdef F_DUPFD_CLOEXEC
-	fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 1025);
+	fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 1024);
 #else
-	fd = fcntl(sbuf->sock, F_DUPFD, 1025);
+	fd = fcntl(sbuf->sock, F_DUPFD, 1024);
 #endif
 	if (fd == -1
 #ifdef __sun__				// Solaris stdio has lower 256 limit
-	    || (fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 257)) == -1
+	    || (fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 256)) == -1
 #endif
 	    ) {
 	    return false;

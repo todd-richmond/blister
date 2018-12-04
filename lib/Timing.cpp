@@ -53,8 +53,6 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 	}
     } else {
 	stats = it->second;
-//lck.runlock();
-//lck.wlock();
 	lck.uplock();
     }
     ++stats->cnt;
