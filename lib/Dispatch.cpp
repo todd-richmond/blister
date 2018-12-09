@@ -719,11 +719,11 @@ void Dispatcher::onStop() {
     waitForMain();
 }
 
-void Dispatcher::wake(uint tasks, bool master) {
+void Dispatcher::wake(uint tasks, bool main) {
     uint woke = 0;
 
     if (maxthreads == 0) {
-	if (master)
+	if (main)
 	    exec();
 	return;
     }
