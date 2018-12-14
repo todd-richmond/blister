@@ -204,6 +204,8 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	psbuf->utime = utime / HZ * 1000 + (utime % HZ) * (1000L / HZ);
     }
     fclose(f);
+#else
+    (void)pid;
 #endif
     return 0;
 }

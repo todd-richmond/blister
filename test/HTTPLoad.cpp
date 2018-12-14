@@ -91,6 +91,7 @@ private:
     static Lock lock;
     static Condvar cv;
     static bool dbg, ka, ruser;
+    static tchar format_buf[32];
     static ulong muser;
     static uint mthread;
     static uint to;
@@ -111,6 +112,8 @@ private:
 
     int onStart(void);
     static bool expand(tchar *str, const attrmap &amap = vars);
+    static const tchar *format(ulong u);
+    static const tchar *format(float f);
     static char *read(uint idx, usec_t &iousec);
     static void add(const tchar *file);
     static uint next(void);
@@ -118,6 +121,7 @@ private:
 
 Lock HTTPLoad::lock;
 Condvar HTTPLoad::cv(lock);
+char HTTPLoad::format_buf[32];
 uint HTTPLoad::threads;
 ulong HTTPLoad::muser;
 uint HTTPLoad::mthread;
@@ -558,16 +562,6 @@ int HTTPLoad::onStart(void) {
 	tusec += diff - smsec * 1000;
 	++count;
 	++tcount;
-/*
-	if (!minusec || diff < minusec)
-	    minusec = diff;
-	if (diff > maxusec)
-	    maxusec = diff;
-	if (!tminusec || diff < tminusec)
-	    tminusec = diff;
-	if (diff > tmaxusec)
-	    tmaxusec = diff;
-*/
 	lock.unlock();
 	dlog << Log::Info << T("cmd=all duration=") << (diff / 1000) << endlog;
     }
@@ -578,23 +572,19 @@ int HTTPLoad::onStart(void) {
     return 0;
 }
 
-inline tstring format(ulong u) {
-    tchar buf[32];
-
-    tsprintf(buf, T(" %7lu"), u);
-    return buf;
+const tchar *HTTPLoad::format(ulong u) {
+    tsprintf(format_buf, T(" %7lu"), u);
+    return format_buf;
 }
 
-inline tstring format(float f) {
-    tchar buf[32];
-
+const tchar *HTTPLoad::format(float f) {
     if (f - 0.0f < FLT_EPSILON)
-	tstrcpy(buf, T("       0"));
+	tstrcpy(format_buf, T("       0"));
     else if (f >= 100)
-	tsprintf(buf, T(" %7u"), (unsigned)(f + .5f));
+	tsprintf(format_buf, T(" %7u"), (unsigned)(f + .5f));
     else
-	tsprintf(buf, T(" %7.2g"), (double)f);
-    return buf;
+	tsprintf(format_buf, T(" %7.2g"), (double)f);
+    return format_buf;
 }
 
 inline float round(ulong count, ulong div) {

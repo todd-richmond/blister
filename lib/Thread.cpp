@@ -340,14 +340,12 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     bool suspend, bool aterm) {
     Locker lkr(lck);
 
-    if (state == Terminated)
-	state = Init;
-    else if (state != Init)
-	return false;
-    autoterm = aterm;
     argument = arg;
+    autoterm = aterm;
     main = func;
-    if (suspend)
+    if (state != Terminated && state != Init)
+	return false;
+    else if (suspend)
 	state = Suspended;
     else
 	state = Running;

@@ -95,6 +95,7 @@ private:
     ulong id;
     static Lock lock;
     static Condvar cv;
+    static tchar format_buf[32];
     static bool ruser;
     static ulong muser;
     static uint mthread;
@@ -116,6 +117,8 @@ private:
 
     int onStart(void);
     static bool expand(tchar *str, const attrmap &amap = vars);
+    static const tchar *format(ulong u);
+    static const tchar *format(float f);
     static char *read(uint idx, usec_t &iousec);
     static void add(const tchar *file);
     static uint next(void);
@@ -123,6 +126,7 @@ private:
 
 Lock SMTPLoad::lock;
 Condvar SMTPLoad::cv(lock);
+char SMTPLoad::format_buf[32];
 uint SMTPLoad::threads;
 ulong SMTPLoad::muser;
 uint SMTPLoad::mthread;
@@ -545,23 +549,19 @@ int SMTPLoad::onStart(void) {
     return 0;
 }
 
-inline tstring format(ulong u) {
-    tchar buf[32];
-
-    tsprintf(buf, T(" %7lu"), u);
-    return buf;
+const tchar *SMTPLoad::format(ulong u) {
+    tsprintf(format_buf, T(" %7lu"), u);
+    return format_buf;
 }
 
-inline tstring format(float f) {
-    tchar buf[32];
-
+const tchar *SMTPLoad::format(float f) {
     if (f - 0.0f < FLT_EPSILON)
-	tstrcpy(buf, T("       0"));
+	tstrcpy(format_buf, T("       0"));
     else if (f >= 100)
-	tsprintf(buf, T(" %7u"), (unsigned)(f + .5f));
+	tsprintf(format_buf, T(" %7u"), (unsigned)(f + .5f));
     else
-	tsprintf(buf, T(" %7.2g"), (double)f);
-    return buf;
+	tsprintf(format_buf, T(" %7.2g"), (double)f);
+    return format_buf;
 }
 
 inline float round(ulong count, ulong div) {
