@@ -607,7 +607,7 @@ void HTTPServerSocket::error(uint sts) {
 	"Service Unavailable", "Gateway Timeout", "Version Not Supported"
     };
 #pragma warning(push)
-#pragma warning(disable: 6385)	// -V::557
+#pragma warning(disable: 6385)	// -V557
     if (sts >= 200 && sts < 200 + sizeof (err2xx) / sizeof (char *))
 	p = err2xx[sts % 200];
     else if (sts >= 300 && sts < 300 + sizeof (err3xx) / sizeof (char *))
@@ -618,7 +618,7 @@ void HTTPServerSocket::error(uint sts) {
 	p = err5xx[sts % 500];
     else
 	p = "HTTP error";
-#pragma warning(pop)		// +V::557
+#pragma warning(pop)		// +V557
     status(sts, "text/plain");
     ss << sts << ' ' << p << CRLF;
     _status = sts;

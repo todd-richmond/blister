@@ -125,7 +125,7 @@
 #define _WSTATVFS_DEFINED
 
 #if _MSC_VER >= 1900
-typedef __int64 _ino_t;	//-V677
+typedef __int64 _ino_t;	// -V677
 #endif
 #define __STDC__ 1
 #include <direct.h>
@@ -260,7 +260,7 @@ typedef wchar_t wchar;
 
 typedef ushort gid_t;
 typedef int id_t;
-typedef llong ino_t;	//-V677
+typedef llong ino_t;	// -V677
 typedef short nlink_t;
 typedef long pid_t;
 typedef long timer_t;

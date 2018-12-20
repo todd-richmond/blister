@@ -7,6 +7,7 @@
 *.dSYM
 *.vcxproj.filters
 *.vcxproj.user
+*cotire*
 aclocal.m4
 ar-lib
 autom4te.cache
@@ -70,4 +71,5 @@ x64
 .idea
 .ruby-version
 cov-int
+perf.data
 xcuserdata

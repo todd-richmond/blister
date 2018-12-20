@@ -103,7 +103,7 @@ public:
     explicit Sockaddr(const hostent *h) { set(h); }
     explicit Sockaddr(Proto proto = TCP) {
 	ZERO(addr);
-        family(proto);
+	family(proto);
     }
     explicit Sockaddr(const sockaddr &sa) { set(sa); }
     explicit Sockaddr(const tchar *host, Proto proto = TCP) {

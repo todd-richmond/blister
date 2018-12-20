@@ -298,7 +298,7 @@ void Service::handle(ulong sig) {
     case SERVICE_CONTROL_SHUTDOWN:
     case SERVICE_CONTROL_STOP:
 	update(Stopping);
-	GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0); //-V549
+	GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0); // -V549
 	break;
     case SERVICE_CONTROL_ABORT:
 	onAbort();
@@ -1269,7 +1269,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     av[ac] = NULL;
     splitpath(argv[0], name.c_str(), installdir, prog);
     if (name.empty())
-	name = prog;	// -V::820
+	name = prog;	//  -V820
     dlog.source(name.c_str());
     set_files();
     if ((ret = command(cmd, ac, av)) != -1) {

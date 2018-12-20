@@ -113,9 +113,9 @@ public:
     explicit Log(Level level = Info);
     ~Log();
 
-    bool alert(void) const { return afd.enable; }
-    void alert(bool b) { afd.enable = b; }
-    void alert(Level L, const tchar *file = NULL, uint cnt = 0,
+    bool alertfile(void) const { return afd.enable; }
+    void alertfile(bool b) { afd.enable = b; }
+    void alertfile(Level L, const tchar *file = NULL, uint cnt = 0,
 	ulong sz = 10 * 1024 * 1024, ulong tm = 0);
     const tchar *alertname(void) const { return afd.filename(); }
     const tchar *alertpath(void) const { return afd.pathname(); }
