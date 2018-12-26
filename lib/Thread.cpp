@@ -27,6 +27,7 @@ ThreadGroup ThreadGroup::MainThreadGroup(false);
 Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
 
 #ifdef _WIN32
+// -V::1020
 #include <errno.h>
 
 Process Process::self(GetCurrentProcess());
@@ -593,4 +594,3 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
     } while (true);
     return NULL;
 }
-

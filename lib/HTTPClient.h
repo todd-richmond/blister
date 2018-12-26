@@ -25,7 +25,7 @@ class BLISTER URL {
 public:
     URL(): port(80) { set(NULL); }
     explicit URL(const tchar *url): port(80) { set(url); }
-    URL(const URL &url) { operator =(url); }
+    URL(const URL &url): port(0) { operator =(url); }
 
     tstring host, path, prot, query;
     ushort port;

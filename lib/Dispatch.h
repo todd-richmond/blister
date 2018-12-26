@@ -115,11 +115,14 @@ public:
     explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
 	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
-	DispatchObj(d), due(DSP_NEVER_DUE) { init(); timeout(cb, msec); }
+	DispatchObj(d), due(DSP_NEVER_DUE), to(0) { init(); timeout(cb, msec); }
     explicit DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
 	DispatchObj(parent), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(DispatchObj &parent, ulong msec, DispatchObjCB cb):
-	DispatchObj(parent), due(DSP_NEVER_DUE) { init(); timeout(cb, msec); }
+	DispatchObj(parent), to(0), due(DSP_NEVER_DUE) {
+	init();
+	timeout(cb, msec);
+    }
     virtual ~DispatchTimer();
 
     msec_t expires(void) const { return due; }
@@ -282,6 +285,8 @@ private:
 
 	TimerSet(): split(0) {}
 	TimerSet(const TimerSet &) CPP_DELETE;
+
+	const TimerSet & operator =(const TimerSet &) CPP_DELETE;
 
 	bool empty(void) const { return unsorted.empty() && sorted.empty(); }
 	msec_t half(void) const { return split; }

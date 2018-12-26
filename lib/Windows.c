@@ -25,7 +25,6 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <time.h>
-#include <windows.h>
 
  //-V::303
 #pragma comment(lib, "winmm.lib")
@@ -117,21 +116,21 @@ msec_t mticks(void) {
 }
 
 usec_t uticks(void) {
-    static uint64_t tps;
+    static LARGE_INTEGER tps;
 
-    if (tps) {
-	uint64_t now;
+    if (tps.QuadPart) {
+	LARGE_INTEGER now;
 
-	if (QueryPerformanceCounter((LARGE_INTEGER *)&now))
-	    return now * 1000000 / tps;
+	if (QueryPerformanceCounter(&now))
+	    return (ULONGLONG)now.QuadPart * 1000000 / (ULONGLONG)tps.QuadPart;
     } else {
 	static int lck;
 
 	if (!lck) {
-	    QueryPerformanceFrequency((LARGE_INTEGER *)&tps);
+	    QueryPerformanceFrequency(&tps);
 	    lck = 1;
 	}
-	if (tps)
+	if (tps.QuadPart)
 	    return uticks();
     }
     return mticks() * 1000;
@@ -369,7 +368,7 @@ int write(int fd, const void *buf, uint len) {
     return out;
 }
 
-long writev(int fd, const struct iovec *io , int num) {
+long writev(int fd, const iovec *io , int num) {
     ulong len = 0;
     char buf[1024];
     char *p = buf;

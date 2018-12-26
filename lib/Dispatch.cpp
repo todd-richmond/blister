@@ -20,7 +20,8 @@
 #include <time.h>
 #include "Dispatch.h"
 
-#ifdef _WIN32
+#ifdef _WIN32	// -V::1020
+
 #define CLOEXEC(fd)
 #else
 #define CLOEXEC(fd) (void)fcntl((fd), F_SETFD, FD_CLOEXEC)
@@ -769,6 +770,7 @@ void Dispatcher::wake(uint tasks, bool main) {
     }
 }
 
+// enter locked, leave unlocked
 void Dispatcher::wakeup(ulong msec) {
 #ifdef DSP_WIN32_ASYNC
     interval = msec;
@@ -1092,7 +1094,7 @@ void Dispatcher::addReady(DispatchObj &obj, bool hipri, DispatchMsg reason) {
     lock.lock();
     obj.msg = reason;
     if (ready(obj, hipri) && !workers)
-	wakeup(0);
+	wakeup(0);  // -V1020
     else
 	lock.unlock();
 }

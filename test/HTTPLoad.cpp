@@ -121,7 +121,7 @@ private:
 
 Lock HTTPLoad::lock;
 Condvar HTTPLoad::cv(lock);
-char HTTPLoad::format_buf[32];
+tchar HTTPLoad::format_buf[32];
 uint HTTPLoad::threads;
 ulong HTTPLoad::muser;
 uint HTTPLoad::mthread;

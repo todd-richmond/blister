@@ -395,7 +395,14 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 	buf = p;
 	if ((p = strchr(p, '&')) != NULL)
 	    *p++ = '\0';
+#ifdef UNICODE
+	tstring s(achartotchar(buf));
+
+	URL::unescape(s);
+	strcpy(buf, tstringtoachar(s));
+#else
 	URL::unescape(buf);
+#endif
 	if ((pp = strchr(buf, '=')) == NULL) {
 	    amap[buf] = "";
 	} else {

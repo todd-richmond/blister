@@ -623,7 +623,7 @@ long Socket::writev(const iovec *iov, int count) const {
 
 #ifdef _WIN32
     out = -1;
-    check(WSASend(sbuf->sock, (WSABUF *)iov, count, (ulong *)&out, 0, NULL,
+    check(WSASend(sbuf->sock, (iovec *)iov, count, (ulong *)&out, 0, NULL,
 	NULL));
 #else
     do {
@@ -639,7 +639,7 @@ long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
 
 #ifdef _WIN32
     out = -1;
-    check(WSASendTo(sbuf->sock, (WSABUF *)iov, count, (ulong *)&out, 0, sa,
+    check(WSASendTo(sbuf->sock, (iovec *)iov, count, (ulong *)&out, 0, sa,
 	sa.size(), NULL, NULL));
     return out <= 0 && blocked() ? 0 : out;
 #else

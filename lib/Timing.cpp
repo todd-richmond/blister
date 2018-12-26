@@ -28,6 +28,7 @@ static Timing &_dtiming(void) {
 
 Timing &dtiming(_dtiming());
 
+// -V::1020
 void Timing::add(const TimingKey &key, timing_t diff) {
     timingmap::const_iterator it;
     uint slot;

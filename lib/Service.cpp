@@ -543,16 +543,17 @@ void *Service::open(uint size) {
     return map;
 }
 
+Lock ServiceData::lock;
+
 ServiceData::ServiceData(const tchar *service, uint num, uint size):
     count(0), counter(0), ctrs(num), data(NULL), datasz(0), help(0),
     init(false), last(0), map(NULL), mapsz(size), name(service), offset(0) {
 }
 
 DWORD ServiceData::open(LPWSTR lpDeviceNames) {
-    static Lock lock;
+    FastLocker lkr(lock);
 
     (void)lpDeviceNames;
-    lock.lock();
     if (!init) {
 	HANDLE hdl;
 	LONG status;
@@ -633,21 +634,18 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	init = true;
     }
     count++;
-    lock.unlock();
     return 0;
 }
 
 DWORD ServiceData::close(void) {
-    static Lock lock;
+    FastLocker lkr(lock);
 
-    lock.lock();
     if (!--count) {
 	init = false;
 	UnmapViewOfFile(map);
 	map = NULL;
 	delete [] data;
     }
-    lock.unlock();
     return 0;
 }
 

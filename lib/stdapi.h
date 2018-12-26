@@ -105,8 +105,8 @@
 #ifndef WIN32
 #define WIN32
 #endif
+#define _WIN32_WINNT	_WIN32_WINNT_WINBLUE
 #define NTDDI_VERSION	NTDDI_WIN8
-#define _WIN32_WINNT	_WIN32_WINNT_WIN8
 #define NOIME
 #define NOMCX
 #define NOSERVICE
@@ -138,6 +138,7 @@ typedef __int64 _ino_t;	//-V677
 #include <time.h>
 #include <wchar.h>
 #include <winsock2.h>
+#include <ws2def.h>
 #include <sys/stat.h>
 
 #undef _INO_T_DEFINED
@@ -335,10 +336,10 @@ typedef struct statvfs {
 } statvfs_t;
 
 // writev emulation
-typedef struct iovec {
-    size_t iov_len;
-    char *iov_base;
-} iovec_t;
+typedef struct _WSABUF iovec;
+typedef struct _WSABUF iovec_t;
+#define iov_len len
+#define iov_base buf
 
 struct timezone {
     int tz_minuteswest;
@@ -374,7 +375,7 @@ extern BLISTER int open(const char *path, int mode, ...);
 extern BLISTER DIR *opendir(const char *path);
 extern BLISTER int read(int, void *, unsigned int);
 extern BLISTER dirent *readdir(DIR *dir);
-extern BLISTER long readv(int fd, struct iovec *vec, int numvec);
+extern BLISTER long readv(int fd, iovec *vec, int numvec);
 extern BLISTER int rename(const char *from, const char *to);
 extern BLISTER void seekdir(DIR *dir, long offset);
 extern BLISTER int setmode(int fd, int mode);
@@ -396,7 +397,7 @@ extern BLISTER WDIR *wopendir(const wchar *path);
 extern BLISTER wdirent *wreaddir(WDIR *dir);
 extern BLISTER int wrename(const wchar *from, const wchar *to);
 extern BLISTER int write(int, const void *, uint);
-extern BLISTER long writev(int fd, const struct iovec *vec, int numvec);
+extern BLISTER long writev(int fd, const iovec *vec, int numvec);
 extern BLISTER void wseekdir(WDIR *dir, long);
 extern BLISTER int wstat(const wchar *wpath, struct stat *buf);
 extern BLISTER int wstatvfs(const wchar *wpath, struct statvfs *buf);
@@ -890,7 +891,7 @@ using namespace stdext;
 #endif
 
 #if CPLUSPLUS < 11
-#define CPP_DEFAULT		{}
+#define CPP_DEFAULT		{}  // NOLINT
 #define CPP_DELETE
 #ifndef nullptr
 #define nullptr			NULL

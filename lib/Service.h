@@ -196,6 +196,7 @@ private:
     uint last, offset;
     void *map;
     tstring name;
+    static Lock lock;
 };
 #endif
 

@@ -68,12 +68,12 @@ typedef pthread_t thread_hdl_t;
 #if defined(__FreeBSD__) || defined(__OpenBSD__)
 #include <pthread_np.h>
 typedef ulong thread_id_t;
-#define THREAD_EQUAL(x, y)	(x == y)
+#define THREAD_EQUAL(x, y)	((x) == (y))
 #define THREAD_ID()		(thread_id_t)pthread_getthreadid_np()
 #elif defined(__linux__)
 #include <sys/syscall.h>
 typedef pid_t thread_id_t;
-#define THREAD_EQUAL(x, y)	(x == y)
+#define THREAD_EQUAL(x, y)	((x) == (y))
 #define THREAD_ID()		(thread_id_t)syscall(__NR_gettid)
 #else
 typedef pthread_t thread_id_t;
@@ -90,7 +90,7 @@ typedef pthread_t thread_id_t;
 #if defined(__i386__) || defined(__x86_64__)
 #define THREAD_PAUSE()  	__builtin_ia32_pause()
 #endif
-#elif (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
+#elif defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
 #define THREAD_BARRIER()	asm volatile("" ::: "memory")
 #define THREAD_FENCE()		asm volatile("mfence" ::: "memory")
 #if __GNUC_MAJOR__ < 5

@@ -126,7 +126,7 @@ private:
 
 Lock SMTPLoad::lock;
 Condvar SMTPLoad::cv(lock);
-char SMTPLoad::format_buf[32];
+tchar SMTPLoad::format_buf[32];
 uint SMTPLoad::threads;
 ulong SMTPLoad::muser;
 uint SMTPLoad::mthread;
