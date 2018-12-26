@@ -1122,7 +1122,8 @@ bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
     };
 
     outsz = 0;
-    if ((out = new char[(len + 2) * 4 / 3 + (len / maxlen * 2) + 8]) == NULL) //-V668
+    if ((out = new char[(len + 2) * 4 / 3 + (len / maxlen * 2) + 8]) ==
+	NULL) // -V668
 	return false;
     encode(input, len, out, outsz, table, true);
     return true;
@@ -1141,7 +1142,8 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
     };
 
     outsz = (size_t)tstrlen(file);
-    if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) == NULL) //-V668
+    if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) ==
+	NULL) // -V668
 	return false;
     memcpy(out, begin, sizeof (begin) - 1);
     memcpy(out + sizeof (begin) - 1, tchartoachar(file), outsz);
@@ -1286,7 +1288,7 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
 		continue;
 	}
 	out_byte = (out_byte << 6) + add_bits;
-	out_bits += 6;	//-V127
+	out_bits += 6;	// -V127
 	if (out_bits == 24) {
 	    out[0] = (char)((out_byte & 0xFF0000) >> 16);
 	    out[1] = (char)((out_byte & 0x00FF00) >> 8);

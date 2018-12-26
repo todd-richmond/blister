@@ -373,7 +373,7 @@ Log::~Log() {
     close();
 }
 
-void Log::alert(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
+void Log::alertfile(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
     Locker lkr(lck);
 
     afd.set(l, f, cnt, sz, tm);
@@ -733,7 +733,7 @@ bool Log::setids(uid_t uid, gid_t gid) const {
 	(void)uid; (void)gid;
 	return true;
 #else
-    return (!alert() || chown(alertpath(), uid, gid) == -1) &&
+    return (!alertfile() || chown(alertpath(), uid, gid) == -1) &&
 	(!file() || chown(filepath(), uid, gid) == -1);
 #endif
 }
