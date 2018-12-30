@@ -22,7 +22,7 @@ target_link_libraries(httpload blister_static)
 add_executable(smtpload SMTPLoad.cpp)
 target_link_libraries(smtpload blister_static)
 
-cppcheck(cfg daemonize dlog dtiming echotest httpd httpload smtpload)
+check(cfg daemonize dlog dtiming echotest httpd httpload smtpload)
 
 install(FILES http.wld smtp.wld DESTINATION etc)
 install(TARGETS cfg daemonize dlog httpload smtpload DESTINATION bin)

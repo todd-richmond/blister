@@ -108,9 +108,11 @@ static TSNumber<long long> loops(MAXLLONG);
 static volatile bool qflag;
 static TSNumber<usec_t> usecs;
 
+static inline bool loop_exit(void) { return --loops < 0 || qflag; }
+
 void EchoTest::EchoClientSocket::onConnect(void) {
     if (error()) {
-	if (--loops <= 0 || qflag) {
+	if (loop_exit()) {
 	    erase();
 	} else {
 	    ++errs;
@@ -130,7 +132,7 @@ void EchoTest::EchoClientSocket::input() {
     uint len;
 
     if (error() || ((len = (uint)read(dbuf + in, dsz - in)) == (uint)-1)) {
-	if (--loops <= 0 || qflag) {
+	if (loop_exit()) {
 	    erase();
 	} else {
 	    ++errs;
@@ -142,7 +144,7 @@ void EchoTest::EchoClientSocket::input() {
     } else if ((in += len) == dsz) {
 	timing_t usec = Timing::now() - begin;
 
-	if (--loops <= 0 || qflag) {
+	if (loop_exit()) {
 	    erase();
 	} else {
 	    ++ops;
@@ -167,7 +169,7 @@ void EchoTest::EchoClientSocket::output() {
 	erase();
     } else if (error() || ((len = (uint)write(dbuf + out, dsz - out)) ==
 	(uint)-1)) {
-	if (--loops <= 0 || qflag) {
+	if (loop_exit()) {
 	    erase();
 	} else {
 	    ++errs;
@@ -201,6 +203,7 @@ void EchoTest::EchoClientSocket::start() {
 
 #pragma GCC diagnostic ignored "-Wstack-usage="
 void EchoTest::EchoServerSocket::input() {
+    uint oldin = in;
     char tmp[MAXREAD];
 
     if (error() || ((in = (uint)read(tmp, sizeof (tmp))) == (uint)-1)) {
@@ -220,24 +223,28 @@ void EchoTest::EchoServerSocket::input() {
 	readable(input);
     } else {
 	dlogd(T("server partial write"), out);
-	delete [] buf;
-	buf = new char[(size_t)(in - out)];
-	memcpy(buf, tmp + out, (size_t)(in - out));
+	in -= out;
+	if (oldin < in) {
+	    delete [] buf;
+	    buf = new char[(size_t)in];
+	}
+	memcpy(buf, tmp + out, (size_t)in);
 	out = 0;
 	writeable(output);
     }
 }
 
 void EchoTest::EchoServerSocket::output() {
-    int len;
+    uint len;
 
-    if (error() || ((len = write(buf + out, (uint)(in - out))) < 0)) {
+    if (error() || ((len = (uint)write(buf + out, (uint)(in - out))) ==
+	(uint)-1)) {
 	dloge(T("server write"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	erase();
 	return;
     }
-    out += (uint)len;
+    out += len;
     if (out == in) {
 	dlogt(T("server write"), len);
 	readable(input);
@@ -288,23 +295,23 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (!tstricmp(argv[i], T("-c"))) {
 	    server = false;
 	} else if (!tstricmp(argv[i], T("-d"))) {
-	    delay = (ulong)ttol(argv[++i]);
+	    delay = tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-e"))) {
-	    sockets = (uint)ttol(argv[++i]);
+	    sockets = (uint)tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-h"))) {
 	    host = argv[++i];
 	} else if (!tstricmp(argv[i], T("-l"))) {
-	    loops = ttol(argv[++i]);
+	    loops = tstrtol(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-p"))) {
-	    threads = (uint)ttol(argv[++i]);
+	    threads = (uint)tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-s"))) {
 	    client = false;
 	} else if (!tstricmp(argv[i], T("-t"))) {
-	    tmt = (ulong)ttol(argv[++i]);
+	    tmt = tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-v"))) {
 	    dlog.level(dlog.level() >= Log::Debug ? Log::Trace : Log::Debug);
 	} else if (!tstricmp(argv[i], T("-w"))) {
-	    wait = (ulong)ttol(argv[++i]);
+	    wait = tstrtoul(argv[++i], NULL, 10);
 	} else if (*argv[i] != '-') {
 	    path = argv[i];
 	} else {
@@ -383,7 +390,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    tcout << (timing_t)cnt * 1000000 / (now - last) << T("\t\t") <<
 		(usecs / (cnt ? cnt : 1)) << '\t' << errs << endl;
 	    last = now;
-	} while (!qflag && loops.load() > 0);
+	} while (loops.load() > 0 && !qflag);
     } else {
 	et.waitForMain();
     }
