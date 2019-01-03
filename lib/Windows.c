@@ -91,49 +91,27 @@ int gettimeofday(struct timeval *tv, struct timezone *tz) {
     return 0;
 }
 
+static LARGE_INTEGER tps;
+
+static inline void tps_init(void) {
+    if (!tps.QuadPart)
+	QueryPerformanceFrequency(&tps);
+}
+
 msec_t mticks(void) {
-    ulong now;
-    msec_t ret;
-    static ulong cnt = (ulong)-1, last = (ulong)-1;
-    static volatile long lck;
+    LARGE_INTEGER now;
 
-    while (InterlockedExchange(&lck, 1))
-	YieldProcessor();
-    now = timeGetTime();	    /* GetTickCount() only has 16ms accuracy */
-    if (now < last) {
-	if (++cnt) {
-	    ulong tmp = now;
-
-	    now += tmp - last;
-	    last = tmp;
-	} else {
-	    last = now;
-	}
-    }
-    ret = (msec_t)cnt * (ulong)-1 + now - last;
-    InterlockedExchange(&lck, 0);
-    return ret;
+    tps_init();
+    QueryPerformanceCounter(&now);
+    return (ULONGLONG)now.QuadPart * 1000 / (ULONGLONG)tps.QuadPart;
 }
 
 usec_t uticks(void) {
-    static LARGE_INTEGER tps;
+    LARGE_INTEGER now;
 
-    if (tps.QuadPart) {
-	LARGE_INTEGER now;
-
-	if (QueryPerformanceCounter(&now))
-	    return (ULONGLONG)now.QuadPart * 1000000 / (ULONGLONG)tps.QuadPart;
-    } else {
-	static int lck;
-
-	if (!lck) {
-	    QueryPerformanceFrequency(&tps);
-	    lck = 1;
-	}
-	if (tps.QuadPart)
-	    return uticks();
-    }
-    return mticks() * 1000;
+    tps_init();
+    QueryPerformanceCounter(&now);
+    return (ULONGLONG)now.QuadPart * 1000000 / (ULONGLONG)tps.QuadPart;
 }
 
 static uint rename_lock(const wchar *path) {

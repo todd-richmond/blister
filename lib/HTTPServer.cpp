@@ -500,11 +500,11 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)ss.size() + len);
     hdrs.write(buf, i);
     iov[0].iov_base = (char *)hdrs.str();
-    iov[0].iov_len = (size_t)hdrs.size();
+    iov[0].iov_len = (iovlen_t)hdrs.size();
     iov[1].iov_base = (char *)ss.str();
-    iov[1].iov_len = (size_t)ss.size();
+    iov[1].iov_len = (iovlen_t)ss.size();
     iov[2].iov_base = (char *)p;
-    iov[2].iov_len = (size_t)len;
+    iov[2].iov_len = (iovlen_t)len;
     dlog << (_status < 400 ? Log::Info : Log::Note) << cmd << ' ' << path <<
 	T(": ") << _status << endlog;
     send();

@@ -221,7 +221,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 	req += tchartoachar(hstrm.str());
     req += "\r\n";
     iov[0].iov_base = (char *)req.c_str();
-    iov[0].iov_len = req.size();
+    iov[0].iov_len = (iovlen_t)req.size();
     iov[1].iov_base = (char *)data;
     iov[1].iov_len = datasz;
 loop:

@@ -219,9 +219,9 @@ public:
 	    long out;
 
 	    iov[0].iov_base = pb;
-	    iov[0].iov_len = (size_t)(pp - pb);
+	    iov[0].iov_len = (iovlen_t)(pp - pb);
 	    iov[1].iov_base = (char *)p;
-	    iov[1].iov_len = (size_t)sz;
+	    iov[1].iov_len = (iovlen_t)sz;
 	    out = fd.writev(iov, 2);
 	    setp(pb, pb + bufsz);
 	    return out == -1 || (ulong)out < (ulong)iov[0].iov_len ? -1 :

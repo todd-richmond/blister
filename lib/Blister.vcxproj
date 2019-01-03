@@ -200,10 +200,21 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <EnablePREfast>false</EnablePREfast>
-      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/FS /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard>stdcpp14</LanguageStandard>
       <SDLCheck>true</SDLCheck>
       <StringPooling>true</StringPooling>
+      <ControlFlowGuard>
+      </ControlFlowGuard>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <CreateHotpatchableImage>
+      </CreateHotpatchableImage>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableEnhancedInstructionSet>
+      </EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX86</TargetMachine>
@@ -226,12 +237,16 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>
       </DebugInformationFormat>
-      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/FS /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp14</LanguageStandard>
       <StringPooling>true</StringPooling>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableEnhancedInstructionSet>
+      </EnableEnhancedInstructionSet>
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX86</TargetMachine>
@@ -255,11 +270,15 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>
       </DebugInformationFormat>
-      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/FS /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp14</LanguageStandard>
       <StringPooling>true</StringPooling>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableEnhancedInstructionSet>
+      </EnableEnhancedInstructionSet>
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX86</TargetMachine>
@@ -281,10 +300,21 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <EnablePREfast>false</EnablePREfast>
-      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/FS /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard>stdcpp14</LanguageStandard>
       <SDLCheck>true</SDLCheck>
       <StringPooling>true</StringPooling>
+      <ControlFlowGuard>
+      </ControlFlowGuard>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <CreateHotpatchableImage>
+      </CreateHotpatchableImage>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableEnhancedInstructionSet>
+      </EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX86</TargetMachine>
@@ -308,13 +338,23 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <EnablePREfast>false</EnablePREfast>
-      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/FS /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <MinimalRebuild>false</MinimalRebuild>
       <LanguageStandard>stdcpp14</LanguageStandard>
       <SDLCheck>true</SDLCheck>
       <OmitFramePointers>false</OmitFramePointers>
       <StringPooling>true</StringPooling>
+      <ControlFlowGuard>
+      </ControlFlowGuard>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <CreateHotpatchableImage>
+      </CreateHotpatchableImage>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableEnhancedInstructionSet>
+      </EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
@@ -341,12 +381,16 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>
       </DebugInformationFormat>
-      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/FS /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <MinimalRebuild>false</MinimalRebuild>
       <LanguageStandard>stdcpp14</LanguageStandard>
       <StringPooling>true</StringPooling>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableEnhancedInstructionSet>
+      </EnableEnhancedInstructionSet>
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
@@ -373,12 +417,16 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>
       </DebugInformationFormat>
-      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/FS /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <MinimalRebuild>false</MinimalRebuild>
       <LanguageStandard>stdcpp14</LanguageStandard>
       <StringPooling>true</StringPooling>
       <FloatingPointModel>Fast</FloatingPointModel>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableEnhancedInstructionSet>
+      </EnableEnhancedInstructionSet>
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
@@ -403,12 +451,22 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <EnablePREfast>false</EnablePREfast>
-      <AdditionalOptions>/FS %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/FS /Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp14</LanguageStandard>
       <SDLCheck>true</SDLCheck>
       <OmitFramePointers>false</OmitFramePointers>
       <StringPooling>true</StringPooling>
+      <ControlFlowGuard>
+      </ControlFlowGuard>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <CreateHotpatchableImage>
+      </CreateHotpatchableImage>
+      <SupportJustMyCode>true</SupportJustMyCode>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableEnhancedInstructionSet>
+      </EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
     </ClCompile>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>

@@ -35,7 +35,6 @@ typedef DWORD thread_id_t;
 #define THREAD_YIELD()		Sleep(0)
 
 typedef volatile LONG atomic_t;
-typedef volatile atomic_t atomic_flag;
 
 // atomic functions that return updated value
 #define atomic_ref(i)		InterlockedIncrement(&i)
@@ -370,7 +369,7 @@ protected:
 #else
 
 class BLISTER SpinLock: nocopy {
-    static const int SPINLOCK_YIELD = 1 << 5;
+    static const int SPINLOCK_YIELD = 1 << 6;
 
 public:
     SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) {

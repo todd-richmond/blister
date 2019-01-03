@@ -62,7 +62,7 @@
 				WARN_DISABLE(w)
 
 #ifdef __cplusplus
-#if __cplusplus <= 199711L && !defined(__clang__)
+#if __cplusplus <= 199711L && !defined(__clang__) && !defined(_MSC_VER)
 #define CPLUSPLUS	8
 #elif __cplusplus <= 201103L
 #define CPLUSPLUS	11
@@ -338,6 +338,7 @@ typedef struct statvfs {
 // writev emulation
 typedef struct _WSABUF iovec;
 typedef struct _WSABUF iovec_t;
+typedef ULONG iovlen_t;
 #define iov_len len
 #define iov_base buf
 
@@ -482,6 +483,7 @@ typedef unsigned short ushort;
 typedef unsigned int uint;
 #endif
 
+typedef size_t iovlen_t;
 typedef long long llong;
 typedef unsigned long ulong;
 typedef unsigned long long ullong;
