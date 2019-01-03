@@ -37,6 +37,7 @@ set_target_properties(blister_obj PROPERTIES POSITION_INDEPENDENT_CODE 1)
 target_compile_definitions(blister_obj PRIVATE BUILD_BLISTER)
 target_include_directories(blister_obj PUBLIC .)
 target_cppcheck(blister_obj)
+target_cpplint(blister_obj ${blister_INC_SOURCE})
 
 if(BLISTER_DLL)
     add_library(blister SHARED $<TARGET_OBJECTS:blister_obj>)

@@ -1218,7 +1218,7 @@ private:
 
 // fast single linked object list
 template <class C>
-class ObjectList: nocopy {
+class BLISTER ObjectList: nocopy {
 public:
     ObjectList(): back(NULL), front(NULL), sz(0) {}
 
