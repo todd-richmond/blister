@@ -369,7 +369,7 @@ protected:
 #else
 
 class BLISTER SpinLock: nocopy {
-    static const int SPINLOCK_YIELD = 1 << 6;
+    static const uint SPINLOCK_YIELD = 1 << 6;
 
 public:
     SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) {

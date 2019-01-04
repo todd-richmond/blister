@@ -851,6 +851,8 @@ struct pidstat {
 typedef uint64_t msec_t;
 typedef uint64_t usec_t;
 
+#define millitime()	((msec_t)(microtime() / 1000))
+
 inline usec_t microtime(void) {
     struct timeval tv;
 
@@ -866,8 +868,6 @@ inline void time_adjust_msec(struct timespec *ts, ulong msec) {
 	++ts->tv_sec;
     }
 }
-
-#define millitime()	((msec_t)(microtime() / 1000))
 
 EXTERNC
 extern BLISTER int lockfile(int fd, short type, short whence, ulong start, ulong

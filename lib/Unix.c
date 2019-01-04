@@ -169,21 +169,21 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
     setvbuf(f, fbuf, _IOFBF, sizeof (fbuf));
-    while (fgets(buf, sizeof (buf), f) != NULL) {
+    while (fgets(buf, (int)sizeof (buf), f) != NULL) {
 	char *end;
 	ulong val;
 
-	if (!strncmp(buf, "Pss:", 4)) {
+	if (!strncmp(buf, "Pss:", (size_t)4)) {
 	    val = strtoul(buf + 4, &end, 10);
-	    if (!strncmp(end, " kB", 3))
+	    if (!strncmp(end, " kB", (size_t)3))
 		psbuf->pss += val;
-	} else if (!strncmp(buf, "Rss:", 4)) {
+	} else if (!strncmp(buf, "Rss:", (size_t)4)) {
 	    val = strtoul(buf + 4, &end, 10);
-	    if (!strncmp(end, " kB", 3))
+	    if (!strncmp(end, " kB", (size_t)3))
 		psbuf->rss += val;
-	} else if (!strncmp(buf, "Size:", 5)) {
+	} else if (!strncmp(buf, "Size:", (size_t)5)) {
 	    val = strtoul(buf + 5, &end, 10);
-	    if (!strncmp(end, " kB", 3))
+	    if (!strncmp(end, " kB", (size_t)3))
 		psbuf->sz += val;
 	}
     }
@@ -191,7 +191,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     sprintf(buf, "/proc/%ld/stat", (long)pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
-    if (fgets(buf, sizeof (buf), f) != NULL) {
+    if (fgets(buf, (int)sizeof (buf), f) != NULL) {
 	char c;
 	long d;
 	const char *p = strchr(buf, ')');

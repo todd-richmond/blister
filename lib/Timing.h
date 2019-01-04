@@ -33,7 +33,7 @@
  *
  * A global "dtiming" object allows for the simplest functionality but other
  * objects can be instantiated as well
- * 
+ *
  * Timing can be used in either "direct" or "stack" mode. There are TimingEntry
  * and TimingFrame classes to simplify timing code blocks
  *
@@ -59,12 +59,12 @@
  *     call_c();
  *     dtiming.record();
  *   }
- * 
+ *
  *   void call_c() {
  *     TimingFrame tf(T("call_c"));
  *     function_c();
  *   }
- * 
+ *
  *   dtiming.start(T("function_a"));
  *   function_a();
  *   call_b();
@@ -110,7 +110,7 @@ public:
     Timing() {}
     ~Timing() { clear(); }
 
-    static const int TIMINGSLOTS = 10;
+    static const uint TIMINGSLOTS = 10;
 
     vector<tstring>::size_type depth(void) const { return tls->callers.size(); }
 

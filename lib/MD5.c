@@ -52,7 +52,6 @@
 
 #include "stdapi.h"
 #include "MD5.h"
-#include <string.h>
 
 #if defined(__i386__) || defined(__x86_64__) || defined(_WIN32)
 #define ARCH_IS_BIG_ENDIAN 0
@@ -174,7 +173,7 @@ static void md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/) {
 #endif
 	    } else {
 		/* not aligned */
-		memcpy(xbuf, data, 64);
+		memcpy(xbuf, data, (size_t)64);
 		X = xbuf;
 	    }
 	}
@@ -415,8 +414,8 @@ void md5_hmac(const unsigned char *text, unsigned textlen, const unsigned char
     /* start out by storing key in pads */
     memset(k_ipad, 0, sizeof k_ipad);
     memset(k_opad, 0, sizeof k_opad);
-    memcpy(k_ipad, key, keylen);
-    memcpy(k_opad, key, keylen);
+    memcpy(k_ipad, key, (size_t)keylen);
+    memcpy(k_opad, key, (size_t)keylen);
 
     /* XOR key with ipad and opad values */
     for (int i = 0; i < 64; i++) {
