@@ -57,7 +57,7 @@ public:
 	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()), next(NULL) {}
     virtual ~DispatchObj() {
-	if (!group->refcount.release())
+	if (group->refcount.release())
 	    delete group;
     }
 
