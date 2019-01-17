@@ -1100,7 +1100,7 @@ public:
     __forceinline bool release(void) {
 	FastSpinLocker lkr(lck);
 
-	return --cnt != 0;
+	return --cnt == 0;
     }
 
 private:
@@ -1112,13 +1112,13 @@ private:
 
 class BLISTER RefCount: nocopy {
 public:
-    explicit RefCount(uint init = 1): cnt((int)init) {}
+    explicit RefCount(uint init = 1): cnt((atomic_t)init) {}
 
     __forceinline operator bool(void) const { return referenced(); }
     __forceinline bool referenced(void) const { return atomic_get(cnt) != 0; }
 
     __forceinline void reference(void) { atomic_ref(cnt); }
-    __forceinline bool release(void) { return atomic_rel(cnt) != 0; }
+    __forceinline bool release(void) { return atomic_rel(cnt) == 0; }
 
 private:
     mutable atomic_t cnt;
