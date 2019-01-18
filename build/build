@@ -1,38 +1,31 @@
 #!/bin/sh
-TOOLDIR=/usr/local
 
-#export PATH=${TOOLDIR}/bin:$PATH
-#export LD_LIBRARY_PATH=${TOOLDIR}/lib:${LD_LIBRARY_PATH}
+CMAKE=$(which cmake 2> /dev/null)
 
 if [ "$1" = "-?" -o "$1" = "-h" ]; then
-    echo "usage:	$0
-	[CMAKE_BUILD_TYPE ...]
-	automake [configure_args ...]"
-    echo "usage: $0 [configure_args]"
+    echo "usage:  $0
+	[Debug|MinSizeRel|Release|RelWithDebInfo [cmake_args ...]]
+	[automake [configure_args ...]]"
     exit 1
 fi
-
-if [ "$1" == automake -o -z "$(which cmake 2> /dev/null)" ]; then
-    if [ $(uname) = "Darwin" ]; then
-	LIBTOOLIZE=glibtoolize
-    else
-	LIBTOOLIZE=libtoolize
-    fi
-
-    shift
+[ "$1" == "automake" ] && shift && unset CMAKE
+if [ -z "$CMAKE" ]; then
+    LIBTOOLIZE=$(which libtoolize 2> /dev/null)
+    [ -z "$LIBTOOLIZE" ] && LIBTOOLIZE=$(which glibtoolize 2> /dev/null)
+    [ -z "$LIBTOOLIZE" ] && echo "[g]libtoolize required in path" && exit 1
     set -x
-    make distclean > /dev/null 2>&1
+    [ -f Makefile ] && make distclean > /dev/null 2>&1
     aclocal || exit 1
     autoconf || exit 1
     $LIBTOOLIZE --automake || exit 1
     automake -a || exit 1
     ./configure $* || exit 1
 else
-    CMAKE_BUILD_TYPE=${1:-Release}
-    shift
+    CMAKE_BUILD_TYPE=Release
+    [ -n "$1" ] && CMAKE_BUILD_TYPE=$1 && shift
     set -x
-    cmake -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} $* . || exit 1
+    [ -f Makefile ] && make distclean > /dev/null 2>&1
+    $CMAKE -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} $@ . || exit 1
 fi
-
-make -j 6
+make -j8
 

@@ -13,7 +13,7 @@ AM_CONDITIONAL(StackProtector, test "`echo '$(gcc -dumpversion) >= 4.9' | bc`" =
 : ${CFLAGS=""}
 : ${CXXFLAGS=""}
 : ${GCCREL="`gcc -dumpversion`"}
-: ${OPTIMIZE="-O3 -g -DNDEBUG"}
+: ${OPTIMIZE="-O3 -fdata-sections -ffunction-sections -g -DNDEBUG"}
 : ${OSREL="`uname -r | cut -d. -f1-2`"}
 : ${STACKPROTECTOR="-fstack-protector-strong"}
 
@@ -52,10 +52,9 @@ AC_ARG_ENABLE(optimize,
 AC_MSG_RESULT("$optimize")
 AC_SUBST(optimize)
 
-COMMON_CFLAGS="-pipe -Wall -Werror -Wformat=2 -Wno-format-nonliteral \
--Wno-format-y2k -Wstrict-aliasing=2 -Wwrite-strings $optimize -DOSREL=$OSREL"
+COMMON_CFLAGS="-ffast-math -march=native -pipe -Wall -Wconversion -Werror -Wextra -Wformat=2 -Wno-format-nonliteral -Wformat-security -Wno-format-y2k -Wmultichar -Wno-pragmas -Wredundant-decls -Wsign-conversion -Wstrict-aliasing -Wstrict-overflow=2 -Wtrampolines -Wno-unknown-pragmas -Wwrite-strings $optimize"
 AM_CFLAGS="$AM_CFLAGS $COMMON_CFLAGS"
-AM_CXXFLAGS="$AM_CXXFLAGS -fno-exceptions -fno-rtti -Wno-deprecated $COMMON_CFLAGS"
+AM_CXXFLAGS="$AM_CXXFLAGS -fno-exceptions -fno-rtti -Wno-deprecated -Wnon-virtual-dtor -Woverloaded-virtual -Wsign-promo $COMMON_CFLAGS"
 
 AC_SUBST([AM_CFLAGS])
 AC_SUBST([AM_CXXFLAGS])
