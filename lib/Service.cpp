@@ -62,14 +62,15 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
     if (p) {
 	root = p;
     } else {
-	if (full[0] == '/' || full[1] == ':') {
-	    root = full;
+	if (full[0] == '.' && full[1] == '/')
+	    full += 2;
+	if (full[0] != '/' && full[1] != ':' && tgetcwd(buf, sizeof (buf) /
+	    sizeof (tchar))) {
+	    root = buf;
+	    root += '/';
+	    root += full;
 	} else {
-	    if (!tgetcwd(buf, sizeof (buf) / sizeof (tchar))) {
-		root = buf;
-		root += '/';
-		root += full;
-	    }
+	    root = full;
 	}
 	if ((pos = root.find_last_of('/')) == root.npos)
 	    pos = root.find_last_of('\\');
@@ -443,12 +444,12 @@ bool Service::uninstall() {
     return false;
 }
 
-bool Service::start(int argc, const tchar *const *argv) {
+int Service::start(int argc, const tchar *const *argv) {
     if (!open())
 	return false;
     errnum = StartService(hService, argc - 1, (LPCTSTR *)&argv[1]) ? 0 :
 	GetLastError();
-    return errnum == 0;
+    return errnum;
 }
 
 bool Service::send(int sig) {
@@ -1012,7 +1013,7 @@ int Service::ctrl_handler(void *) {
 	};
 	// ignore signals we sent our own pg
 	if (si.si_pid != getpid() || si.si_code == SI_QUEUE) {
-	    dlogi(Log::mod(service->name), Log::kv(T("sig"), str));
+	    dlogd(Log::mod(service->name), Log::kv(T("sig"), str));
 	    signal_handler(sig, &si, NULL);
 	}
     };
@@ -1089,7 +1090,7 @@ bool Service::uninstall() {
     return chmod(path.c_str(), S_IRWXU|S_IRGRP|S_IXGRP) != -1;
 }
 
-bool Service::start(int argc, const tchar * const *argv) {
+int Service::start(int argc, const tchar * const *argv) {
     pid_t fpid;
     uint loop = 15;
     Status sts;
@@ -1097,16 +1098,16 @@ bool Service::start(int argc, const tchar * const *argv) {
     while (loop-- && (sts = status()) == Stopping)
 	sleep(1);
     if (sts != Error && sts != Stopped)
-	return false;
+	return -1;
     if (console || (fpid = fork()) == 0) {
-	exit(run(argc, argv));
+	return run(argc, argv);
     } else if (fpid == -1) {
 	errnum = errno;
 	dloge(Log::mod(argv[0]), Log::error(T("unable to fork")));
-	return false;
+	return -2;
     } else {
-	bool started = false;
 	int ret;
+	bool started = false;
 
 	waitpid(fpid, &ret, 0);
 	ret = WIFEXITED(ret) ? WEXITSTATUS(ret) : WIFSIGNALED(ret) ?
@@ -1118,15 +1119,15 @@ bool Service::start(int argc, const tchar * const *argv) {
 	    } else if (sts == Starting) {
 		started = true;
 	    } else if (ret) {
-		return false;
+		return ret;
 	    } else if ((sts == Error || sts == Stopped) &&
 		(started || i > 50)) {
-		return false;
+		return -3;
 	    }
 	    msleep(100);
 	}
     }
-    return true;
+    return 0;
 }
 
 bool Service::send(int sig) {
@@ -1298,10 +1299,10 @@ int Service::execute(int argc, const tchar * const *argv) {
 	if (ret)
 	    errnum = ESRCH;
 	else
-	    ret = !start(ac, av);
+	    ret = start(ac, av);
     } else if (tstreq(cmd, T("restart"))) {
 	stop();
-	ret = !start(ac, av);
+	ret = start(ac, av);
     } else if (tstreq(cmd, T("continue")) || tstreq(cmd, T("resume"))) {
 	ret = !resume();
     } else if (tstreq(cmd, T("roll")) || tstreq(cmd, T("sigusr1")) ||
@@ -1310,7 +1311,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     } else if (tstreq(cmd, T("sigusr2"))) {
 	ret = !sigusr2();
     } else if (tstreq(cmd, T("start"))) {
-	ret = !start(ac, av);
+	ret = start(ac, av);
 	if (ret && status() != Error) {
 	    ret = 0;
 	    tcout << name << T(": ") << status(status()) << endl;
@@ -1408,7 +1409,8 @@ Daemon::Daemon(const tchar *svc_name, const tchar *display, bool pauseable):
 
 Daemon::~Daemon() {
     if (qflag != None)
-	dlog.note(Log::mod(name), Log::kv(T("sts"), T("stopped")));
+	dlog.note(Log::mod(name), Log::kv(T("sts"), T("stopped")),
+	    Log::kv(T("duration"), (mticks() - msec) / 1000U));
     if (lckfd != -1) {
 	if (!watch || child)
 	    (void)tunlink(lckfile.c_str());
@@ -1740,8 +1742,7 @@ bool Daemon::onRefresh(void) {
 }
 
 void Daemon::onStop(bool fast) {
-    dlogn(Log::mod(name), Log::cmd(fast ? T("exit") : T("stop")),
-	Log::kv(T("duration"), (mticks() - msec) / 1000U));
+    dlogi(Log::mod(name), Log::cmd(fast ? T("exit") : T("stop")));
     qflag = fast ? Fast : Slow;
 }
 

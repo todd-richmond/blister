@@ -78,7 +78,7 @@ public:
 	const tchar * const *depend = NULL, bool manual = false);
     bool uninstall(void);
     int execute(int argc, const tchar * const *argv);
-    bool start(int argc, const tchar * const *argv);
+    int start(int argc, const tchar * const *argv);
     bool stop(bool fast = false) {
 	return send(fast ? SERVICE_CONTROL_EXIT : SERVICE_CONTROL_STOP);
     }
