@@ -368,9 +368,9 @@ void Config::trim(tstring &s) const {
     tstring::size_type i, j;
 
     for (j = s.size(); j; j--)
-	if (!istspace(s[j]))
+	if (!istspace(s[j - 1]))
 	    break;
-    if (++j < s.size())
+    if (j < s.size())
 	s.erase(j);
     for (i = 0; i < j; i++)
 	if (!istspace(s[i]))
