@@ -1112,7 +1112,7 @@ private:
 
 class BLISTER RefCount: nocopy {
 public:
-    explicit RefCount(uint init = 1): cnt((atomic_t)init) {}
+    explicit RefCount(uint init = 1): cnt((int)init) {}
 
     __forceinline operator bool(void) const { return referenced(); }
     __forceinline bool referenced(void) const { return atomic_get(cnt) != 0; }
