@@ -161,8 +161,8 @@ bool Dispatcher::exec() {
 	lock.lock();
 	running--;
 #else
-	lock.unlock();
 	atomic_inc(running);
+	lock.unlock();
 	obj->dcb(obj);
 	atomic_dec(running);
 	lock.lock();
@@ -729,9 +729,7 @@ void Dispatcher::wake(uint tasks, bool main) {
 	return;
     }
     while (tasks && rlist && !shutdown) {
-	uint u = lifo.size();
-	uint wake = workers - (uint)running - u;
-	static uint cpus = Processor::count();
+	uint wake = workers - (uint)running - lifo.size();
 
 	if (wake >= rlist.size())
 	    break;
@@ -739,11 +737,14 @@ void Dispatcher::wake(uint tasks, bool main) {
 	lock.unlock();
 	if (wake < tasks)
 	    tasks = wake;
-	if (u && (tasks / 2 + 1) >= u) {
+	if (lifo && tasks >= lifo.size()) {
 	    wake = lifo.broadcast();
 	    tasks = wake >= tasks ? 0 : tasks - wake;
 	} else {
-	    wake = woke ? 1 : tasks > cpus ? cpus : tasks;
+	    uint u;
+	    static uint cpus = Processor::count();
+
+	    wake = tasks <= cpus ? tasks : woke ? cpus / 2 + 1 : cpus;
 	    if ((u = lifo.set(wake)) == wake) {
 		Thread *t;
 
@@ -763,8 +764,6 @@ void Dispatcher::wake(uint tasks, bool main) {
 		tasks -= wake;
 	    }
 	}
-	if (wake)
-	    THREAD_YIELD();
 	woke += wake;
 	lock.lock();
     }
