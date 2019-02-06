@@ -22,7 +22,8 @@ static const thread_id_t NOID = (thread_id_t)-1;
 
 Lock ThreadGroup::grouplck;
 set<ThreadGroup *> ThreadGroup::groups;
-ulong ThreadGroup::nextId;
+atomic_t ThreadGroup::next_id;
+ThreadLocal<Thread::ThreadLocalMap *> Thread::flocal;
 ThreadGroup ThreadGroup::MainThreadGroup(false);
 Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
 
@@ -203,6 +204,23 @@ bool Processor::affinity(ullong mask) {
 #endif
 }
 
+void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
+    ThreadLocalMap *fmap = flocal.get();
+
+    if (!fmap) {
+	fmap = new ThreadLocalMap();
+	flocal.set(fmap);
+    }
+    if (func) {
+	(*fmap)[data] = func;
+    } else if (data) {
+	func = (*fmap)[data];
+	fmap->erase(data);
+	if (func)
+	    func(data);
+    }
+}
+
 Thread::Thread(thread_hdl_t handle, ThreadGroup *tg, bool aterm): cv(lck),
     argument(NULL), autoterm(aterm), hdl(handle), id(NOID), main(NULL),
     retval(0), state(Running) {
@@ -222,10 +240,13 @@ Thread::~Thread() {
     }
     if (group)
 	group->remove(*this);
+    if (this == &MainThread)
+	thread_cleanup();
 }
 
 // set state and notify threadgroup
 void Thread::clear(void) {
+    thread_cleanup();
     lck.lock();
     if (id != NOID) {
 #ifdef _WIN32
@@ -313,8 +334,20 @@ bool Thread::resume(void) {
     return ret;
 }
 
+void Thread::thread_cleanup(void) {
+    ThreadLocalMap *fmap = flocal.get();
+
+    if (fmap) {
+	for (ThreadLocalMap::const_iterator it = fmap->begin(); it !=
+	    fmap->end(); ++it)
+	    it->second(it->first);
+	delete fmap;
+	flocal.set(NULL);
+    }
+}
+
 // setup thread and call it's main routine
-THREAD_FUNC Thread::threadInit(void *arg) {
+THREAD_FUNC Thread::thread_init(void *arg) {
     Thread *thread = static_cast<Thread *> (arg);
     ThreadState istate = thread->state;
 
@@ -351,7 +384,8 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     else
 	state = Running;
 #ifdef _WIN32
-    hdl = (HANDLE)_beginthreadex(NULL, stacksz, threadInit, this, 0, (uint *)&id);
+    hdl = (HANDLE)_beginthreadex(NULL, stacksz, thread_init, this, 0,
+	(uint *)&id);
 #else
     pthread_attr_t attr;
 
@@ -361,7 +395,7 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
 	pthread_attr_setstacksize(&attr, stacksz);
     }
     pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-    pthread_create(&hdl, &attr, threadInit, this);
+    pthread_create(&hdl, &attr, thread_init, this);
     pthread_attr_destroy(&attr);
 #endif
     if (hdl) {
@@ -455,7 +489,7 @@ bool Thread::wait(ulong timeout) {
 
 ThreadGroup::ThreadGroup(bool aterm): cv(cvlck), autoterm(aterm), state(Init) {
     grouplck.lock();
-    id = (thread_id_t)((ulong)nextId++);
+    id = (thread_id_t)atomic_inc(next_id);
     groups.insert(this);
     grouplck.unlock();
 }

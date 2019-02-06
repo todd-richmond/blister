@@ -200,6 +200,7 @@ typedef pthread_key_t tlskey_t;
 typedef volatile atomic_t atomic_flag;
 #endif
 #include <set>
+#include STL_UNORDERED_MAP_H
 
 class Thread;
 class ThreadGroup;
@@ -315,6 +316,8 @@ protected:
 };
 
 /* Thread local storage for classes with proper destruction when theads exit */
+typedef void (*ThreadLocalFree)(void *data);
+
 template<class C>
 class BLISTER ThreadLocalClass: nocopy {
 public:
@@ -324,20 +327,14 @@ public:
 
     __forceinline C &operator *(void) const { return get(); }
     __forceinline C *operator ->(void) const { return &get(); }
-    void erase(void) { delete (C *)tls_get(key); tls_set(key, 0); }
-    __forceinline C &get(void) const {
-	C *c = (C *)tls_get(key);
-
-	if (!c) {
-	    c = new C;
-	    tls_set(key, c);
-	}
-	return *c;
-    }
+    void erase(void);
+    C &get(void) const;
     __forceinline void set(C *c) const { tls_set(key, c); }
 
 protected:
     tlskey_t key;
+
+    static void cleanup(void *data) { delete (C *)data; }
 };
 
 /*
@@ -1341,6 +1338,7 @@ public:
     bool suspend(void);
     bool terminate(void);
     bool wait(ulong timeout = INFINITE);
+    static void thread_cleanup(void *data, ThreadLocalFree func);
 
 protected:
     void end(int ret = 0);
@@ -1348,6 +1346,8 @@ protected:
     virtual void onStop(void) {}
 
 private:
+    typedef unordered_map<void *, ThreadLocalFree> ThreadLocalMap;
+
     mutable Lock lck;
     Condvar cv;
     void *argument;
@@ -1358,10 +1358,12 @@ private:
     ThreadRoutine main;
     int retval;
     volatile ThreadState state;
+    static ThreadLocal<ThreadLocalMap *> flocal;
 
     void clear(void);
+    void thread_cleanup(void);
     static int init(void *thisp);
-    static THREAD_FUNC threadInit(void *thisp);
+    static THREAD_FUNC thread_init(void *thisp);
 
     friend class ThreadGroup;
 };
@@ -1415,11 +1417,31 @@ private:
     Thread master;
     static Lock grouplck;
     static set<ThreadGroup *> groups;
-    static ulong nextId;
+    static atomic_t next_id;
 
     static int init(void *thisp);
     friend class Thread;
 };
+
+template<class C>
+void ThreadLocalClass<C>::erase(void) {
+    C *c = (C *)tls_get(key);
+
+    tls_set(key, 0);
+    Thread::thread_cleanup(c, NULL);
+}
+
+template<class C>
+C &ThreadLocalClass<C>::get(void) const {
+    C *c = (C *)tls_get(key);
+
+    if (!c) {
+	c = new C;
+	tls_set(key, c);
+	Thread::thread_cleanup(c, cleanup);
+    }
+    return *c;
+}
 
 #endif
 #endif // Thread_h
