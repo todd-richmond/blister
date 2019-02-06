@@ -82,11 +82,11 @@ usec_t __no_sanitize("thread") uticks(void) {
 	atomic_clr(lck);
     }
     return mach_absolute_time() * mti.numer / mti.denom;
-#elif defined(CLOCK_BOOTTIME)
+#elif defined(CLOCK_MONOTONIC)
     struct timespec ts;
 
-    clock_gettime(CLOCK_BOOTTIME, &ts);
-    return (usec_t)ts.tv_sec * 1000000 + (msec_t)ts.tv_nsec / 1000;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (usec_t)ts.tv_sec * 1000000 + (usec_t)ts.tv_nsec / 1000;
 #else
     usec_t diff, now, save;
     struct timeval tv;
