@@ -48,18 +48,30 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 	lck.wlock();
 	if ((it = tmap.find(key.hash())) == tmap.end()) {
 	    tmap[key] = stats;
+#if CPLUSPLUS >= 11
+	    lck.downlock();
+#endif
 	} else {
+#if CPLUSPLUS >= 11
+	    lck.downlock();
+#endif
 	    delete stats;
 	    stats = it->second;
 	}
     } else {
 	stats = it->second;
+#if CPLUSPLUS < 11
 	lck.uplock();
+#endif
     }
     ++stats->cnt;
     ++stats->cnts[slot];
     stats->tot += diff;
+#if CPLUSPLUS < 11
     lck.wunlock();
+#else
+    lck.runlock();
+#endif
 }
 
 void Timing::clear() {
@@ -136,7 +148,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    else if (stats->cnt >= 10000UL)
 		tsprintf(cbuf, T("%4luk"), stats->cnt / 1000UL);
 	    else
-		tsprintf(cbuf, T("%5lu"), stats->cnt);
+		tsprintf(cbuf, T("%5lu"), stats->cnt / 1U);
 	    if (tot) {
 		tchar abuf[16];
 
@@ -156,11 +168,11 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    }
 	    s += (tchar)'"';
 	    tsprintf(buf, T(",%.3g,%lu"), (double)stats->tot / 1000000.0,
-		stats->cnt);
+		stats->cnt / 1U);
 	}
 	s += buf;
 	for (u = begin; u <= last && tot; u++) {
-	    ulong cnt = (columns && u == begin) ? sum : stats->cnts[u];
+	    ulong cnt = (columns && u == begin) ? sum : stats->cnts[u] / 1U;
 
 	    if (!columns) {
 		tsprintf(buf, T(",%lu"), cnt);

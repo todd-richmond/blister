@@ -152,10 +152,17 @@ private:
 	}
 	~Stats() { free((char *)key); }
 
+#if CPLUSPLUS >= 11
+	TSNumber<ulong> cnt;
+	TSNumber<ulong> cnts[TIMINGSLOTS];
+	const tchar *key;
+	TSNumber<timing_t> tot;
+#else
 	ulong cnt;
 	ulong cnts[TIMINGSLOTS];
 	const tchar *key;
 	timing_t tot;
+#endif
     };
 
     struct BLISTER Tlsdata {
