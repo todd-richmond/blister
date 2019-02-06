@@ -616,6 +616,7 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 #define DSP_EVENT_ERR(evt)	evt->revents & (POLLERR | POLLHUP)
 #define DSP_EVENT_READ(evt)	evt->revents & POLLIN
 #define DSP_EVENT_WRITE(evt)	evt->revents & POLLOUT
+#define DSP_ONESHOT(ds, flag)	ds->flags &= ~(flag);
 
 	socketmap::const_iterator sit;
 
@@ -630,6 +631,7 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 #define DSP_EVENT_ERR(evt)	evt->events & (EPOLLERR | EPOLLHUP)
 #define DSP_EVENT_READ(evt)	evt->events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)
 #define DSP_EVENT_WRITE(evt)	evt->events & EPOLLOUT
+#define DSP_ONESHOT(ds, flag)	ds->flags &= ~(flag);
 
 	ds = static_cast<DispatchSocket *>(evt->data.ptr);
 
@@ -637,6 +639,7 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 #define DSP_EVENT_ERR(evt)	evt->flags & (EV_EOF | EV_ERROR)
 #define DSP_EVENT_READ(evt)	evt->filter == EVFILT_READ && evt->data > 0
 #define DSP_EVENT_WRITE(evt)	evt->filter == EVFILT_WRITE && evt->data > 0
+#define DSP_ONESHOT(ds, flag)
 
 	ds = static_cast<DispatchSocket *>(evt->udata);
 #endif
@@ -653,6 +656,7 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 		    DispatchRead;
 	    else
 		ds->flags |= DSP_Readable;
+	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectRead);
 	}
 	if (DSP_EVENT_WRITE(evt)) {
 	    if (ds->flags & DSP_Connecting)
@@ -661,12 +665,14 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 		ds->msg = DispatchWrite;
 	    else
 		ds->flags |= DSP_Writeable;
+	    DSP_ONESHOT(ds, DSP_SelectWrite);
 	}
 	if (DSP_EVENT_ERR(evt)) {
 	    if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
 		ds->msg = DispatchClose;
 	    else
 		ds->flags |= DSP_Closeable;
+	    DSP_ONESHOT(ds, DSP_SelectClose);
 	}
 	if ((ds->flags & DSP_Scheduled) && ready(*ds, ds->msg ==
 	    DispatchAccept))
@@ -1045,7 +1051,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	event_t evt;
 
 	evt.data.ptr = &ds;
-	evt.events = sockevts[m] | EPOLLERR | EPOLLHUP;
+	evt.events = sockevts[m] | EPOLLERR | EPOLLHUP | (uint)EPOLLET |
+	    EPOLLONESHOT;
 	RETRY(epoll_ctl(evtfd, op, ds.fd(), &evt));
 	if (resched)
 	    RETRY(eventfd_write(wfd, 1));

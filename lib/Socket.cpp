@@ -422,7 +422,8 @@ bool Socket::movehigh(void) {
 	int fd;
 
 #ifdef F_DUPFD_CLOEXEC
-	fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 1024);
+	// 1024-1035 cause valgrind warnings
+	fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 1036);
 #else
 	fd = fcntl(sbuf->sock, F_DUPFD, 1024);
 #endif
