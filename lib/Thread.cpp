@@ -489,7 +489,7 @@ bool Thread::wait(ulong timeout) {
 
 ThreadGroup::ThreadGroup(bool aterm): cv(cvlck), autoterm(aterm), state(Init) {
     grouplck.lock();
-    id = (thread_id_t)atomic_inc(next_id);
+    id = (thread_id_t)(ulong)atomic_inc(next_id);
     groups.insert(this);
     grouplck.unlock();
 }
