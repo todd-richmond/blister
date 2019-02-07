@@ -367,7 +367,7 @@ protected:
 
 class BLISTER SpinLock: nocopy {
 public:
-    SpinLock(uint lmt = 1 << 9): spins(Processor::count() == 1 ? 0 : lmt) {
+    SpinLock(uint lmt = 1 << 8): spins(Processor::count() == 1 ? 0 : lmt) {
 #if CPLUSPLUS >= 11 && !defined(__GNUC__)
 	lck.clear();
 #else
@@ -376,21 +376,30 @@ public:
 #endif
     }
     __forceinline void lock(void) {
-	while (!trylock()) {
+	if (!trylock()) {
 #ifdef THREAD_PAUSE
-	    for (uint u = spins; u; --u) {
-		THREAD_PAUSE();
-		THREAD_BARRIER();
-	    }
-	    if (testlock())
-		THREAD_YIELD();
+	    uint lmt = 1;
+
+	    do {
+		if (lmt >= spins) {
+		    THREAD_YIELD();
+		} else {
+		    for (uint u = lmt; u; --u) {
+			THREAD_PAUSE();
+			THREAD_BARRIER();
+		    }
+		    lmt <<= 1;
+		}
+	    } while (testlock() || !trylock());
 #else
-	    THREAD_YIELD();
+	    do {
+		THREAD_YIELD();
+	    } while (testlock() || !trylock())
 #endif
 	}
     }
 #if CPLUSPLUS >= 11 && !defined(__GNUC__)
-    __forceinline bool testlock(void) { return true; }
+    __forceinline bool testlock(void) { return false; }
     __forceinline bool trylock(void) {
 	return !lck.test_and_set(memory_order_acquire);
     }
