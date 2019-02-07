@@ -102,7 +102,7 @@ typedef pthread_t thread_id_t;
 
 #ifdef __GNUC__
 
-#if (defined(__arm__) && (__GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 4)))
+#if defined(__arm__) && (__GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 4))
 
 #define NO_ATOMIC_ADD
 #define NO_ATOMIC_LOCK
@@ -366,11 +366,9 @@ protected:
 #else
 
 class BLISTER SpinLock: nocopy {
-    static const uint SPINLOCK_YIELD = 1 << 6;
-
 public:
-    SpinLock(): init(Processor::count() == 1 ? SPINLOCK_YIELD : 1U) {
-#if CPLUSPLUS >= 11
+    SpinLock(uint lmt = 1 << 9): spins(Processor::count() == 1 ? 0 : lmt) {
+#if CPLUSPLUS >= 11 && !defined(__GNUC__)
 	lck.clear();
 #else
 	// cppcheck-suppress useInitializationList
@@ -378,40 +376,38 @@ public:
 #endif
     }
     __forceinline void lock(void) {
+	while (!trylock()) {
 #ifdef THREAD_PAUSE
-	if (!trylock()) {
-	    uint pause = init;
-
-	    do {
-		if (pause == SPINLOCK_YIELD) {
-		    THREAD_YIELD();
-		} else {
-		    for (uint u = 0; u < pause; ++u) {
-			THREAD_PAUSE();
-			THREAD_BARRIER();
-		    }
-		    pause <<= 1;
-		}
-	    } while (!trylock());
-	}
+	    for (uint u = spins; u; --u) {
+		THREAD_PAUSE();
+		THREAD_BARRIER();
+	    }
+	    if (testlock())
+		THREAD_YIELD();
 #else
-	while (!trylock())
 	    THREAD_YIELD();
 #endif
+	}
     }
-#if CPLUSPLUS >= 11
+#if CPLUSPLUS >= 11 && !defined(__GNUC__)
+    __forceinline bool testlock(void) { return true; }
     __forceinline bool trylock(void) {
 	return !lck.test_and_set(memory_order_acquire);
     }
     __forceinline void unlock(void) { lck.clear(memory_order_release); }
 #else
-    __forceinline bool trylock(void) { return atomic_lck(lck) == 0; }
+    __forceinline bool testlock(void) { return lck; }
+    __forceinline bool trylock(void) { return !atomic_lck(lck); }
     __forceinline void unlock(void) { atomic_clr(lck); }
 #endif
 
 private:
-    const uint init;
+#if CPLUSPLUS >= 11 && !defined(__GNUC__)
     atomic_flag lck;
+#else
+    atomic_t lck;
+#endif
+    const uint spins;
 };
 
 #endif
