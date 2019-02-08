@@ -576,7 +576,7 @@ public:
 	ret = sema4.wait(msec);
 	olck.lock();
 	if (!ret)
-	    ret = sema4.wait(0);
+	    ret = sema4.trywait();
 	atomic_dec(waiting);
 	if (ret && !--pending)
 	    ilck.unlock();
@@ -677,20 +677,19 @@ public:
 	return true;
     }
     __forceinline bool trywait(void) {
-	mach_timespec ts = { 0, 0 };
+	static mach_timespec ts = { 0, 0 };
 
 	return semaphore_timedwait(hdl, ts) == KERN_SUCCESS;
     }
     __forceinline bool wait(ulong msec = INFINITE) {
-	if (msec == INFINITE) {
+	if (msec == INFINITE)
 	    return semaphore_wait(hdl) == KERN_SUCCESS;
-	} else {
-	    mach_timespec ts = {
-		(uint) (msec / 1000), ((clock_res_t) msec % 1000) * 1000000
-	    };
 
-	    return semaphore_timedwait(hdl, ts) == KERN_SUCCESS;
-	}
+	mach_timespec ts = {
+	    (uint)(msec / 1000), ((clock_res_t)msec % 1000) * 1000000
+	};
+
+	return semaphore_timedwait(hdl, ts) == KERN_SUCCESS;
     }
 
 protected:
@@ -736,17 +735,30 @@ public:
 	}
 	return true;
     }
-    __forceinline bool trywait(void) { return sem_trywait(&hdl) == 0; }
+    __forceinline bool trywait(void) {
+	do {
+	    if (!sem_trywait(&hdl))
+		return true;
+	} while (errno == EINTR);
+	return false;
+    }
     __forceinline bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {
-	    return sem_wait(&hdl) == 0;
+	    do {
+		if (!sem_wait(&hdl))
+		    return true;
+	    } while (errno == EINTR);
 	} else {
 	    timespec ts;
 
 	    clock_gettime(CLOCK_REALTIME_COARSE, &ts);
 	    time_adjust_msec(&ts, msec);
-	    return sem_timedwait(&hdl, &ts) == 0;
+	    do {
+		if (!sem_timedwait(&hdl, &ts))
+		    return true;
+	    } while (errno == EINTR);
 	}
+	return false;
     }
 
 protected:
@@ -784,7 +796,7 @@ public:
 	op.sem_num = 0;
 	op.sem_op = (short)cnt;
 	op.sem_flg = 0;
-	return semop(hdl, &op, 1) == 0;
+	return semop(op);
     }
     __forceinline bool trywait(void) {
 	sembuf op;
@@ -792,7 +804,7 @@ public:
 	op.sem_num = 0;
 	op.sem_op = -1;
 	op.sem_flg = IPC_NOWAIT;
-	return semop(hdl, &op, 1) == 0;
+	return semop(op);
     }
     __forceinline bool wait(ulong msec = INFINITE) {
 	sembuf op;
@@ -800,24 +812,34 @@ public:
 	op.sem_num = 0;
 	op.sem_op = -1;
 	op.sem_flg = 0;
+	if (msec == INFINITE)
+	    return semop(op);
 #ifdef BSD_BASE
 	(void)msec;
-	return semop(hdl, &op, 1) == 0;
+	return semop(op);
 #else
-	if (msec == INFINITE) {
-	    return semop(hdl, &op, 1) == 0;
-	} else {
-	    timespec ts;
+	timespec ts;
 
-	    clock_gettime(CLOCK_REALTIME_COARSE, &ts);
-	    time_adjust_msec(&ts, msec);
-	    return semtimedop(hdl, &op, 1, &ts) == 0;
-	}
+	clock_gettime(CLOCK_REALTIME_COARSE, &ts);
+	time_adjust_msec(&ts, msec);
+	do {
+	    if (!semtimedop(hdl, &op, 1, &ts))
+		return true;
+	} while (errno == EINTR);
+	return false;
 #endif
     }
 
 protected:
     int hdl;
+
+    __forceinline bool semop(sembuf &op) {
+	do {
+	    if (!::semop(hdl, &op, 1))
+		return true;
+	} while (errno == EINTR);
+	return false;
+    }
 };
 
 class BLISTER Condvar: nocopy {
@@ -1237,7 +1259,6 @@ public:
 
 	return sz;
     }
-
     __forceinline uint broadcast(void) {
 	Waiting *w, *next;
 	uint ret;
