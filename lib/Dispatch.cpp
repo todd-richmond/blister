@@ -356,6 +356,9 @@ int Dispatcher::onStart() {
 	(uintptr_t)-1 || !(evts[0].flags & EV_ERROR)) {
 	close(evtfd);
 	evtfd = -1;
+    } else {
+	EV_SET(&evts[0], 1, EVFILT_USER, EV_ADD, NOTE_TRIGGER, 0, NULL);
+	RETRY(kevent(evtfd, &evts[0], 1, NULL, 0, NULL));
     }
 #endif
 #endif
@@ -801,7 +804,7 @@ void Dispatcher::wakeup(ulong msec) {
 		EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, msec,
 		    NULL);
 	    else
-		EV_SET(&evt, 1, EVFILT_USER, EV_ADD, NOTE_TRIGGER, 0, NULL);
+		EV_SET(&evt, 1, EVFILT_USER, EV_ENABLE, NOTE_TRIGGER, 0, NULL);
 	    RETRY(kevent(evtfd, &evt, 1, NULL, 0, &ts));
 #endif
 	}
@@ -839,10 +842,8 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
 	}
     } else {
 	removeTimer(dt);
-	if (ready(dt) && !workers) {
-	    wakeup(0);
-	    return;
-	}
+	if (ready(dt) && !workers)
+	    wake(1, false);
     }
     lock.unlock();
 }
