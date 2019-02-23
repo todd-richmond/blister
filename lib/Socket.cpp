@@ -92,7 +92,7 @@ const tstring &Sockaddr::hostname() {
 const tstring Sockaddr::ip(void) const {
     ushort fam = family();
 
-    if (fam  == AF_INET) {
+    if (fam == AF_INET) {
 	char buf[INET_ADDRSTRLEN];
 
 	return achartotstring(inet_ntop(fam, &addr.sa4.sin_addr, buf, sizeof
@@ -422,19 +422,16 @@ bool Socket::movehigh(void) {
 	int fd;
 
 #ifdef F_DUPFD_CLOEXEC
-	// 1024-1035 cause valgrind warnings
-	fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 1036);
+	fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 1024);
 #else
 	fd = fcntl(sbuf->sock, F_DUPFD, 1024);
 #endif
-	if (fd == -1
 #ifdef __sun__				// Solaris stdio has lower 256 limit
-	    || (fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 256)) == -1
+	if (fd == -1)
+	    fd = fcntl(sbuf->sock, F_DUPFD_CLOEXEC, 256);
 #endif
-	    ) {
-	    return false;
-	} else if (fd == sbuf->sock) {
-	    (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
+	if (fd == -1) {
+	    (void)fcntl(sbuf->sock, F_SETFD, FD_CLOEXEC);
 	} else {
 #ifndef F_DUPFD_CLOEXEC
 	    (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
