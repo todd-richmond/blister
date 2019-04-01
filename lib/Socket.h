@@ -153,6 +153,7 @@ public:
     bool ipv6(void) const { return family() == AF_INET6; }
     ushort port(void) const;
     void port(ushort port);
+    Proto proto(void) const;
     bool service(const tchar *service, Proto proto = TCP);
     bool set(const addrinfo *h);
     bool set(const tchar *host, Proto proto = TCP);
@@ -405,7 +406,7 @@ protected:
 
 /*
  * SocketSet manages system dependent fd_set/select() and pollfd/poll()
- * differences and is optimized for very large file descriptor sets. 
+ * differences and is optimized for very large file descriptor sets.
  */
 class BLISTER SocketSet {
 public:

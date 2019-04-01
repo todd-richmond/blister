@@ -168,7 +168,6 @@ public:
     virtual void erase(void);
 
 protected:
-    bool closesocket(void) { return Socket::close(); }
     void poll(DispatchObjCB cb, ulong msec, DispatchMsg msg);
 
     bool mapped;

@@ -915,13 +915,11 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 	}
 #endif
     }
-    if (close) {
+    if (del) {
+	flist.push_back(ds);
+    } else if (close) {
 	lkr.unlock();
-	ds.closesocket();
-	if (del) {
-	    lkr.lock();
-	    flist.push_back(ds);
-	}
+	ds.Socket::close();
     }
 }
 

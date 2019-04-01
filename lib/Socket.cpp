@@ -123,6 +123,14 @@ void Sockaddr::port(ushort port) {
 	addr.sa6.sin6_port = htons(port);
 }
 
+Sockaddr::Proto Sockaddr::proto(void) const {
+    switch (family()) {
+    case AF_INET: return TCP4;
+    case AF_INET6: return TCP6;
+    default: return UNSPEC;
+    }
+}
+
 bool Sockaddr::service(const tchar *service, Proto proto) {
     Sockaddr sa;
 
