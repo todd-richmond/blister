@@ -126,6 +126,8 @@ public:
 	name = sa.name;
 	return *this;
     }
+    operator const in_addr *() const { return &addr.sa4.sin_addr; }
+    operator const in6_addr *() const { return &addr.sa6.sin6_addr; }
     operator const sockaddr *() const { return &addr.sa; }
     operator const sockaddr_in *() const { return &addr.sa4; }
     operator const sockaddr_in6 *() const { return &addr.sa6; }
@@ -139,13 +141,6 @@ public:
     const tstring &host(void) const;
     bool host(const tchar *host, Proto proto = TCP) {
 	return port() ? set(host, port(), proto) : set(host, proto);
-    }
-    bool is_v4mapped(void) const {
-	const in6_addr &sa6 = addr.sa6.sin6_addr;
-
-	return ipv6() && sa6.s6_addr16[0] == 0 && sa6.s6_addr16[1] == 0 &&
-	    sa6.s6_addr16[2] == 0 && sa6.s6_addr16[3] == 0 &&
-	    sa6.s6_addr16[4] == 0 && sa6.s6_addr16[5] == 0xFFFF;
     }
     const tstring ip(void) const;
     const tstring ipstr(void) const { return str(ip()); }
@@ -163,11 +158,19 @@ public:
     bool set(const sockaddr &sa);
     ushort size(void) const { return size(family()); }
     const tstring str(void) const { return str(host()); }
+    bool v4mapped(void) const {
+	const in6_addr &sa6 = addr.sa6.sin6_addr;
 
-    static sa_family_t families[];
+	return ipv6() && sa6.s6_addr16[0] == 0 && sa6.s6_addr16[1] == 0 &&
+	    sa6.s6_addr16[2] == 0 && sa6.s6_addr16[3] == 0 &&
+	    sa6.s6_addr16[4] == 0 && sa6.s6_addr16[5] == 0xFFFF;
+    }
+
     static bool dgram(Proto proto) {
 	return proto == UDP || proto == UDP4 || proto == UDP6;
     }
+    static addrinfo *getaddrinfo(const tchar *host, const tchar *service, Proto
+	proto = TCP);
     static const tstring &hostname(void);
     static const tstring service_name(ushort port, Proto proto = TCP);
     static ushort service_port(const tchar *service, Proto proto = TCP);
@@ -195,6 +198,7 @@ private:
 
     sockaddr_any addr;
     mutable tstring name;
+    static sa_family_t families[];
 
     const tstring str(const tstring &val) const;
 };
@@ -203,6 +207,20 @@ WARN_POP
 inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
     return os << addr.str();
 }
+
+// Socket address list for hosts that resolve to multiple results
+class BLISTER SockaddrList: public ObjectList<ObjectListNode<Sockaddr> > {
+public:
+    SockaddrList() {}
+    SockaddrList(const char *host, ushort port, Sockaddr::Proto proto =
+	Sockaddr::TCP) { insert(host, port, proto); }
+    ~SockaddrList() { free(); }
+
+    bool insert(const char *host, ushort port, Sockaddr::Proto proto =
+	Sockaddr::TCP);
+    void insert(const Sockaddr &addr) { push_back(*new ObjectListNode<Sockaddr>(
+	addr)); }
+};
 
 /*
  * CIDR/Network class to simplify IP range lookups

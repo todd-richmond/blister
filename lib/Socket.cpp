@@ -64,6 +64,36 @@ const tstring &Sockaddr::host(void) const {
     return name;
 }
 
+addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
+    proto) {
+    struct addrinfo *ai, hints;
+
+    ZERO(hints);
+    hints.ai_family = families[proto];
+    if (!host || !*host || *host == '*' || !tstricmp(host, T("INADDR_ANY")) ||
+	!tstricmp(host, T("IN6ADDR_ANY"))) {
+	host = NULL;
+	hints.ai_flags = AI_PASSIVE;
+    } else if (istdigit(*host)) {
+	hints.ai_flags = AI_NUMERICHOST;
+    } else {
+	hints.ai_flags = AI_CANONNAME;
+	 if (!tstrnicmp(host, T("ipv4:"), 5)) {
+	    hints.ai_family = families[TCP4];
+	    host += 5;
+	} else if (!tstrnicmp(host, T("ipv6:"), 5)) {
+	    hints.ai_family = families[TCP6];
+	    host += 5;
+	}
+    }
+    hints.ai_flags |= AI_ADDRCONFIG | AI_V4MAPPED;
+    if (service && istdigit(*service))
+	hints.ai_flags |= AI_NUMERICSERV;
+    hints.ai_socktype = dgram(proto) ? SOCK_DGRAM : SOCK_STREAM;
+    return ::getaddrinfo(host ? tchartoachar(host) : NULL, service ?
+	tchartoachar(service) : NULL, &hints, &ai) ? NULL : ai;
+}
+
 const tstring &Sockaddr::hostname() {
     static tstring hname;
 
@@ -101,7 +131,7 @@ const tstring Sockaddr::ip(void) const {
 	char buf[INET6_ADDRSTRLEN];
 	const char *s = inet_ntop(fam, &addr.sa6.sin6_addr, buf, sizeof (buf));
 
-	return achartotstring(is_v4mapped() ? s + 7 : s);
+	return achartotstring(v4mapped() ? s + 7 : s);
     } else {
 	return T("");
     }
@@ -186,26 +216,11 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 }
 
 bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
-    struct addrinfo *ai, hints;
+    addrinfo *ai = getaddrinfo(host, service, proto);
 
     ZERO(addr);
-    ZERO(hints);
-    hints.ai_family = families[proto];
-    hints.ai_socktype = dgram(proto) ? SOCK_DGRAM : SOCK_STREAM;
-    if (!host || !*host || *host == '*' || !tstricmp(host, T("INADDR_ANY"))) {
-	host = NULL;
-	hints.ai_flags = AI_PASSIVE;
-    } else if (istdigit(*host)) {
-	hints.ai_flags = AI_NUMERICHOST;
-    } else {
-	hints.ai_flags = AI_CANONNAME;
-    }
-    hints.ai_flags |= AI_ADDRCONFIG | AI_V4MAPPED;
-    if (service && istdigit(*service))
-	hints.ai_flags |= AI_NUMERICSERV;
     name.erase();
-    if (getaddrinfo(host ? tchartoachar(host) : NULL, service ?
-	tchartoachar(service) : NULL, &hints, &ai))
+    if (!ai)
 	return false;
     set(ai);
     freeaddrinfo(ai);
@@ -269,6 +284,26 @@ const tstring Sockaddr::str(const tstring &val) const {
     return val + buf;
 }
 
+bool SockaddrList::insert(const tchar *host, ushort portno, Sockaddr::Proto
+    proto) {
+    addrinfo *ai;
+
+    if (portno) {
+	tchar portstr[8];
+
+	tsprintf(portstr, T("%u"), (uint)portno);
+	ai = Sockaddr::getaddrinfo(host, portstr, proto);
+    } else {
+	ai = Sockaddr::getaddrinfo(host, NULL, proto);
+    }
+    if (!ai)
+	return false;
+    for (addrinfo *elem = ai; elem; elem = elem->ai_next)
+	insert(Sockaddr(elem));
+    freeaddrinfo(ai);
+    return true;
+}
+
 #define BUILD_IP(ip) ((ip[0] << 24) | (ip[1] << 16) | (ip[2] << 8) | ip[3])
 #define VALID_IP(ip) (ip[0] < 256 && ip[1] < 256 && ip[2] < 256 && ip[3] < 256)
 
@@ -284,8 +319,10 @@ bool CIDR::add(const tchar *addrs) {
 	if (tstrchr(addrs, '/') && (tsscanf(addrs, T("%3u.%3u.%3u.%3u/%2u"),
 	    &ip1[0], &ip1[1], &ip1[2], &ip1[3], &maskbits) == 5) &&
 	    VALID_IP(ip1) && maskbits >= 1 && maskbits <= 32) {
-	    range.rmin = BUILD_IP(ip1) & (ulong)~((1 << (32 - maskbits)) - 1);
-	    range.rmax = range.rmin | (ulong)((1 << (32 - maskbits)) - 1);
+	    range.rmin = BUILD_IP(ip1) & (ulong)(~((1 << (32 - maskbits)) - 1) &
+		0xFFFFFFFF);
+	    range.rmax = range.rmin | (ulong)(((1 << (32 - maskbits)) - 1) &
+		0xFFFFFFFF);
 	    ranges.push_back(range);
 	} else if (tstrchr(addrs, '-') && (tsscanf(addrs,
 	    T("%3u.%3u.%3u.%3u-%3u.%3u.%3u.%3u"), &ip1[0], &ip1[1], &ip1[2],

@@ -1220,14 +1220,55 @@ private:
 template <class C>
 class BLISTER ObjectList: nocopy {
 public:
+    struct Node {
+	__forceinline Node(): next(NULL) {}
+
+	C *next;
+    };
+
+    class const_iterator {
+    public:
+	__forceinline const_iterator(const C *c): cur(c) {}
+	__forceinline const_iterator(const const_iterator &r): cur(r.cur) {}
+	__forceinline const C &operator *() const { return *cur; }
+	__forceinline const C *operator ->() const { return cur; }
+	__forceinline const_iterator &operator ++() {
+	    if (cur)
+		cur = cur->next;
+	    return *this;
+	}
+	__forceinline bool operator ==(const const_iterator &it) const {
+	    return cur == it.cur;
+	}
+	__forceinline bool operator !=(const const_iterator &it) const {
+	    return cur != it.cur;
+	}
+
+    private:
+	const C *cur;
+    };
+
     ObjectList(): back(NULL), front(NULL), sz(0) {}
 
     bool operator !(void) const { return front == NULL; }
     operator bool(void) const { return front != NULL; }
+    const_iterator begin(void) const { return const_iterator(front); }
     bool empty(void) const { return front == NULL; }
+    const_iterator end(void) const { return const_iterator(NULL); }
     const C *peek(void) const { return front; }
     uint size(void) const { return sz; }
 
+    void erase(void) { back = front = NULL; sz = 0; }
+    void free(void) {
+	while (front) {
+	    C *c = front->next;
+
+	    delete front;
+	    front = c;
+	}
+	back = NULL;
+	sz = 0;
+    }
     void pop(C &obj) {
 	if (front == &obj) {
 	    if ((front = obj.next) == NULL)
@@ -1311,6 +1352,13 @@ public:
 private:
     C *back, *front;
     uint sz;
+};
+
+template <class C>
+struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C>>::Node {
+    __forceinline ObjectListNode(const C &c): val(c) {}
+
+    C val;
 };
 
 #endif

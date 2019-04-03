@@ -49,13 +49,13 @@ enum DispatchMsg {
 };
 
 // base classes for event objects
-class BLISTER DispatchObj: nocopy {
+class BLISTER DispatchObj: ObjectList<DispatchObj>::Node, nocopy {
 public:
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
-	dspr(d), flags(0), msg(DispatchNone), group(new Group), next(NULL) {}
+	dspr(d), flags(0), msg(DispatchNone), group(new Group) {}
     DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),
 	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
-	group(&parent.group->add()), next(NULL) {}
+	group(&parent.group->add()) {}
     virtual ~DispatchObj() {
 	if (group->refcount.release())
 	    delete group;
@@ -95,7 +95,6 @@ private:
     };
 
     Group *group;
-    DispatchObj *next;
 
     DispatchObj &operator =(const DispatchObj &obj);
     friend class Dispatcher;
@@ -374,7 +373,9 @@ private:
 	timers.insert(dt);
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
-    void removeTimer(DispatchTimer &dt) { timers.set(dt, DispatchTimer::DSP_NEVER_DUE); }
+    void removeTimer(DispatchTimer &dt) {
+	timers.set(dt, DispatchTimer::DSP_NEVER_DUE);
+    }
     void setTimer(DispatchTimer &dt, ulong tm);
 
     friend class DispatchSocket;
