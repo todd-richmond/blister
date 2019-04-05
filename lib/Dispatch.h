@@ -36,10 +36,10 @@
 class Dispatcher;
 class DispatchObj;
 
-typedef void (*DispatchObjCB)(DispatchObj *);
-
 #define DSP_DECLARE(cls, func) \
-    static void func(DispatchObj *obj) { (static_cast<cls *>(obj))->func(); } \
+    static __forceinline void func(DispatchObj *obj) { \
+	(static_cast<cls *>(obj))->func(); \
+    } \
     void func(void)
 
 // Dispatch messages
@@ -51,6 +51,8 @@ enum DispatchMsg {
 // base classes for event objects
 class BLISTER DispatchObj: ObjectList<DispatchObj>::Node, nocopy {
 public:
+    typedef void (*DispatchObjCB)(DispatchObj *);
+
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(new Group) {}
     DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),

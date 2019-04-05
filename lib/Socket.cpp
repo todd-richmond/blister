@@ -72,8 +72,8 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
     hints.ai_family = families[proto];
     if (!host || !*host || *host == '*' || !tstricmp(host, T("INADDR_ANY")) ||
 	!tstricmp(host, T("IN6ADDR_ANY"))) {
-	host = NULL;
 	hints.ai_flags = AI_PASSIVE;
+	host = NULL;
     } else if (istdigit(*host)) {
 	hints.ai_flags = AI_NUMERICHOST;
     } else {
