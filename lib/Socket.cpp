@@ -187,21 +187,22 @@ bool Sockaddr::set(const addrinfo *ai) {
 }
 
 bool Sockaddr::set(const tchar *host, Proto proto) {
-    const tchar *p = NULL;
+    const tchar *p;
+    tstring s;
 
-    if (host && (p = tstrchr(host, ':')) != NULL) {
-	const tchar *pp;
-
-	if ((pp = tstrchr(p + 1, ':')) != NULL)
-	    p = tstrrchr(pp, ';');
+    if (!host) {
+	p = NULL;
+    } else if (*host == '[') {
+	if ((p = tstrchr(host, ']')) == NULL)
+	    return false;
+	s.assign(host + 1, (tstring::size_type)(p - host - 1));
+	host = s.c_str();
+	p = tstrchr(p, ':');
+    } else if ((p = tstrchr(host, ':')) != NULL) {
+	s.assign(host, (tstring::size_type)(p - host));
+	host = s.c_str();
     }
-    if (p) {
-	tstring s(host);
-
-	s.erase((tstring::size_type)(p - host));
-	return set(s.c_str(), p + 1, proto);
-    }
-    return set(host, (tchar *)NULL, proto);
+    return set(host, p ? p + 1 : NULL, proto);
 }
 
 bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
@@ -280,8 +281,17 @@ const tstring Sockaddr::str(const tstring &val) const {
     if (!p)
 	return val;
 
-    tsprintf(buf, T("%c%u"), ipv4() ? ':' : ';', (uint)p);
-    return val + buf;
+    tsprintf(buf, T(":%u"), (uint)p);
+    if (val.find(':') == val.npos) {
+	return val + buf;
+    } else {
+	tstring s(T("["));
+
+	s += val;
+	s += ']';
+	s += buf;
+	return s;
+    }
 }
 
 bool SockaddrList::insert(const tchar *host, ushort portno, Sockaddr::Proto
@@ -319,10 +329,10 @@ bool CIDR::add(const tchar *addrs) {
 	if (tstrchr(addrs, '/') && (tsscanf(addrs, T("%3u.%3u.%3u.%3u/%2u"),
 	    &ip1[0], &ip1[1], &ip1[2], &ip1[3], &maskbits) == 5) &&
 	    VALID_IP(ip1) && maskbits >= 1 && maskbits <= 32) {
-	    range.rmin = BUILD_IP(ip1) & (ulong)(~((1 << (32 - maskbits)) - 1) &
-		0xFFFFFFFF);
-	    range.rmax = range.rmin | (ulong)(((1 << (32 - maskbits)) - 1) &
-		0xFFFFFFFF);
+	    range.rmin = BUILD_IP(ip1) & ((ulong)~((1 << (32 - maskbits)) - 1) &
+		0xFFFFFFFFUL);
+	    range.rmax = range.rmin | ((ulong)((1 << (32 - maskbits)) - 1) &
+		0xFFFFFFFFUL);
 	    ranges.push_back(range);
 	} else if (tstrchr(addrs, '-') && (tsscanf(addrs,
 	    T("%3u.%3u.%3u.%3u-%3u.%3u.%3u.%3u"), &ip1[0], &ip1[1], &ip1[2],
