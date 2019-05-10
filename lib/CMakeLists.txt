@@ -1,19 +1,6 @@
-set(blister_INC_SOURCE
-    Config.h
-    Dispatch.h
-    HTTPClient.h
-    HTTPServer.h
-    Log.h
-    MD5.h
-    Service.h
-    SMTPClient.h
-    Socket.h
-    stdapi.h
-    Streams.h
-    Thread.h
-    Timing.h)
+set(blister_obj_INC_SOURCE stdapi.h Streams.h)
 
-set(blister_LIB_SOURCE
+set(blister_obj_LIB_SOURCE
     Config.cpp
     Dispatch.cpp
     HTTPClient.cpp
@@ -32,12 +19,10 @@ else()
     list(APPEND blister_LIB_SOURCE Unix.c)
 endif()
 
-add_library(blister_obj OBJECT ${blister_LIB_SOURCE})
+add_library(blister_obj OBJECT ${blister_obj_LIB_SOURCE})
 set_target_properties(blister_obj PROPERTIES POSITION_INDEPENDENT_CODE 1)
 target_compile_definitions(blister_obj PRIVATE BUILD_BLISTER)
 target_include_directories(blister_obj PUBLIC .)
-target_cppcheck(blister_obj)
-target_cpplint(blister_obj ${blister_INC_SOURCE})
 
 if(BLISTER_DLL)
     add_library(blister SHARED $<TARGET_OBJECTS:blister_obj>)
@@ -73,5 +58,6 @@ else()
     install(TARGETS blister blister_static DESTINATION lib)
 endif()
 
+analyze(blister_obj)
 cotire(blister_obj)
 

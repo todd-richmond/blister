@@ -367,7 +367,8 @@ protected:
 
 class BLISTER SpinLock: nocopy {
 public:
-    SpinLock(uint lmt = 1 << 8): spins(Processor::count() == 1 ? 0 : lmt) {
+    explicit SpinLock(uint lmt = 0x100): spins(Processor::count() == 1 ? 0 :
+	lmt) {
 #if CPLUSPLUS >= 11 && !defined(__GNUC__)
 	lck.clear();
 #else
