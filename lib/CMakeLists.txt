@@ -14,9 +14,9 @@ set(blister_obj_LIB_SOURCE
     Timing.cpp)
 
 if(WIN32)
-    list(APPEND blister_LIB_SOURCE Windows.c WindowsCPP.cpp)
+    list(APPEND blister_obj_LIB_SOURCE Windows.c WindowsCPP.cpp)
 else()
-    list(APPEND blister_LIB_SOURCE Unix.c)
+    list(APPEND blister_obj_LIB_SOURCE Unix.c)
 endif()
 
 add_library(blister_obj OBJECT ${blister_obj_LIB_SOURCE})

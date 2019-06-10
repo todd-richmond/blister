@@ -552,14 +552,15 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 }
 
 void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime,
-    const char *errstr, bool close) {
+    const char *str, bool close) {
     char buf[128];
     int i;
     struct tm tmbuf, *tmptr;
 
     hdrs.reset();
     ss.reset();
-    i = snprintf(buf, sizeof (buf), "%s %u %s\r\n", prot, sts, errstr);
+    i = snprintf(buf, sizeof (buf), "%s %u %s\r\n", prot, sts, str ?  str :
+	sts < 300 ? "OK" : "ERR");
     i = min(i, (int)sizeof (buf) - 1);
     hdrs.write(buf, i);
     if (date) {

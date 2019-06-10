@@ -62,7 +62,7 @@ protected:
     void reply(int fd, ulong sz);
     void reply(uint sts) { status(sts, NULL); reply(); }
     void status(uint sts, const char *mime = "text/plain", time_t mtime = 0,
-	const char *errstr = "OK", bool close = false);
+	const char *str = NULL, bool close = false);
     virtual void del(void) { error(501); }
     virtual void disconnect(DispatchObjCB cb = done) { ready(cb); }
     virtual void exec(void);

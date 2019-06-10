@@ -1571,7 +1571,6 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		sigset_t sigs;
 
 		ZERO(sa);
-		sa.sa_flags = 0;
 		sa.sa_handler = null_handler;
 		sigaction(SIGALRM, &sa, NULL);
 		sigemptyset(&sigs);
