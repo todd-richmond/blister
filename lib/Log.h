@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2017 Todd Richmond
+ * Copyright 2001-2019 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -31,7 +31,7 @@ class Config;
  * performance enhancements including buffered writes (managed by background
  * thread) and code macros to reduce function calls for data that will be
  * ignored
- * 
+ *
  * Log levels include the 8 levels from syslog as well as "trace" that allows
  * better segregation of verbose, low level msgs from normal debug output. A
  * thread-local prefix string can also be set so that logs made during a

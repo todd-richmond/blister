@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2017 Todd Richmond
+ * Copyright 2001-2019 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -27,7 +27,7 @@
  * number of subsections delimited by '.'. Ini files are stored as property
  * strings by using the section as the attr prefix. get() functions allow
  * fetches with default values and set() functions can modify existing values
- * 
+ *
  * When reading configuration, a "prefix" value may be specified so multiple
  * programs can share a common config file. This works by pruning off the
  * prefix string so that shared libraries can use a common attribute substring.
@@ -48,7 +48,7 @@
  *   prog1.attr1 = value1
  *   prog2.attr1 = " value2 "
  *   *.attr2 = ${host}
- * 
+ *
  *   config.read("common.cfg", "prog1");
  *   config.get("attr1", "default");    // return app specific value of attr1
  *   config.get("attr2", "default");    // return app shared value of attr2

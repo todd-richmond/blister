@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2017 Todd Richmond
+ * Copyright 2001-2019 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -945,7 +945,7 @@ int wstatvfs(const wchar *path, struct statvfs *buf) {
     wchar *cp;
     int rc;
 
-    /* try root directory. This doesn't handle filesystems not mapped 
+    /* try root directory. This doesn't handle filesystems not mapped
      * to drive a letter or a path without a drive letter
      */
     cp = wcschr(path, ':');
