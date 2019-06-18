@@ -39,16 +39,19 @@ Sockaddr::SockInit Sockaddr::init;
 #endif
 
 sa_family_t Sockaddr::families[] = {
-    AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6, AF_UNSPEC
+    AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6, AF_UNIX,
+    AF_UNIX, AF_UNSPEC
 };
 
 const void *Sockaddr::address(void) const {
-    if (family() == AF_INET)
-	return &addr.sa4.sin_addr;
-    else if (family() == AF_INET6)
-	return &addr.sa6.sin6_addr;
-    else
-	return &addr.sa;
+    switch (family()) {
+	case AF_INET: return &addr.sa4.sin_addr;
+	case AF_INET6: return &addr.sa6.sin6_addr;
+#ifndef _WIN32
+	case AF_UNIX: return &addr.sau;
+#endif
+	default: return &addr.sa;
+    }
 }
 
 const tstring &Sockaddr::host(void) const {
@@ -138,25 +141,27 @@ const tstring Sockaddr::ip(void) const {
 }
 
 ushort Sockaddr::port(void) const {
-    if (family() == AF_INET)
-	return htons(addr.sa4.sin_port);
-    else if (family() == AF_INET6)
-	return htons(addr.sa6.sin6_port);
-    else
-	return 0;
+    switch (family()) {
+	case AF_INET: return htons(addr.sa4.sin_port);
+	case AF_INET6: return htons(addr.sa6.sin6_port);
+	default: return 0;
+    }
 }
 
 void Sockaddr::port(ushort port) {
-    if (family() == AF_INET)
-	addr.sa4.sin_port = htons(port);
-    else if (family() == AF_INET6)
-	addr.sa6.sin6_port = htons(port);
+    switch (family()) {
+	case AF_INET: addr.sa4.sin_port = htons(port); break;
+	case AF_INET6: addr.sa6.sin6_port = htons(port); break;
+    }
 }
 
 Sockaddr::Proto Sockaddr::proto(void) const {
     switch (family()) {
     case AF_INET: return TCP4;
     case AF_INET6: return TCP6;
+#ifndef _WIN32
+    case AF_UNIX: return *addr.sau.sun_path == '/' ? UNIX_FILE : UNIX_NAME;
+#endif
     default: return UNSPEC;
     }
 }
@@ -217,10 +222,26 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 }
 
 bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
-    addrinfo *ai = getaddrinfo(host, service, proto);
-
     ZERO(addr);
     name.erase();
+#ifndef _WIN32
+    if (host && (*host == '/' || proto == UNIX_FILE || proto == UNIX_NAME)) {
+	const uint sz = sizeof (addr.sau.sun_path);
+
+	addr.sau.sun_family = AF_UNIX;
+	if (proto == UNIX_NAME) {
+	    addr.sau.sun_path[0] = '\0';
+	    strncpy(addr.sau.sun_path + 1, host, sz - 1);
+	} else {
+	    strncpy(addr.sau.sun_path, host, sz);
+	    addr.sau.sun_path[sz - 1] = '\0';
+	}
+	addr.sau.sun_path[sz - 1] = '\0';
+	return true;
+    }
+#endif
+    addrinfo *ai = getaddrinfo(host, service, proto);
+
     if (!ai)
 	return false;
     set(ai);
@@ -237,12 +258,14 @@ bool Sockaddr::set(const hostent *h) {
 }
 
 bool Sockaddr::set(const sockaddr &sa) {
-    if (sa.sa_family == AF_INET)
-	addr.sa4 = (const sockaddr_in &)sa;
-    else if (sa.sa_family == AF_INET6)
-	addr.sa6 = (const sockaddr_in6 &)sa;
-    else
-	addr.sa = sa;
+    switch (sa.sa_family) {
+	case AF_INET: addr.sa4 = (const sockaddr_in &)sa; break;
+	case AF_INET6: addr.sa6 = (const sockaddr_in6 &)sa; break;
+#ifndef _WIN32
+	case AF_UNIX: addr.sau = (const sockaddr_un &)sa; break;
+#endif
+	default: addr.sa = sa; break;
+    }
     return true;
 }
 
@@ -270,6 +293,7 @@ ushort Sockaddr::size(ushort family) {
     switch (family) {
     case AF_INET: return sizeof (sockaddr_in);
     case AF_INET6: return sizeof (sockaddr_in6);
+    case AF_UNIX: return sizeof (sockaddr_un);
     default: return sizeof (sockaddr_any);
     }
 }
@@ -423,6 +447,8 @@ bool Socket::bind(const Sockaddr &sa, bool reuse) {
 	return false;
     if (reuse && !reuseaddr(true))
 	return false;
+    if (sa.proto() == Sockaddr::UNIX_FILE)
+	sbuf->unlink(sa.path());
     return check(::bind(sbuf->sock, sa, sa.size()));
 }
 

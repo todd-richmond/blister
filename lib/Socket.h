@@ -46,6 +46,7 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 
 #define ioctlsocket	ioctl
 #define INVALID_SOCKET	-1
@@ -91,12 +92,14 @@ inline bool interrupted(int e) { return e == WSAEINTR; }
 
 /*
  * Socket address class to wrap sockaddr structures and deal with Win32 startup
- * requirements. Currently limited to IPV4/6 TCP or UDP addresses
+ * requirements. Limited to IPV4/6 TCP or UDP addresses and UNIX domain paths
  */
 WARN_PUSH_DISABLE(26495)
 class BLISTER Sockaddr {
 public:
-    enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNSPEC };
+    enum Proto {
+	TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNIX_FILE, UNIX_NAME, UNSPEC
+    };
 
     Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
     explicit Sockaddr(const addrinfo *ai) { set(ai); }
@@ -131,6 +134,7 @@ public:
     operator const sockaddr *() const { return &addr.sa; }
     operator const sockaddr_in *() const { return &addr.sa4; }
     operator const sockaddr_in6 *() const { return &addr.sa6; }
+    operator const sockaddr_un *() const { return &addr.sau; }
 
     const void *address(void) const;
     void clear(void) { ZERO(addr); name.clear(); }
@@ -146,6 +150,10 @@ public:
     const tstring ipstr(void) const { return str(ip()); }
     bool ipv4(void) const { return family() == AF_INET; }
     bool ipv6(void) const { return family() == AF_INET6; }
+    const char *path(void) const {
+	return family() == AF_UNIX ? *addr.sau.sun_path == '\0' ?
+	    addr.sau.sun_path + 1 : addr.sau.sun_path : NULL;
+    }
     ushort port(void) const;
     void port(ushort port);
     Proto proto(void) const;
@@ -176,7 +184,8 @@ public:
     static ushort service_port(const tchar *service, Proto proto = TCP);
     static ushort size(ushort family);
     static bool stream(Proto proto) {
-	return proto == TCP || proto == TCP4 || proto == TCP6;
+	return proto == TCP || proto == TCP4 || proto == TCP6 || proto ==
+	    UNIX_FILE || proto == UNIX_NAME;
     }
 
 private:
@@ -184,6 +193,9 @@ private:
 	sockaddr sa;
 	sockaddr_in sa4;
 	sockaddr_in6 sa6;
+#ifndef _WIN32
+	sockaddr_un sau;
+#endif
     } sockaddr_any;
 
 #ifdef _WIN32
@@ -366,7 +378,9 @@ public:
     long readv(iovec *iov, int count, const Sockaddr &sa) const;
     int write(const void *buf, uint len) const;
     int write(const void *buf, uint len, const Sockaddr &sa) const;
-    template<class C> int write(const C &c) const { return write(&c, sizeof (c)); }
+    template<class C> int write(const C &c) const {
+	return write(&c, sizeof (c));
+    }
     long writev(const iovec *iov, int count) const;
     long writev(const iovec *iov, int count, const Sockaddr &sa) const;
 
@@ -374,7 +388,8 @@ protected:
     class BLISTER SocketBuf {
     public:
 	SocketBuf(int t, socket_t s, bool o): sock(s), count(1), err(0),
-	    rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE), blck(true), own(o) {}
+	    path(NULL), rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE),
+	    blck(true), own(o) {}
 	~SocketBuf() { if (own) close(); }
 
 	bool blocked(void) const { return ::blocked(err); }
@@ -394,6 +409,11 @@ protected:
 		int ret = ::closesocket(sock);
 
 		sock = SOCK_INVALID;
+		if (path) {
+		    (void)::unlink(path);
+		    free(path);
+		    path = NULL;
+		}
 		if (ret)
 		    err = sockerrno();
 		else
@@ -402,11 +422,13 @@ protected:
 	    return false;
 	}
 	bool interrupted(void) const { return ::interrupted(err); }
+	void unlink(const char *p) { path = strdup(p); }
 
     private:
 	socket_t sock;
 	uint count;
 	mutable int err;
+	char *path;
 	uint rto;
 	int type;
 	uint wto;

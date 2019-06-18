@@ -35,13 +35,23 @@ URL &URL::operator =(const URL &url) {
 }
 
 const tstring URL::fullpath(void) const {
-    tstring s(prot + T("://") + host);
+    tstring s(prot + T("://"));
 
-    if (port != 80) {
+    if (port && port != 80) {
 	tchar buf[8];
 
 	tsprintf(buf, T(":%u"), port);
+	s += host;
 	s += buf;
+    } else if (!port && (prot == T("http+unix") || prot == T("https+unix"))) {
+	for (tstring::const_iterator it = host.begin(); it != host.end(); ++it) {
+	    if (*it == '/')
+		s += T("%2F");
+	    else
+		s += *it;
+	}
+    } else {
+	s += host;
     }
     return s + relpath();
 }
@@ -75,13 +85,18 @@ bool URL::set(const tchar *url) {
 	host.assign(url, (tstring::size_type)(p - url));
 	p = tstrchr(p, '/');
     } else {
-	port = 80;
 	if (pp && pp != url)
 	    host.assign(url, (tstring::size_type)(pp - url));
 	else if (pp)
 	    host = T("localhost");
 	else
 	    host = url;
+	if (prot == T("http+unix") || prot == T("https+unix")) {
+	    unescape(host);
+	    port = 0;
+	} else {
+	    port = 80;
+	}
 	p = pp;
     }
     if (p) {
