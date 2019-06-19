@@ -97,9 +97,7 @@ inline bool interrupted(int e) { return e == WSAEINTR; }
 WARN_PUSH_DISABLE(26495)
 class BLISTER Sockaddr {
 public:
-    enum Proto {
-	TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNIX_FILE, UNIX_NAME, UNSPEC
-    };
+    enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNIX, UNSPEC };
 
     Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
     explicit Sockaddr(const addrinfo *ai) { set(ai); }
@@ -184,8 +182,7 @@ public:
     static ushort service_port(const tchar *service, Proto proto = TCP);
     static ushort size(ushort family);
     static bool stream(Proto proto) {
-	return proto == TCP || proto == TCP4 || proto == TCP6 || proto ==
-	    UNIX_FILE || proto == UNIX_NAME;
+	return proto == TCP || proto == TCP4 || proto == TCP6 || proto == UNIX;
     }
 
 private:
@@ -422,7 +419,12 @@ protected:
 	    return false;
 	}
 	bool interrupted(void) const { return ::interrupted(err); }
-	void unlink(const char *p) { path = strdup(p); }
+	void unlink(const char *p) {
+#ifndef __APPLE__
+	    if (strchr(p, '/'))
+#endif
+	    path = strdup(p);
+	}
 
     private:
 	socket_t sock;

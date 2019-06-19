@@ -40,7 +40,7 @@ Sockaddr::SockInit Sockaddr::init;
 
 sa_family_t Sockaddr::families[] = {
     AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6, AF_UNIX,
-    AF_UNIX, AF_UNSPEC
+    AF_UNSPEC
 };
 
 const void *Sockaddr::address(void) const {
@@ -55,6 +55,12 @@ const void *Sockaddr::address(void) const {
 }
 
 const tstring &Sockaddr::host(void) const {
+#ifndef _WIN32
+    if (family() == AF_UNIX) {
+	name = "unix:";
+	name += *addr.sau.sun_path ? addr.sau.sun_path : addr.sau.sun_path + 1;
+    }
+#endif
     if (name.empty()) {
 	char buf[NI_MAXHOST];
 
@@ -160,7 +166,7 @@ Sockaddr::Proto Sockaddr::proto(void) const {
     case AF_INET: return TCP4;
     case AF_INET6: return TCP6;
 #ifndef _WIN32
-    case AF_UNIX: return *addr.sau.sun_path == '/' ? UNIX_FILE : UNIX_NAME;
+    case AF_UNIX: return UNIX;
 #endif
     default: return UNSPEC;
     }
@@ -205,7 +211,10 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
 	p = tstrchr(p, ':');
     } else if ((p = tstrchr(host, ':')) != NULL) {
 	s.assign(host, (tstring::size_type)(p - host));
-	host = s.c_str();
+	if (s == T("unix"))
+	    p = NULL;
+	else
+	    host = s.c_str();
     }
     return set(host, p ? p + 1 : NULL, proto);
 }
@@ -225,17 +234,24 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
     ZERO(addr);
     name.erase();
 #ifndef _WIN32
-    if (host && (*host == '/' || proto == UNIX_FILE || proto == UNIX_NAME)) {
+    if (host && !tstrncmp(host, "unix:", 5)) {
+	host += 5;
+	proto = UNIX;
+    }
+    if (host && (proto == UNIX || tstrchr(host, '/'))) {
 	const uint sz = sizeof (addr.sau.sun_path);
 
 	addr.sau.sun_family = AF_UNIX;
-	if (proto == UNIX_NAME) {
+#ifdef __APPLE__	// no unlinked file support
+	strncpy(addr.sau.sun_path, host, sz);
+#else
+	if (tstrchr(host, '/')) {
+	    strncpy(addr.sau.sun_path, host, sz);
+	} else {
 	    addr.sau.sun_path[0] = '\0';
 	    strncpy(addr.sau.sun_path + 1, host, sz - 1);
-	} else {
-	    strncpy(addr.sau.sun_path, host, sz);
-	    addr.sau.sun_path[sz - 1] = '\0';
 	}
+#endif
 	addr.sau.sun_path[sz - 1] = '\0';
 	return true;
     }
@@ -304,7 +320,6 @@ const tstring Sockaddr::str(const tstring &val) const {
 
     if (!p)
 	return val;
-
     tsprintf(buf, T(":%u"), (uint)p);
     if (val.find(':') == val.npos) {
 	return val + buf;
@@ -447,8 +462,10 @@ bool Socket::bind(const Sockaddr &sa, bool reuse) {
 	return false;
     if (reuse && !reuseaddr(true))
 	return false;
-    if (sa.proto() == Sockaddr::UNIX_FILE)
+#ifndef _WIN32
+    if (sa.proto() == Sockaddr::UNIX)
 	sbuf->unlink(sa.path());
+#endif
     return check(::bind(sbuf->sock, sa, sa.size()));
 }
 

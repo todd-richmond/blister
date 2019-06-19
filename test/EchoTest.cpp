@@ -374,7 +374,8 @@ int tmain(int argc, const tchar * const argv[]) {
     if (server && !et.listen(sa, tmt))
 	return 1;
     if (client) {
-	dlogi(T("echo"), sa.str(), path);
+	dlogi(Log::mod(T("echo")), Log::cmd(T("echo")), Log::kv(T("addr"),
+	    sa.str()), Log::kv(T("data"), path));
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	et.connect(sa, sockets, delay, tmt, wait);
 	Thread::MainThread.priority(10);
