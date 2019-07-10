@@ -223,7 +223,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
     if (portno) {
 	tchar portstr[8];
 
-	tsprintf(portstr, T("%u"), (uint)portno);
+	tsprintf(portstr, T("%uu"), portno);
 	return set(host, portstr, proto);
     } else {
 	return set(host, (tchar *)NULL, proto);
@@ -242,7 +242,7 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 	const uint sz = sizeof (addr.sau.sun_path);
 
 	addr.sau.sun_family = AF_UNIX;
-#ifdef __APPLE__	// no unlinked file support
+#ifndef __linux__	// no anonymous file support
 	strncpy(addr.sau.sun_path, host, sz);
 #else
 	if (tstrchr(host, '/')) {
@@ -293,7 +293,7 @@ const tstring Sockaddr::service_name(ushort port, Proto proto) {
 	NI_DGRAM : 0)) {
 	tchar pbuf[8];
 
-	tsprintf(pbuf, T("%u"), (uint)port);
+	tsprintf(pbuf, T("%hu"), port);
 	return pbuf;
     }
     return achartotstring(buf);
@@ -320,7 +320,7 @@ const tstring Sockaddr::str(const tstring &val) const {
 
     if (!p)
 	return val;
-    tsprintf(buf, T(":%u"), (uint)p);
+    tsprintf(buf, T(":%hu"), p);
     if (val.find(':') == val.npos) {
 	return val + buf;
     } else {
@@ -333,18 +333,18 @@ const tstring Sockaddr::str(const tstring &val) const {
     }
 }
 
-bool SockaddrList::insert(const tchar *host, ushort portno, Sockaddr::Proto
+bool SockaddrList::insert(const tchar *host, ushort port, Sockaddr::Proto
     proto) {
-    addrinfo *ai;
+    tchar buf[8];
 
-    if (portno) {
-	tchar portstr[8];
+    tsprintf(buf, T("%hu"), port);
+    return insert(host, buf, proto);;
+}
 
-	tsprintf(portstr, T("%u"), (uint)portno);
-	ai = Sockaddr::getaddrinfo(host, portstr, proto);
-    } else {
-	ai = Sockaddr::getaddrinfo(host, NULL, proto);
-    }
+bool SockaddrList::insert(const tchar *host, const tchar *service,
+    Sockaddr::Proto proto) {
+    addrinfo *ai = Sockaddr::getaddrinfo(host, service, proto);
+
     if (!ai)
 	return false;
     for (addrinfo *elem = ai; elem; elem = elem->ai_next)

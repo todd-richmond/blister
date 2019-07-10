@@ -51,6 +51,7 @@ const Config::KV *Config::newkv(const tchar *key, const tchar *val) const {
 	    }
 	}
     }
+    // cppcheck-suppress memleak
     return kv;
 }
 
@@ -158,6 +159,18 @@ long Config::get(const tchar *attr, long def, const tchar *sect) const {
     return kv ? tstrtol(kv->val, NULL, 10) : def;
 }
 
+llong Config::get(const tchar *attr, llong def, const tchar *sect) const {
+    RLocker lkr(lck, !THREAD_ISSELF(locker));
+    const KV *kv = getkv(attr, sect);
+
+    if (kv && kv->expand) {
+	tstring s;
+
+	return expandkv(kv, s) ? tstrtoll(s.c_str(), NULL, 10) : def;
+    }
+    return kv ? tstrtoll(kv->val, NULL, 10) : def;
+}
+
 ulong Config::get(const tchar *attr, ulong def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(attr, sect);
@@ -168,6 +181,18 @@ ulong Config::get(const tchar *attr, ulong def, const tchar *sect) const {
 	return expandkv(kv, s) ? tstrtoul(s.c_str(), NULL, 10) : def;
     }
     return kv ? tstrtoul(kv->val, NULL, 10) : def;
+}
+
+ullong Config::get(const tchar *attr, ullong def, const tchar *sect) const {
+    RLocker lkr(lck, !THREAD_ISSELF(locker));
+    const KV *kv = getkv(attr, sect);
+
+    if (kv && kv->expand) {
+	tstring s;
+
+	return expandkv(kv, s) ? tstrtoull(s.c_str(), NULL, 10) : def;
+    }
+    return kv ? tstrtoull(kv->val, NULL, 10) : def;
 }
 
 double Config::get(const tchar *attr, double def, const tchar *sect) const {

@@ -685,7 +685,10 @@ EXTERNC_
 #define ttol		wtol
 #define tstrtod		wcstod
 #define tstrtol		wcstol
+#define tstrtoll	wcstoll
 #define tstrtoul	wcstoul
+#define tstrtoull	wcstoull
+#define tstrtoq		wcstoq
 #define texecvp		wexecvp
 #define tgetcwd		wgetcwd
 #define tgetenv		wgetenv
@@ -773,7 +776,10 @@ typedef wchar tuchar;
 #define ttol		atol
 #define tstrtod		strtod
 #define tstrtol		strtol
+#define tstrtoll	strtoll
 #define tstrtoul	strtoul
+#define tstrtoull	strtoull
+#define tstrtoq		strtoq
 #define texecvp		execvp
 #define tgetcwd		getcwd
 #define tgetenv		getenv

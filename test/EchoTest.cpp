@@ -67,6 +67,7 @@ public:
 	static const tchar *section(void) { return T("echo"); }
 
 	virtual void start(void) {
+	    cork(false);
 	    nodelay(true);
 	    readable(input, tmt);
 	}
@@ -122,6 +123,7 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 	    timeout(start, wait);
 	}
     } else {
+	cork(false);
 	nodelay(true);
 	begin = Timing::now();
 	ready(output);
@@ -276,12 +278,17 @@ bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
     }
 }
 
-static void signal_handler(int) { qflag = true; }
+static EchoTest et;
+
+static void signal_handler(int) {
+    qflag = true;
+    if (!errs && !ops)
+	et.stop();
+}
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true;
     ulong delay = 20, tmt = TIMEOUT, wait = 0;
-    EchoTest et;
     int fd;
     const tchar *host = NULL;
     int i;
@@ -347,7 +354,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	close(fd);
     }
     if (!host)
-	host = T("localhost:8888");
+	host = T("*:8888");
     if (!sa.set(host)) {
 	tcerr << T("echo: unknown host ") << host << endl;
 	return 1;

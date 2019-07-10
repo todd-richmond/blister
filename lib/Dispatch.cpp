@@ -357,7 +357,8 @@ int Dispatcher::onStart() {
 	close(evtfd);
 	evtfd = -1;
     } else {
-	EV_SET(&evts[0], 1, EVFILT_USER, EV_ADD, NOTE_TRIGGER, 0, NULL);
+	EV_SET(&evts[0], 1, EVFILT_USER, EV_ADD | EV_CLEAR, NOTE_TRIGGER, 0,
+	    NULL);
 	RETRY(kevent(evtfd, &evts[0], 1, NULL, 0, NULL));
     }
 #endif
@@ -671,7 +672,8 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    DSP_ONESHOT(ds, DSP_SelectWrite);
 	}
 	if (DSP_EVENT_ERR(evt)) {
-	    if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
+	    if (ds->msg == DispatchConnect || (ds->msg == DispatchNone &&
+		ds->flags & DSP_Scheduled))
 		ds->msg = DispatchClose;
 	    else
 		ds->flags |= DSP_Closeable;
@@ -804,7 +806,8 @@ void Dispatcher::wakeup(ulong msec) {
 		EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, msec,
 		    NULL);
 	    else
-		EV_SET(&evt, 1, EVFILT_USER, EV_ENABLE, NOTE_TRIGGER, 0, NULL);
+		EV_SET(&evt, 1, EVFILT_USER, EV_ENABLE | EV_ONESHOT,
+		    NOTE_TRIGGER, 0, NULL);
 	    RETRY(kevent(evtfd, &evt, 1, NULL, 0, &ts));
 #endif
 	}

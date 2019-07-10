@@ -99,10 +99,22 @@ public:
 	return (int)get(attr, (long)def, sect);
     }
     long get(const tchar *attr, long def, const tchar *sect = NULL) const;
+    llong get(const tchar *attr, llong def, const tchar *sect = NULL) const;
+    short get(const tchar *attr, short def, const tchar *sect = NULL) const {
+	return (short)get(attr, (long)def, sect);
+    }
+    tchar get(const tchar *attr, tchar def, const tchar *sect = NULL) const {
+	tchar buf[2];
+	buf[0] = def; buf[1] = '\0'; return get(attr, buf, sect)[0];
+    }
     uint get(const tchar *attr, uint def, const tchar *sect = NULL) const {
 	return (uint)get(attr, (ulong)def, sect);
     }
     ulong get(const tchar *attr, ulong def, const tchar *sect = NULL) const;
+    ullong get(const tchar *attr, ullong def, const tchar *sect = NULL) const;
+    ushort get(const tchar *attr, ushort def, const tchar *sect = NULL) const {
+	return (ushort)get(attr, (ulong)def, sect);
+    }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = NULL, bool append = false);
     void set(const tchar *attr, const tchar *val, const tchar *sect = NULL) {
@@ -127,11 +139,27 @@ public:
     void set(const tchar *attr, long val, const tchar *sect = NULL) {
 	tchar buf[24]; tsprintf(buf, T("%ld"), val); set(attr, buf, sect);
     }
+    void set(const tchar *attr, llong val, const tchar *sect = NULL) {
+	tchar buf[48]; tsprintf(buf, T("%lld"), val); set(attr, buf, sect);
+    }
+    void set(const tchar *attr, short val, const tchar *sect = NULL) {
+	tchar buf[16]; tsprintf(buf, T("%hd"), val); set(attr, buf, sect);
+    }
+    void set(const tchar *attr, tchar val, const tchar *sect = NULL) {
+	tchar buf[2]; buf[0] = val; buf[1] = '\0'; set(attr, buf, sect);
+    }
     void set(const tchar *attr, uint val, const tchar *sect = NULL) {
 	tchar buf[24]; tsprintf(buf, T("%u"), val); set(attr, buf, sect);
     }
     void set(const tchar *attr, ulong val, const tchar *sect = NULL) {
 	tchar buf[24]; tsprintf(buf, T("%lu"), val); set(attr, buf, sect);
+    }
+    void set(const tchar *attr, ullong val, const tchar *sect = NULL) {
+	// cppcheck-suppress invalidPrintfArgType_uint
+	tchar buf[48]; tsprintf(buf, T("%llu"), val); set(attr, buf, sect);
+    }
+    void set(const tchar *attr, ushort val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%hu"), val); set(attr, buf, sect);
     }
     void setv(const tchar *attr, const tchar *val, ... /* , const tchar
 	*sect = NULL, NULL */);

@@ -395,7 +395,7 @@ int HTTPLoad::onStart(void) {
 	fs.open("debug.out", ios::trunc | ios::out);
     srand((uint)(id ^ ((uticks() >> 32 ^ (msec_t)time(NULL)))));
     if (id > Processor::count())
-	msleep((uint)rand() % 1000 * ((mthread / 20) + 1));
+	msleep((ulong)rand() % 1000U * ((mthread / 20) + 1));
     while (!qflag) {
 	const tchar *p;
 	ulong smsec = 0;

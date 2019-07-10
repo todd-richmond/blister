@@ -387,7 +387,7 @@ int SMTPLoad::onStart(void) {
 
     srand((uint)(id ^ ((uticks() >> 32 ^ (msec_t)time(NULL)))));
     if (id > Processor::count())
-	msleep((uint)rand() % 1000 * ((mthread / 20) + 1));
+	msleep((ulong)rand() % 1000U * ((mthread / 20) + 1));
     while (!qflag) {
 	const tchar *p;
 	ulong smsec = 0;
@@ -442,6 +442,7 @@ int SMTPLoad::onStart(void) {
 		ret = true;
 	    }
 	    if (!ret) {
+		// continue
 	    } else if (cmd->cmd == T("connect")) {
 		ret = sc.connect(cmd->addr, to);
 	    } else if (cmd->cmd == T("auth")) {

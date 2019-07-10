@@ -415,7 +415,7 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 void HTTPServerSocket::keepalive(void) {
     const char *p = "Pragma";
     const char *val = attr(p);
-    static const char *keep = "keep-alive";
+    static const char keep[] = "keep-alive";
 
     ka = prot[7] == '1';		// HTTP 1.1
     if (val != NULL && !stricmp(val, keep)) {

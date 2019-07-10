@@ -1272,6 +1272,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     dlog.source(name.c_str());
     set_files();
     if ((ret = command(cmd, ac, av)) != -1) {
+	// handled by virtual method
     } else if (tstreq(cmd, T("install"))) {
 	ret = !install(NULL, av[0], &av[1]);
     } else if (tstreq(cmd, T("uninstall"))) {
@@ -1577,7 +1578,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		sigaddset(&sigs, SIGALRM);
 		pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
 		first = false;
-		sprintf(buf, "%lu %lu", (ulong)getpid(), (ulong)child);
+		sprintf(buf, "%lu\n%lu", (ulong)getpid(), (ulong)child);
 		if (lseek(lckfd, 0, SEEK_SET) || write(lckfd, buf, strlen(
 		    buf)) < 1) {
 		    dlogw(Log::mod(name), Log::cmd(T("watch")),

@@ -148,10 +148,12 @@ public:
     const tstring ipstr(void) const { return str(ip()); }
     bool ipv4(void) const { return family() == AF_INET; }
     bool ipv6(void) const { return family() == AF_INET6; }
+#ifndef _WIN32
     const char *path(void) const {
 	return family() == AF_UNIX ? *addr.sau.sun_path == '\0' ?
 	    addr.sau.sun_path + 1 : addr.sau.sun_path : NULL;
     }
+#endif
     ushort port(void) const;
     void port(ushort port);
     Proto proto(void) const;
@@ -221,12 +223,16 @@ inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
 class BLISTER SockaddrList: public ObjectList<ObjectListNode<Sockaddr> > {
 public:
     SockaddrList() {}
-    SockaddrList(const char *host, ushort port, Sockaddr::Proto proto =
+    SockaddrList(const tchar *host, ushort port, Sockaddr::Proto proto =
 	Sockaddr::TCP) { insert(host, port, proto); }
+    SockaddrList(const tchar *host, const tchar *service = NULL,
+	Sockaddr::Proto proto = Sockaddr::TCP) { insert(host, service, proto); }
     ~SockaddrList() { free(); }
 
-    bool insert(const char *host, ushort port, Sockaddr::Proto proto =
+    bool insert(const tchar *host, ushort port, Sockaddr::Proto proto =
 	Sockaddr::TCP);
+    bool insert(const tchar *host, const tchar *service = NULL,
+	Sockaddr::Proto proto = Sockaddr::TCP);
     void insert(const Sockaddr &addr) { push_back(*new ObjectListNode<Sockaddr>(
 	addr)); }
 };
@@ -420,7 +426,7 @@ protected:
 	}
 	bool interrupted(void) const { return ::interrupted(err); }
 	void unlink(const char *p) {
-#ifndef __APPLE__
+#ifdef __linux__
 	    if (strchr(p, '/'))
 #endif
 	    path = strdup(p);
