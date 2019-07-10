@@ -978,7 +978,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
 	    ds.flags &= ~DSP_Closeable;
 	    ds.msg = DispatchClose;
 	}
-	ready(ds, m == DispatchAccept);
+	(void)ready(ds, m == DispatchAccept);
 	lock.unlock();
 	return;
     }
@@ -1016,7 +1016,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
     if (WSAAsyncSelect(ds.fd(), wnd, socketmsg, sockevts[(int)m])) {
 	lock.lock();
 	ds.msg = DispatchClose;
-	ready(ds);
+	(void)ready(ds);
 	removeTimer(ds);
 	if (resched)
 	    wakeup((ulong)(due - now));
@@ -1188,9 +1188,9 @@ void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB
     if (!cb)
 	cb = connected;
     if (open(sa.family()) && blocking(false) && Socket::connect(sa))
-	ready(cb, false, DispatchConnect);
+	(void)ready(cb, false, DispatchConnect);
     else if (!blocked())
-	ready(cb, false, DispatchClose);
+	(void)ready(cb, false, DispatchClose);
     else
 	poll(cb, msec, DispatchConnect);
 }

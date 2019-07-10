@@ -321,6 +321,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     for (it = hdrv.begin(); it != hdrv.end(); ++it)
 	sstrm << tstringtoastring(*it) << crlf;
     if (mime) {
+	// coverity[dont_call : FALSE ]
 	sprintf(buf, "--%x%x%x%x", (uint)rand(), (uint)rand(), (uint)rand(),
 	    (uint)rand());
 	boundary = buf;

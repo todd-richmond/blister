@@ -153,6 +153,7 @@ void EchoTest::EchoClientSocket::input() {
 	    usecs += usec;
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read"), len);
+	    // coverity[dont_call : FALSE ]
 	    timeout(repeat, wait + (wait < 2000 ? 0 : (uint)rand() % 50));
 	}
     } else if (loops.load() <= 0 || qflag) {

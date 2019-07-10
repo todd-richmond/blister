@@ -91,6 +91,7 @@ void HTTPServerSocket::readhdrs() {
 
 	room = datasz < 3 ? (uint)datasz : 3;
 	datasz += in;
+	// coverity[string_null : FALSE ]
 	scan(data + oldsz - room, in + room);
     } else {
 	datasz += in;
@@ -548,6 +549,7 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 	}
 #endif
     }
+    // coverity[string_null : FALSE ]
     reply(fmap, len);
 }
 
