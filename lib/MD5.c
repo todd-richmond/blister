@@ -386,6 +386,7 @@ void md5_finish(md5_state_t *pms, md5_byte_t digest[16]) {
 
 void md5_hmac(const unsigned char *text, unsigned textlen, const unsigned char
     *key, unsigned keylen, md5_byte_t digest[16]) {
+    int i;
     unsigned char k_ipad[65];    /* inner padding - key XORd with ipad */
     unsigned char k_opad[65];    /* outer padding - key XORd with opad */
     md5_state_t state;
@@ -418,7 +419,7 @@ void md5_hmac(const unsigned char *text, unsigned textlen, const unsigned char
     memcpy(k_opad, key, (size_t)keylen);
 
     /* XOR key with ipad and opad values */
-    for (int i = 0; i < 64; i++) {
+    for (i = 0; i < 64; i++) {
 	k_ipad[i] ^= 0x36;
 	k_opad[i] ^= 0x5c;
     }
