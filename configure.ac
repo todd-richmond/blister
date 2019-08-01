@@ -52,7 +52,7 @@ AC_ARG_ENABLE(optimize,
 AC_MSG_RESULT("$optimize")
 AC_SUBST(optimize)
 
-COMMON_CFLAGS="-ffast-math -march=native -pipe -Wall -Wconversion -Werror -Wextra -Wformat=2 -Wno-format-nonliteral -Wformat-security -Wno-format-y2k -Wmultichar -Wno-pragmas -Wredundant-decls -Wsign-conversion -Wstrict-aliasing -Wstrict-overflow=2 -Wno-unknown-pragmas -Wno-unknown-warning-option -Wwrite-strings $optimize"
+COMMON_CFLAGS="-ffast-math -march=native -pipe -Wall -Wconversion -Werror -Wextra -Wformat=2 -Wno-format-nonliteral -Wformat-security -Wno-format-y2k -Wmultichar -Wno-pragmas -Wredundant-decls -Wsign-conversion -Wstrict-aliasing -Wstrict-overflow=2 -Wno-unknown-pragmas -option -Wwrite-strings $optimize"
 AM_CFLAGS="$AM_CFLAGS $COMMON_CFLAGS"
 AM_CXXFLAGS="$AM_CXXFLAGS -fno-exceptions -fno-rtti -std=c++11 -Wno-deprecated -Wnon-virtual-dtor -Woverloaded-virtual -Wsign-promo $COMMON_CFLAGS"
 
