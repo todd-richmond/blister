@@ -859,14 +859,14 @@ typedef uint64_t usec_t;
 
 #define millitime()	((msec_t)(microtime() / 1000))
 
-inline usec_t microtime(void) {
+static inline usec_t microtime(void) {
     struct timeval tv;
 
     gettimeofday(&tv, NULL);
     return (usec_t)tv.tv_sec * (usec_t)1000000 + (usec_t)tv.tv_usec;
 }
 
-inline void time_adjust_msec(struct timespec *ts, ulong msec) {
+static inline void time_adjust_msec(struct timespec *ts, ulong msec) {
     ts->tv_sec += (time_t)(msec / 1000U);
     *(ulong *)&ts->tv_nsec += (msec % 1000U) * 1000000U;
     if ((ulong)ts->tv_nsec > 1000000000U) {
@@ -1361,7 +1361,7 @@ private:
 };
 
 template <class C>
-struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C>>::Node {
+struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C> >::Node {
     __forceinline ObjectListNode(const C &c): val(c) {}
 
     C val;

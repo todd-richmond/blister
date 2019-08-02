@@ -61,6 +61,7 @@ typedef DWORD tlskey_t;
 
 #else
 
+#include <errno.h>
 #include <pthread.h>
 
 typedef pthread_t thread_hdl_t;

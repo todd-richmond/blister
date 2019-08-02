@@ -237,7 +237,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	lock.unlock();
     }
     vars[T("host")] = host ? host : default_host;
-    while (is.getline(buf, sizeof (buf) / sizeof (tchar))) {
+    while (is.getline(buf, (streamsize)(sizeof (buf) / sizeof (tchar)))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
 	    continue;
