@@ -338,7 +338,7 @@ bool SockaddrList::insert(const tchar *host, ushort port, Sockaddr::Proto
     tchar buf[8];
 
     tsprintf(buf, T("%hu"), port);
-    return insert(host, buf, proto);;
+    return insert(host, buf, proto);
 }
 
 bool SockaddrList::insert(const tchar *host, const tchar *service,
@@ -433,7 +433,7 @@ Socket &Socket::operator =(socket_t sock) {
 }
 
 Socket &Socket::operator =(const Socket &r) {
-    if (sbuf == r.sbuf || this == &r)
+    if (this == &r || sbuf == r.sbuf)
 	return *this;
     if (--sbuf->count == 0)
 	delete sbuf;

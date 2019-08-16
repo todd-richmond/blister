@@ -32,7 +32,7 @@ const int MAXREAD = 8 * 1024;
 
 class EchoTest: public Dispatcher {
 public:
-    EchoTest(): Dispatcher(cfg) {}
+    EchoTest(): Dispatcher(config) {}
 
     class EchoClientSocket: public DispatchClientSocket {
     public:
@@ -99,7 +99,7 @@ public:
 	ulong wait);
 
 private:
-    Config cfg;
+    Config config;
 };
 
 static char *dbuf;

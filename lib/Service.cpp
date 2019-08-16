@@ -1010,13 +1010,13 @@ int Service::ctrl_handler(void *) {
 	    tsprintf(buf, T("%i"), sig);
 	    str = buf;
 	    break;
-	};
+	}
 	// ignore signals we sent our own pg
 	if (si.si_pid != getpid() || si.si_code == SI_QUEUE) {
 	    dlogd(Log::mod(service->name), Log::kv(T("sig"), str));
 	    signal_handler(sig, &si, NULL);
 	}
-    };
+    }
     sigpid = 0;
     return 0;
 }

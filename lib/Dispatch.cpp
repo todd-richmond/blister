@@ -571,7 +571,7 @@ void Dispatcher::cleanup(void) {
 	if ((t = wait()) == NULL)
 	    break;
 	delete t;
-    };
+    }
     lock.lock();
     while (rlist) {
 	DispatchObj *obj = rlist.pop_front();

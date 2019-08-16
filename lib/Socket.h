@@ -123,8 +123,10 @@ public:
     }
     bool operator !=(const Sockaddr &sa) const { return !operator ==(sa); }
     Sockaddr &operator =(const Sockaddr &sa) {
-	addr = sa.addr;
-	name = sa.name;
+	if (this != &sa) {
+	    addr = sa.addr;
+	    name = sa.name;
+	}
 	return *this;
     }
     operator const in_addr *() const { return &addr.sa4.sin_addr; }
@@ -388,7 +390,7 @@ public:
     long writev(const iovec *iov, int count, const Sockaddr &sa) const;
 
 protected:
-    class BLISTER SocketBuf {
+    class BLISTER SocketBuf: nocopy {
     public:
 	SocketBuf(int t, socket_t s, bool o): sock(s), count(1), err(0),
 	    path(NULL), rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE),

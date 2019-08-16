@@ -343,14 +343,13 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
     } else if (file[0] == '>') {
 	fd = ttoi(file.c_str() + 1);
     } else {
-	const tchar *p;
+	tstring::size_type p = path.find('%');
 
-	fd = -1;
-	if ((p = tstrchr(path.c_str(), '%')) != NULL) {
-	    if (p[-1] == '.')
-		p--;
-	    path.erase((tstring::size_type)(p - path.c_str()));
+	if (p && p != path.npos && path[p - 1] == '.') {
+	    p--;
+	    path.erase(p);
 	}
+	fd = -1;
     }
     len = 0;
 }
