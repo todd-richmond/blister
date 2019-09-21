@@ -786,7 +786,7 @@ void Service::abort_handler(void) {
 	sigaction(SIGALRM, &sa, NULL);
 	alarm(5);
 	dlog << Log::Crit << Log::mod(service->name) << Log::cmd(T("abort")) <<
-	    Log::kv(T("err"), T("timeout")) << endlog;
+	    Log::error(T("timeout")) << endlog;
 	alarm(0);
     }
     _exit(-2);
@@ -1039,7 +1039,8 @@ int Service::run(int argc, const tchar * const *argv) {
 	if (fpid > 0) {
 	    ::exit(0);
 	} else if (fpid == -1) {
-	    dloge(Log::mod(argv[0]), Log::error(T("unable to fork")));
+	    dloge(Log::mod(argv[0]), Log::cmd(T("fork")),
+		Log::error(tstrerror(errno)));
 	    ::exit(1);
 	}
 	if ((fd = ::open(T("/dev/null"), O_RDONLY)) != -1) {
@@ -1092,7 +1093,9 @@ bool Service::uninstall() {
 
 int Service::start(int argc, const tchar * const *argv) {
     pid_t fpid;
-    uint loop = 15;
+    uint loop = 5;
+    int ret = -4;
+    struct sigaction sa;
     Status sts;
 
     while (loop-- && (sts = status()) == Stopping)
@@ -1103,31 +1106,26 @@ int Service::start(int argc, const tchar * const *argv) {
 	return run(argc, argv);
     } else if (fpid == -1) {
 	errnum = errno;
-	dloge(Log::mod(argv[0]), Log::error(T("unable to fork")));
+	dloge(Log::mod(argv[0]), Log::cmd(T("fork")), Log::error(errstr()));
 	return -2;
-    } else {
-	int ret;
-	bool started = false;
-
-	waitpid(fpid, &ret, 0);
-	ret = WIFEXITED(ret) ? WEXITSTATUS(ret) : WIFSIGNALED(ret) ?
-	    WTERMSIG(ret) : 0;
-	for (int i = 0; i < 10 * 30; i++) {
-	    if ((sts = status()) == Running || sts == Pausing ||
-		sts == Paused || sts == Refreshing || sts == Resuming) {
-		break;
-	    } else if (sts == Starting) {
-		started = true;
-	    } else if (ret) {
-		return ret;
-	    } else if ((sts == Error || sts == Stopped) &&
-		(started || i > 50)) {
-		return -3;
-	    }
-	    msleep(100);
+    }
+    ZERO(sa);
+    sa.sa_handler = null_handler;
+    sigaction(SIGALRM, &sa, NULL);
+    loop = 60;
+    for (uint u = 0; u < loop; u++) {
+	if ((sts = status()) == Running || sts == Pausing ||
+	    sts == Paused || sts == Refreshing || sts == Resuming)
+	    return 0;
+	alarm(1);
+	if (waitpid(pid, &ret, 0) > 0) {
+	    ret = WIFEXITED(ret) ? WEXITSTATUS(ret) : WIFSIGNALED(ret) ?
+		WTERMSIG(ret) : -3;
+	    break;
 	}
     }
-    return 0;
+    alarm(0);
+    return ret;
 }
 
 bool Service::send(int sig) {
@@ -1313,9 +1311,14 @@ int Service::execute(int argc, const tchar * const *argv) {
 	ret = !sigusr2();
     } else if (tstreq(cmd, T("start"))) {
 	ret = start(ac, av);
-	if (ret && status() != Error) {
-	    ret = 0;
-	    tcout << name << T(": ") << status(status()) << endl;
+	if (ret && (sts = status()) != Error) {
+	    if (sts == Stopped) {
+		errnum = 0;
+		ret = 1;
+	    } else {
+		ret = 0;
+	    }
+	    tcout << name << T(": ") << status(sts) << endl;
 	}
     } else if (tstreq(cmd, T("state"))) {
 	sts = status();
@@ -1565,7 +1568,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    time(&start);
 	    child = fork();
 	    if (child == -1) {
-		dloge(Log::mod(name), Log::cmd(T("fork")), Log::error(errno));
+		dloge(Log::mod(name), Log::cmd(T("fork")), Log::error(errstr()));
 		sleep(cfg.get(T("watch.interval"), 60U) / 4);
 	    } else if (child) {
 		struct flock fl;
