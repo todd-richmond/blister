@@ -176,8 +176,7 @@ HTTPClient::HTTPClient(): ka(true), ressz(0), result(0), rto(90 * 1000),
 bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     if (sock.open() && sa == addr)
 	return true;
-    if (addr != sa)
-	addr = sa;
+    addr = sa;
     sock.close();
     ka = keepalive;
     if (!sock.connect(addr, to)) {

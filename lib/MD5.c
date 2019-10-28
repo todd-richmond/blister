@@ -156,6 +156,7 @@ static void md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/) {
 	 */
 	static const int w = 1;
 
+	// cppcheck-suppress knownConditionTrueFalse
 	if (*((const md5_byte_t *)&w)) /* dynamic little-endian */
 #endif
 #if BYTE_ORDER <= 0		/* little-endian */

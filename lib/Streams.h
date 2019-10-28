@@ -27,16 +27,16 @@ template<class C>
 class BLISTER faststreambuf: public streambuf, private nocopy {
 public:
     explicit faststreambuf(streamsize sz = 4096, char *p = NULL):
-	alloced(false), buf(NULL), bufsz(0), fd(-1) {
+	alloced(false), buf(NULL), bufsz(0), fd(NULL) {
 	faststreambuf::setbuf(p, sz);
     }
-    explicit faststreambuf(C &c, streamsize sz = 4096, char *p = NULL):
-	alloced(false), buf(NULL), bufsz(0), fd(c) {
+    explicit faststreambuf(const C &c, streamsize sz = 4096, char *p = NULL):
+	alloced(false), buf(NULL), bufsz(0), fd(&c) {
 	faststreambuf::setbuf(p, sz);
     }
     ~faststreambuf() { if (alloced) delete [] buf; }
 
-    void attach(C &c) { fd = c; }
+    void attach(const C &c) { fd = &c; }
     const char *str(void) const { return buf; }
     void str(char *p, streamsize sz) { setbuf(p, sz); }
     streamsize read(void *in, streamsize sz) { return xsgetn((char *)in, sz); }
@@ -117,7 +117,7 @@ public:
 	char *pb = pbase(), *pp = pptr();
 
 	if (pp > pb) {
-	    if (fd.write(pb, (uint)(pp - pb)) != pp - pb)
+	    if (fd->write(pb, (uint)(pp - pb)) != pp - pb)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
@@ -130,19 +130,19 @@ public:
 	if (p == NULL) {
 	    uchar c;
 
-	    return fd.read((char *)&c, sizeof (c)) == (int)sizeof (c) ? (int)c :
-		-1;
+	    return fd->read((char *)&c, sizeof (c)) == (int)sizeof (c) ?
+		(int)c : -1;
 	} else if (p >= egptr()) {
 	    char *pb = pbase();
 	    streamsize left = (streamsize)(pptr() - pb);
 	    int sz;
 
 	    if (left) {
-		if ((sz = fd.write(pb, (uint)left)) != left && sz)
+		if ((sz = fd->write(pb, (uint)left)) != left && sz)
 		    return -1;
 		setp(pb, pb + bufsz);
 	    }
-	    if ((sz = fd.read(buf, (uint)bufsz)) == -1)
+	    if ((sz = fd->read(buf, (uint)bufsz)) == -1)
 		return -1;
 	    setg(buf, buf, buf + sz);
 	    return *buf;
@@ -154,7 +154,7 @@ public:
 	uchar c = (uchar)i;
 
 	if (pptr() == NULL) {
-	    return i == -1 || fd.write((const char *)&c, sizeof (c)) ==
+	    return i == -1 || fd->write((const char *)&c, sizeof (c)) ==
 		(int)sizeof (c) ? i : -1;
 	} else {
 	    int sz = i == -1 ? 0 : 1;
@@ -180,21 +180,21 @@ public:
 	p += left;
 	left = (pptr() - pb);
 	if (left) {				// flush output
-	    if (fd.write(pb, (uint)left) != (int)left)
+	    if (fd->write(pb, (uint)left) != (int)left)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
 	setg(buf, buf, buf);
 	if (sz >= bufsz || !bufsz) {		// read directly into user buf
 	    while (sz) {
-		if ((in = fd.read(p, (uint)sz)) <= 0)
+		if ((in = fd->read(p, (uint)sz)) <= 0)
 		    return size - sz;
 		p += in;
 		sz -= in;
 	    }
 	} else {				// read into stream buf
 	    while (sz) {
-		if ((in = fd.read(buf, (uint)bufsz)) <= 0) {
+		if ((in = fd->read(buf, (uint)bufsz)) <= 0) {
 		    return size - sz;
 		} else if (in < sz) {
 		    memcpy(p, buf, (size_t)in);
@@ -222,7 +222,7 @@ public:
 	    iov[0].iov_len = (iovlen_t)(pp - pb);
 	    iov[1].iov_base = (char *)p;
 	    iov[1].iov_len = (iovlen_t)sz;
-	    out = fd.writev(iov, 2);
+	    out = fd->writev(iov, 2);
 	    setp(pb, pb + bufsz);
 	    return out == -1 || (ulong)out < (ulong)iov[0].iov_len ? -1 :
 		(streamsize)((streamsize)out - (streamsize)iov[0].iov_len);
@@ -231,7 +231,7 @@ public:
 	    pbump((int)sz);
 	} else {
 	    left = (streamsize)(pp - pb);
-	    if (left && fd.write(pb, (uint)left) != (int)left)
+	    if (left && fd->write(pb, (uint)left) != (int)left)
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
@@ -242,7 +242,7 @@ private:
     bool alloced;
     char *buf;
     streamsize bufsz;
-    C fd;
+    const C *fd;
 };
 
 /*
@@ -281,6 +281,41 @@ private:
 };
 
 typedef bufferstream<tchar> tbufferstream;
+
+class BLISTER memstream: public istream {
+public:
+    memstream(void *data, streamsize sz): istream(&mb), mb(data, sz) {}
+    virtual ~memstream() {}
+
+private:
+    class BLISTER membuf: public streambuf, public nocopy {
+    public:
+	explicit membuf(void *data, streamsize sz): begin((char *)data),
+	    end((char *)data + sz) {
+	    setg(begin, begin, end);
+	}
+
+    private:
+	virtual streampos seekoff(off_type off, ios_base::seekdir dir,
+	    ios_base::openmode) {
+	    if (dir == ios_base::cur)
+		setg(begin, gptr() + off >= end ? end : gptr() + off, end);
+	    else if (dir == ios_base::beg)
+		setg(begin, begin + off >= end ? end : begin + off, end);
+	    else
+		setg(begin, end, end);
+	    return gptr() - eback();
+	}
+	virtual streampos seekpos(streampos pos, ios_base::openmode mode) {
+	    return seekoff(pos, ios_base::beg, mode);
+	}
+
+	char *begin, *end;
+    };
+
+private:
+    membuf mb;
+};
 
 /*
  * nullstream is a byte sink stream that ignores all writes

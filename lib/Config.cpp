@@ -30,7 +30,8 @@ const Config::KV *Config::newkv(const tchar *key, const tchar *val) const {
     KV *kv = (KV *)ret;
 
     kv->expand = false;
-    if (vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen - 1] == val[0]) {
+    if (vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen - 1] ==
+	val[0]) {
 	kv->quote = val[0];
 	++val;
 	vlen -= 2;

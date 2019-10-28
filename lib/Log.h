@@ -437,7 +437,7 @@ template<size_t N> inline tostream &operator <<(tostream &os, const
     return kv.printstr(os);
 }
 
-inline Log &operator <<(Log &l, Log &(*manip)(Log &)) { return manip(l); }
+inline Log &operator <<(Log &l, Log &(* const func)(Log &)) { return func(l); }
 inline Log &endlog(Log &l) { return l.endlog(); }
 
 extern BLISTER Log &dlog;
