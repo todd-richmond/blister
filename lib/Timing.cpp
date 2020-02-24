@@ -207,18 +207,18 @@ void Timing::erase(const TimingKey &key) {
 }
 
 const tchar *Timing::format(timing_t t, tchar *buf) {
-    double d((double)t / 1000.0);
-
-    if (d < 10)
-	tsprintf(buf, T("%.3f"), d);
-    else if (d < 100)
-	tsprintf(buf, T("%.2f"), d);
-    else if (d < 10000)
-	tsprintf(buf, T("%.0f"), d);
-    else if (d < 1000000)
-	tsprintf(buf, T("%.0fk"), d / 1000);
+    if (t < 10000LLU)
+	tsprintf(buf, T("%.3f"), (double)t / 1000.0);
+    else if (t < 100000LLU)
+	tsprintf(buf, T("%.2f"), (double)t / 1000.0);
+    else if (t < 1000000LLU)
+	tsprintf(buf, T("%llu"), t / 1000LLU);
+    else if (t < 1000000000LLU)
+	tsprintf(buf, T("%lluk"), t / 1000000LLU);
+    else if (t < 1000000000000LLU)
+	tsprintf(buf, T("%lluk"), t / 1000000000LLU);
     else
-	tsprintf(buf, T("%.0fm"), d / 1000000);
+	tsprintf(buf, T("%llug"), t / 1000000000000LLU);
     return buf;
 }
 

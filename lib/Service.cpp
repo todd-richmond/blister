@@ -87,7 +87,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	DWORD type;
 
 	tsprintf(buf, T("SYSTEM\\CurrentControlSet\\Services\\%s\\Parameters"),
-	    id);
+	    id ? id : T("Service"));
 	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,
 	    buf, 0L, KEY_ALL_ACCESS, &key) == ERROR_SUCCESS) {
 	    size = sizeof (buf);
@@ -390,8 +390,8 @@ bool Service::update(Status status) {
     return SetServiceStatus(hStatus, &ssStatus) != FALSE;
 }
 
-bool Service::install(const tchar *file, const tchar *desc,
-    const tchar * const * depend, bool manual) {
+bool Service::install(const tchar *file, const tchar *desc, const tchar * const
+    *depend, bool manual) {
     tchar buf[PATH_MAX];
     size_t i;
     tchar *p = NULL;

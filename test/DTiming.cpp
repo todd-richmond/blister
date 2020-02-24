@@ -75,6 +75,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     if (i < argc) {
 	tcerr << T("Usage: dtiming\n")
+	    T("\t[-c|--columns #]\n")
 	    T("\t[-i|--input file]\n")
 	    T("\t[-m|--msec]\n")
 	    T("\t[-n|--sortbyname]\n")

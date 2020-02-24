@@ -388,16 +388,13 @@ int Dispatcher::onStart() {
 	asock.close();
 	isock.blocking(false);
 	isock.cloexec();
+	rset.set(isock);
 	wsock.blocking(false);
 	wsock.cloexec();
 #if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
     }
 #endif
-    if (evtfd == -1) {
-	CLOEXEC(isock.fd());
-	CLOEXEC(wsock.fd());
-	rset.set(isock);
-    } else {
+    if (evtfd != -1) {			// cppcheck-suppress duplicateCondition
 	CLOEXEC(evtfd);
 #ifdef DSP_DEVPOLL
 	evts[0].fd = isock.fd();
@@ -1207,7 +1204,7 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
     if (!Socket::listen(addr, reuse, queue))
 	return false;
     blocking(false);
-    CLOEXEC(fd());
+    cloexec();
     msleep(1);
     poll(cb, DispatchTimer::DSP_NEVER, DispatchAccept);
     return true;

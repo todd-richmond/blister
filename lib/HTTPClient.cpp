@@ -251,12 +251,14 @@ loop:
 	!getline(sstrm, s)) {
 	sock.close();
 	if (first && ka && (!sent || rto > (mticks() - start) + 200)) {
-	    dlogd(Log::mod(T("http")), Log::cmd(T("reconnect")));
+	    dlogd(Log::mod(T("http")), Log::cmd(T("reconnect")),
+		Log::kv(T("addr"), addr.ipstr()));
 	    sstrm.seekp(0, ios::beg);
 	    first = false;
 	    goto loop;
 	} else {
-	    dlogn(Log::mod(T("http")), Log::cmd(T("disconnect")));
+	    dlogn(Log::mod(T("http")), Log::cmd(T("disconnect")),
+		Log::kv(T("addr"), addr.ipstr()));
 	    iov[0].iov_base = (char *)NULL;
 	    goto done;
 	}
@@ -268,7 +270,8 @@ loop:
     while (*p == ' ' || *p == '\t')
 	p++;
     sts = (uint)atoi(p);
-    dlogd(Log::mod(T("http")), Log::kv(T("status"), sts));
+    dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
+	Log::kv(T("path"), path), Log::kv(T("status"), sts));
     while (getline(sstrm, s)) {		    // does not support folded hdrs
 	p = s.c_str();
 	while (*p == ' ' || *p == '\t')

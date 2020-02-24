@@ -1132,6 +1132,7 @@ bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
 
 bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
     size_t &outsz) {
+    string afile(tchartoachar(file));
     static const char begin[] = "begin 644 ";
     static const char end[] = "\r\nend\r\n";
     static const uchar table[64] = {
@@ -1142,12 +1143,12 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
 	'X', 'Y', 'Z', '[', '\\', ']', '^', '_'
     };
 
-    outsz = (size_t)tstrlen(file);
+    outsz = (size_t)afile.size();
     if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) ==
 	NULL) // -V668
 	return false;
     memcpy(out, begin, sizeof (begin) - 1);
-    memcpy(out + sizeof (begin) - 1, tchartoachar(file), outsz);
+    memcpy(out + sizeof (begin) - 1, afile.c_str(), outsz);
     outsz += sizeof (begin) - 1;
     out[outsz++] = '\r';
     out[outsz++] = '\n';
@@ -1239,7 +1240,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 
 bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
     char *out;
-    int out_byte = 0, out_bits = 0;
+    int out_bits = 0, out_byte = 0;
     static const uchar table[256] = {
 	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*000-007*/
 	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*010-017*/
@@ -1276,8 +1277,9 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
     };
 
     outsz = 0;
-    if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
+    if ((out = new char[sz * 3 / 4 + 8]) == NULL)
 	return false;
+    output = out;
     while (sz > 0) {
 	int add_bits = table[(int)*input++];
 
