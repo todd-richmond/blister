@@ -391,7 +391,11 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
 
     pthread_attr_init(&attr);
     if (stacksz) {
+#ifdef NDEBUG
 	stacksz += 32 * 1024;
+#else
+	stacksz += 64 * 1024;
+#endif
 	pthread_attr_setstacksize(&attr, stacksz);
     }
     pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
