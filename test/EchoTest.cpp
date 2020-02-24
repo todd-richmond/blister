@@ -331,8 +331,8 @@ int tmain(int argc, const tchar * const argv[]) {
 		T("\t[-l loops]\n")
 		T("\t[-p threads]\n")
 		T("\t[-s]\n")
-		T("\t[-v*]\n")
 		T("\t[-t timeout]\n")
+		T("\t[-v*]\n")
 		T("\t[-w wait]\n")
 		T("\tdatafile | datastr") << endl;
 	    return 1;

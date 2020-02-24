@@ -142,6 +142,7 @@ protected:
     ulong to;
 
 private:
+    const DispatchTimer & operator =(const DispatchTimer &) CPP_DELETE;
     void init(void);
 
     msec_t due;
@@ -174,6 +175,9 @@ protected:
     bool mapped;
 
     friend class Dispatcher;
+
+private:
+    const DispatchSocket & operator =(const DispatchSocket &) CPP_DELETE;
 };
 
 class BLISTER DispatchIOSocket: public DispatchSocket {

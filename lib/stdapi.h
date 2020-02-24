@@ -1235,12 +1235,16 @@ public:
     class const_iterator {
     public:
 	__forceinline const_iterator(const C *c): cur(c) {}
-	__forceinline const_iterator(const const_iterator &r): cur(r.cur) {}
+	__forceinline const_iterator(const const_iterator &it): cur(it.cur) {}
 	__forceinline const C &operator *() const { return *cur; }
 	__forceinline const C *operator ->() const { return cur; }
 	__forceinline const_iterator &operator ++() {
 	    if (cur)
 		cur = cur->next;
+	    return *this;
+	}
+	__forceinline const_iterator &operator =(const const_iterator &it) {
+	    cur = it.cur;
 	    return *this;
 	}
 	__forceinline bool operator ==(const const_iterator &it) const {
