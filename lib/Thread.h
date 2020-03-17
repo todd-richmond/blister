@@ -377,7 +377,7 @@ public:
 	lck = 0;
 #endif
     }
-    __forceinline void lock(void) {
+    __forceinline __no_sanitize_thread void lock(void) {
 	if (!trylock()) {
 #ifdef THREAD_PAUSE
 	    uint lmt = 1;
@@ -402,14 +402,18 @@ public:
     }
 #if CPLUSPLUS >= 11 && !defined(__GNUC__)
     __forceinline bool testlock(void) { return false; }
-    __forceinline bool trylock(void) {
+    __forceinline __no_sanitize_thread bool trylock(void) {
 	return !lck.test_and_set(memory_order_acquire);
     }
-    __forceinline void unlock(void) { lck.clear(memory_order_release); }
+    __forceinline __no_sanitize_thread void unlock(void) {
+	lck.clear(memory_order_release);
+    }
 #else
-    __forceinline bool testlock(void) { return lck; }
-    __forceinline bool trylock(void) { return !atomic_lck(lck); }
-    __forceinline void unlock(void) { atomic_clr(lck); }
+    __forceinline __no_sanitize_thread bool testlock(void) { return lck; }
+    __forceinline __no_sanitize_thread bool trylock(void) {
+	return !atomic_lck(lck);
+    }
+    __forceinline __no_sanitize_thread void unlock(void) { atomic_clr(lck); }
 #endif
 
 private:

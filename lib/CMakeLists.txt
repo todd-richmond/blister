@@ -1,17 +1,8 @@
-set(blister_obj_INC_SOURCE stdapi.h Streams.h)
+set(blister_obj_INC_SOURCE Config.h Dispatch.h HTTPClient.h HTTPServer.h Log.h
+    MD5.h Service.h SMTPClient.h Socket.h stdapi.h Streams.h Timing.h Thread.h)
 
-set(blister_obj_LIB_SOURCE
-    Config.cpp
-    Dispatch.cpp
-    HTTPClient.cpp
-    HTTPServer.cpp
-    Log.cpp
-    MD5.c
-    Service.cpp
-    Socket.cpp
-    SMTPClient.cpp
-    Thread.cpp
-    Timing.cpp)
+set(blister_obj_LIB_SOURCE Config.cpp Dispatch.cpp HTTPClient.cpp HTTPServer.cpp
+    Log.cpp MD5.c Service.cpp Socket.cpp SMTPClient.cpp Thread.cpp Timing.cpp)
 
 if(WIN32)
     list(APPEND blister_obj_LIB_SOURCE Windows.c WindowsCPP.cpp)
@@ -23,6 +14,10 @@ add_library(blister_obj OBJECT ${blister_obj_LIB_SOURCE})
 set_target_properties(blister_obj PROPERTIES POSITION_INDEPENDENT_CODE 1)
 target_compile_definitions(blister_obj PRIVATE BUILD_BLISTER)
 target_include_directories(blister_obj PUBLIC .)
+if(NOT CMAKE_VERSION VERSION_LESS 3.16)
+    #set_target_properties(blister_obj PROPERTIES UNITY_BUILD_BATCH_SIZE 20 UNITY_BUILD ON)
+    target_precompile_headers(blister_obj PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:stdapi.h>")
+endif()
 
 if(BLISTER_DLL)
     add_library(blister SHARED $<TARGET_OBJECTS:blister_obj>)
@@ -56,10 +51,10 @@ if(WIN32)
     endif()
 else()
     if(BLISTER_DLL)
-        install(TARGETS blister DESTINATION lib)
+	install(TARGETS blister DESTINATION lib)
     endif()
     if(BLISTER_LIB)
-        install(TARGETS blister_static DESTINATION lib)
+	install(TARGETS blister_static DESTINATION lib)
     endif()
 endif()
 
