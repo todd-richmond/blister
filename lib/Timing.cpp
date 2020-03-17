@@ -160,15 +160,20 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 		    7 ? 0 : klen - sizeof (buf) + 7), cbuf);
 	    }
 	} else {
-	    s += (tchar)'"';
+	    bool quote = strchr(stats->key, ',') || strchr(stats->key, ' ') ||
+		strchr(stats->key, '\t') || strchr(stats->key, '"');
+
+	    if (quote)
+		s += (tchar)'"';
 	    for (const tchar *p = stats->key; *p; ++p) {
 		if (*p == T('"') || *p == T('\\'))
 		    s += T('\\');
 		s += *p;
 	    }
-	    s += (tchar)'"';
-	    tsprintf(buf, T(",%.3g,%lu"), (double)stats->tot / 1000000.0,
-		stats->cnt / 1U);
+	    if (quote)
+		s += (tchar)'"';
+	    tsprintf(buf, T(",%llu,%lu,%lu"), (ullong)tot, stats->cnt / 1U,
+		(ulong)(tot / stats->cnt));
 	}
 	s += buf;
 	for (u = begin; u <= last && tot; u++) {
