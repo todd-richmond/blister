@@ -41,7 +41,7 @@ else()
     add_library(blister_static ALIAS blister)
 endif()
 
-install(FILES ${blister_INC_SOURCE} DESTINATION include)
+install(FILES ${blister_obj_INC_SOURCE} DESTINATION include)
 if(WIN32)
     if(BLISTER_DLL)
 	install(TARGETS blister RUNTIME DESTINATION bin)
