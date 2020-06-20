@@ -465,18 +465,18 @@ bool Config::write(tostream &os, bool inistyle) const {
     return os.good();
 }
 
-ConfigFile::ConfigFile(const tchar *file, const tchar *str): Config(str) {
+ConfigFile::ConfigFile(const tchar *file, const tchar *_pre): Config(_pre) {
     if (file)
-	read(file, str);
+	read(file, _pre);
 }
 
-bool ConfigFile::read(const tchar *file, const tchar *str, bool app) {
+bool ConfigFile::read(const tchar *file, const tchar *_pre, bool app) {
     if (file)
 	path = file;
 
     tifstream is(path.c_str());
 
-    return read(is, str, app);
+    return read(is, _pre, app);
 }
 
 bool ConfigFile::write(const tchar *file, bool inistyle) const {

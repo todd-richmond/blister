@@ -197,7 +197,7 @@ public:
 	dtiming): key(k), start(t.start()), timing(t) {}
     __forceinline ~TimingEntry() {
 	if (start != (timing_t)-1)
-	    timing.add(key, timing.now() - start);
+	    timing.add(key, Timing::now() - start);
     }
 
     void __forceinline record(void) { start = timing.record(key, start); }

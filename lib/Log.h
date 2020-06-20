@@ -120,7 +120,7 @@ public:
     const tchar *alertname(void) const { return afd.filename(); }
     const tchar *alertpath(void) const { return afd.pathname(); }
     bool buffer(void) const { return bufenable; }
-    void buffer(bool b);
+    void buffer(bool enable);
     void buffer(uint sz = 32 * 1024, ulong msec = 1000) {
 	bufsz = sz; buftm = msec; buffer(true);
     }
@@ -318,17 +318,17 @@ private:
 	ulong length(void) const { return len; }
 	void length(ulong l) { len = l; }
 	const tchar *pathname(void) const { return path.c_str(); }
+	void unlock(void) const;
 
 	bool close(void);
 	void lock(void);
-	void print(const tchar *buf, uint sz);
+	void print(const tchar *buf, uint chars);
 	void print(const tstring &s) { print(s.c_str(), (uint)s.size()); }
 	bool reopen(void);
 	void roll(void);
 	void set(const Config &cfg, const tchar *sect, const tchar *sub,
 	    bool enable, const tchar *level, const tchar *file);
 	void set(Level lvl, const tchar *file, uint cnt, ulong sz, ulong sec);
-	void unlock(void);
 
     private:
 	int fd;

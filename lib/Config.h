@@ -201,7 +201,6 @@ private:
     bool ini;
 
     void addkv(const KV *kv) { amap.insert(make_pair(kv->key, kv)); }
-    void delkv(const KV *kv) const { delete [] (char *)kv; }
     bool expandkv(const KV *kv, tstring &val) const;
     const KV *getkv(const tchar *attr, const tchar *sect) const;
     const KV *newkv(const tchar *key, const tchar *val) const;
@@ -210,6 +209,7 @@ private:
     bool parse(tistream &is);
     void set(const tchar *attr, const tchar *val, const tchar *sect, bool
 	append);
+    static void delkv(const KV *kv) { delete [] (char *)kv; }
 };
 
 inline tistream &operator >>(tistream &is, Config &cfg) {
@@ -225,12 +225,12 @@ inline tostream &operator <<(tostream &os, const Config &cfg) {
 
 class BLISTER ConfigFile: public Config {
 public:
-    explicit ConfigFile(const tchar *file = NULL, const tchar *pre = NULL);
+    explicit ConfigFile(const tchar *file = NULL, const tchar *_pre = NULL);
 
     bool read(tistream &is, const tchar *_pre = NULL, bool append = false) {
 	return Config::read(is, _pre, append);
     }
-    bool read(const tchar *file = NULL, const tchar *pre = NULL, bool append =
+    bool read(const tchar *file = NULL, const tchar *_pre = NULL, bool append =
 	false);
     bool write(tostream &os, bool inf) const { return Config::write(os, inf); }
     bool write(void) const { return write(NULL, iniformat()); }

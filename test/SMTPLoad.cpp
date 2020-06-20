@@ -24,6 +24,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <float.h>
+#include <math.h>
 #include <signal.h>
 #include <time.h>
 #include <sys/stat.h>
@@ -402,7 +403,7 @@ int SMTPLoad::onStart(void) {
 	lock.unlock();
 	if (!tmp)
 	    break;
-	id = tmpid ? tmpid % (muser ? muser : id) : 0;
+	id = tmpid ? tmpid % (muser ? muser : id) : 0;	// NOLINT
 	tsprintf(data, T("%lu"), id);
 	lvars[T("id")] = data;
 	if ((ait = vars.find(T("user"))) == vars.end())
@@ -556,17 +557,17 @@ const tchar *SMTPLoad::format(ulong u) {
 }
 
 const tchar *SMTPLoad::format(float f) {
-    if (f - 0.0f < FLT_EPSILON)
+    if (f - 0.0F < FLT_EPSILON)
 	tstrcpy(format_buf, T("       0"));
     else if (f >= 100)
-	tsprintf(format_buf, T(" %7u"), (unsigned)(f + .5f));
+	tsprintf(format_buf, T(" %7lu"), (ulong)round(f));
     else
 	tsprintf(format_buf, T(" %7.2g"), (double)f);
     return format_buf;
 }
 
 inline float round(ulong count, ulong div) {
-    return div ? (float)count / ((float)div * 1.0f) : 0;
+    return div ? (float)count / ((float)div * 1.0F) : 0;
 }
 
 void SMTPLoad::print(tostream &os, usec_t last) {

@@ -372,7 +372,7 @@ bool CIDR::add(const tchar *addrs) {
 		0xFFFFFFFFUL);
 	    range.rmax = range.rmin | ((ulong)((1 << (32 - maskbits)) - 1) &
 		0xFFFFFFFFUL);
-	    ranges.push_back(range);
+	    ranges.emplace_back(range);
 	} else if (tstrchr(addrs, '-') && (tsscanf(addrs,
 	    T("%3u.%3u.%3u.%3u-%3u.%3u.%3u.%3u"), &ip1[0], &ip1[1], &ip1[2],
 	    &ip1[3], &ip2[0], &ip2[1], &ip2[2], &ip2[3]) == 8) &&
@@ -380,11 +380,11 @@ bool CIDR::add(const tchar *addrs) {
 	    range.rmin = BUILD_IP(ip1);
 	    range.rmax = BUILD_IP(ip2);
 	    if (range.rmax >= range.rmin)
-		ranges.push_back(range);
+		ranges.emplace_back(range);
 	} else if ((tsscanf(addrs, T("%3u.%3u.%3u.%3u"), &ip1[0], &ip1[1],
 	    &ip1[2], &ip1[3]) == 4) && VALID_IP(ip1)) {
 	    range.rmin = range.rmax = BUILD_IP(ip1);
-	    ranges.push_back(range);
+	    ranges.emplace_back(range);
 	}
 	if ((addrs = tstrchr(p, ',')) != NULL ||
 	    (addrs = tstrchr(p, ';')) != NULL ||

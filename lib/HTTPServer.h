@@ -36,7 +36,7 @@ public:
     const attrmap &arguments(void) const { return args; }
     const attrmap &attributes(void) const { return attrs; }
     const attrmap &postarguments(void) const { return postargs; }
-    void urldecode(char *data, attrmap &amap) const;
+    void urldecode(char *buf, attrmap &amap) const;
     virtual const string mimetype(const char *ext) const;
     static void senddate(bool b) { date = b; }
     static const tchar *section(void) { return T("http"); }
@@ -55,8 +55,8 @@ protected:
     const char *attr(const char *name) const { return find(attrs, name); }
     const char *postarg(const char *name) const { return find(postargs, name); }
     void header(const char *attr, const char *val);
-    void error(uint errnum);
-    void error(uint errnum, const char *errstr);
+    void error(uint sts);
+    void error(uint sts, const char *errstr);
     void keepalive(void);
     void reply(const char *data = NULL, ulong len = (ulong)-1);
     void reply(int fd, ulong sz);

@@ -281,7 +281,7 @@ int Thread::init(void *thisp) {
     return (static_cast<Thread *> (thisp))->onStart();
 }
 
-bool Thread::priority(int pri) {
+bool Thread::priority(int pri) {	// NOLINT
     if (!hdl)
 	return false;
 #ifdef _WIN32

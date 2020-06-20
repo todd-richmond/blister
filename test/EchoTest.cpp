@@ -154,6 +154,7 @@ void EchoTest::EchoClientSocket::input() {
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read"), len);
 	    // coverity[dont_call : FALSE ]
+	    // NOLINTNEXTLINE
 	    timeout(repeat, wait + (wait < 2000 ? 0 : (uint)rand() % 50));
 	}
     } else if (loops.load() <= 0 || qflag) {
@@ -279,7 +280,7 @@ bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
     }
 }
 
-static EchoTest et;
+static EchoTest et; // NOLINT
 
 static void signal_handler(int) {
     qflag = true;
@@ -338,7 +339,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    return 1;
 	}
     }
-    if ((fd = open(tchartoachar(path), O_RDONLY)) == -1) {
+    if ((fd = open(tchartoachar(path), O_CLOEXEC | O_RDONLY)) == -1) {
 	if (access(tchartoachar(path), 0) == 0) {
 	    tcerr << T("echotest: unable to open ") << path << endl;
 	    return 1;

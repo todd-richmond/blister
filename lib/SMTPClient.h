@@ -82,9 +82,9 @@ private:
 
     void parse_append(const tchar *name, const tchar *route,
 	const tchar *mailbox, const tchar *domain);
-    tchar parse_domain(tchar *&in, tchar *&domain, tchar *&commment);
-    tchar parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials);
-    tchar parse_route(tchar *&in, tchar *&route);
+    int parse_domain(tchar *&in, tchar *&domain, tchar *&commment);
+    int parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials);
+    int parse_route(tchar *&in, tchar *&route);
     static bool skip_whitespace(tchar *&in);
 };
 
@@ -122,7 +122,7 @@ public:
     bool to(const tchar *id) { return add(tov, id); }
     bool to(const RFC822Addr &addrs) { return add(tov, addrs); }
     void attribute(const tchar *attr, const tchar *val);
-    void header(const tchar *hdr) { hdrv.push_back(hdr); }
+    void header(const tchar *hdr) { hdrv.emplace_back(hdr); }
     void subject(const tchar *s) { sub = s; }
     bool data(bool mime = false, const tchar *txt = NULL);
     bool data(const void *p, size_t sz, bool dotstuff = true);
@@ -174,7 +174,7 @@ bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
 bool uudecode(const char *in, size_t sz, uint &perm, tstring &file, void
     *&out, size_t &outsz);
 
-time_t mkgmtime(const struct tm * const tmp);
+time_t mkgmtime(const struct tm *tmp);
 time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);
 
 #endif // SMTPClient_h

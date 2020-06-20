@@ -34,14 +34,14 @@ bool SMTPClient::add(vector<tstring> &v, const RFC822Addr &addrs) {
 	return false;
     for (uint u = 0; u < addrs.size(); u++) {
 	ret = cmd(T("RCPT TO:"), addrs.address(u).c_str()) && ret;
-	v.push_back(addrs.address(u, true));
+	v.emplace_back(addrs.address(u, true));
     }
     return ret;
 }
 
 bool SMTPClient::add(vector<tstring> &v, const tchar *id) {
     bool ret = cmd(T("RCPT TO:"), id);
-    v.push_back(id);
+    v.emplace_back(id);
     return ret;
 }
 
@@ -50,7 +50,7 @@ void SMTPClient::attribute(const tchar *attr, const tchar *val) {
 
     s += T(": ");
     s += val;
-    hdrv.push_back(s);
+    hdrv.emplace_back(s);
 }
 
 bool SMTPClient::auth(const tchar *id, const tchar *pass) {
@@ -809,7 +809,7 @@ uint RFC822Addr::parse(const tchar *addrs) {
     }
     while (tok) {
 	tok = parse_phrase(s, phrase, T(",@<;:"));
-	switch (tok) {
+	switch (tok) {			// NOLINT
 	case ',':
 	case '\0':
 	case ';':
@@ -831,7 +831,7 @@ uint RFC822Addr::parse(const tchar *addrs) {
 		    if (tok != ':') {
 			parse_append(phrase, r, T(""), T(""));
 			while (tok && tok != '>')
-			    tok = *s++;
+			    tok = (int)(uchar)*s++;
 			continue;
 		    }
 		    tok = parse_phrase(s, m, T("@>"));
@@ -843,7 +843,7 @@ uint RFC822Addr::parse(const tchar *addrs) {
 		tok = parse_domain(s, d, unused);
 		parse_append(phrase, r, m, d);
 		while (tok && tok != '>')
-		    tok = *s++;
+		    tok = (int)(uchar)*s++;
 		continue;		// effectively inserts a comma
 	    } else {
 		parse_append(phrase, NULL, m, T(""));
@@ -855,13 +855,13 @@ uint RFC822Addr::parse(const tchar *addrs) {
 
 void RFC822Addr::parse_append(const tchar *p, const tchar *r, const tchar *l,
     const tchar *d) {
-    domains.push_back(d ? d : T(""));
-    phrases.push_back(p ? p : T(""));
-    locals.push_back(l ? l : T(""));
-    routes.push_back(r ? r : T(""));
+    domains.emplace_back(d ? d : T(""));
+    phrases.emplace_back(p ? p : T(""));
+    locals.emplace_back(l ? l : T(""));
+    routes.emplace_back(r ? r : T(""));
 }
 
-tchar RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
+int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
     *specials) {
     tchar c;
     tchar *dst, *src = in;
@@ -898,10 +898,10 @@ tchar RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
 	    *dst++ = c;
 	}
     }
-    return c;
+    return (int)(uint)c;
 }
 
-tchar RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
+int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
     tchar c;
     tchar *cdst;
     uint cnt;
@@ -948,10 +948,10 @@ tchar RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
 	    break;
 	}
     }
-    return c;
+    return (int)(uint)c;
 }
 
-tchar RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
+int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
     tchar c;
     tchar *dst, *src = in;
 
@@ -975,7 +975,7 @@ tchar RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
 	    break;
 	}
     }
-    return c;
+    return (int)(uint)c;
 }
 
 bool RFC822Addr::skip_whitespace(tchar *&in) {
@@ -1376,7 +1376,7 @@ static int tmcomp(const tm *const atmp, const tm *const btmp) {
     return result;
 }
 
-time_t mkgmtime(const tm *const tmp) {
+time_t mkgmtime(const tm *tmp) {
     int bits;
     int seconds;
     time_t t;

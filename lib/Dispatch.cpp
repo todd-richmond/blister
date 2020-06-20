@@ -923,12 +923,12 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
     }
 }
 
-void Dispatcher::pollSocket(DispatchSocket &ds, ulong tm, DispatchMsg m) {
+void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     uint flags;
     msec_t now = mticks();
     bool resched = false;
-    msec_t tmt = tm == DispatchTimer::DSP_NEVER ? DispatchTimer::DSP_NEVER_DUE :
-	now + tm;
+    msec_t tmt = timeout == DispatchTimer::DSP_NEVER ?
+	DispatchTimer::DSP_NEVER_DUE : now + timeout;
     static uint ioarray[] = {
 	DSP_Readable | DSP_Closeable, DSP_Writeable | DSP_Closeable,
 	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable,

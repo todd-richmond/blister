@@ -1243,8 +1243,10 @@ public:
 		cur = cur->next;
 	    return *this;
 	}
+	// NOLINTNEXTLINE
 	__forceinline const_iterator &operator =(const const_iterator &it) {
-	    cur = it.cur;
+	    if (this != &it)
+		cur = it.cur;
 	    return *this;
 	}
 	__forceinline bool operator ==(const const_iterator &it) const {

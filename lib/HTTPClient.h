@@ -59,8 +59,8 @@ public:
 
     tostream &operator <<(tostream &os) const;
     bool close(void) { return sock.close(); }
-    bool connect(const Sockaddr &addr, bool keepalive = false,
-	uint timeout = SOCK_INFINITE);
+    bool connect(const Sockaddr &sa, bool keepalive = false, uint timeout =
+	SOCK_INFINITE);
     bool connect(const tchar *host, ushort port = 80, bool keepalive = false,
 	uint timeout = SOCK_INFINITE) {
 	return connect(Sockaddr(host, port), keepalive, timeout);

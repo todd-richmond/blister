@@ -20,6 +20,7 @@ project (Blister C CXX)
 find_library(SYSTEM_RT_LIB NAMES rt)
 find_package(Threads QUIET)
 find_program(PROGRAM_CCACHE NAMES ccache PATHS ENV PATH)
+find_program(PROGRAM_CLANGTIDY NAMES clang-tidy PATHS ENV PATH)
 find_program(PROGRAM_CPPCHECK NAMES cppcheck PATHS ENV PATH)
 find_program(PROGRAM_CPPLINT NAMES cpplint cpplint.py PATHS ENV PATH)
 
@@ -82,7 +83,7 @@ else()
     set(CLEAN_COTIRE "")
 
 endif()
-if(PROGRAM_CCACHE)
+if(PROGRAM_CCACHE AND NOT CMAKE_C_CLANG_TIDY AND NOT CMAKE_CXX_CLANG_TIDY AND NOT CMAKE_C_CPPCHECK AND NOT CMAKE_CXX_CPPCHECK AND NOT CMAKE_X_CPPLINT AND NOT CMAKE_CXX_CPPLINT AND NOT CMAKE_C_INCLUDE_WHAT_YOU_USE AND NOT CMAKE_CXX_INCLUDE_WHAT_YOU_USE)
     if(NOT CMAKE_VERSION VERSION_LESS 3.5)
 	set(CMAKE_C_COMPILER_LAUNCHER CCACHE_DEPEND=1 CCACHE_SLOPPINESS=file_stat_matches,locale,pch_defines,time_macros "${PROGRAM_CCACHE}")
 	set(CMAKE_CXX_COMPILER_LAUNCHER CCACHE_DEPEND=1 CCACHE_SLOPPINESS=file_stat_matches,locale,pch_defines,time_macros "${PROGRAM_CCACHE}")
@@ -184,6 +185,52 @@ else()
     set(BLISTER_LIB TRUE)
 endif()
 
+# clang-tidy support
+if(PROGRAM_CLANGTIDY)
+    add_custom_target(clangtidy COMMENT "Clang-tidy C/C++ static analysis")
+    list(APPEND clangtidy_args --quiet)
+    execute_process(COMMAND bash -c "dirname $(dirname $(dirname $(clang -print-resource-dir)))" OUTPUT_VARIABLE CLANG_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
+    file(GLOB CLANG_CXX_INC ${CLANG_DIR}/include/c++/*)
+else()
+    add_custom_target(clangtidy COMMENT "clang-tidy not available")
+endif()
+set_target_properties(clangtidy PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+function(target_clangtidy target)
+    if(PROGRAM_CLANGTIDY)
+        if(NOT TARGET ${target})
+            message(FATAL_ERROR "clangtidy target does not exist: ${target}")
+        endif()
+        set(files)
+        get_target_property(sources ${target} SOURCES)
+        foreach(source ${sources})
+	    get_source_file_property(location ${source} LOCATION)
+	    list(APPEND files ${location})
+        endforeach()
+        foreach(file ${ARGN})
+            if(EXISTS ${file})
+                list(APPEND files ${file})
+            elseif(EXISTS ${CMAKE_CURRENT_LIST_DIR}/${file})
+                list(APPEND files ${CMAKE_CURRENT_LIST_DIR}/${file})
+            else()
+                message(FATAL_ERROR "clang-tidy file does not exist: ${file}")
+            endif()
+        endforeach()
+        add_custom_target(clangtidy_${target}
+            COMMENT "Running clang-tidy on ${target}"
+	    COMMAND ${PROGRAM_CLANGTIDY} ${clangtidy_args} ${files} -- "$<$<BOOL:$<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS>>:-D$<JOIN:$<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS>,;-D>>" -I${CLANG_CXX_INC} "$<$<BOOL:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>>:-I$<JOIN:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>,;-I>>"
+	    COMMAND_EXPAND_LISTS
+            VERBATIM WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+        add_dependencies(clangtidy clangtidy_${target})
+    endif()
+endfunction()
+
+function(clangtidy)
+    foreach(target ${ARGN})
+        target_clangtidy(${target})
+    endforeach()
+endfunction()
+
 # cppcheck support
 if(PROGRAM_CPPCHECK)
     add_custom_target(cppcheck COMMENT "Cppcheck C/C++ static code analysis")
@@ -220,9 +267,9 @@ function(target_cppcheck target)
 	    endif()
 	endforeach()
 	add_custom_target(${target}_cppcheck
+	    COMMENT "Running cppcheck on ${target}"
 	    COMMAND ${PROGRAM_CPPCHECK} ${cppcheck_args} ${includes} ${files}
-	    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-	    COMMENT "Running cppcheck on ${target}" VERBATIM)
+	    VERBATIM WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 	add_dependencies(cppcheck ${target}_cppcheck)
     endif()
 endfunction()
@@ -274,9 +321,9 @@ function(target_cpplint target)
 	    endif()
 	endforeach()
 	add_custom_target(${target}_cpplint
+	    COMMENT "Running cpplint on ${target}"
 	    COMMAND ${PROGRAM_CPPLINT} ${cpplint_args} ${files}
-	    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-	    COMMENT "Running cpplint on ${target}" VERBATIM)
+	    VERBATIM WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 	add_dependencies(cpplint ${target}_cpplint)
     endif()
 endfunction()
@@ -288,6 +335,7 @@ function(cpplint)
 endfunction()
 
 function(analyze)
+    clangtidy(${ARGN})
     cppcheck(${ARGN})
     cpplint(${ARGN})
 endfunction()

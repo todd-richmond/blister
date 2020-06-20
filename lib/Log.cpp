@@ -354,7 +354,7 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
     len = 0;
 }
 
-void Log::LogFile::unlock(void) {
+void Log::LogFile::unlock(void) const {
     if (fd >= 0)
 	(void)lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
 }

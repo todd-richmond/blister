@@ -55,8 +55,9 @@ public:
 
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(new Group) {}
-    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),
-	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
+    // NOLINTNEXTLINE
+    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): dcb(cb),
+	dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()) {}
     virtual ~DispatchObj() {
 	if (group->refcount.release())
@@ -170,7 +171,7 @@ public:
     virtual void erase(void);
 
 protected:
-    void poll(DispatchObjCB cb, ulong msec, DispatchMsg msg);
+    void poll(DispatchObjCB cb, ulong msec, DispatchMsg reason);
 
     bool mapped;
 
@@ -219,7 +220,7 @@ public:
     DispatchClientSocket(DispatchObj &parent, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(parent, sock, msec) {}
 
-    void connect(const Sockaddr &addr, ulong msec = 30000, DispatchObjCB cb =
+    void connect(const Sockaddr &sa, ulong msec = 30000, DispatchObjCB cb =
 	connected);
 
 protected:
@@ -241,12 +242,12 @@ class BLISTER DispatchListenSocket: public DispatchSocket {
 public:
     explicit DispatchListenSocket(Dispatcher &d, int type = SOCK_STREAM):
 	DispatchSocket(d, type) {}
-    DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
-	int type = SOCK_STREAM, bool reuse = true, int backlog = SOCK_BACKLOG,
+    DispatchListenSocket(Dispatcher &d, const Sockaddr &sa, int type =
+	SOCK_STREAM, bool reuse = true, int backlog = SOCK_BACKLOG,
 	DispatchObjCB cb = connection);
 
     const Sockaddr address(void) const { return addr; }
-    bool listen(const Sockaddr &addr, bool reuse = true, int backlog =
+    bool listen(const Sockaddr &sa, bool reuse = true, int backlog =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL);
     bool listen(const tchar *addrstr, bool reuse = true, int backlog =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL) {
@@ -270,7 +271,7 @@ public:
 
     const Config &config(void) const { return cfg; }
 
-    bool start(uint maxthreads = 100, uint stacksz = 0);
+    bool start(uint mthreads = 100, uint stacksz = 0);
 
 protected:
     virtual int onStart(void);
@@ -390,9 +391,9 @@ private:
 
     void cleanup(void);
     bool exec(void);
-    uint handleEvents(const void *evts, uint cnt);
+    uint handleEvents(const void *evts, uint nevts);
     int run(void);
-    void wake(uint tasks, bool master);
+    void wake(uint tasks, bool main);
     // enter locked, leave unlocked for performance
     void wakeup(ulong msec);
     static int worker(void *parm);

@@ -104,7 +104,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	columns = TIMINGSLOTS;
     sorted.reserve(tmap.size());
     for (it = tmap.begin(); it != tmap.end(); ++it)
-	sorted.push_back(it->second);
+	sorted.emplace_back(it->second);
     sort(sorted.begin(), sorted.end(), sort_key ? less_key : greater_time);
     for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
 	stats = *sit;
@@ -299,15 +299,15 @@ void Timing::restart() {
 
     if (!tlsd.callers.empty()) {
 	tlsd.starts.pop_back();
-	tlsd.starts.push_back(now());
+	tlsd.starts.emplace_back(now());
     }
 }
 
 void Timing::start(const TimingKey &key) {
     Tlsdata &tlsd(*tls);
 
-    tlsd.callers.push_back((const tchar *)key);
-    tlsd.starts.push_back(now());
+    tlsd.callers.emplace_back((const tchar *)key);
+    tlsd.starts.emplace_back(now());
 }
 
 void Timing::stop(uint lvl) {

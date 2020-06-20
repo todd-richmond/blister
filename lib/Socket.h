@@ -235,8 +235,9 @@ public:
 	Sockaddr::TCP);
     bool insert(const tchar *host, const tchar *service = NULL,
 	Sockaddr::Proto proto = Sockaddr::TCP);
-    void insert(const Sockaddr &addr) { push_back(*new ObjectListNode<Sockaddr>(
-	addr)); }
+    void insert(const Sockaddr &addr) {
+	push_back(*new ObjectListNode<Sockaddr>(addr));
+    }
 };
 
 /*
@@ -447,7 +448,6 @@ protected:
 	friend class Socket;
     };
 
-protected:
     bool check(int ret) const { return sbuf->check(ret); }
     bool rwpoll(bool rd) const;
 

@@ -242,8 +242,8 @@ loop:
     if (!connect(addr, ka))
 	goto done;
     start = mticks();
-    if ((sent = ((ulong)sock.writev(iov, 2) == (ulong)(req.size() +
-	datasz))) == false ||
+    if (!(sent = ((ulong)sock.writev(iov, 2) == (ulong)(req.size() +
+	datasz))) ||
 	// shutdown causes huge cpu spikes on NT - not sure why
 #if 0
 	(!ka && !sock.shutdown(false, true)) ||

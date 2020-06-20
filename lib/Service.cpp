@@ -756,7 +756,7 @@ bool Service::open(const tchar *file) {
     stStatus = Stopped;
     if (file)
 	lckfile = file;
-    if ((fd = ::open(lckfile.c_str(), O_RDONLY | O_NOATIME)) == -1)
+    if ((fd = ::open(lckfile.c_str(), O_RDONLY | O_CLOEXEC | O_NOATIME)) == -1)
 	return false;
     ZERO(fl);
     fl.l_type = F_WRLCK;
@@ -817,7 +817,7 @@ void Service::signal_handler(int sig, siginfo_t *si, void *) {
 	timer_settime(timer, 0, &its, NULL);
     }
 #endif
-    switch (sig) {
+    switch (sig) {			// NOLINT
     case SIGALRM:
 	service->onTimer((ulong)si->si_value.sival_ptr);
 	break;
@@ -1461,8 +1461,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     cfg.prefix(name.c_str());
     stStatus = Starting;
     do {
-	lckfd = ::open(tstringtoachar(lckfile), O_CREAT | O_WRONLY, S_IREAD |
-	    S_IWRITE);
+	lckfd = ::open(tstringtoachar(lckfile), O_CREAT | O_CLOEXEC | O_WRONLY,
+	    S_IREAD | S_IWRITE);
 	if (lckfd == -1 || lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 1)) {
 	    dloge(Log::mod(name), Log::cmd(T("start")), T("sts=running"));
 	    if (lckfd != -1)
