@@ -70,13 +70,13 @@ usec_t __no_sanitize("thread") uticks(void) {
     static struct mach_timebase_info mti;
 
     if (!mti.denom) {
-        while (atomic_lck(&lck))
+        while (atomic_lck(lck))
 	    THREAD_YIELD();
 	if (!mti.denom) {
 	    mach_timebase_info(&mti);
 	    mti.denom *= 1000;
 	}
-	atomic_clr(&lck);
+	atomic_clr(lck);
     }
     return mach_absolute_time() * mti.numer / mti.denom;
 #elif defined(CLOCK_MONOTONIC)

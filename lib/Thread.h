@@ -383,14 +383,14 @@ public:
 	    uint lmt = 1;
 
 	    do {
-		if (lmt >= spins) {
-		    THREAD_YIELD();
-		} else {
+		if (LIKELY(lmt < spins)) {
 		    for (uint u = lmt; u; --u) {
 			THREAD_PAUSE();
 			THREAD_BARRIER();
 		    }
 		    lmt <<= 1;
+		} else {
+		    THREAD_YIELD();
 		}
 	    } while (testlock() || !trylock());
 #else
@@ -401,7 +401,7 @@ public:
 	}
     }
 #if CPLUSPLUS >= 11 && !defined(__GNUC__)
-    __forceinline bool testlock(void) const { return false; }
+    __forceinline bool testlock(void) { return false; }
     __forceinline __no_sanitize_thread bool trylock(void) {
 	return !lck.test_and_set(memory_order_acquire);
     }
@@ -409,7 +409,7 @@ public:
 	lck.clear(memory_order_release);
     }
 #else
-    __forceinline __no_sanitize_thread bool testlock(void) const { return lck; }
+    __forceinline __no_sanitize_thread bool testlock(void) { return lck; }
     __forceinline __no_sanitize_thread bool trylock(void) {
 	return !atomic_lck(lck);
     }
@@ -560,7 +560,8 @@ public:
 
 	olck.lock();
 	cnt = waiting - pending;
-	if (cnt) {
+	if (LIKELY(cnt)) {
+	    tfr
 	    if (!pending) {
 		ilck.lock();
 		cnt = waiting - pending;
@@ -581,7 +582,7 @@ public:
 	lck.unlock();
 	ret = sema4.wait(msec);
 	olck.lock();
-	if (!ret)
+	if (UNLIKELY(!ret))
 	    ret = sema4.trywait();
 	atomic_dec(waiting);
 	if (ret && !--pending)
@@ -675,10 +676,9 @@ public:
 	    SYNC_POLICY_FIFO : SYNC_POLICY_LIFO, (int)init) == KERN_SUCCESS;
     }
     __forceinline bool set(uint cnt = 1) {
-	while (cnt) {
-	    if (semaphore_signal(hdl) != KERN_SUCCESS)
+	while (cnt--) {
+	    if (UNLIKELY(semaphore_signal(hdl) != KERN_SUCCESS))
 		return false;
-	    --cnt;
 	}
 	return true;
     }
@@ -734,10 +734,9 @@ public:
 	return valid = (sem_init(&hdl, 0, init) == 0);
     }
     __forceinline bool set(uint cnt = 1) {
-	while (cnt) {
-	    if (sem_post(&hdl))
+	while (cnt--) {
+	    if (UNLIKELY(sem_post(&hdl)))
 		return false;
-	    --cnt;
 	}
 	return true;
     }
@@ -829,7 +828,7 @@ public:
 	clock_gettime(CLOCK_REALTIME_COARSE, &ts);
 	time_adjust_msec(&ts, msec);
 	do {
-	    if (!semtimedop(hdl, &op, 1, &ts))
+	    if (LIKELY(!semtimedop(hdl, &op, 1, &ts)))
 		return true;
 	} while (errno == EINTR);
 	return false;
@@ -839,9 +838,9 @@ public:
 protected:
     int hdl;
 
-    __forceinline bool semop(sembuf &op) const {
+    __forceinline bool semop(sembuf &op) {
 	do {
-	    if (!::semop(hdl, &op, 1))
+	    if (LIKELY(!::semop(hdl, &op, 1)))
 		return true;
 	} while (errno == EINTR);
 	return false;
@@ -916,16 +915,14 @@ public:
     __forceinline bool rtrylock(ulong spins = 0) {
 	FastSpinLocker lckr(lck);
 
-	while (true) {
-	    if (!writing && !wwaiting) {
-		++readers;
-		return true;
-	    } else if (!spins--) {
-		break;
-	    }
+	while (writing || wwaiting) {
+	    if (LIKELY(!spins))
+		return false;
+	    --spins;
 	    lckr.relock();
 	}
-	return false;
+	++readers;
+	return true;
     }
     __forceinline void runlock(void) {
 	FastSpinLocker lckr(lck);
@@ -935,17 +932,16 @@ public:
     __forceinline bool tryuplock(ulong spins = 0) {
 	FastSpinLocker lckr(lck);
 
-	--readers;
-	if (readers) {
+	if (readers > 1 || writing) {
+	    if (LIKELY(!spins))
+		return false;
 	    ++wwaiting;
 	    do {
-		if (!spins--) {
-		    --wwaiting;
-		    return false;
-		}
 		lckr.relock();
-	    } while (readers || writing);
+	    } while ((readers > 1 || writing) && --spins);
 	    --wwaiting;
+	    if (!spins)
+		return false;
 	}
 	writing = true;
 	return true;
@@ -953,12 +949,11 @@ public:
     __forceinline void uplock(void) {
 	FastSpinLocker lckr(lck);
 
-	--readers;
-	if (readers) {
+	if (readers > 1 || writing) {
 	    ++wwaiting;
 	    do {
 		lckr.relock();
-	    } while (readers || writing);
+	    } while (readers > 1 || writing);
 	    --wwaiting;
 	}
 	writing = true;
@@ -979,20 +974,18 @@ public:
 	FastSpinLocker lckr(lck);
 
 	if (readers || writing) {
-	    if (!spins)
+	    if (LIKELY(!spins))
 		return false;
 	    ++wwaiting;
-	    while (spins--) {
-		if (!readers && !writing) {
-		    --wwaiting;
-		    writing = true;
-		    return true;
-		}
+	    do {
 		lckr.relock();
-	    }
+	    } while ((readers || writing) && --spins);
 	    --wwaiting;
+	    if (!spins)
+		return false;
 	}
-	return false;
+	writing = true;
+	return true;
     }
     __forceinline void wunlock(void) {
 	FastSpinLocker lckr(lck);
@@ -1290,7 +1283,7 @@ public:
     }
     __forceinline uint set(uint count = 1) {
 	lck.lock();
-	while (head && count) {
+	while (LIKELY(head && count)) {
 	    Waiting *w = head;
 
 	    head = w->next;
@@ -1310,7 +1303,7 @@ public:
 	head = &w;
 	++sz;
 	lck.unlock();
-	if (!w.sema4.wait(msec)) {
+	if (UNLIKELY(!w.sema4.wait(msec))) {
 	    lck.lock();
 	    for (Waiting **ww = (Waiting **)&head; *ww; ww = &(*ww)->next) {
 		if (*ww == &w) {
@@ -1467,7 +1460,7 @@ template<class C>
 C &ThreadLocalClass<C>::get(void) const {
     C *c = (C *)tls_get(key);
 
-    if (!c) {
+    if (UNLIKELY(!c)) {
 	c = new C;
 	tls_set(key, c);
 	Thread::thread_cleanup(c, cleanup);
