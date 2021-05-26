@@ -344,7 +344,7 @@ public:
 	return check(::setsockopt(sbuf->sock, lvl, opt, (char *)&val,
 	    sizeof (val)));
     }
-    bool setsockopt(int lvl, int opt, bool val) {
+    bool setsockopt(int lvl, int opt, bool val) { // NOLINT(misc-no-recursion)
 	int i = (int)val;
 
 	return setsockopt(lvl, opt, i);

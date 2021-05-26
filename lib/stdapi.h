@@ -22,15 +22,18 @@
 #define CPP_STR(s)		#s
 
 #ifdef _MSC_VER
-#define PRAGMA_STR(s)		__pragma(s)
 #define __no_sanitize(check)
 #define __no_sanitize_address
 #define __no_sanitize_memory
 #define __no_sanitize_thread
 #define __no_sanitize_unsigned
+#define ALIGN(sz)		__declspec(align(sz))
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
 #define DLL_LOCAL
+#define LIKELY(c)		(c)
+#define PRAGMA_STR(s)		__pragma(s)
+#define UNLIKELY(c)		(c)
 #define WARN_DISABLE(w)		PRAGMA_STR(warning(disable: w))
 #define WARN_ENABLE(w)		PRAGMA_STR(warning(enable: w))
 #define WARN_POP		PRAGMA_STR(warning(pop))
@@ -48,16 +51,19 @@
 #define __no_sanitize_memory	__no_sanitize("memory")
 #define __no_sanitize_thread	__no_sanitize("thread")
 #define __no_sanitize_unsigned	__no_sanitize("unsigned-integer-overflow")
-
+#define ALIGN(sz)		__attribute__((aligned(sz)))
 #define DLL_EXPORT		__attribute__((visibility("default")))
 #define DLL_IMPORT		__attribute__((visibility("default")))
 #define DLL_LOCAL		__attribute__((visibility("hidden")))
+#define LIKELY(c)		__builtin_expect(!!(c), 1)
 #define PRAGMA_STR(s)		_Pragma (#s)
+#define UNLIKELY(c)		__builtin_expect(!!(c), 0)
 #define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored #w)
 #define WARN_ENABLE(w)		PRAGMA_STR(GCC diagnostic warning #w)
 #define WARN_POP		PRAGMA_STR(GCC pop_options)
 #define WARN_PUSH		PRAGMA_STR(GCC push_options)
 #endif
+
 #define WARN_PUSH_DISABLE(w)	WARN_PUSH \
 				WARN_DISABLE(w)
 

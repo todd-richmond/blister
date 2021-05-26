@@ -66,20 +66,17 @@ msec_t mticks(void) {
 
 usec_t __no_sanitize("thread") uticks(void) {
 #if defined(__APPLE__)
-    static atomic_t lck;
+    static volatile atomic_t lck;
     static struct mach_timebase_info mti;
 
     if (!mti.denom) {
-        if (atomic_lck(lck)) {
-	    struct mach_timebase_info mti2;
-
-	    mach_timebase_info(&mti2);
-	    return mach_absolute_time() * mti2.numer / mti2.denom / 1000;
-	} else {
+        while (atomic_lck(&lck))
+	    THREAD_YIELD();
+	if (!mti.denom) {
 	    mach_timebase_info(&mti);
 	    mti.denom *= 1000;
 	}
-	atomic_clr(lck);
+	atomic_clr(&lck);
     }
     return mach_absolute_time() * mti.numer / mti.denom;
 #elif defined(CLOCK_MONOTONIC)
@@ -158,7 +155,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     struct stat sbuf;
 
     sprintf(buf, "/proc/%ld/as", (long)pid);
-    if (stat(buf, &sbuf) = -1)
+    if (stat(buf, &sbuf) == -1)
 	return -1;
     psbuf->sz = sbuf.st_size / 1024;
 #elif defined(__linux__)

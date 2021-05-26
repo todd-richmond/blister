@@ -1,10 +1,10 @@
 {
 	"version": "0.2.0",
   	"configurations": [{
-        "name": "Launch echotest",
-        "type": "go",
-        "request": "launch",
-        "mode": "exec",
+		"name": "Launch echotest",
+		"type": "go",
+		"request": "launch",
+		"mode": "exec",
 		"program": "${workspaceFolder}/build/test/echotest",
 		"args": ["-l", "100000"]
 	}]

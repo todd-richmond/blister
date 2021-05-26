@@ -161,10 +161,10 @@ bool Dispatcher::exec() {
 	lock.lock();
 	running--;
 #else
-	atomic_inc(running);
+	atomic_inc(&running);
 	lock.unlock();
 	obj->dcb(obj);
-	atomic_dec(running);
+	atomic_dec(&running);
 	lock.lock();
 #endif
 	obj->flags &= ~DSP_Active;

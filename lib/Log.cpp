@@ -285,7 +285,9 @@ void Log::LogFile::roll(void) {
 		break;
 	    s1 = s2;
 	}
-	if (!u)
+	if (cnt == 1)
+	    (void)tunlink(file.c_str());
+	else
 	    (void)trename(file.c_str(), s1.c_str());
     } else if (path != file) {
 	(void)tunlink(path.c_str());
@@ -545,7 +547,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
 	    (uint)now_usec);
 	ss = buf;
 	ss += tstringtoastring(hostname);
-	if (!mailfrom.empty()) {
+	if (!mailfrom.empty() && mailfrom != T("<>")) {
 	    ss += ' ';
 	    if (_type == KeyVal)
 		ss += "nm=";

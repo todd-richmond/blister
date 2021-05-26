@@ -56,8 +56,8 @@ public:
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(new Group) {}
     // NOLINTNEXTLINE
-    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): dcb(cb),
-	dspr(parent.dspr), flags(0), msg(DispatchNone),
+    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),
+	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()) {}
     virtual ~DispatchObj() {
 	if (group->refcount.release())

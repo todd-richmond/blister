@@ -123,8 +123,10 @@ bool DLLibrary::open(const tchar *dll) {
 	hdl = dlopen(file.c_str(), RTLD_LAZY | RTLD_GLOBAL);
     }
 #endif
-    if (!hdl)
+    if (!hdl) {
 	err = dlerror();
+	file.erase();
+    }
 #endif
     return hdl != 0;
 }
@@ -137,6 +139,7 @@ bool DLLibrary::close() {
     if (hdl)
 	dlclose(hdl);
 #endif
+    file.erase();
     hdl = 0;
     return true;
 }
@@ -493,7 +496,7 @@ bool Thread::wait(ulong timeout) {
 
 ThreadGroup::ThreadGroup(bool aterm): cv(cvlck), autoterm(aterm), state(Init) {
     grouplck.lock();
-    id = (thread_id_t)(ulong)atomic_inc(next_id);
+    id = (thread_id_t)(ulong)atomic_x_inc(&next_id);
     groups.insert(this);
     grouplck.unlock();
 }

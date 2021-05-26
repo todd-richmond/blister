@@ -165,6 +165,7 @@ int tmain(int argc, tchar *argv[]) {
 		from = argv[++i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		host = argv[++i];
+	    dlog.mail(true);
 	    dlog.mail(mlvl, to, from, host);
 	} else if (!tstricmp(argv[i], T("-n")) || !tstricmp(argv[i],
 	    T("--name"))) {
@@ -198,6 +199,7 @@ int tmain(int argc, tchar *argv[]) {
 		host = argv[++i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		fac = (uint)tstrtoul(argv[++i], NULL, 10);
+	    dlog.syslog(true);
 	    dlog.syslog(slvl, host, fac);
 	} else if (!tstricmp(argv[i], T("-t")) || !tstricmp(argv[i],
 	    T("--type"))) {

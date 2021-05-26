@@ -1,0 +1,12 @@
+cppcheck_suppressions
+class_X_Y
+ConfigurationNotChecked
+cstyleCast
+missingOverride
+noExplicitConstructor
+postfixOperator
+preprocessorErrorDirective
+uninitMemberVar
+unmatchedSuppression
+unreadVariable
+variableScope

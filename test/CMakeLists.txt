@@ -2,10 +2,10 @@ add_executable(cfg Cfg.cpp)
 target_link_libraries(cfg blister_static)
 
 add_executable(daemonize Daemonize.cpp)
-target_link_libraries(daemonize ${LDFLAGS_CXX_STATIC} blister_static)
+target_link_libraries(daemonize blister_static)
 
 add_executable(dlog DLog.cpp)
-target_link_libraries(dlog ${LDFLAGS_CXX_STATIC} blister_static)
+target_link_libraries(dlog blister_static)
 
 add_executable(dtiming DTiming.cpp)
 target_link_libraries(dtiming blister)
@@ -14,10 +14,10 @@ add_executable(echotest EchoTest.cpp)
 target_link_libraries(echotest blister)
 
 add_executable(httpload HTTPLoad.cpp)
-target_link_libraries(httpload ${LDFLAGS_CXX_STATIC} blister_static)
+target_link_libraries(httpload blister_static)
 
 add_executable(smtpload SMTPLoad.cpp)
-target_link_libraries(smtpload ${LDFLAGS_CXX_STATIC} blister_static)
+target_link_libraries(smtpload blister_static)
 
 add_executable(uhttpd HTTPd.cpp)
 target_link_libraries(uhttpd blister)

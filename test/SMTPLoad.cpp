@@ -31,10 +31,7 @@
 #include <fstream>
 #include STL_UNORDERED_MAP_H
 #include "Log.h"
-#ifndef CLIENT
 #include "SMTPClient.h"
-#define CLIENT SMTPClient
-#endif
 
 typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
@@ -378,13 +375,13 @@ uint SMTPLoad::next(void) {
 }
 
 int SMTPLoad::onStart(void) {
-    usec_t start, end, last, now, io;
+    attrmap::const_iterator ait;
     tchar buf[1024], data[4096];
-    CLIENT sc;
-    attrmap lvars;
     ulong diff;
     vector<LoadCmd *>::const_iterator it;
-    attrmap::const_iterator ait;
+    attrmap lvars;
+    SMTPClient sc;
+    usec_t start, end, last, now, io;
 
     srand((uint)(id ^ ((uticks() >> 32 ^ (msec_t)time(NULL)))));
     if (id > Processor::count())
@@ -572,12 +569,12 @@ inline float round(ulong count, ulong div) {
 
 void SMTPLoad::print(tostream &os, usec_t last) {
     tchar buf[32];
+    bufferstream<tchar> bs;
     LoadCmd *cmd;
     vector<LoadCmd *>::const_iterator it;
     ulong lusec = (ulong)(uticks() - last);
     ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0, calls = 0;
-    bufferstream<tchar> bs;
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
@@ -624,8 +621,8 @@ void SMTPLoad::print(tostream &os, usec_t last) {
 }
 
 void SMTPLoad::reset(bool all) {
-    vector<LoadCmd *>::const_iterator it;
     LoadCmd *cmd;
+    vector<LoadCmd *>::const_iterator it;
 
     for (it = cmds.begin(); it != cmds.end(); ++it) {
 	cmd = *it;
@@ -654,7 +651,8 @@ void SMTPLoad::uninit(void) {
     delete [] body;
     delete [] bodycache;
     delete [] bodysz;
-    for (vector<LoadCmd *>::const_iterator it = cmds.begin(); it != cmds.end(); ++it)
+    for (vector<LoadCmd *>::const_iterator it = cmds.begin(); it != cmds.end();
+	++it)
 	delete *it;
     cmds.clear();
 }

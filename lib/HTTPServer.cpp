@@ -619,6 +619,7 @@ void HTTPServerSocket::error(uint sts) {
 #pragma warning(push)
 #pragma warning(disable: 6385)	// -V557
     if (sts >= 200 && sts < 200 + sizeof (err2xx) / sizeof (char *))
+	// cppcheck-suppress arrayIndexOutOfBounds
 	p = err2xx[sts % 200];
     else if (sts >= 300 && sts < 300 + sizeof (err3xx) / sizeof (char *))
 	p = err3xx[sts % 300];

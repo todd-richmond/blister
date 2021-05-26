@@ -32,7 +32,7 @@ const int MAXREAD = 8 * 1024;
 
 class EchoTest: public Dispatcher {
 public:
-    EchoTest(): Dispatcher(config) {}
+    EchoTest(const Config &config): Dispatcher(config) {}
 
     class EchoClientSocket: public DispatchClientSocket {
     public:
@@ -97,9 +97,6 @@ public:
     bool listen(const Sockaddr &sa, ulong timeout);
     void connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
 	ulong wait);
-
-private:
-    Config config;
 };
 
 static char *dbuf;
@@ -133,6 +130,7 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 void EchoTest::EchoClientSocket::input() {
     uint len;
 
+dtiming.add(T("tfr input"), 1);
     if (error() || ((len = (uint)read(dbuf + in, dsz - in)) == (uint)-1)) {
 	if (loop_exit()) {
 	    erase();
@@ -151,7 +149,7 @@ void EchoTest::EchoClientSocket::input() {
 	} else {
 	    ++ops;
 	    usecs += usec;
-	    dtiming.add(T("echo"), usec);
+	    //dtiming.add(T("echo"), usec);
 	    dlogt(T("client read"), len);
 	    // coverity[dont_call : FALSE ]
 	    // NOLINTNEXTLINE
@@ -210,6 +208,7 @@ void EchoTest::EchoServerSocket::input() {
     uint oldin = in;
     char tmp[MAXREAD];
 
+//dtiming.add(T("tfr input"), 1);
     if (error() || ((in = (uint)read(tmp, sizeof (tmp))) == (uint)-1)) {
 	if (loops.load() > 0 && !qflag)
 	    dloge(T("server read"), msg == DispatchTimeout ? T("timeout") :
@@ -241,6 +240,7 @@ void EchoTest::EchoServerSocket::input() {
 void EchoTest::EchoServerSocket::output() {
     uint len;
 
+//dtiming.add(T("tfr output"), 1);
     if (error() || ((len = (uint)write(buf + out, (uint)(in - out))) ==
 	(uint)-1)) {
 	dloge(T("server write"), msg == DispatchTimeout ? T("timeout") :
@@ -264,7 +264,7 @@ void EchoTest::connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
 	EchoClientSocket *ecs = new EchoClientSocket(*this, sa, tmt, wait);
 
 	ecs->detach();
-	ecs->start(u * (count < wait / delay ? wait / count : delay));
+	ecs->start(u * delay / count);
     }
 }
 
@@ -280,7 +280,8 @@ bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
     }
 }
 
-static EchoTest et; // NOLINT
+static Config config;
+static EchoTest et(config); // NOLINT
 
 static void signal_handler(int) {
     qflag = true;
@@ -290,7 +291,7 @@ static void signal_handler(int) {
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true;
-    ulong delay = 20, tmt = TIMEOUT, wait = 0;
+    ulong delay = 0, tmt = TIMEOUT, wait = 0;
     int fd;
     const tchar *host = NULL;
     int i;
