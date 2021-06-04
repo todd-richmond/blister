@@ -93,7 +93,7 @@ private:
 	RefCount refcount;
 	bool active;
 
-	Group &add() { refcount.reference(); return *this; }
+	Group &add(void) { refcount.reference(); return *this; }
     };
 
     Group *group;
@@ -183,7 +183,7 @@ public:
     DispatchIOSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER):
 	DispatchSocket(d, sock, msec) {}
     explicit DispatchIOSocket(DispatchObj &parent, int type = SOCK_STREAM,
-	ulong msec = DSP_NEVER) : DispatchSocket(parent, type, msec) {}
+	ulong msec = DSP_NEVER): DispatchSocket(parent, type, msec) {}
     DispatchIOSocket(DispatchObj &parent, const Socket &sock, ulong msec =
 	DSP_NEVER): DispatchSocket(parent, sock, msec) {}
 
@@ -211,7 +211,7 @@ public:
     DispatchClientSocket(Dispatcher &d, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(d, sock, msec) {}
     explicit DispatchClientSocket(DispatchObj &parent, int type = SOCK_STREAM,
-	ulong msec = DSP_NEVER) : DispatchIOSocket(parent, type, msec) {}
+	ulong msec = DSP_NEVER): DispatchIOSocket(parent, type, msec) {}
     DispatchClientSocket(DispatchObj &parent, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(parent, sock, msec) {}
 
@@ -422,8 +422,11 @@ private:
 template<class D, class C>
 class SimpleDispatchListenSocket: public DispatchListenSocket {
 public:
-    explicit SimpleDispatchListenSocket(D &d, int type = SOCK_STREAM):
-	DispatchListenSocket(d, type) {}
+    explicit SimpleDispatchListenSocket(D &d, int type = SOCK_STREAM,
+	bool detached = true): DispatchListenSocket(d, type) {
+	if (detached)
+	    detach();
+    }
 
     bool listen(const Sockaddr &sa, bool enable = true) {
 	const Config &cfg = dspr.config();
