@@ -150,9 +150,8 @@ bool Dispatcher::exec() {
 	    obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
 	    group->glist.push_back(*obj);
 	    continue;
-	} else {
-	    group->active = true;
 	}
+	group->active = true;
 	obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
 #ifdef NO_ATOMIC_ADD
 	running++;
@@ -168,23 +167,22 @@ bool Dispatcher::exec() {
 	lock.lock();
 #endif
 	obj->flags &= ~DSP_Active;
-	if (obj->flags & DSP_Freed && !(obj->flags & DSP_Socket)) {
-	    lock.unlock();
-	    delete obj;
-	    obj = NULL;
-	    lock.lock();
-	}
 	group->active = false;
 	if (group->glist) {
-	    if (obj && obj->flags & DSP_Ready) {
+	    if (obj->flags & DSP_Ready) {
 		obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
 		group->glist.push_back(*obj);
 	    }
 	    obj = group->glist.pop_front();
 	    obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
 	    rlist.push_back(*obj);
-	} else if (obj && obj->flags & DSP_Ready) {
+	} else if (obj->flags & DSP_Ready) {
 	    rlist.push_back(*obj);
+	}
+	if (obj->flags & DSP_Freed && !(obj->flags & DSP_Socket)) {
+	    lock.unlock();
+	    delete obj;
+	    lock.lock();
 	}
     }
     return !shutdown;
@@ -310,8 +308,10 @@ int Dispatcher::onStart() {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
 	}
-	if (count)
-	    wake(count, true);
+	if (!maxthreads)
+	    exec();
+	else if (count)
+	    wake(count);
 	lock.unlock();
     }
     lock.lock();
@@ -545,8 +545,10 @@ int Dispatcher::onStart() {
 	    if (ready(*dt, false))
 		count++;
 	}
-	if (count)
-	    wake(count, true);
+	if (!maxthreads)
+	    exec();
+	else if (count)
+	    wake(count);
     }
     cleanup();
     lock.unlock();
@@ -684,7 +686,7 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
     if (flist) {
 	if (!count)
 	    count = 1;
-	rlist.push_back(flist);
+	rlist.push_front(flist);
     }
     return count;
 }
@@ -728,12 +730,12 @@ void Dispatcher::onStop() {
     waitForMain();
 }
 
-void Dispatcher::wake(uint tasks, bool main) {
+void Dispatcher::wake(uint tasks) {
     uint woke = 0;
 
-    if (maxthreads == 0) {
-	if (main)
-	    exec();
+    if (!maxthreads) {
+	if (polling)
+	    wakeup(0);
 	return;
     }
     while (tasks && rlist && !shutdown) {
@@ -843,7 +845,7 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
     } else {
 	removeTimer(dt);
 	if (ready(dt) && !workers)
-	    wake(1, false);
+	    wake(1);
     }
     lock.unlock();
 }
@@ -909,13 +911,14 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 		lkr.lock();
 		nevts = handleEvents(evts, nevts);
 		if (nevts > 1)
-		    wake(nevts - 1, false);
+		    wake(nevts - 1);
 	    }
 #endif
 	}
 #endif
     }
     if (del) {
+	lkr.lock();
 	flist.push_back(ds);
     } else if (close) {
 	lkr.unlock();
@@ -1087,7 +1090,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	    lock.lock();
 	    nevts = handleEvents(evts, nevts);
 	    if (nevts > 1)
-		wake(nevts - 1, false);
+		wake(nevts - 1);
 	    lock.unlock();
 	}
 #endif
@@ -1197,7 +1200,7 @@ void DispatchClientSocket::connected() {
 }
 
 bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
-    DispatchObjCB cb) {
+    DispatchObjCB cb, bool start) {
     if (!cb)
 	cb = connection;
     addr = sa;
@@ -1205,8 +1208,12 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
 	return false;
     blocking(false);
     cloexec();
-    msleep(1);
-    poll(cb, DispatchTimer::DSP_NEVER, DispatchAccept);
+    if (start) {
+	msleep(1);
+	poll(cb, DispatchTimer::DSP_NEVER, DispatchAccept);
+    } else {
+	callback(cb);
+    }
     return true;
 }
 

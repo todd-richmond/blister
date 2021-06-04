@@ -55,7 +55,6 @@ public:
 
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(new Group) {}
-    // NOLINTNEXTLINE
     DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),
 	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()) {}
@@ -143,7 +142,6 @@ protected:
     ulong to;
 
 private:
-    const DispatchTimer & operator =(const DispatchTimer &) CPP_DELETE;
     void init(void);
 
     msec_t due;
@@ -171,14 +169,11 @@ public:
     virtual void erase(void);
 
 protected:
-    void poll(DispatchObjCB cb, ulong msec, DispatchMsg reason);
+    void poll(DispatchObjCB cb, ulong msec, DispatchMsg msg);
 
     bool mapped;
 
     friend class Dispatcher;
-
-private:
-    const DispatchSocket & operator =(const DispatchSocket &) CPP_DELETE;
 };
 
 class BLISTER DispatchIOSocket: public DispatchSocket {
@@ -220,7 +215,7 @@ public:
     DispatchClientSocket(DispatchObj &parent, const Socket &sock,
 	ulong msec = DSP_NEVER): DispatchIOSocket(parent, sock, msec) {}
 
-    void connect(const Sockaddr &sa, ulong msec = 30000, DispatchObjCB cb =
+    void connect(const Sockaddr &addr, ulong msec = 30000, DispatchObjCB cb =
 	connected);
 
 protected:
@@ -242,16 +237,16 @@ class BLISTER DispatchListenSocket: public DispatchSocket {
 public:
     explicit DispatchListenSocket(Dispatcher &d, int type = SOCK_STREAM):
 	DispatchSocket(d, type) {}
-    DispatchListenSocket(Dispatcher &d, const Sockaddr &sa, int type =
-	SOCK_STREAM, bool reuse = true, int backlog = SOCK_BACKLOG,
+    DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
+	int type = SOCK_STREAM, bool reuse = true, int backlog = SOCK_BACKLOG,
 	DispatchObjCB cb = connection);
 
     const Sockaddr address(void) const { return addr; }
-    bool listen(const Sockaddr &sa, bool reuse = true, int backlog =
-	SOCK_BACKLOG, DispatchObjCB cb = NULL);
+    bool listen(const Sockaddr &addr, bool reuse = true, int backlog =
+	SOCK_BACKLOG, DispatchObjCB cb = NULL, bool start = true);
     bool listen(const tchar *addrstr, bool reuse = true, int backlog =
-	SOCK_BACKLOG, DispatchObjCB cb = NULL) {
-	return listen(Sockaddr(addrstr), reuse, backlog, cb);
+	SOCK_BACKLOG, DispatchObjCB cb = NULL, bool start = true) {
+	return listen(Sockaddr(addrstr), reuse, backlog, cb, start);
     }
     void relisten(void) { poll(NULL, DSP_PREVIOUS, DispatchAccept); }
 
@@ -271,7 +266,7 @@ public:
 
     const Config &config(void) const { return cfg; }
 
-    bool start(uint mthreads = 100, uint stacksz = 0);
+    bool start(uint maxthreads = 100, uint stacksz = 0);
 
 protected:
     virtual int onStart(void);
@@ -291,7 +286,7 @@ private:
 	TimerSet(): split(0) {}
 	TimerSet(const TimerSet &) CPP_DELETE;
 
-	TimerSet & operator =(const TimerSet &) CPP_DELETE;
+	const TimerSet & operator =(const TimerSet &) CPP_DELETE;
 
 	bool empty(void) const { return unsorted.empty() && sorted.empty(); }
 	msec_t half(void) const { return split; }
@@ -391,11 +386,10 @@ private:
 
     void cleanup(void);
     bool exec(void);
-    uint handleEvents(const void *evts, uint nevts);
+    uint handleEvents(const void *evts, uint cnt);
     int run(void);
-    void wake(uint tasks, bool main);
-    // enter locked, leave unlocked for performance
-    void wakeup(ulong msec);
+    void wake(uint tasks);
+    void wakeup(ulong msec);	// enter locked, leave unlocked for performance
     static int worker(void *parm);
 
     SpinLock lock;

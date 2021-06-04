@@ -148,16 +148,16 @@ const tstring Sockaddr::ip(void) const {
 
 ushort Sockaddr::port(void) const {
     switch (family()) {
-	case AF_INET: return htons(addr.sa4.sin_port);
-	case AF_INET6: return htons(addr.sa6.sin6_port);
-	default: return 0;
+    case AF_INET: return htons(addr.sa4.sin_port);
+    case AF_INET6: return htons(addr.sa6.sin6_port);
+    default: return 0;
     }
 }
 
 void Sockaddr::port(ushort port) {
     switch (family()) {
-	case AF_INET: addr.sa4.sin_port = htons(port); break;
-	case AF_INET6: addr.sa6.sin6_port = htons(port); break;
+    case AF_INET: addr.sa4.sin_port = htons(port); break;
+    case AF_INET6: addr.sa6.sin6_port = htons(port); break;
     }
 }
 
