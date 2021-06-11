@@ -1221,7 +1221,7 @@ private:
 // prohibit object copies by subclassing this
 class BLISTER nocopy {
 protected:
-    nocopy() CPP_DEFAULT;
+    __forceinline nocopy() CPP_DEFAULT;
 
 private:
     nocopy(const nocopy &) CPP_DELETE;
@@ -1232,7 +1232,7 @@ private:
 template <class C>
 class BLISTER ObjectList: nocopy {
 public:
-    struct Node {
+    struct Node: nocopy {
 	__forceinline Node(): next(NULL) {}
 
 	C *next;

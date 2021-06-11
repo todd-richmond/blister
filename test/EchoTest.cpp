@@ -32,7 +32,7 @@ const int MAXREAD = 8 * 1024;
 
 class EchoTest: public Dispatcher {
 public:
-    EchoTest(const Config &config): Dispatcher(config) {}
+    explicit EchoTest(const Config &config): Dispatcher(config) {}
 
     class EchoClientSocket: public DispatchClientSocket {
     public:

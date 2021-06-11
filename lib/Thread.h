@@ -401,7 +401,7 @@ public:
 	}
     }
 #if CPLUSPLUS >= 11 && !defined(__GNUC__)
-    __forceinline bool testlock(void) { return false; }
+    __forceinline bool testlock(void) const { return false; }
     __forceinline __no_sanitize_thread bool trylock(void) {
 	return !lck.test_and_set(memory_order_acquire);
     }
@@ -409,7 +409,7 @@ public:
 	lck.clear(memory_order_release);
     }
 #else
-    __forceinline __no_sanitize_thread bool testlock(void) { return lck; }
+    __forceinline __no_sanitize_thread bool testlock(void) const { return lck; }
     __forceinline __no_sanitize_thread bool trylock(void) {
 	return !atomic_lck(lck);
     }
@@ -838,7 +838,7 @@ public:
 protected:
     int hdl;
 
-    __forceinline bool semop(sembuf &op) {
+    __forceinline bool semop(sembuf &op) const {
 	do {
 	    if (LIKELY(!::semop(hdl, &op, 1)))
 		return true;

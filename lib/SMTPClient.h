@@ -56,7 +56,9 @@ public:
 	if (addrs)
 	    parse(addrs);
     }
-    explicit RFC822Addr(const tstring &addrs): buf(NULL) { parse(addrs.c_str()); }
+    explicit RFC822Addr(const tstring &addrs): buf(NULL) {
+	parse(addrs.c_str());
+    }
     ~RFC822Addr() { delete [] buf; }
 
     const tstring address(uint u = 0, bool name = false, bool brkt = true) const;
@@ -80,8 +82,8 @@ private:
     tchar *buf;
     vector<const tchar *> domains, locals, phrases, routes;
 
-    void parse_append(const tchar *name, const tchar *route,
-	const tchar *mailbox, const tchar *domain);
+    void parse_append(const tchar *name, const tchar *route, const tchar
+	*mailbox, const tchar *domain);
     int parse_domain(tchar *&in, tchar *&domain, tchar *&commment);
     int parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials);
     int parse_route(tchar *&in, tchar *&route);
@@ -93,12 +95,14 @@ public:
     SMTPClient();
     virtual ~SMTPClient() {}
 
-    const tstring &extensions(void) const { return exts; }
     int code(void) const { return ttoi(sts.c_str()); }
+    bool exts_find(const char *s) const { return exts.find(s) != exts.npos; }
+    const tstring &extensions(void) const { return exts; }
     const tchar *message(void) const {
 	return sts.length() > 4 ? sts.c_str() + 4 : T("");
     }
     const tstring &message_multi(void) const { return multi; }
+    bool multi_find(const char *s) const { return multi.find(s) != multi.npos; }
     const tstring &result(void) const { return sts; }
 
     bool connect(const Sockaddr &addr, uint timeout = SOCK_INFINITE);

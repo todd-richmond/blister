@@ -50,21 +50,28 @@ protected:
 };
 
 int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
+    char buf[32];
+    ushort port = 8080;
     int ret = Daemon::onStart(argc, argv);
     SimpleDispatchListenSocket<Dispatcher, HTTPDaemonSocket> *hsock;
 
     if (ret)
 	return ret;
+    for (int i = 0; i < argc; ++i) {
+	if (!strcmp(argv[i], "-p") && i < argc - 1)
+	    port = (ushort)atoi(argv[++i]);
+    }
+    sprintf(buf, "*:%u", (uint)port);
     if (!dspr.start()) {
 	dloge(name, Log::error(T("unable to start")));
 	return -1;
     }
     hsock = new SimpleDispatchListenSocket<Dispatcher, HTTPDaemonSocket>(dspr);
-    if (hsock->listen(T("*:8080"))) {
-	hsock->detach();
-    } else {
+    if (!hsock->listen(buf, true)) {
 	delete hsock;
 	dspr.stop();
+	dlog << Log::Err << HTTPServerSocket::section() << " socket failed" <<
+	    endlog;
         dspr.waitForMain();
         return -1;
     }

@@ -31,9 +31,9 @@ bool HTTPServerSocket::date;
 HTTPServerSocket::HTTPServerSocket(Dispatcher &d, Socket &sock):
     DispatchServerSocket(d, sock), path(NULL), prot(NULL), postdata(NULL),
     postsz(0), chunkin(0), chunktrailer(false), postchunking(false), cmd(NULL),
-    data(NULL), datasz(0), postin(0), sz(0), fmap(NULL), ka(false),
-    nagleon(true), postdatasz(0), rto(RTimeout), wto(WTimeout), savechar(0),
-    _status(0)  {
+    data(NULL), datasz(0), sz(0), fmap(NULL), ka(false), nagleon(true),
+    postdatasz(0), postin(0), rto(RTimeout), wto(WTimeout), savechar(0),
+    _status(0) {
     ZERO(iov);
 }
 
@@ -60,10 +60,6 @@ void HTTPServerSocket::postdata_grow(DispatchObjCB cb, ulong keepsize, ulong
     ready(cb);
 }
 
-void HTTPServerSocket::postdata_free() {
-    delete [] postdata;
-}
-
 void HTTPServerSocket::readhdrs() {
     uint in;
     uint room = (uint)(sz - datasz);
@@ -72,7 +68,7 @@ void HTTPServerSocket::readhdrs() {
 	disconnect();
 	return;
     }
-    if (!room) {
+    if (room <= 1) {
 	char *old = data;
 
 	sz += 1000;
@@ -81,7 +77,8 @@ void HTTPServerSocket::readhdrs() {
 	memcpy(data, old, datasz);
 	delete [] old;
     }
-    in = (uint)read(data + datasz, room);
+    // - 1 to leave room for savechar logic
+    in = (uint)read(data + datasz, room - 1);
     if (in == (uint)-1) {
 	disconnect();
 	return;
@@ -103,7 +100,7 @@ void HTTPServerSocket::readpost() {
     ulong in = 0;
     ulong room = postdatasz ? postdatasz - postin : sz - datasz;
     ulong left = room > 100 && postsz == (ulong)-1 ? room : postsz - postin;
-    static const int chunkmap[256] = {
+    static const char chunkmap[256] = {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -1, -1, -2, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -121,21 +118,22 @@ void HTTPServerSocket::readpost() {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     };
 
-    if (msg == DispatchTimeout || msg == DispatchClose) {
+    if (msg == DispatchTimeout) {
 	disconnect();
 	return;
     }
-    if (room < left && (!postdatasz || postsz == (ulong)-1)) {
-	if (postsz == (uint)-1)
-	    in = postin < 8 * 1024 ? 16 * 1024 : (postin * 2);
+    if (msg != DispatchClose && room < left + 1 && (!postdatasz || postsz ==
+	(ulong)-1)) {
+	if (postsz == (ulong)-1)
+	    in = postin < 8 * 1024 ? 16 * 1024 : postin * 2;
 	else
 	    in = postsz;
 	postdata_grow(readpost, postin, in + 1);
 	postdatasz = in;
 	return;
     }
-    if ((in = (ulong)read(postdata + postin, (uint)(left > (uint)-2 ? (uint)-2 :
-	left))) == (ulong)-1) {
+    if (msg == DispatchClose || (in = (ulong)read(postdata + postin,
+	(uint)left)) == (ulong)-1) {
 	if (postsz == (ulong)-1 && !postchunking) {
 	    left = in = 0;
 	    postsz = postin;
@@ -156,10 +154,10 @@ void HTTPServerSocket::readpost() {
 	    if (postin <= pos)
 		break;
 
-	    int c;
+	    char c;
 	    ulong chunksize = 0;
-	    const char *lf = (const char *)memchr(postdata + pos, '\n',
-		postin - pos);
+	    const char *lf = (const char *)memchr(postdata + pos, '\n', postin -
+		pos);
 
 	    if (!lf)
 		break;
@@ -171,7 +169,7 @@ void HTTPServerSocket::readpost() {
 		}
 	    } else {
 		while ((c = chunkmap[(uchar)postdata[pos]]) >= 0) {
-		    chunksize = (chunksize * 16 + (unsigned)c);
+		    chunksize = chunksize * 16 + (ulong)c;
 		    ++pos;
 		}
 		if (c != -2 || pos == chunkin) {
@@ -193,7 +191,7 @@ void HTTPServerSocket::readpost() {
 	}
     }
     if (left || postsz == (ulong)-1) {
-	postpre(readpost);
+	readable(readpost, rto);
     } else {
 	savechar = postdata[postsz];
 	postdata[postsz] = '\0';
@@ -506,8 +504,8 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     iov[1].iov_len = (iovlen_t)ss.size();
     iov[2].iov_base = (char *)p;
     iov[2].iov_len = (iovlen_t)len;
-    dlog << (_status < 400 ? Log::Info : Log::Note) << cmd << ' ' << path <<
-	T(": ") << _status << endlog;
+    dlog << (_status < 400 ? Log::Info : Log::Note) << Log::cmd(cmd) <<
+	Log::kv("path", path) << Log::kv("sts", _status) << endlog;
     send();
 }
 
@@ -553,15 +551,15 @@ void HTTPServerSocket::reply(int fd, ulong len) {
     reply(fmap, len);
 }
 
-void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime,
-    const char *str, bool close) {
+void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
+    char *str, bool close) {
     char buf[128];
     int i;
     struct tm tmbuf, *tmptr;
 
     hdrs.reset();
     ss.reset();
-    i = snprintf(buf, sizeof (buf), "%s %u %s\r\n", prot, sts, str ?  str :
+    i = snprintf(buf, sizeof (buf), "%s %u %s\r\n", prot, sts, str ? str :
 	sts < 300 ? "OK" : "ERR");
     i = min(i, (int)sizeof (buf) - 1);
     hdrs.write(buf, i);
@@ -592,7 +590,7 @@ void HTTPServerSocket::header(const char *attr, const char *val) {
     hdrs << attr << ": " << val << CRLF;
 }
 
-void HTTPServerSocket::error(uint sts) {
+void HTTPServerSocket::error(uint sts, bool close) {
     const char *p;
     static const char *err2xx[] = {
 	"OK", "Created", "Accepted", "Non-Authoritative Information",
@@ -630,14 +628,14 @@ void HTTPServerSocket::error(uint sts) {
     else
 	p = "HTTP error";
 #pragma warning(pop)		// +V557
-    status(sts, "text/plain");
+    status(sts, "text/plain", 0, NULL, close);
     ss << sts << ' ' << p << CRLF;
     _status = sts;
     reply();
 }
 
-void HTTPServerSocket::error(uint sts, const char *errstr) {
-    status(sts, "text/plain", 0, errstr);
+void HTTPServerSocket::error(uint sts, const char *errstr, bool close) {
+    status(sts, "text/plain", 0, errstr, close);
     ss << sts << ' ' << errstr << CRLF;
     _status = sts;
     reply();
@@ -690,8 +688,7 @@ void HTTPServerSocket::get(bool head) {
 	!strnicmp(val + 1, "length=", 7) &&
 	(ulong)atol(val + 8) != (ulong)statbuf.st_size)
 	sts = 200;
-    status(sts, ext ? mimetype(ext).c_str() : "application/octet-stream",
-	statbuf.st_mtime);
+    status(sts, mimetype(ext), statbuf.st_mtime);
     if (sts == 200 && !head)
 	reply(fd, (ulong)statbuf.st_size);
     else
@@ -699,7 +696,7 @@ void HTTPServerSocket::get(bool head) {
     ::close(fd);
 }
 
-const string HTTPServerSocket::mimetype(const char *ext) const {
+const char *HTTPServerSocket::mimetype(const char *ext) const {
     static const struct mimemap {
 	const char *ext;
 	const char *mime;
@@ -755,9 +752,11 @@ const string HTTPServerSocket::mimetype(const char *ext) const {
 	{ NULL, NULL }
     };
 
-    for (uint u = 0; mime[u].ext; ++u) {
-	if (!stricmp(ext, mime[u].ext))
-	    return mime[u].mime;
+    if (ext) {
+	for (uint u = 0; mime[u].ext; ++u) {
+	    if (!stricmp(ext, mime[u].ext))
+		return mime[u].mime;
+	}
     }
     return "application/octet-stream";
 }

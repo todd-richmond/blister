@@ -682,6 +682,16 @@ int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
     }
 }
 
+long Socket::sendmsg(const msghdr &msgh, int flags) const {
+    int out;
+
+    do {
+	if (check(out = (int)::sendmsg(sbuf->sock, &msgh, flags)))
+	    break;
+    } while (interrupted());
+    return out <= 0 && blocked() ? 0 : out;
+}
+
 int Socket::write(const void *buf, uint sz) const {
     int out;
 

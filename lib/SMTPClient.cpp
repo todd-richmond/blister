@@ -80,12 +80,13 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	while (isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
 	ret = cmd(T("AUTH LOGIN"), achartotchar(uubuf), 334);
+	delete [] uubuf;
 	if (ret && (ret = base64encode(pass, passlen, uubuf, uusz)) == true) {
 	    while (isspace(uubuf[uusz - 1]))
 		uubuf[--uusz] = '\0';
 	    ret = cmd(achartotchar(uubuf), NULL, 235);
+	    delete[] uubuf;
 	}
-	delete[] uubuf;
     }
     return ret;
 }
@@ -164,7 +165,9 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
 }
 
 bool SMTPClient::ehlo(const tchar *domain) {
-    if (cmd(T("EHLO"), domain ? domain : Sockaddr::hostname().c_str())) {
+    if (!domain)
+	domain = Sockaddr::hostname().c_str();
+    if (cmd(T("EHLO"), domain)) {
 	exts = multi;
 	return true;
     } else {
@@ -187,6 +190,10 @@ bool SMTPClient::from(const tchar *id) {
 	id = T("<>");
     frm = id;
     return cmd(T("MAIL FROM:"), id);
+}
+
+bool SMTPClient::xclient(const tchar *xclient_cmd) {
+    return cmd(T("XCLIENT"), xclient_cmd);
 }
 
 bool SMTPClient::from(const RFC822Addr &addr) {
@@ -228,30 +235,10 @@ bool SMTPClient::quit() {
     return ret || code() == 421;
 }
 
-void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
-    vector<tstring>::const_iterator it;
-
-    if (v.empty())
-	return;
-    sstrm << tchartoachar(hdr);
-    for (it = v.begin(); it != v.end(); ++it) {
-	const tstring &s = *it;
-
-	if (it != v.begin())
-	    sstrm << ",\r\n\t";
-	sstrm << tstringtoachar(s);
-    }
-    sstrm << crlf;
-}
-
 bool SMTPClient::rcpt(const tchar *id) {
     RFC822Addr addr(id);
 
     return cmd(T("RCPT TO:"), addr.address().c_str());
-}
-
-bool SMTPClient::xclient(const tchar *xclient_cmd) {
-    return cmd(T("XCLIENT"), xclient_cmd);
 }
 
 bool SMTPClient::vrfy(const tchar *id) {
@@ -376,6 +363,22 @@ bool SMTPClient::enddata() {
     return cmd(T("."));
 }
 
+void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
+    vector<tstring>::const_iterator it;
+
+    if (v.empty())
+	return;
+    sstrm << tchartoachar(hdr);
+    for (it = v.begin(); it != v.end(); ++it) {
+	const tstring &s = *it;
+
+	if (it != v.begin())
+	    sstrm << ",\r\n\t";
+	sstrm << tstringtoachar(s);
+    }
+    sstrm << crlf;
+}
+
 bool SMTPClient::stuff(const void *data, size_t sz) {
     const char *start = (const char *)data;
     const char *p, *pp;
@@ -441,9 +444,9 @@ static const tchar *NonASCII = T("Non-ASCII character");
 
 void RFC821Addr::parseaddr(const tchar *&input) {
     uint angledepth = 0;
+    tstring::size_type anglelast = tstring::npos;
     uint parendepth = 0;
     bool saw_colon = false;
-    tstring::size_type anglelast = tstring::npos;
 
     addr.erase();
     domain_buf.erase();
@@ -594,17 +597,23 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	    break;
 	case '"':
 	    while ((c = addr[pos++]) != '"') {
-		if (c == '\\')
+		if (pos != addr.length() && c == '\\')
 		    c = addr[pos++];
+		if (pos == addr.length()) {
+		    err = "Unbalanced '\"'";
+		    goto fail;
+		}
 		local_part += c;
 	    }
 	    continue;
 	case '\\':
-	    local_part += addr[pos++];
+	    if (pos != addr.length())
+		local_part += addr[pos++];
 	    continue;
 	case ' ':
 	case '.': {
 		bool saw_dot = (c == '.');
+
 		while (pos < addr.length() &&
 		    ((c = addr[pos]) == ' ' || (!saw_dot && c == '.'))) {
 		    if (c == '.')
@@ -856,8 +865,8 @@ uint RFC822Addr::parse(const tchar *addrs) {
 void RFC822Addr::parse_append(const tchar *p, const tchar *r, const tchar *l,
     const tchar *d) {
     domains.emplace_back(d ? d : T(""));
-    phrases.emplace_back(p ? p : T(""));
     locals.emplace_back(l ? l : T(""));
+    phrases.emplace_back(p ? p : T(""));
     routes.emplace_back(r ? r : T(""));
 }
 
@@ -987,8 +996,8 @@ bool RFC822Addr::skip_whitespace(tchar *&in) {
 	if (c == '(') {
 	    cmt = 1;
 	    ++s;
-	    while (cmt && (c = *s) != 0 && !(c == '\n' && s[1] != ' ' &&
-		s[1] != '\t')) {
+	    while (cmt && (c = *s) != 0 && !(c == '\n' && s[1] != ' ' && s[1] !=
+		'\t')) {
 		++s;
 		if (c == '\\' && *s)
 		    ++s;
@@ -997,7 +1006,7 @@ bool RFC822Addr::skip_whitespace(tchar *&in) {
 		else if (c == ')')
 		    --cmt;
 	    }
-	    s--;
+	    --s;
 	} else if (!istspace((uchar)c)) {
 	    break;
 	} else if (c == '\n' && s[1] != ' ' && s[1] != '\t') {
@@ -1050,7 +1059,6 @@ const tstring RFC822Addr::address(uint u, bool n, bool b) const {
     } else {
 	s += locals[u];
     }
-
     if (*domains[u]) {
 	s += '@';
 	s += domains[u];
@@ -1240,7 +1248,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 
 bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
     char *out;
-    int out_bits = 0, out_byte = 0;
+    uint out_bits = 0, out_byte = 0;
     static const uchar table[256] = {
 	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*000-007*/
 	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*010-017*/
@@ -1281,7 +1289,7 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
 	return false;
     output = out;
     while (sz > 0) {
-	int add_bits = table[(int)*input++];
+	uchar add_bits = table[(uchar)*input++];
 
 	sz--;
 	if (add_bits >= 64) {
@@ -1307,7 +1315,7 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
 	    *out++ = (char)out_byte;
 	    out_byte = 0;
 	} else {
-	    int mask = 0xFF << (out_bits - 8);
+	    uint mask = 0xFF << (out_bits - 8);
 
 	    *out++ = (char)((out_byte & mask) >> (out_bits - 8));
 	    out_byte &= ~mask;

@@ -49,14 +49,14 @@ enum DispatchMsg {
 };
 
 // base classes for event objects
-class BLISTER DispatchObj: ObjectList<DispatchObj>::Node, nocopy {
+class BLISTER DispatchObj: ObjectList<DispatchObj>::Node {
 public:
     typedef void (*DispatchObjCB)(DispatchObj *);
 
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(new Group) {}
-    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): nocopy(),
-	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone),
+    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): dcb(cb),
+	dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()) {}
     virtual ~DispatchObj() {
 	if (group->refcount.release())
@@ -81,11 +81,11 @@ protected:
 
     DispatchObjCB dcb;
     Dispatcher &dspr;
-    uint flags;
+    volatile uint flags;
     DispatchMsg msg;
 
 private:
-    class Group {
+    class BLISTER Group: nocopy {
     public:
 	Group(): active(false) {}
 
@@ -152,9 +152,6 @@ private:
 // handle socket events
 class BLISTER DispatchSocket: public DispatchTimer, public Socket {
 public:
-#if CPLUSPLUS >= 11
-    DispatchSocket(const DispatchSocket &ds): DispatchSocket((DispatchObj &)ds) {}
-#endif
     explicit DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =
 	DSP_NEVER);
     DispatchSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER);

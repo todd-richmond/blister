@@ -5,6 +5,7 @@ AnalyzeTemporaryDtors: false
 FormatStyle:     none
 Checks: >
   *,
+  -altera-struct-pack-align,
   -android-cloexec-accept,
   -android-cloexec-fopen,
   -android-cloexec-open,
@@ -27,6 +28,7 @@ Checks: >
   -clang-analyzer-valist.Uninitialized,
   -clang-diagnostic-unknown-pragmas,
   -clang-diagnostic-unknown-warning-option,
+  -concurrency-mt-unsafe,
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-avoid-goto,
   -cppcoreguidelines-avoid-magic-numbers,
@@ -85,7 +87,9 @@ Checks: >
   -llvmlibc-callee-namespace,
   -llvmlibc-implementation-in-namespace,
   -llvmlibc-restrict-system-libc-headers,
+  -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
+  -misc-redundant-expression,
   -misc-unused-parameters,
   -modernize-avoid-c-arrays,
   -modernize-deprecated-headers,
@@ -101,6 +105,7 @@ Checks: >
   -modernize-use-override,
   -modernize-use-using,
   -readability-braces-around-statements,
+  -readability-function-cognitive-complexity,
   -readability-const-return-type,
   -readability-convert-member-functions-to-static,
   -readability-else-after-return,

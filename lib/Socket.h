@@ -99,7 +99,6 @@ class BLISTER Sockaddr {
 public:
     enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNIX, UNSPEC };
 
-    Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
     explicit Sockaddr(const addrinfo *ai) { set(ai); }
     explicit Sockaddr(const hostent *h) { set(h); }
     explicit Sockaddr(Proto proto = TCP) {
@@ -117,6 +116,7 @@ public:
     Sockaddr(const tchar *host, const tchar *service, Proto proto = TCP) {
 	set(host, service, proto);
     }
+    Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
 
     bool operator ==(const Sockaddr &sa) const {
 	return !memcmp(&addr, &sa.addr, size());
@@ -382,6 +382,7 @@ public:
     template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
     long readv(iovec *iov, int count) const;
     long readv(iovec *iov, int count, const Sockaddr &sa) const;
+    long sendmsg(const msghdr &msgh, int flags = 0) const;
     int write(const void *buf, uint len) const;
     int write(const void *buf, uint len, const Sockaddr &sa) const;
     template<class C> int write(const C &c) const {
@@ -456,7 +457,7 @@ protected:
 
 /*
  * SocketSet manages system dependent fd_set/select() and pollfd/poll()
- * differences and is optimized for very large file descriptor sets.
+ * differences and is optimized for very large file descriptor sets
  */
 class BLISTER SocketSet {
 public:

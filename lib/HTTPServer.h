@@ -37,26 +37,27 @@ public:
     const attrmap &attributes(void) const { return attrs; }
     const attrmap &postarguments(void) const { return postargs; }
     void urldecode(char *buf, attrmap &amap) const;
-    virtual const string mimetype(const char *ext) const;
+    virtual const char *mimetype(const char *ext) const;
+    virtual void start(void) { readable(readhdrs, rto); }
     static void senddate(bool b) { date = b; }
     static const tchar *section(void) { return T("http"); }
 
-    virtual void start(void) { readable(readhdrs, rto); }
-
 protected:
     string argdata;
+    iovec iov[3];
+    bufferstream<char> hdrs, ss;
     const char *path, *prot;
     char *postdata;
     ulong postsz;
     static const char CRLF[];
 
-    template<class C> ostream &operator <<(const C &c) const { return ss << c; }
     const char *arg(const char *name) const { return find(args, name); }
     const char *attr(const char *name) const { return find(attrs, name); }
     const char *postarg(const char *name) const { return find(postargs, name); }
+    template<class C> ostream &operator <<(const C &c) { return ss << c; }
     void header(const char *attr, const char *val);
-    void error(uint sts);
-    void error(uint sts, const char *errstr);
+    void error(uint sts, bool close = false);
+    void error(uint sts, const char *errstr, bool close = false);
     void keepalive(void);
     void reply(const char *data = NULL, ulong len = (ulong)-1);
     void reply(int fd, ulong sz);
@@ -73,10 +74,10 @@ protected:
     // allow subclasses to allocate their own postdata buffers
     // subclasses must reset postdata to NULL in their destructor to prevent
     // it from freeing buffer incorrectly
-    virtual void postdata_free(void);
+    virtual void postdata_free(void) { delete [] postdata; }
     virtual void postdata_grow(DispatchObjCB cb, ulong keepsize, ulong newsize);
     virtual void put(void) { error(501); }
-    // Called when reply() no longer needs its buffer data
+    // called when reply() no longer needs its buffer data
     virtual void replydone(DispatchObjCB cb) { ready(cb); }
     DSP_DECLARE(HTTPServerSocket, done);
     DSP_DECLARE(HTTPServerSocket, send);
@@ -87,23 +88,21 @@ private:
     bool chunktrailer, postchunking;
     const char *cmd;
     char *data;
-    ulong datasz, postin, sz;
+    ulong datasz, sz;
     char *fmap;
-    bufferstream<char> hdrs, ss;
-    iovec iov[3];
     bool ka, nagleon;
-    ulong postdatasz;
+    ulong postdatasz, postin;
     uint rto, wto;
     char savechar;
     uint _status;
     static bool date;
 
-    void scan(char *buf, ulong len, bool append = false);
     const char *find(const attrmap &amap, const char *name) const {
 	attrmap::const_iterator it = amap.find(name);
 
 	return it == amap.end() ? (const char *)NULL : it->second;
     }
+    void scan(char *buf, ulong len, bool append = false);
     DSP_DECLARE(HTTPServerSocket, parse);
     DSP_DECLARE(HTTPServerSocket, readhdrs);
     DSP_DECLARE(HTTPServerSocket, readpost);
