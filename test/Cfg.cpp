@@ -19,7 +19,8 @@
 #include "Config.h"
 
 int tmain(int argc, const tchar * const argv[]) {
-    const tchar *attr = NULL, *file = NULL, *prefix = NULL, *section = NULL;
+    const tchar *attr = NULL, *file = NULL, *prefix = NULL, *section = NULL,
+	*update = NULL;
     ConfigFile cfg;
     bool boolean = false, check = false, integer = false, nonewline = false;
     bool exists;
@@ -50,6 +51,11 @@ int tmain(int argc, const tchar * const argv[]) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    section = argv[i];
+	} else if (!tstrcmp(argv[i], T("-u")) || !tstrcmp(argv[i],
+	    T("--update"))) {
+	    if (i + 1 == argc || argv[++i][0] == '-')
+		break;
+	    update = argv[i];
 	} else if (argv[i][0] != '-') {
 	    attr = argv[i];
 	    if (i + 1 != argc && argv[i + 1][0] != '-')
@@ -65,12 +71,14 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("\t[-i|--integer]\n")
 	    T("\t[-n|--nonewline]\n")
 	    T("\t[-p|--prefix prefix]\n")
-	    T("\t[-s|--section section]\n");
+	    T("\t[-s|--section section]\n")
+	    T("\t[-u|--update value]\n");
 	    return -1;
     }
     if (file) {
 	if (!cfg.read(file, prefix)) {
-	    tcerr << T("unable to read ") << file << endl;
+	    tcerr << T("unable to read ") << file << T(": ") <<
+		tstrerror(errno) << endl;
 	    return -1;
 	}
     } else {
@@ -83,6 +91,14 @@ int tmain(int argc, const tchar * const argv[]) {
 	return cfg.get(attr, false, section) ? 0 : 1;
     } else if (integer) {
 	return cfg.get(attr, 0, section);
+    } else if (update) {
+	cfg.set(attr, update, section);
+	if (!cfg.write()) {
+	    tcerr << T("unable to write ") << file << T(": ") <<
+		tstrerror(errno) << endl;
+	    return -1;
+	}
+	return 0;
     } else if (exists) {
 	tcout << cfg.get(attr, (tchar *)NULL, section);
 	if (!nonewline)

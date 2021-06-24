@@ -488,7 +488,7 @@ bool ConfigFile::write(const tchar *file, bool inistyle) const {
 	tstring tmp(path + T(".tmp"));
 	tofstream os(tstringtoachar(tmp));
 
-	if (!write(os, inistyle) || !rename(tstringtoachar(tmp),
+	if (!write(os, inistyle) || rename(tstringtoachar(tmp),
 	    tstringtoachar(path))) {
 	    unlink(tstringtoachar(tmp));
 	    return false;
