@@ -23,7 +23,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	*val = NULL;
     ConfigFile cfg;
     bool boolean = false, check = false, integer = false, nonewline = false,
-	update = false;
+	quiet = false, update = false;
     bool exists;
     int i;
 
@@ -53,6 +53,9 @@ int tmain(int argc, const tchar * const argv[]) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    prefix = argv[i];
+	} else if (!tstrcmp(argv[i], T("-q")) ||
+	    !tstrcmp(argv[i], T("--quiet"))) {
+	    quiet = true;
 	} else if (!tstrcmp(argv[i], T("-s")) ||
 	    !tstrcmp(argv[i], T("--section"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
@@ -77,6 +80,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("\t[-i|--integer]\n")
 	    T("\t[-n|--nonewline]\n")
 	    T("\t[-p|--prefix prefix]\n")
+	    T("\t[-q|--quiet]\n")
 	    T("\t[-s|--section section]\n")
 	    T("\t[-u|--update]\n");
 	    return -1;
@@ -113,7 +117,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    tcout << endl;
 	return 0;
     } else {
-	tcerr << attr << T(" not found") << endl;
+	if (!quiet)
+	    tcerr << attr << T(" not found") << endl;
 	return -1;
     }
 }
