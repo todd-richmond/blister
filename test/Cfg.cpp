@@ -94,11 +94,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	return cfg.get(attr, val && (*val == '1' || *val == 't' || *val ==
 	    'T' || *val == 'y' || *val == 'Y'), section) ? 0 : 1;
     } else if (integer) {
-	int i = 0;
-
-	if (val)
-	    i = (int)tstrtol(val, NULL, 10);
-	return cfg.get(attr, i, section);
+	return cfg.get(attr, val ? (int)tstrtol(val, NULL, 10) : 0, section);
     } else if (update) {
 	if (val)
 	    cfg.set(attr, val, section);
