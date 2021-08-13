@@ -19,10 +19,11 @@
 #include "Config.h"
 
 int tmain(int argc, const tchar * const argv[]) {
-    const tchar *attr = NULL, *file = NULL, *prefix = NULL, *section = NULL,
-	*update = NULL;
+    const tchar *attr = NULL, *file = T("-"), *prefix = NULL, *section = NULL,
+	*val = NULL;
     ConfigFile cfg;
-    bool boolean = false, check = false, integer = false, nonewline = false;
+    bool boolean = false, check = false, integer = false, nonewline = false,
+	update = false;
     bool exists;
     int i;
 
@@ -35,6 +36,12 @@ int tmain(int argc, const tchar * const argv[]) {
 	} else if (!tstrcmp(argv[i], T("-c")) ||
 	    !tstrcmp(argv[i], T("--check"))) {
 	    check = true;
+	} else if (!tstrcmp(argv[i], T("-f")) ||
+	    !tstrcmp(argv[i], T("--file"))) {
+	    if (i + 1 == argc)
+		break;
+	    else
+		file = argv[i];
 	} else if (!tstrcmp(argv[i], T("-i")) ||
 	    !tstrcmp(argv[i], T("--integer"))) {
 	    integer = true;
@@ -53,54 +60,59 @@ int tmain(int argc, const tchar * const argv[]) {
 	    section = argv[i];
 	} else if (!tstrcmp(argv[i], T("-u")) || !tstrcmp(argv[i],
 	    T("--update"))) {
-	    if (i + 1 == argc || argv[++i][0] == '-')
-		break;
-	    update = argv[i];
+	    update = true;
 	} else if (argv[i][0] != '-') {
 	    attr = argv[i];
-	    if (i + 1 != argc && argv[i + 1][0] != '-')
-		file = argv[++i];
+	    if (i + 1 != argc)
+		val = argv[++i];
 	} else {
 	    break;
 	}
     }
     if (i < argc || !attr) {
-	tcerr << T("Usage: cfg [options] attribute [file]\n")
+	tcerr << T("Usage: cfg [options] attribute [value]\n")
 	    T("\t[-b|--boolean]\n")
 	    T("\t[-c|--check]\n")
+	    T("\t[-f|--file cfgfile]\n")
 	    T("\t[-i|--integer]\n")
 	    T("\t[-n|--nonewline]\n")
 	    T("\t[-p|--prefix prefix]\n")
 	    T("\t[-s|--section section]\n")
-	    T("\t[-u|--update value]\n");
+	    T("\t[-u|--update]\n");
 	    return -1;
     }
-    if (file) {
-	if (!cfg.read(file, prefix)) {
-	    tcerr << T("unable to read ") << file << T(": ") <<
-		tstrerror(errno) << endl;
-	    return -1;
-	}
-    } else {
-	cfg.read(tcin, prefix);
+    if (!(tstrcmp(file, T("-")) ? cfg.read(file, prefix) : cfg.read(tcin,
+	prefix))) {
+	tcerr << T("unable to read ") << file << T(": ") << tstrerror(errno) <<
+	    endl;
+	return -1;
     }
     exists = cfg.exists(attr, section);
     if (check) {
 	return exists ? 0 : 1;
     } else if (boolean) {
-	return cfg.get(attr, false, section) ? 0 : 1;
+	return cfg.get(attr, val && (*val == '1' || *val == 't' || *val ==
+	    'T' || *val == 'y' || *val == 'Y'), section) ? 0 : 1;
     } else if (integer) {
-	return cfg.get(attr, 0, section);
+	int i = 0;
+
+	if (val)
+	    i = (int)tstrtol(val, NULL, 10);
+	return cfg.get(attr, i, section);
     } else if (update) {
-	cfg.set(attr, update, section);
-	if (!cfg.write()) {
+	if (val)
+	    cfg.set(attr, val, section);
+	else
+	    cfg.erase(attr, section);
+	if (!(tstrcmp(file, T("-")) ? cfg.write() : cfg.write(tcout,
+	    cfg.iniformat()))) {
 	    tcerr << T("unable to write ") << file << T(": ") <<
 		tstrerror(errno) << endl;
 	    return -1;
 	}
 	return 0;
-    } else if (exists) {
-	tcout << cfg.get(attr, (tchar *)NULL, section);
+    } else if (exists || val) {
+	tcout << cfg.get(attr, val, section);
 	if (!nonewline)
 	    tcout << endl;
 	return 0;
