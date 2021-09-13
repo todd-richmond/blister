@@ -232,7 +232,9 @@ public:
     }
     bool read(const tchar *file = NULL, const tchar *_pre = NULL, bool append =
 	false);
-    bool write(tostream &os, bool ini) const { return Config::write(os, ini); }
+    bool write(tostream &os, bool inistyle) const {
+	return Config::write(os, inistyle);
+    }
     bool write(void) const { return write(NULL, iniformat()); }
     bool write(const tchar *file, bool ini = false) const;
 
