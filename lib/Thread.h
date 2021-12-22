@@ -213,21 +213,21 @@ class BLISTER LockerTemplate: nocopy {
 public:
     explicit __forceinline LockerTemplate(C &lock, bool lockit = true):
 	lck(lock), locked(lockit) {
-	if (lockit)
+	if (LIKELY(lockit))
 	    (lck.*LOCK)();
     }
-    __forceinline ~LockerTemplate() { if (locked) (lck.*UNLOCK)(); }
+    __forceinline ~LockerTemplate() { if (LIKELY(locked)) (lck.*UNLOCK)(); }
 
     __forceinline operator bool(void) const { return locked; }
 
     __forceinline void lock(void) {
-	if (!locked) {
+	if (LIKELY(!locked)) {
 	    locked = true;
 	    (lck.*LOCK)();
 	}
     }
     __forceinline void relock(void) {
-	if (locked) {
+	if (LIKELY(locked)) {
 	    (lck.*UNLOCK)();
 	    THREAD_YIELD();
 	} else {
@@ -236,7 +236,7 @@ public:
 	(lck.*LOCK)();
     }
     __forceinline void unlock(void) {
-	if (locked) {
+	if (LIKELY(locked)) {
 	    (lck.*UNLOCK)();
 	    locked = false;
 	}
@@ -907,7 +907,7 @@ public:
     __forceinline void rlock(void) {
 	FastSpinLocker lckr(lck);
 
-	while (writing || wwaiting)
+	while (UNLIKELY(writing || wwaiting))
 	    lckr.relock();
 	++readers;
     }
@@ -1024,14 +1024,14 @@ public:
     __forceinline void rlock(void) {
 	FastLocker lckr(lck);
 
-	while (writing || wwaiting)
+	while (UNLIKELY(writing || wwaiting))
 	    rcv.wait();
 	++readers;
     }
     __forceinline bool rtrylock(ulong msec = 0) {
 	FastLocker lckr(lck);
 
-	if (writing || wwaiting) {
+	if (UNLIKELY(writing || wwaiting)) {
 	    if (!msec || !rcv.wait(msec))
 		return false;
 	}
@@ -1041,7 +1041,7 @@ public:
     __forceinline void runlock(void) {
 	FastLocker lckr(lck);
 
-	if (!--readers && wwaiting)
+	if (UNLIKELY(!--readers && wwaiting))
 	    wcv.set();
     }
     __forceinline void uplock(void) {
@@ -1087,7 +1087,7 @@ public:
 	FastLocker lckr(lck);
 
 	writing = false;
-	if (wwaiting)
+	if (LIKELY(wwaiting))
 	    wcv.set();
 	else
 	    rcv.broadcast();

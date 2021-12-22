@@ -126,7 +126,8 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 	    return false;
 	}
 	sts = astringtotstring(asts);
-	if (sts.length() < 3 || (sts[3] != '-' && sts[3] != ' ')) {
+	if (sts.length() < 3 || (sts.length() > 3 && sts[3] != '-' && sts[3] !=
+	    ' ')) {
 	    dlogd(Log::mod(T("smtp")), Log::kv(T("data"), T("invalid")),
 		Log::kv(T("reply"), sts.c_str()));
 	    return false;
