@@ -554,6 +554,7 @@ const tchar *SMTPLoad::format(ulong u) {
 }
 
 const tchar *SMTPLoad::format(float f) {
+    WARN_DISABLE(26467)
     if (f - 0.0F < FLT_EPSILON)
 	tstrcpy(format_buf, T("       0"));
     else if (f >= 100)

@@ -208,6 +208,7 @@ bool Processor::affinity(ullong mask) {
 }
 
 void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
+    WARN_PUSH_DISABLE(26430);
     ThreadLocalMap *fmap = flocal.get();
 
     if (!fmap) {
@@ -222,6 +223,7 @@ void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
 	if (func)
 	    func(data);
     }
+    WARN_POP;
 }
 
 Thread::Thread(thread_hdl_t handle, ThreadGroup *tg, bool aterm): cv(lck),

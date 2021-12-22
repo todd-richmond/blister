@@ -96,13 +96,13 @@ public:
     virtual ~SMTPClient() {}
 
     int code(void) const { return ttoi(sts.c_str()); }
-    bool exts_find(const char *s) const { return exts.find(s) != exts.npos; }
+    bool exts_find(const tchar *s) const { return exts.find(s) != exts.npos; }
     const tstring &extensions(void) const { return exts; }
     const tchar *message(void) const {
 	return sts.length() > 4 ? sts.c_str() + 4 : T("");
     }
     const tstring &message_multi(void) const { return multi; }
-    bool multi_find(const char *s) const { return multi.find(s) != multi.npos; }
+    bool multi_find(const tchar *s) const { return multi.find(s) != multi.npos; }
     const tstring &result(void) const { return sts; }
 
     bool connect(const Sockaddr &addr, uint timeout = SOCK_INFINITE);

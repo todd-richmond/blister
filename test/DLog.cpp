@@ -118,7 +118,7 @@ int tmain(int argc, tchar *argv[]) {
 		    break;
 	    }
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		cnt = strtoul(argv[++i], NULL, 10);
+		cnt = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		sz = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
@@ -139,7 +139,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("--keepalive"))) {
 	    ka = 1000;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		ka = strtoul(argv[++i], NULL, 10);
+		ka = tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-l")) || !tstricmp(argv[i],
 	    T("--level"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')

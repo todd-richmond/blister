@@ -36,7 +36,7 @@
 #define UNLIKELY(c)		(c)
 #define WARN_DISABLE(w)		PRAGMA_STR(warning(disable: w))
 #define WARN_ENABLE(w)		PRAGMA_STR(warning(enable: w))
-#define WARN_POP		PRAGMA_STR(warning(pop))
+#define WARN_POP			PRAGMA_STR(warning(pop))
 #define WARN_PUSH		PRAGMA_STR(warning(push))
 #elif defined(__GNUC__)
 #define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
@@ -60,7 +60,7 @@
 #define UNLIKELY(c)		__builtin_expect(!!(c), 0)
 #define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored #w)
 #define WARN_ENABLE(w)		PRAGMA_STR(GCC diagnostic warning #w)
-#define WARN_POP		PRAGMA_STR(GCC pop_options)
+#define WARN_POP			PRAGMA_STR(GCC pop_options)
 #define WARN_PUSH		PRAGMA_STR(GCC push_options)
 #endif
 
@@ -100,13 +100,13 @@
 #endif
 
 #pragma inline_depth(69)
+#pragma warning(disable: 26135 26400 26401 26408 26409 26426 26429 26432 26433)
+#pragma warning(disable: 26434 26438 26440 26443 26446 26447 26455 26457 26462)
+#pragma warning(disable: 26472 26494 26496 26497 28125 26477 26481 26482 26485)
+#pragma warning(disable: 26486 26487 26489 26492 26493 26812 26814 26818 26819)
 #pragma warning(disable: 4018 4068 4097 4100 4103 4127 4146 4200 4201 4250 4251)
 #pragma warning(disable: 4335 4503 4511 4512 4530 4577 4619 4625 4626 4668 4710)
 #pragma warning(disable: 4711 4786 4820 4996 5026 5027)
-#pragma warning(disable: 26135 26400 26401 26408 26409 26426 26429 26432 26433)
-#pragma warning(disable: 26434 26438 26440 26443 26446 26447 26455 26462 26472)
-#pragma warning(disable: 26494 26496 26497 28125 26477 26481 26482 26485 26486)
-#pragma warning(disable: 26489 26492 26493)
 
 #ifndef WIN32
 #define WIN32
@@ -139,6 +139,10 @@ typedef __int64 _ino_t;	// -V677
 #include <stdint.h>
 #include <stdio.h>
 #undef __STDC__
+#ifdef _CRT_INTERNAL_NONSTDC_NAMES
+#undef _CRT_INTERNAL_NONSTDC_NAMES
+#define _CRT_INTERNAL_NONSTDC_NAMES 1
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -154,6 +158,8 @@ typedef __int64 _ino_t;	// -V677
 #undef ino_t
 #undef rename
 #undef stat
+#define stricmp     _stricmp
+#define wcsicmp         _wcsicmp
 
 #ifndef __cplusplus
 #define inline		__inline

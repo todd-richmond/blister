@@ -505,7 +505,7 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     iov[2].iov_base = (char *)p;
     iov[2].iov_len = (iovlen_t)len;
     dlog << (_status < 400 ? Log::Info : Log::Note) << Log::cmd(cmd) <<
-	Log::kv("path", path) << Log::kv("sts", _status) << endlog;
+	Log::kv(T("path"), path) << Log::kv(T("sts"), _status) << endlog;
     send();
 }
 

@@ -296,7 +296,7 @@ private:
 	    unsorted.erase(&dt);
 	}
 	DispatchTimer *get(void) {
-	    unsorted_timerset::iterator it = unsorted.begin();
+	    unsorted_timerset::const_iterator it = unsorted.begin();
 
 	    if (it != unsorted.end()) {
 		DispatchTimer *dt = *it;
@@ -310,7 +310,7 @@ private:
 	    return NULL;
 	}
 	DispatchTimer *get(msec_t when) {
-	    sorted_timerset::iterator it = sorted.begin();
+	    sorted_timerset::const_iterator it = sorted.begin();
 
 	    if (it != sorted.end()) {
 		DispatchTimer *dt = *it;

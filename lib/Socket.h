@@ -134,7 +134,9 @@ public:
     operator const sockaddr *() const { return &addr.sa; }
     operator const sockaddr_in *() const { return &addr.sa4; }
     operator const sockaddr_in6 *() const { return &addr.sa6; }
+    #ifndef _WIN32
     operator const sockaddr_un *() const { return &addr.sau; }
+    #endif
 
     const void *address(void) const;
     void clear(void) { ZERO(addr); name.clear(); }
@@ -382,7 +384,9 @@ public:
     template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
     long readv(iovec *iov, int count) const;
     long readv(iovec *iov, int count, const Sockaddr &sa) const;
+#ifndef _WIN32
     long sendmsg(const msghdr &msgh, int flags = 0) const;
+#endif
     int write(const void *buf, uint len) const;
     int write(const void *buf, uint len, const Sockaddr &sa) const;
     template<class C> int write(const C &c) const {

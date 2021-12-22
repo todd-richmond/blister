@@ -160,8 +160,8 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 		    7 ? 0 : klen - sizeof (buf) + 7), cbuf);
 	    }
 	} else {
-	    bool quote = strchr(stats->key, ',') || strchr(stats->key, ' ') ||
-		strchr(stats->key, '\t') || strchr(stats->key, '"');
+	    bool quote = tstrchr(stats->key, ',') || tstrchr(stats->key, ' ') ||
+		tstrchr(stats->key, '\t') || tstrchr(stats->key, '"');
 
 	    if (quote)
 		s += (tchar)'"';

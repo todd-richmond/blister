@@ -600,7 +600,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		if (pos != addr.length() && c == '\\')
 		    c = addr[pos++];
 		if (pos == addr.length()) {
-		    err = "Unbalanced '\"'";
+		    err = T("Unbalanced '\"'");
 		    goto fail;
 		}
 		local_part += c;
