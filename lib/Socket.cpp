@@ -309,7 +309,9 @@ ushort Sockaddr::size(ushort family) {
     switch (family) {
     case AF_INET: return sizeof (sockaddr_in);
     case AF_INET6: return sizeof (sockaddr_in6);
+#ifndef _WIN32
     case AF_UNIX: return sizeof (sockaddr_un);
+#endif
     default: return sizeof (sockaddr_any);
     }
 }
@@ -676,6 +678,7 @@ int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
     }
 }
 
+#ifndef _WIN32
 long Socket::sendmsg(const msghdr &msgh, int flags) const {
     int out;
 
@@ -685,6 +688,7 @@ long Socket::sendmsg(const msghdr &msgh, int flags) const {
     } while (interrupted());
     return out <= 0 && blocked() ? 0 : out;
 }
+#endif
 
 bool Socket::sockname(Sockaddr &sa) {
     socklen_t sz = sa.size();

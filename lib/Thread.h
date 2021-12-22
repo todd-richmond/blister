@@ -561,7 +561,6 @@ public:
 	olck.lock();
 	cnt = waiting - pending;
 	if (LIKELY(cnt)) {
-	    tfr
 	    if (!pending) {
 		ilck.lock();
 		cnt = waiting - pending;

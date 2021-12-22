@@ -13,7 +13,7 @@ AlignTrailingComments: true
 AllowAllArgumentsOnNextLine: true
 AllowAllConstructorInitializersOnNextLine: true
 AllowAllParametersOfDeclarationOnNextLine: true
-AllowShortBlocksOnASingleLine: Empty
+AllowShortBlocksOnASingleLine: true
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: All
 AllowShortIfStatementsOnASingleLine: Never
@@ -73,22 +73,18 @@ IncludeBlocks:   Preserve
 IncludeCategories:
   - Regex:           'stdapi.*'
     Priority:        0
-    SortPriority:    0
   - Regex:           '<[[:alnum:]]+.h>'
     Priority:        2
-    SortPriority:    0
   - Regex:           '<[[:alnum:]]+>'
     Priority:        3
-    SortPriority:    0
   - Regex:           '.*'
     Priority:        5
-    SortPriority:    0
 IncludeIsMainRegex: '(Test)?$'
 IncludeIsMainSourceRegex: ''
 #IndentCaseBlocks: false
 IndentCaseLabels: false
 #IndentExternBlock: NoIndent
-IndentGotoLabels: true
+#IndentGotoLabels: true
 IndentPPDirectives: None
 IndentWidth:     4
 IndentWrappedFunctionNames: true
@@ -137,7 +133,6 @@ SpacesInContainerLiterals: false
 SpacesInCStyleCastParentheses: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
-Standard:        Latest
 StatementMacros:
   - Q_UNUSED
   - QT_REQUIRE_VERSION
