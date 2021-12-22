@@ -1167,7 +1167,7 @@ bool Service::send(int sig) {
     }
     do {
 	close();
-	if (sig == SIGHUP)
+	if (sig == SIGHUP || sig == SIGUSR1 || sig == SIGUSR2)
 	    return true;
 	msleep(100);
 	if (!open())

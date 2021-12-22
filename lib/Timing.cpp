@@ -33,7 +33,7 @@ void Timing::add(const TimingKey &key, timing_t diff) {
     timingmap::const_iterator it;
     uint slot;
     Stats *stats;
-    static timing_t limits[TIMINGSLOTS - 1] = {
+    static const timing_t limits[TIMINGSLOTS - 1] = {
 	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
     };
 

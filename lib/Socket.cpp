@@ -368,9 +368,9 @@ bool CIDR::add(const tchar *addrs) {
 	if (tstrchr(addrs, '/') && (tsscanf(addrs, T("%3u.%3u.%3u.%3u/%2u"),
 	    &ip1[0], &ip1[1], &ip1[2], &ip1[3], &maskbits) == 5) &&
 	    VALID_IP(ip1) && maskbits >= 1 && maskbits <= 32) {
-	    range.rmin = BUILD_IP(ip1) & ((ulong)~((1 << (32 - maskbits)) - 1) &
+	    range.rmin = BUILD_IP(ip1) & (~((1UL << (32U - maskbits)) - 1U) &
 		0xFFFFFFFFUL);
-	    range.rmax = range.rmin | ((ulong)((1 << (32 - maskbits)) - 1) &
+	    range.rmax = range.rmin | (((1UL << (32U - maskbits)) - 1U) &
 		0xFFFFFFFFUL);
 	    ranges.emplace_back(range);
 	} else if (tstrchr(addrs, '-') && (tsscanf(addrs,
@@ -618,12 +618,6 @@ bool Socket::proxysockname(Sockaddr &sa) {
 }
 #endif
 
-bool Socket::sockname(Sockaddr &sa) {
-    socklen_t sz = sa.size();
-
-    return check(getsockname(sbuf->sock, sa.data(), &sz));
-}
-
 bool Socket::rwpoll(bool rd) const {
     uint msec = rd ? sbuf->rto : sbuf->wto;
 
@@ -690,6 +684,12 @@ long Socket::sendmsg(const msghdr &msgh, int flags) const {
 	    break;
     } while (interrupted());
     return out <= 0 && blocked() ? 0 : out;
+}
+
+bool Socket::sockname(Sockaddr &sa) {
+    socklen_t sz = sa.size();
+
+    return check(getsockname(sbuf->sock, sa.data(), &sz));
 }
 
 int Socket::write(const void *buf, uint sz) const {

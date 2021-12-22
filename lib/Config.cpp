@@ -427,8 +427,12 @@ bool Config::write(tostream &os, bool inistyle) const {
     for (vector<const tchar *>::size_type u = 0; u < keys.size(); ++u) {
 	const tchar *dot;
 	const tchar *key = keys[u];
-	const KV *kv = amap.find(key)->second;
+	const KV *kv;
 
+	it = amap.find(key);
+	if (it == amap.end())
+	    continue;
+	kv = it->second;
 	if ((dot = tstrchr(key, '.')) == NULL) {
 	    if (inistyle) {
 		sect = '.';

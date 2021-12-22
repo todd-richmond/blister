@@ -932,12 +932,12 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     bool resched = false;
     msec_t tmt = timeout == DispatchTimer::DSP_NEVER ?
 	DispatchTimer::DSP_NEVER_DUE : now + timeout;
-    static uint ioarray[] = {
+    static const uint ioarray[] = {
 	DSP_Readable | DSP_Closeable, DSP_Writeable | DSP_Closeable,
 	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable,
 	DSP_Writeable | DSP_Closeable, DSP_Closeable, 0, 0
     };
-    static uint sarray[] = {
+    static const uint sarray[] = {
 	DSP_SelectRead, DSP_SelectWrite, DSP_SelectRead | DSP_SelectWrite,
 	DSP_SelectAccept, DSP_Connecting | DSP_SelectWrite, DSP_SelectClose, 0,
 	0
