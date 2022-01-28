@@ -71,7 +71,8 @@ public:
     void append(const tchar *attr, const tchar *val, const tchar *sect = NULL) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
-	set(attr, val, sect, true);
+	return set(attr, tstrlen(attr), val, tstrlen(val), sect, sect ?
+	    tstrlen(sect) : 0, true);
     }
     void clear(void);
     void erase(const tchar *attr, const tchar *sect = NULL);
@@ -117,10 +118,17 @@ public:
     }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = NULL, bool append = false);
-    void set(const tchar *attr, const tchar *val, const tchar *sect = NULL) {
+    void set(const char *attr, const char *val, const char *sect = NULL) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
-	set(attr, val, sect, false);
+	return set(attr, tstrlen(attr), val, tstrlen(val), sect, sect ?
+	    tstrlen(sect) : 0);
+    }
+    void set(const string &attr, const string &val, const string &sect) {
+	WLocker lkr(lck, !THREAD_ISSELF(locker));
+
+	return set(attr.c_str(), attr.size(), val.c_str(), val.size(),
+	    sect.c_str(), sect.size());
     }
     void set(const tchar *attr, const bool val, const tchar *sect = NULL) {
 	set(attr, val ? T("t") : T("f"), sect);
@@ -200,15 +208,15 @@ private:
     tstring pre;
     bool ini;
 
-    void addkv(const KV *kv) { amap.insert(make_pair(kv->key, kv)); }
     bool expandkv(const KV *kv, tstring &val) const;
     const KV *getkv(const tchar *attr, const tchar *sect) const;
-    const KV *newkv(const tchar *key, const tchar *val) const;
+    const KV *newkv(const tchar *attr, size_t alen, const tchar *val, size_t
+	vlen) const;
     void trim(tstring &str) const;
 
     bool parse(tistream &is);
-    void set(const tchar *attr, const tchar *val, const tchar *sect, bool
-	append);
+    void set(const char *attr, size_t alen, const char *val, size_t vlen, const
+	char *sect, size_t slen, bool append = false);
     static void delkv(const KV *kv) { delete [] (char *)kv; }
 };
 

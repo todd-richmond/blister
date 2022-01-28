@@ -22,12 +22,12 @@
 #include <vector>
 #include "Config.h"
 
-// 1 allocation for key, val, state
-const Config::KV *Config::newkv(const tchar *key, const tchar *val) const {
-    size_t klen = tstrlen(key);
-    size_t vlen = tstrlen(val);
-    char *ret = new char[sizeof (KV) + klen + vlen + 2];
-    KV *kv = (KV *)ret;
+// 1 allocation for attr, val, state
+const Config::KV *Config::newkv(const tchar *attr, size_t alen, const tchar
+    *val, size_t vlen) const {
+    static KV _kv;
+    KV *kv = (KV *)new char[((char *)&_kv.val - (char *)&_kv) + alen + vlen +
+	2];
 
     kv->expand = false;
     if (vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen - 1] ==
@@ -40,7 +40,7 @@ const Config::KV *Config::newkv(const tchar *key, const tchar *val) const {
     }
     memcpy(kv->val, val, vlen);
     kv->val[vlen] = '\0';
-    kv->key = (const tchar *)memcpy(kv->val + vlen + 1, key, klen + 1);
+    kv->key = (const tchar *)memcpy(kv->val + vlen + 1, attr, alen + 1);
     if (kv->quote != '\'') {
 	const tchar *p = val;
 
@@ -296,7 +296,8 @@ bool Config::parse(tistream &is) {
 	    ini = true;
 	    continue;
 	}
-	set(attr.c_str(), val.c_str(), sect.c_str(), append);
+	set(attr.c_str(), attr.size(), val.c_str(), val.size(), sect.c_str(),
+	    sect.size(), append);
     }
     return true;
 }
@@ -308,79 +309,71 @@ bool Config::read(tistream &is, const tchar *str, bool app) {
 	return false;
     prefix(str);
     if (!app) {
-	kvmap::iterator it;
-
-	while ((it = amap.begin()) != amap.end()) {
-	    const KV *kv = it->second;
-
-	    amap.erase(it);
-	    delkv(kv);
-	}
+	locker = THREAD_ID();
+	clear();
+	locker = 0;
     }
     return parse(is);
 }
 
-void Config::set(const tchar *attr, const tchar *val, const tchar *sect, bool
-    append) {
-    kvmap::iterator it;
+void Config::set(const tchar *attr, size_t alen, const tchar *val, size_t vlen,
+    const tchar *sect, size_t slen, bool append) {
     const KV *kv, *oldkv;
 
-    if (sect && *sect) {
+    if (slen) {
 	tstring s(sect);
 
 	s += '.';
 	s += attr;
-	it = amap.find(s.c_str());
-	if (it == amap.end()) {
-	    kv = newkv(s.c_str(), val);
-	    addkv(kv);
-	    return;
-	}
+	kv = newkv(s.c_str(), s.size(), val, vlen);
     } else {
-	it = amap.find(attr);
-	if (it == amap.end()) {
-	    kv = newkv(attr, val);
-	    addkv(kv);
-	    return;
-	}
+	kv = newkv(attr, alen, val, vlen);
     }
-    oldkv = it->second;
+
+    pair<kvmap::iterator, bool> old(amap.emplace(kv->key, kv));
+
+    if (old.second)
+	return;
+    oldkv = old.first->second;
     if (append) {
-	size_t len = tstrlen(val);
 	tstring s;
 
+	vlen = tstrlen(val);
+	delkv(kv);
 	if (oldkv->quote)
-	    s += oldkv->quote;
+	    s = oldkv->quote;
 	s += oldkv->val;
-	if (len > 1 && (val[0] == '"' || val[0] == '\'') && val[len - 1] == val[0])
-	    s.append(val + 1, len - 2);
+	if (vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen - 1] ==
+	    val[0])
+	    s.append(val + 1, vlen - 2);
 	else
-	    s.append(val, len);
+	    s.append(val, vlen);
 	if (oldkv->quote)
 	    s += oldkv->quote;
-	kv = newkv(oldkv->key, s.c_str());
-    } else {
-	kv = newkv(oldkv->key, val);
+	vlen = s.size();
+	kv = newkv(oldkv->key, strlen(oldkv->key), s.c_str(), vlen);
     }
-    amap.erase(it);
+    amap.erase(old.first);
     delkv(oldkv);
-    addkv(kv);
+    amap.emplace(kv->key, kv);
 }
 
 void Config::setv(const tchar *attr1, const tchar *val1, ...) {
     const tchar *arg, *attr = NULL, *sect = NULL;
+    size_t slen;
     va_list vl;
 
     va_start(vl, val1);
     while ((arg = va_arg(vl, const tchar *)) != NULL)
 	sect = sect == NULL ? arg : NULL;
     va_end(vl);
+    slen = sect ? strlen(sect) : 0;
     lock();
-    set(attr1, val1, sect, false);
+    set(attr1, strlen(attr1), val1, strlen(val1), sect, slen);
     va_start(vl, val1);
     while ((arg = va_arg(vl, const tchar *)) != NULL) {
 	if (attr) {
-	    set(attr, arg, sect, false);
+	    set(attr, strlen(attr), arg, strlen(arg), sect, slen);
 	    attr = NULL;
 	} else {
 	    attr = arg;
