@@ -309,9 +309,13 @@ bool Config::read(tistream &is, const tchar *str, bool app) {
 	return false;
     prefix(str);
     if (!app) {
-	locker = THREAD_ID();
-	clear();
-	locker = 0;
+	if (THREAD_ISSELF(locker)) {
+	    clear();
+	} else {
+	    locker = THREAD_ID();
+	    clear();
+	    locker = 0;
+	}
     }
     return parse(is);
 }
