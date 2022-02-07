@@ -22,36 +22,35 @@
 #include "Thread.h"
 
 /*
- * The Config class is used to read either property (attr = value) or
+ * The Config class is used to read either property (key = value) or
  * ini ([ section ]) style configuration files. Property files may have any
  * number of subsections delimited by '.'. Ini files are stored as property
- * strings by using the section as the attr prefix. get() functions allow
+ * strings by using the section as the key prefix. get() functions allow
  * fetches with default values and set() functions can modify existing values
  *
  * When reading configuration, a "prefix" value may be specified so multiple
  * programs can share a common config file. This works by pruning off the
- * prefix string so that shared libraries can use a common attribute substring.
- * "*" may be used as an attribute prefix to enable all prefixes to share a
- * single value
+ * prefix string so that shared libraries can use a common key substring.
+ * "*" used as a key prefix enables all prefixes to share a single value
  *
- * attr/value lines have a few extra features not found in many config readers
+ * key/value lines have a few extra features not found in many config readers
  *   1) value enclosed in "" or '' will keep leading and trailing spaces and
  *      '' will not be expanded.
  *   2) lines ending in \ will have their values continued on the next line
- *   3) ${attr} or $(attr) substrings will be recursively expanded during get()
+ *   3) ${key} or $(key) substrings will be recursively expanded during get()
  *   4) lines beginning with # are comments
  *   5) lines beginning with #include will recursively include the filename arg
- *   6) attr += val appends the value
- *   7) repeated attributes are stored as "last read attr wins"
+ *   6) key += val appends the value
+ *   7) repeated keys are stored as "last read key wins"
  *
  *   host = hostname
- *   prog1.attr1 = value1
- *   prog2.attr1 = " value2 "
- *   *.attr2 = ${host}
+ *   prog1.key1 = value1
+ *   prog2.key1 = " value2 "
+ *   *.key2 = ${host}
  *
  *   config.read("common.cfg", "prog1");
- *   config.get("attr1", "default");    // return app specific value of attr1
- *   config.get("attr2", "default");    // return app shared value of attr2
+ *   config.get("key1", "default");    // return app specific value of key1
+ *   config.get("key2", "default");    // return app shared value of key2
  */
 
 class BLISTER Config: nocopy {
@@ -68,108 +67,108 @@ public:
     bool iniformat(void) const { return ini; }
     const tstring &prefix(void) const { return pre; }
 
-    void append(const tchar *attr, const tchar *val, const tchar *sect = NULL) {
+    void append(const tchar *key, const tchar *val, const tchar *sect = NULL) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
-	return set(attr, tstrlen(attr), val, tstrlen(val), sect, sect ?
+	return set(key, tstrlen(key), val, tstrlen(val), sect, sect ?
 	    tstrlen(sect) : 0, true);
     }
     void clear(void);
-    void erase(const tchar *attr, const tchar *sect = NULL);
-    bool exists(const tchar *attr, const tchar *sect = NULL) const {
+    void erase(const tchar *key, const tchar *sect = NULL);
+    bool exists(const tchar *key, const tchar *sect = NULL) const {
 	RLocker lkr(lck, !THREAD_ISSELF(locker));
 
-	return getkv(attr, sect) != NULL;
+	return getkv(key, sect) != NULL;
     }
-    const tstring get(const tchar *attr, const tchar *def = NULL, const tchar
+    const tstring get(const tchar *key, const tchar *def = NULL, const tchar
 	*sect = NULL) const;
-    const tstring get(const tstring &attr) const { return get(attr.c_str()); }
-    const tstring get(const tstring &attr, const tstring &def) const {
-	return get(attr.c_str(), def.c_str());
+    const tstring get(const tstring &key) const { return get(key.c_str()); }
+    const tstring get(const tstring &key, const tstring &def) const {
+	return get(key.c_str(), def.c_str());
     }
-    const tstring get(const tstring &attr, const tstring &def, const tstring
+    const tstring get(const tstring &key, const tstring &def, const tstring
 	&sect) const {
-	return get(attr.c_str(), def.c_str(), sect.c_str());
+	return get(key.c_str(), def.c_str(), sect.c_str());
     }
-    bool get(const tchar *attr, bool def, const tchar *sect = NULL) const;
-    double get(const tchar *attr, double def, const tchar *sect = NULL) const;
-    float get(const tchar *attr, float def, const tchar *sect = NULL) const {
-	return (float)get(attr, (double)def, sect);
+    bool get(const tchar *key, bool def, const tchar *sect = NULL) const;
+    double get(const tchar *key, double def, const tchar *sect = NULL) const;
+    float get(const tchar *key, float def, const tchar *sect = NULL) const {
+	return (float)get(key, (double)def, sect);
     }
-    int get(const tchar *attr, int def, const tchar *sect = NULL) const {
-	return (int)get(attr, (long)def, sect);
+    int get(const tchar *key, int def, const tchar *sect = NULL) const {
+	return (int)get(key, (long)def, sect);
     }
-    long get(const tchar *attr, long def, const tchar *sect = NULL) const;
-    llong get(const tchar *attr, llong def, const tchar *sect = NULL) const;
-    short get(const tchar *attr, short def, const tchar *sect = NULL) const {
-	return (short)get(attr, (long)def, sect);
+    long get(const tchar *key, long def, const tchar *sect = NULL) const;
+    llong get(const tchar *key, llong def, const tchar *sect = NULL) const;
+    short get(const tchar *key, short def, const tchar *sect = NULL) const {
+	return (short)get(key, (long)def, sect);
     }
-    tchar get(const tchar *attr, tchar def, const tchar *sect = NULL) const {
+    tchar get(const tchar *key, tchar def, const tchar *sect = NULL) const {
 	tchar buf[2];
-	buf[0] = def; buf[1] = '\0'; return get(attr, buf, sect)[0];
+	buf[0] = def; buf[1] = '\0'; return get(key, buf, sect)[0];
     }
-    uint get(const tchar *attr, uint def, const tchar *sect = NULL) const {
-	return (uint)get(attr, (ulong)def, sect);
+    uint get(const tchar *key, uint def, const tchar *sect = NULL) const {
+	return (uint)get(key, (ulong)def, sect);
     }
-    ulong get(const tchar *attr, ulong def, const tchar *sect = NULL) const;
-    ullong get(const tchar *attr, ullong def, const tchar *sect = NULL) const;
-    ushort get(const tchar *attr, ushort def, const tchar *sect = NULL) const {
-	return (ushort)get(attr, (ulong)def, sect);
+    ulong get(const tchar *key, ulong def, const tchar *sect = NULL) const;
+    ullong get(const tchar *key, ullong def, const tchar *sect = NULL) const;
+    ushort get(const tchar *key, ushort def, const tchar *sect = NULL) const {
+	return (ushort)get(key, (ulong)def, sect);
     }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = NULL, bool append = false);
-    void set(const char *attr, const char *val, const char *sect = NULL) {
+    void set(const char *key, const char *val, const char *sect = NULL) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
-	return set(attr, tstrlen(attr), val, tstrlen(val), sect, sect ?
+	return set(key, tstrlen(key), val, tstrlen(val), sect, sect ?
 	    tstrlen(sect) : 0);
     }
-    void set(const string &attr, const string &val, const string &sect) {
+    void set(const string &key, const string &val, const string &sect) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
-	return set(attr.c_str(), attr.size(), val.c_str(), val.size(),
+	return set(key.c_str(), key.size(), val.c_str(), val.size(),
 	    sect.c_str(), sect.size());
     }
-    void set(const tchar *attr, const bool val, const tchar *sect = NULL) {
-	set(attr, val ? T("t") : T("f"), sect);
+    void set(const tchar *key, const bool val, const tchar *sect = NULL) {
+	set(key, val ? T("t") : T("f"), sect);
     }
-    void set(const tchar *attr, double val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%g"), val); set(attr, buf, sect);
+    void set(const tchar *key, double val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%g"), val); set(key, buf, sect);
     }
-    void set(const tchar *attr, float val, const tchar *sect = NULL) {
+    void set(const tchar *key, float val, const tchar *sect = NULL) {
 	tchar buf[24];
 	tsprintf(buf, T("%f"), (double)val);
-	set(attr, buf, sect);
+	set(key, buf, sect);
     }
-    void set(const tchar *attr, int val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%d"), val); set(attr, buf, sect);
+    void set(const tchar *key, int val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%d"), val); set(key, buf, sect);
     }
-    void set(const tchar *attr, long val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%ld"), val); set(attr, buf, sect);
+    void set(const tchar *key, long val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%ld"), val); set(key, buf, sect);
     }
-    void set(const tchar *attr, llong val, const tchar *sect = NULL) {
-	tchar buf[48]; tsprintf(buf, T("%lld"), val); set(attr, buf, sect);
+    void set(const tchar *key, llong val, const tchar *sect = NULL) {
+	tchar buf[48]; tsprintf(buf, T("%lld"), val); set(key, buf, sect);
     }
-    void set(const tchar *attr, short val, const tchar *sect = NULL) {
-	tchar buf[16]; tsprintf(buf, T("%hd"), val); set(attr, buf, sect);
+    void set(const tchar *key, short val, const tchar *sect = NULL) {
+	tchar buf[16]; tsprintf(buf, T("%hd"), val); set(key, buf, sect);
     }
-    void set(const tchar *attr, tchar val, const tchar *sect = NULL) {
-	tchar buf[2]; buf[0] = val; buf[1] = '\0'; set(attr, buf, sect);
+    void set(const tchar *key, tchar val, const tchar *sect = NULL) {
+	tchar buf[2]; buf[0] = val; buf[1] = '\0'; set(key, buf, sect);
     }
-    void set(const tchar *attr, uint val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%u"), val); set(attr, buf, sect);
+    void set(const tchar *key, uint val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%u"), val); set(key, buf, sect);
     }
-    void set(const tchar *attr, ulong val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%lu"), val); set(attr, buf, sect);
+    void set(const tchar *key, ulong val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%lu"), val); set(key, buf, sect);
     }
-    void set(const tchar *attr, ullong val, const tchar *sect = NULL) {
+    void set(const tchar *key, ullong val, const tchar *sect = NULL) {
 	// cppcheck-suppress invalidPrintfArgType_uint
-	tchar buf[48]; tsprintf(buf, T("%llu"), val); set(attr, buf, sect);
+	tchar buf[48]; tsprintf(buf, T("%llu"), val); set(key, buf, sect);
     }
-    void set(const tchar *attr, ushort val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%hu"), val); set(attr, buf, sect);
+    void set(const tchar *key, ushort val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%hu"), val); set(key, buf, sect);
     }
-    void setv(const tchar *attr, const tchar *val, ... /* , const tchar
+    void setv(const tchar *key, const tchar *val, ... /* , const tchar
 	*sect = NULL, NULL */);
     bool write(tostream &os) const { return write(os, ini); }
     bool write(tostream &os, bool ini) const;
@@ -199,8 +198,8 @@ private:
 	}
     };
 
-    typedef unordered_map<const tchar *, const KV *, strhash<tchar>, streq<tchar> >
-	kvmap;
+    typedef unordered_map<const tchar *, const KV *, strhash<tchar>,
+	streq<tchar> > kvmap;
 
     kvmap amap;
     mutable RWLock lck;
@@ -209,15 +208,14 @@ private:
     bool ini;
 
     bool expandkv(const KV *kv, tstring &val) const;
-    const KV *getkv(const tchar *attr, const tchar *sect) const;
-    const KV *newkv(const tchar *attr, size_t alen, const tchar *val, size_t
-	vlen) const;
-    void trim(tstring &str) const;
-
+    const KV *getkv(const tchar *key, const tchar *sect) const;
     bool parse(tistream &is);
-    void set(const char *attr, size_t alen, const char *val, size_t vlen, const
+    void set(const char *key, size_t klen, const char *val, size_t vlen, const
 	char *sect, size_t slen, bool append = false);
     static void delkv(const KV *kv) { delete [] (char *)kv; }
+    static const KV *newkv(const tchar *key, size_t klen, const tchar *val,
+	size_t vlen);
+    static void trim(tstring &str);
 };
 
 inline tistream &operator >>(tistream &is, Config &cfg) {
