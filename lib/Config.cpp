@@ -252,8 +252,9 @@ bool Config::parse(tistream &is) {
 	while (key[sz - 1] == '\\') {
 	    if (getline(is, s)) {
 		trim(s);
-		if (s[0] == ';' || s[0] == '#') {
-		    if (!s.empty() && s[s.size() - 1] != '\\') {
+		if (s.empty()) {
+		} else if (s[0] == ';' || s[0] == '#') {
+		    if (s[s.size() - 1] != '\\') {
 			key = key.substr(0, sz - 1);
 			trim(key);
 			sz = key.size();

@@ -36,7 +36,7 @@
 #define UNLIKELY(c)		(c)
 #define WARN_DISABLE(w)		PRAGMA_STR(warning(disable: w))
 #define WARN_ENABLE(w)		PRAGMA_STR(warning(enable: w))
-#define WARN_POP			PRAGMA_STR(warning(pop))
+#define WARN_POP		PRAGMA_STR(warning(pop))
 #define WARN_PUSH		PRAGMA_STR(warning(push))
 #elif defined(__GNUC__)
 #define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
@@ -60,7 +60,7 @@
 #define UNLIKELY(c)		__builtin_expect(!!(c), 0)
 #define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored #w)
 #define WARN_ENABLE(w)		PRAGMA_STR(GCC diagnostic warning #w)
-#define WARN_POP			PRAGMA_STR(GCC pop_options)
+#define WARN_POP		PRAGMA_STR(GCC pop_options)
 #define WARN_PUSH		PRAGMA_STR(GCC push_options)
 #endif
 
@@ -158,8 +158,8 @@ typedef __int64 _ino_t;	// -V677
 #undef ino_t
 #undef rename
 #undef stat
-#define stricmp     _stricmp
-#define wcsicmp         _wcsicmp
+#define stricmp		_stricmp
+#define wcsicmp		_wcsicmp
 
 #ifndef __cplusplus
 #define inline		__inline
@@ -513,6 +513,7 @@ EXTERNC
 extern BLISTER int clock_gettime(int, struct timespec *ts);
 EXTERNC_
 #endif
+
 #ifndef PATH_MAX
 #define PATH_MAX	1024
 #endif
