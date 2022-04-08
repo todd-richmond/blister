@@ -32,7 +32,7 @@ typedef DWORD thread_id_t;
 #define THREAD_ID()		GetCurrentThreadId()
 #define THREAD_BARRIER()	_ReadWriteBarrier()
 #define THREAD_PAUSE()		YieldProcessor()
-#define THREAD_YIELD()		Sleep(0)
+#define THREAD_YIELD()		if (!SwitchToThread()) Sleep(0)
 
 typedef volatile LONG atomic_t;
 
@@ -305,6 +305,7 @@ public:
     ~ThreadLocal() { tls_free(key); }
 
     __forceinline ThreadLocal &operator =(C c) { set(c); return *this; }
+    // cppcheck-suppress returnDanglingLifetime
     __forceinline C *operator ->(void) const { return &get(); }
     __forceinline operator bool(void) const { return tls_get(key) != NULL; }
     __forceinline operator C() const { return (C)tls_get(key); }

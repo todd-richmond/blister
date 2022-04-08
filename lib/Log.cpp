@@ -162,6 +162,7 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 
 bool Log::LogFile::reopen(void) {
     bool ret = true;
+    struct stat sbuf;
 
     close();
     if ((fd = ::open(tstringtoachar(path), O_WRONLY | O_CREAT | O_BINARY |
@@ -172,7 +173,7 @@ bool Log::LogFile::reopen(void) {
 	ret = false;
     } else {
 	lock();
-	if (!len && path != file) {
+	if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
 	    char buf[PATH_MAX];
 	    time_t now = ::time(NULL);
 	    struct tm tmbuf, *tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(
