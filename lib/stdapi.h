@@ -541,7 +541,7 @@ EXTERNC_
 #define CLOCK_REALTIME_COARSE	CLOCK_REALTIME
 #endif
 
-#if defined(BSD_BASE) || defined(__sun__)
+#if (defined(BSD_BASE) || defined(__sun__)) && !defined(__APPLE__)
 EXTERNC
 extern int wcscasecmp(const wchar_t *, const wchar_t *);
 EXTERNC_
