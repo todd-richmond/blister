@@ -125,7 +125,7 @@ void HTTPServerSocket::readpost() {
     if (msg != DispatchClose && room < left + 1 && (!postdatasz || postsz ==
 	(ulong)-1)) {
 	if (postsz == (ulong)-1)
-	    in = postin < 8 * 1024 ? 16 * 1024 : postin * 2;
+	    in = postin < 8UL * 1024 ? 16UL * 1024 : postin * 2;
 	else
 	    in = postsz;
 	postdata_grow(readpost, postin, in + 1);

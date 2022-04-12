@@ -1027,7 +1027,7 @@ int Service::run(int argc, const tchar * const *argv) {
     struct sigaction sa;
 
     if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
-	rl.rlim_cur = rl.rlim_max == RLIM_INFINITY ? 100 * 1024 : rl.rlim_max;
+	rl.rlim_cur = rl.rlim_max == RLIM_INFINITY ? 100UL * 1024 : rl.rlim_max;
 	while (setrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur >= 1024)
 	    rl.rlim_cur -= 512;
     }

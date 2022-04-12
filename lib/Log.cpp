@@ -306,7 +306,7 @@ void Log::LogFile::set(const Config &cfg, const tchar *sect,
     f = cfg.get((s + T("name")).c_str(), dfile, sect);
     gmt = cfg.get(T("gmt"), false, sect);
     lvl = str2enum(cfg.get((s + T("level")).c_str(), dlvl, sect).c_str());
-    sz = cfg.get((s + T("size")).c_str(), 10 * 1024 * 1024UL, sect);
+    sz = cfg.get((s + T("size")).c_str(), 10UL * 1024 * 1024, sect);
     sec = cfg.get((s + T("time")).c_str(), 0UL, sect);
     set(lvl, f.c_str(), cnt, sz, sec);
     if (fd == -1 && !tstrchr(file.c_str(), '/') &&
@@ -364,7 +364,7 @@ void Log::LogFile::unlock(void) const {
 
 Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true), ffd(true,
     Info, T("stdout"), true), bufenable(false), mailenable(false),
-    syslogenable(false), bufsz(32 * 1024), buftm(1000), ft(*this), gmt(false),
+    syslogenable(false), bufsz(32U * 1024), buftm(1000), ft(*this), gmt(false),
     mp(true), last_sec(0), lvl(level), maillvl(None), sysloglvl(None),
     syslogfac(1), syslogsock(SOCK_DGRAM), _type(Simple), upos(0) {
     format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
@@ -698,7 +698,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
 
     lck.lock();
     _flush();
-    bufsz = cfg.get(T("file.buffer.size"), 32 * 1024U, sect);
+    bufsz = cfg.get(T("file.buffer.size"), 32U * 1024, sect);
     buftm = cfg.get(T("file.buffer.msec"), 1000UL, sect);
     bufenable = cfg.get(T("file.buffer.enable"), false, sect);
     gmt = cfg.get(T("gmt"), false, sect);
@@ -754,7 +754,7 @@ void Log::start(void) {
     Locker lkr(lck);
 
     if (bufenable && ft.getState() != Running)
-	ft.start(16 * 1024);
+	ft.start(16U * 1024);
 }
 
 void Log::stop(void) {

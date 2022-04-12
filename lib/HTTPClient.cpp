@@ -325,7 +325,7 @@ loop:
 	ressz = 0;
 	for (;;) {
 	    if (!room) {
-		room = ressz ? ressz : 12 * 1024;
+		room = ressz ? ressz : 12UL * 1024;
 		sz = ressz + room;
 		newres = new char[(size_t)sz + 1];
 		memcpy(newres, result, ressz);

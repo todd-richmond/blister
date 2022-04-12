@@ -1316,7 +1316,7 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
 	    *out++ = (char)out_byte;
 	    out_byte = 0;
 	} else {
-	    uint mask = 0xFFu << (out_bits - 8);
+	    uint mask = 0xFFU << (out_bits - 8);
 
 	    *out++ = (char)((out_byte & mask) >> (out_bits - 8));
 	    out_byte &= ~mask;

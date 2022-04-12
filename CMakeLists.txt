@@ -195,9 +195,9 @@ endif()
 # clang-tidy support
 if(PROGRAM_CLANGTIDY)
     add_custom_target(clangtidy COMMENT "Clang-tidy C/C++ static analysis")
-    list(APPEND clangtidy_args --quiet)
     execute_process(COMMAND bash -c "dirname $(dirname $(dirname $(clang -print-resource-dir)))" OUTPUT_VARIABLE CLANG_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
     file(GLOB CLANG_CXX_INC ${CLANG_DIR}/include/c++/*)
+    list(APPEND clangtidy_args --extra-arg=-isystem --extra-arg=${CLANG_CXX_INC} --quiet)
 else()
     add_custom_target(clangtidy COMMENT "clang-tidy not available")
 endif()
@@ -225,7 +225,7 @@ function(target_clangtidy target)
         endforeach()
         add_custom_target(clangtidy_${target}
             COMMENT "Running clang-tidy on ${target}"
-	    COMMAND ${PROGRAM_CLANGTIDY} ${clangtidy_args} ${files} -- "$<$<BOOL:$<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS>>:-D$<JOIN:$<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS>,;-D>>" -I${CLANG_CXX_INC} "$<$<BOOL:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>>:-I$<JOIN:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>,;-I>>"
+	    COMMAND ${PROGRAM_CLANGTIDY} ${clangtidy_args} $<TARGET_PROPERTY:${target},CLANGTIDY_ARGS> ${files} -- "$<$<BOOL:$<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS>>:-D$<JOIN:$<TARGET_PROPERTY:${target},COMPILE_DEFINITIONS>,;-D>>" "$<$<BOOL:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>>:-I$<JOIN:$<TARGET_PROPERTY:${target},INCLUDE_DIRECTORIES>,;-I>>" $<TARGET_PROPERTY:${target},CLANGTIDY_FLAGS>
 	    COMMAND_EXPAND_LISTS
             VERBATIM WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
         add_dependencies(clangtidy clangtidy_${target})

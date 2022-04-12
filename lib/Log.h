@@ -116,12 +116,12 @@ public:
     bool alertfile(void) const { return afd.enable; }
     void alertfile(bool b) { afd.enable = b; }
     void alertfile(Level L, const tchar *file = NULL, uint cnt = 0,
-	ulong sz = 10 * 1024 * 1024, ulong tm = 0);
+	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
     const tchar *alertname(void) const { return afd.filename(); }
     const tchar *alertpath(void) const { return afd.pathname(); }
     bool buffer(void) const { return bufenable; }
     void buffer(bool enable);
-    void buffer(uint sz = 32 * 1024, ulong msec = 1000) {
+    void buffer(uint sz = 32U * 1024, ulong msec = 1000) {
 	bufsz = sz; buftm = msec; buffer(true);
     }
     uint bufsize(void) const { return bufsz; }
@@ -129,7 +129,7 @@ public:
     bool file(void) const { return ffd.enable; }
     void file(bool b) { ffd.enable = b; }
     void file(Level l, const tchar *file = NULL, uint cnt = 0,
-	ulong sz = 10 * 1024 * 1024, ulong tm = 0);
+	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
     const tchar *filename(void) const { return ffd.filename(); }
     const tchar *filepath(void) const { return ffd.pathname(); }
     const tchar *format(void) const { return fmt.c_str(); }
@@ -308,7 +308,7 @@ private:
 	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m): cnt(0),
 	    gmt(false), mp(m), len(0), sec(0), sz(0), locked(false), lvl(dlvl),
 	    fd(-1) {
-	    set(dlvl, dfile, 3, 5 * 1024 * 1024, 0);
+	    set(dlvl, dfile, 3, 5UL * 1024 * 1024, 0);
 	    enable = denable;
 	}
 	~LogFile() { close(); }
