@@ -369,40 +369,42 @@ protected:
 
 class BLISTER SpinLock: nocopy {
 public:
-    explicit SpinLock(uint lmt = 0x100): spins(Processor::count() == 1 ? 0 :
-	lmt) {
+    explicit SpinLock(uint lmt = 16):
 #if CPLUSPLUS >= 11 && !defined(__GNUC__)
-	lck.clear();
+	lck(ATOMIC_FLAG_INIT),
 #else
-	// cppcheck-suppress useInitializationList
-	lck = 0;
+	lck(0),
 #endif
-    }
+	spins(Processor::count() == 1 ? 0 : lmt) {}
     __forceinline __no_sanitize_thread void lock(void) {
-	if (!trylock()) {
+	if (testlock() || UNLIKELY(!trylock())) {
 #ifdef THREAD_PAUSE
-	    uint lmt = 1;
+	    uint u = 0;
 
 	    do {
-		if (LIKELY(lmt < spins)) {
-		    for (uint u = lmt; u; --u) {
-			THREAD_PAUSE();
-			THREAD_BARRIER();
-		    }
-		    lmt <<= 1;
+		if (LIKELY(u < spins)) {
+		    ++u;
+		    THREAD_PAUSE();
 		} else {
+		    u = 0;
 		    THREAD_YIELD();
 		}
-	    } while (testlock() || !trylock());
+	    } while (LIKELY(testlock()) || UNLIKELY(!trylock()));
 #else
 	    do {
 		THREAD_YIELD();
-	    } while (testlock() || !trylock())
+	    } while (LIKELY(testlock()) || UNLIKELY(!trylock()));
 #endif
 	}
     }
 #if CPLUSPLUS >= 11 && !defined(__GNUC__)
-    __forceinline bool testlock(void) const { return false; }
+    __forceinline bool testlock(void) const {
+#ifdef __cpp_lib_atomic_flag_test
+	return lck.test(memory_order_relaxed);
+#else
+	return false;
+#endif
+    }
     __forceinline __no_sanitize_thread bool trylock(void) {
 	return !lck.test_and_set(memory_order_acquire);
     }
