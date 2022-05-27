@@ -146,7 +146,7 @@ public:
     static timing_t __forceinline now(void) { return uticks(); }
 
 private:
-    struct BLISTER Stats {
+    struct BLISTER Stats: nocopy {
 	explicit Stats(const tchar *k): cnt(0), key(tstrdup(k)), tot(0) {
 	    ZERO(cnts);
 	}

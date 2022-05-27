@@ -434,10 +434,11 @@ protected:
 	}
 	bool interrupted(void) const { return ::interrupted(err); }
 	void unlink(const char *p) {
-#ifdef __linux__
-	    if (strchr(p, '/'))
-#endif
-	    path = strdup(p);
+	    if (strchr(p, '/')) {
+		if (path)
+		    free(path);
+		path = strdup(p);
+	    }
 	}
 
     private:

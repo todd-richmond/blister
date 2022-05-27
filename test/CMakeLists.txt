@@ -22,7 +22,7 @@ target_link_libraries(smtpload blister_static)
 add_executable(uhttpd HTTPd.cpp)
 target_link_libraries(uhttpd blister)
 
-if(NOT CMAKE_VERSION VERSION_LESS 3.16)
+if(COMPILE_PCH AND NOT CMAKE_VERSION VERSION_LESS 3.16)
     target_precompile_headers(cfg PRIVATE [["stdapi.h"]])
     target_precompile_headers(daemonize REUSE_FROM cfg)
     target_precompile_headers(dlog REUSE_FROM cfg)
@@ -33,7 +33,6 @@ if(NOT CMAKE_VERSION VERSION_LESS 3.16)
     target_precompile_headers(uhttpd REUSE_FROM cfg)
 endif()
 
-analyze(cfg daemonize dlog dtiming echotest httpload smtpload uhttpd)
-
 install(FILES http.wld smtp.wld DESTINATION etc)
 install(TARGETS cfg daemonize dlog httpload smtpload DESTINATION bin)
+
