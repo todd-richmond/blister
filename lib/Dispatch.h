@@ -33,9 +33,6 @@
  */
 #endif
 
-class Dispatcher;
-class DispatchObj;
-
 #define DSP_DECLARE(cls, func) \
     static __forceinline void func(DispatchObj *obj) { \
 	(static_cast<cls *>(obj))->func(); \
@@ -47,6 +44,8 @@ enum DispatchMsg {
     DispatchRead, DispatchWrite, DispatchReadWrite, DispatchAccept,
     DispatchConnect, DispatchClose, DispatchTimeout, DispatchNone
 };
+
+class Dispatcher;
 
 // base classes for event objects
 class BLISTER DispatchObj: ObjectList<DispatchObj>::Node {
