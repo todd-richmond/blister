@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2019 Todd Richmond
+ * Copyright 2001-2022 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -146,7 +146,7 @@ public:
     static timing_t __forceinline now(void) { return uticks(); }
 
 private:
-    struct BLISTER Stats {
+    struct BLISTER Stats: nocopy {
 	explicit Stats(const tchar *k): cnt(0), key(tstrdup(k)), tot(0) {
 	    ZERO(cnts);
 	}

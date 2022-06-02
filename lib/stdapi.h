@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2019 Todd Richmond
+ * Copyright 2001-2022 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -541,7 +541,7 @@ EXTERNC_
 #define CLOCK_REALTIME_COARSE	CLOCK_REALTIME
 #endif
 
-#if defined(BSD_BASE) || defined(__sun__)
+#if (defined(BSD_BASE) || defined(__sun__)) && !defined(__APPLE__)
 EXTERNC
 extern int wcscasecmp(const wchar_t *, const wchar_t *);
 EXTERNC_
@@ -1187,7 +1187,7 @@ struct striless {
 
 // compile time string hashing
 #define STRING_HASH_PRE(i, d)	((
-#define STRING_HASH_POST(i, d)	* 101) + (size_t)s[i])
+#define STRING_HASH_POST(i, d)	* 101) + (tuchar)s[i])
 #define STRING_HASH(i) __forceinline StringHash(const tchar (&s)[i]): \
     hash(STDAPI_REPEAT(i, STRING_HASH_PRE, ~) 0 STDAPI_REPEAT(i, \
 	STRING_HASH_POST, ~)) {}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2019 Todd Richmond
+ * Copyright 2001-2022 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -34,7 +34,7 @@ public:
 	alloced(false), buf(NULL), bufsz(0), fd(&c) {
 	faststreambuf::setbuf(p, sz);
     }
-    ~faststreambuf() { if (alloced) delete [] buf; }
+    virtual ~faststreambuf() { if (alloced) delete [] buf; }
 
     void attach(const C &c) { fd = &c; }
     const char *str(void) const { return buf; }
@@ -294,6 +294,7 @@ private:
 	    end((char *)data + sz) {
 	    setg(begin, begin, end);
 	}
+	virtual ~membuf() {}
 
     private:
 	virtual streampos seekoff(off_type off, ios_base::seekdir dir,

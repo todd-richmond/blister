@@ -20,7 +20,9 @@ if(UNIX AND NOT APPLE)
 endif()
 if(NOT CMAKE_VERSION VERSION_LESS 3.16)
     #set_target_properties(blister_obj PROPERTIES UNITY_BUILD_BATCH_SIZE 20 UNITY_BUILD ON)
-    target_precompile_headers(blister_obj PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:stdapi.h>")
+    if(COMPILE_PCH)
+        target_precompile_headers(blister_obj PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:stdapi.h>")
+    endif()
 endif()
 
 if(BLISTER_DLL)
@@ -58,6 +60,5 @@ else()
     endif()
 endif()
 
-analyze(blister_obj)
 cotire(blister_obj)
 

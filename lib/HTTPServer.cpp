@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2019 Todd Richmond
+ * Copyright 2001-2022 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -125,7 +125,7 @@ void HTTPServerSocket::readpost() {
     if (msg != DispatchClose && room < left + 1 && (!postdatasz || postsz ==
 	(ulong)-1)) {
 	if (postsz == (ulong)-1)
-	    in = postin < 8 * 1024 ? 16 * 1024 : postin * 2;
+	    in = postin < 8UL * 1024 ? 16UL * 1024 : postin * 2;
 	else
 	    in = postsz;
 	postdata_grow(readpost, postin, in + 1);

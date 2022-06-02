@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2019 Todd Richmond
+ * Copyright 2001-2022 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -434,10 +434,11 @@ protected:
 	}
 	bool interrupted(void) const { return ::interrupted(err); }
 	void unlink(const char *p) {
-#ifdef __linux__
-	    if (strchr(p, '/'))
-#endif
-	    path = strdup(p);
+	    if (strchr(p, '/')) {
+		if (path)
+		    free(path);
+		path = strdup(p);
+	    }
 	}
 
     private:

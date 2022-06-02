@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2019 Todd Richmond
+ * Copyright 2001-2022 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -1027,7 +1027,7 @@ int Service::run(int argc, const tchar * const *argv) {
     struct sigaction sa;
 
     if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
-	rl.rlim_cur = rl.rlim_max == RLIM_INFINITY ? 100 * 1024 : rl.rlim_max;
+	rl.rlim_cur = rl.rlim_max == RLIM_INFINITY ? 100UL * 1024 : rl.rlim_max;
 	while (setrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur >= 1024)
 	    rl.rlim_cur -= 512;
     }

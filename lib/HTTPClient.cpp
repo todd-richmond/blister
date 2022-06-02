@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2019 Todd Richmond
+ * Copyright 2001-2022 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -325,7 +325,7 @@ loop:
 	ressz = 0;
 	for (;;) {
 	    if (!room) {
-		room = ressz ? ressz : 12 * 1024;
+		room = ressz ? ressz : 12UL * 1024;
 		sz = ressz + room;
 		newres = new char[(size_t)sz + 1];
 		memcpy(newres, result, ressz);

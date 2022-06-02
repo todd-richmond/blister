@@ -992,7 +992,7 @@
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_PARAMETER = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.12;
+				MACOSX_DEPLOYMENT_TARGET = 11.5;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-fno-standalone-debug",
@@ -1028,6 +1028,7 @@
 					"-Wno-unknown-pragmas",
 					"-Wno-unknown-warning-option",
 					"-Wwrite-strings",
+					"-Wno-null-pointer-subtraction",
 				);
 			};
 			name = Debug;
@@ -1107,7 +1108,7 @@
 				GCC_WARN_UNUSED_PARAMETER = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LLVM_LTO = YES_THIN;
-				MACOSX_DEPLOYMENT_TARGET = 10.12;
+				MACOSX_DEPLOYMENT_TARGET = 11.5;
 				OTHER_CFLAGS = (
 					"-fno-standalone-debug",
 					"-fvisibility=hidden",
@@ -1143,6 +1144,7 @@
 					"-Wno-unknown-pragmas",
 					"-Wno-unknown-warning-option",
 					"-Wwrite-strings",
+					"-Wno-null-pointer-subtraction",
 				);
 			};
 			name = Release;

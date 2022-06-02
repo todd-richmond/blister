@@ -6,6 +6,7 @@ missingOverride
 noExplicitConstructor
 postfixOperator
 preprocessorErrorDirective
+shadowFunction
 uninitMemberVar
 unmatchedSuppression
 unknownMacro

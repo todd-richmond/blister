@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2019 Todd Richmond
+ * Copyright 2001-2022 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -59,7 +59,7 @@ int tmain(int argc, tchar *argv[]) {
 	} else if (!tstricmp(argv[i], T("-a")) || !tstricmp(argv[i],
 	    T("--alert"))) {
 	    Log::Level alvl = Log::Err;
-	    ulong cnt = 3, sz = 10 * 1024 * 1024, tm = 0;
+	    ulong cnt = 3, sz = 10UL * 1024 * 1024, tm = 0;
 	    const tchar *file;
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
@@ -78,7 +78,7 @@ int tmain(int argc, tchar *argv[]) {
 	    dlog.alertfile(alvl, file, (uint)cnt, sz, tm);
 	} else if (!tstricmp(argv[i], T("-b")) || !tstricmp(argv[i],
 	    T("--buffer"))) {
-	    ulong msec = 1000, sz = 32 * 1024;
+	    ulong msec = 1000, sz = 32UL * 1024;
 
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		sz = tstrtoul(argv[++i], NULL, 10);
@@ -106,7 +106,7 @@ int tmain(int argc, tchar *argv[]) {
 	    dlog.format(argv[i]);
 	} else if (!tstricmp(argv[i], T("-f")) || !tstricmp(argv[i],
 	    T("--file"))) {
-	    ulong cnt = 3, sz = 10 * 1024 * 1024, tm = 0;
+	    ulong cnt = 3, sz = 10UL * 1024 * 1024, tm = 0;
 	    const tchar *file;
 	    Log::Level flvl = Log::Info;
 
