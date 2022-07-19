@@ -81,8 +81,10 @@
 #define CPLUSPLUS	14
 #elif __cplusplus <= 201703L
 #define CPLUSPLUS	17
-#else
+#elif __cplusplus <= 202002L
 #define CPLUSPLUS	20
+#else
+#define CPLUSPLUS	23
 #endif
 #define EXTERNC		extern "C" {
 #define EXTERNC_	}
