@@ -31,9 +31,14 @@
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
 #define DLL_LOCAL
+#if _MSVC_LANG >= 202002L
+#define LIKELY(c)		(c) [[likely]]
+#define UNLIKELY(c)		(c) [[unlikely]]
+#else
 #define LIKELY(c)		(c)
-#define PRAGMA_STR(s)		__pragma(s)
 #define UNLIKELY(c)		(c)
+#endif
+#define PRAGMA_STR(s)		__pragma(s)
 #define WARN_DISABLE(w)		PRAGMA_STR(warning(disable: w))
 #define WARN_ENABLE(w)		PRAGMA_STR(warning(enable: w))
 #define WARN_POP		PRAGMA_STR(warning(pop))
@@ -56,8 +61,8 @@
 #define DLL_IMPORT		__attribute__((visibility("default")))
 #define DLL_LOCAL		__attribute__((visibility("hidden")))
 #define LIKELY(c)		__builtin_expect(!!(c), 1)
-#define PRAGMA_STR(s)		_Pragma (#s)
 #define UNLIKELY(c)		__builtin_expect(!!(c), 0)
+#define PRAGMA_STR(s)		_Pragma (#s)
 #define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored #w)
 #define WARN_ENABLE(w)		PRAGMA_STR(GCC diagnostic warning #w)
 #define WARN_POP		PRAGMA_STR(GCC pop_options)
@@ -82,7 +87,6 @@
 #define EXTERNC		extern "C" {
 #define EXTERNC_	}
 #else
-#define CPLUSPLUS	0
 #define EXTERNC
 #define EXTERNC_
 #endif

@@ -132,9 +132,9 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
 }
 
 int pidstat(pid_t pid, struct pidstat *psbuf) {
-    memset(psbuf, 0, sizeof (*psbuf));
     if (!pid)
 	pid = getpid();
+    ZERO(*psbuf);
 #if defined(__APPLE__)
     mach_msg_type_number_t msg_type = TASK_BASIC_INFO_COUNT;
     task_t task = MACH_PORT_NULL;
@@ -142,13 +142,15 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 
     if (task_for_pid(current_task(), pid, &task) != KERN_SUCCESS)
 	return -1;
-    task_info(task, TASK_BASIC_INFO, (task_info_t)&tinfo, &msg_type);
-    psbuf->pss = psbuf->rss = tinfo.resident_size / 1024;
-    psbuf->sz = tinfo.virtual_size / 1024;
-    psbuf->stime = (ulong)tinfo.system_time.seconds * 1000 +
-	(ulong)tinfo.system_time.microseconds / 1000;;
-    psbuf->utime = (ulong)tinfo.user_time.seconds * 1000 +
-	(ulong)tinfo.user_time.microseconds / 1000;;
+    ZERO(tinfo);
+    if (!task_info(task, TASK_BASIC_INFO, (task_info_t)&tinfo, &msg_type)) {
+	psbuf->pss = psbuf->rss = tinfo.resident_size / 1024;
+	psbuf->sz = tinfo.virtual_size / 1024;
+	psbuf->stime = (ulong)tinfo.system_time.seconds * 1000 +
+	    (ulong)tinfo.system_time.microseconds / 1000;;
+	psbuf->utime = (ulong)tinfo.user_time.seconds * 1000 +
+	    (ulong)tinfo.user_time.microseconds / 1000;;
+    }
 #elif defined(sun)
     // TODO incomplete
     char buf[PATH_MAX];
