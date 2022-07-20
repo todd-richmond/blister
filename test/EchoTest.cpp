@@ -204,7 +204,7 @@ void EchoTest::EchoClientSocket::start() {
     connect(sa, tmt);
 }
 
-WARN_DISABLE(-Wstack-usage=)
+#pragma GCC diagnostic ignored "-Wstack-usage="
 void EchoTest::EchoServerSocket::input() {
     uint oldin = in;
     char tmp[MAXREAD];
