@@ -60,5 +60,3 @@ else()
     endif()
 endif()
 
-cotire(blister_obj)
-

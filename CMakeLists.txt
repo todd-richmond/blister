@@ -123,27 +123,6 @@ if(NOT DEFINED IPO_LDFLAGS)
     set(IPO_LDFLAGS "")
 endif()
 
-# compile optimizers
-if(NOT APPLE)
-    include(cotire OPTIONAL)
-endif()
-if(COMMAND cotire)
-    if(WIN32)
-	add_definitions(-DNOIME -DNOMCX -DNOSERVICE -DWIN32_LEAN_AND_MEAN)
-    endif()
-    set(COTIRE_MAXIMUM_NUMBER_OF_UNITY_INCLUDES -j)
-    set(COTIRE_MINIMUM_NUMBER_OF_TARGET_SOURCES 4)
-    if(TARGET clean_cotire)
-	set(CLEAN_COTIRE clean_cotire)
-    endif()
-    set_property(DIRECTORY PROPERTY COTIRE_ADD_UNITY_BUILD FALSE)
-else()
-    function(cotire)
-    endfunction()
-    set(CLEAN_COTIRE "")
-
-endif()
-
 # CXX CMAKE_BUILD_TYPE flags are not always set
 if(NOT CMAKE_CXX_FLAGS_DEBUG AND NOT CMAKE_CXX_FLAGS_RELEASE)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
@@ -252,7 +231,7 @@ add_custom_target(distclean)
 add_custom_command(
     COMMENT "Cleaning distribution"
     COMMAND $(MAKE) ${CLEAN_COTIRE} clean
-    COMMAND find . -name .lto -o -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name \\*_cotire.cmake -o -name \\*.ninja -o -name Makefile | xargs rm -rf
+    COMMAND find . -name .lto -o -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name \\*.ninja -o -name Makefile | xargs rm -rf
     TARGET distclean)
 
 add_subdirectory(lib)
