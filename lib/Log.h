@@ -423,9 +423,11 @@ template<> inline tostream &Log::KV<ullong>::value(tostream &os) const {
 template<> inline tostream &Log::KV<ushort>::value(tostream &os) const {
     return os << val;
 }
+#ifdef _UNICODE
 template<> inline tostream &Log::KV<wchar>::value(tostream &os) const {
     return os << val;
 }
+#endif
 
 template<class C> inline tostream &operator <<(tostream &os, const Log::KV<C>
     &kv) {

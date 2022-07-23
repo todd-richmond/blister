@@ -27,6 +27,7 @@
 #include "Log.h"
 #include "Timing.h"
 
+const int DELAY = 20;
 const int TIMEOUT = 10 * 1000;
 const int MAXREAD = 8 * 1024;
 
@@ -101,6 +102,7 @@ public:
 
 static char *dbuf;
 static uint dsz;
+static EchoTest *etp;
 static TSNumber<uint> errs, ops;
 static TSNumber<long long> loops(MAXLLONG);
 static volatile bool qflag;
@@ -277,18 +279,17 @@ bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
     }
 }
 
-static Config config;
-static EchoTest et(config); // NOLINT
-
 static void signal_handler(int) {
     qflag = true;
     if (!errs && !ops)
-	et.stop();
+	etp->stop();
 }
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true;
-    ulong delay = 20, tmt = TIMEOUT, wait = 0;
+    ulong delay = DELAY, tmt = TIMEOUT, wait = 0;
+    Config config;
+    EchoTest et(config);
     int fd;
     const tchar *host = NULL;
     int i;
@@ -298,6 +299,7 @@ int tmain(int argc, const tchar * const argv[]) {
     struct stat sbuf;
     uint sockets = 20, threads = 20;
 
+    etp = &et;
     for (i = 1; i < argc; i++) {
 	if (!tstricmp(argv[i], T("-c"))) {
 	    server = false;

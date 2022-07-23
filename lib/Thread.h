@@ -37,8 +37,8 @@ typedef DWORD thread_id_t;
 typedef volatile LONG atomic_t;
 
 // atomic functions that return updated value
-#define atomic_ref(i)		InterlockedIncrement(&i)
-#define atomic_rel(i)		InterlockedDecrement(&i)
+#define atomic_reference(i)	InterlockedIncrement(&i)
+#define atomic_release(i)	InterlockedDecrement(&i)
 
 // atomic functions that return previous value
 #define atomic_add(i, j)	InterlockedExchangeAdd(&i, j)
@@ -120,8 +120,8 @@ typedef volatile _Atomic_word atomic_t;
 
 #define __sync_fetch_and_add	__exchange_and_add
 
-#define atomic_ref(i)		(__sync_fetch_and_add(&i, 1) + 1)
-#define atomic_rel(i)		(__sync_fetch_and_add(&i, -1) - 1)
+#define atomic_reference(i)	(__sync_fetch_and_add(&i, 1) + 1)
+#define atomic_release(i)	(__sync_fetch_and_add(&i, -1) - 1)
 
 #if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
 
@@ -156,8 +156,8 @@ inline atomic_t atomic_lck(atomic_t &lck) {
 
 typedef volatile int atomic_t;
 
-#define atomic_ref(i)		__sync_add_and_fetch(&i, 1)
-#define atomic_rel(i)		__sync_add_and_fetch(&i, -1)
+#define atomic_reference(i)	__sync_add_and_fetch(&i, 1)
+#define atomic_release(i)	__sync_add_and_fetch(&i, -1)
 
 #define atomic_add(i, j)	__sync_fetch_and_add(&i, j)
 #define atomic_and(i, j)	__sync_fetch_and_and(&i, j)
@@ -867,8 +867,10 @@ public:
 
     __forceinline void broadcast(void) { pthread_cond_broadcast(&cv); }
     __forceinline void set(uint count = 1) {
-	while (count--)
+	while (count) {
 	    pthread_cond_signal(&cv);
+	    --count;
+	}
     }
     __forceinline bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {
@@ -1142,8 +1144,8 @@ public:
     __forceinline operator bool(void) const { return referenced(); }
     __forceinline bool referenced(void) const { return atomic_get(cnt) != 0; }
 
-    __forceinline void reference(void) { atomic_ref(cnt); }
-    __forceinline bool release(void) { return atomic_rel(cnt) == 0; }
+    __forceinline void reference(void) { atomic_reference(cnt); }
+    __forceinline bool release(void) { return atomic_release(cnt) == 0; }
 
 private:
     mutable atomic_t cnt;

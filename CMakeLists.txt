@@ -31,14 +31,18 @@ endif()
 if(CHECK_CLANGTIDY)
     if(PROGRAM_CLANGTIDY)
 	execute_process(COMMAND bash -c "dirname $(dirname $(dirname $(clang -print-resource-dir)))" OUTPUT_VARIABLE CLANG_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
-	file(GLOB CLANG_CXX_INC ${CLANG_DIR}/include/c++/*)
-	set(CMAKE_C_CLANG_TIDY ${PROGRAM_CLANGTIDY} --extra-arg=-isystem --extra-arg=${CLANG_CXX_INC} --quiet)
+	file(GLOB clang_tidy_cxx_dir ${CLANG_DIR}/include/c++/*)
+	set(CMAKE_C_CLANG_TIDY ${PROGRAM_CLANGTIDY} --quiet)
+	set(CMAKE_CXX_CLANG_TIDY ${CMAKE_C_CLANG_TIDY})
 	if(APPLE)
-	    list(APPEND CMAKE_C_CLANG_TIDY
+	    list(APPEND clang_tidy_c_args
 		--extra-arg=-isystem --extra-arg=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
 		--extra-arg=-isystem --extra-arg=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Kernel.framework/Versions/Current/Headers)
+	    list(APPEND clang_tidy_cxx_args
+		--extra-arg=-isystem --extra-arg=${clang_tidy_cxx_dir})
 	endif()
-	set(CMAKE_CXX_CLANG_TIDY ${CMAKE_C_CLANG_TIDY})
+	list(APPEND CMAKE_C_CLANG_TIDY ${clang_tidy_c_args})
+	list(APPEND CMAKE_CXX_CLANG_TIDY ${clang_tidy_cxx_args} ${clang_tidy_c_args})
     else()
 	message(AUTHOR_WARNING "clang-tidy not available")
     endif()
@@ -117,27 +121,6 @@ if(NOT CMAKE_VERSION VERSION_LESS 3.9 AND NOT CMAKE_BUILD_TYPE STREQUAL Debug)
 endif()
 if(NOT DEFINED IPO_LDFLAGS)
     set(IPO_LDFLAGS "")
-endif()
-
-# compile optimizers
-if(NOT APPLE)
-    include(cotire OPTIONAL)
-endif()
-if(COMMAND cotire)
-    if(WIN32)
-	add_definitions(-DNOIME -DNOMCX -DNOSERVICE -DWIN32_LEAN_AND_MEAN)
-    endif()
-    set(COTIRE_MAXIMUM_NUMBER_OF_UNITY_INCLUDES -j)
-    set(COTIRE_MINIMUM_NUMBER_OF_TARGET_SOURCES 4)
-    if(TARGET clean_cotire)
-	set(CLEAN_COTIRE clean_cotire)
-    endif()
-    set_property(DIRECTORY PROPERTY COTIRE_ADD_UNITY_BUILD FALSE)
-else()
-    function(cotire)
-    endfunction()
-    set(CLEAN_COTIRE "")
-
 endif()
 
 # CXX CMAKE_BUILD_TYPE flags are not always set
@@ -224,7 +207,7 @@ mark_as_advanced(CMAKE_C_FLAGS_PROFILE CMAKE_CXX_FLAGS_PROFILE CMAKE_EXE_LINKER_
 if(PROGRAM_CCACHE AND NOT CMAKE_CXX_CLANG_TIDY AND NOT CMAKE_CXX_CPPCHECK AND NOT CMAKE_CXX_CPPLINT AND NOT CMAKE_CXX_INCLUDE_WHAT_YOU_USE)
     set(COMPILE_PCH TRUE)
     if(NOT CMAKE_VERSION VERSION_LESS 3.5)
-        set(CMAKE_C_COMPILER_LAUNCHER CCACHE_DEPEND=1 CCACHE_HARDLINK=1 CCACHE_SLOPPINESS=file_stat_matches,include_file_ctime,include_file_mtime,locale,pch_defines,system_headers,time_macros ${PROGRAM_CCACHE})
+	set(CMAKE_C_COMPILER_LAUNCHER CCACHE_DEPEND=1 CCACHE_HARDLINK=1 CCACHE_SLOPPINESS=file_stat_matches,include_file_ctime,include_file_mtime,locale,pch_defines,system_headers,time_macros ${PROGRAM_CCACHE})
 	set(CMAKE_CXX_COMPILER_LAUNCHER ${CMAKE_C_COMPILER_LAUNCHER})
     else()
 	set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${PROGRAM_CCACHE}")
@@ -248,7 +231,7 @@ add_custom_target(distclean)
 add_custom_command(
     COMMENT "Cleaning distribution"
     COMMAND $(MAKE) ${CLEAN_COTIRE} clean
-    COMMAND find . -name .lto -o -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name \\*_cotire.cmake -o -name \\*.ninja -o -name Makefile | xargs rm -rf
+    COMMAND find . -name .lto -o -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name \\*.ninja -o -name Makefile | xargs rm -rf
     TARGET distclean)
 
 add_subdirectory(lib)
