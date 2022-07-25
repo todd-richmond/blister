@@ -406,10 +406,9 @@ private:
     static const int DSP_TimerID = 1;
 #else
     int evtfd, wfd;
-    Socket isock;
     volatile bool polling;
     SocketSet rset, wset;
-    Socket wsock;
+    Socket rsock, wsock;
 
     void reset(void);
 #endif

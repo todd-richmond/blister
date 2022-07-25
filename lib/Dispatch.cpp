@@ -115,7 +115,7 @@ Dispatcher::Dispatcher(const Config &config): cfg(config),
 #ifdef DSP_WIN32_ASYNC
     interval(DispatchTimer::DSP_NEVER), wnd(0)
 #else
-    evtfd(-1), wfd(-1), isock(SOCK_STREAM), polling(false), wsock(SOCK_STREAM)
+    evtfd(-1), wfd(-1), polling(false), rsock(SOCK_STREAM), wsock(SOCK_STREAM)
 #endif
     {
 #ifdef DSP_WIN32_ASYNC
@@ -378,7 +378,7 @@ int Dispatcher::onStart() {
 	    return -1;
 	}
 	(void)wsock.connect(addr, 0);
-	while (!asock.accept(isock)) {
+	while (!asock.accept(rsock)) {
 	    if (++u == 50) {
 		CLOSE_EVTFD(evtfd);
 		return -1;
@@ -386,9 +386,9 @@ int Dispatcher::onStart() {
 	    msleep(100);
 	}
 	asock.close();
-	isock.blocking(false);
-	isock.cloexec();
-	rset.set(isock);
+	rsock.blocking(false);
+	rsock.cloexec();
+	rset.set(rsock);
 	wsock.blocking(false);
 	wsock.cloexec();
 #if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
@@ -397,7 +397,7 @@ int Dispatcher::onStart() {
     if (evtfd != -1) {			// cppcheck-suppress duplicateCondition
 	CLOEXEC(evtfd);
 #ifdef DSP_DEVPOLL
-	evts[0].fd = isock.fd();
+	evts[0].fd = rsock.fd();
 	evts[0].events = POLLIN;
 
 	RETRY(pwrite(evtfd, &evts[0], sizeof (evts[0]), 0));
@@ -478,7 +478,7 @@ int Dispatcher::onStart() {
 	    for (u = 0; u < orset.size(); u++) {
 		fd = orset[u];
 		if ((sit = smap.find(fd)) == smap.end()) {
-		    if (fd == isock)
+		    if (fd == rsock)
 			reset();
 		    continue;
 		}
@@ -623,7 +623,7 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 
 	socketmap::const_iterator sit;
 
-	if (evt->fd == isock)
+	if (evt->fd == rsock)
 	    ds = NULL;
 	else if ((sit = smap.find(evt->fd)) == smap.end())
 	    continue;
@@ -694,15 +694,20 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 
 #ifndef DSP_WIN32_ASYNC
 void Dispatcher::reset(void) {
-    char buf[16];
+    if (evtfd == -1) {
+	char buf[16];
+	FastSpinUnlocker ulkr(lock);
 
-    lock.unlock();
+	RETRY(rsock.read(buf, sizeof (buf)));
+    }
 #ifdef DSP_EPOLL
-    RETRY(read(wfd, buf, sizeof (buf)));
-#else
-    RETRY(wsock.read(buf, sizeof (buf)));
+    else {
+	eventfd_t buf;
+	FastSpinUnlocker ulkr(lock);
+
+	RETRY(eventfd_read(wfd, &buf));
+    }
 #endif
-    lock.lock();
 }
 #endif
 

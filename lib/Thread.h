@@ -265,6 +265,18 @@ private:
     C &lck;
 };
 
+template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
+class BLISTER FastUnlockerTemplate: nocopy {
+public:
+    explicit __forceinline FastUnlockerTemplate(C &lock): lck(lock) {
+	(lck.*UNLOCK)();
+    }
+    __forceinline ~FastUnlockerTemplate() { (lck.*LOCK)(); }
+
+private:
+    C &lck;
+};
+
 /*
  * The DLLibrary class loads shared libraries and dynamically fetches function
  * pointers. Do not specify file extensions in the constructor
@@ -431,6 +443,7 @@ private:
 #endif
 
 typedef FastLockerTemplate<SpinLock> FastSpinLocker;
+typedef FastUnlockerTemplate<SpinLock> FastSpinUnlocker;
 typedef LockerTemplate<SpinLock> SpinLocker;
 
 #ifdef _WIN32
