@@ -504,6 +504,7 @@ inline SocketSet::SocketSet(uint maxfds): maxsz(maxfds), sz(0) {
     if (!maxsz)
 	maxsz = 32;
     fds = (fd_set *)new socket_t[(size_t)maxsz + 1];
+    fds->fd_count = 0;
 #else
     fds = maxsz ? new pollfd[maxsz] : NULL;
 #endif
@@ -561,6 +562,9 @@ inline bool SocketSet::set(socket_t fd) {
 	fds = p;
     }
     SSET_FD(sz++) = fd;
+#ifdef _WIN32
+    fds->fd_count = sz;
+#endif
     return true;
 }
 
@@ -568,6 +572,9 @@ inline bool SocketSet::unset(socket_t fd) {
     for (uint u = 0; u < sz; u++) {
 	if (SSET_FD(u) == fd) {
 	    SSET_FD(u) = SSET_FD(--sz);
+#ifdef _WIN32
+	    fds->fd_count = sz;
+#endif
 	    return true;
 	}
     }

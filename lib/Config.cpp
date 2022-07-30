@@ -219,6 +219,7 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar
 	    }
 	}
     }
+#pragma warning(disable: 26402)
     return kv;
 }
 
@@ -355,7 +356,7 @@ void Config::set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
 	if (oldkv->quote)
 	    s += oldkv->quote;
 	vlen = s.size();
-	kv = newkv(oldkv->key, strlen(oldkv->key), s.c_str(), vlen);
+	kv = newkv(oldkv->key, tstrlen(oldkv->key), s.c_str(), vlen);
     }
     amap.erase(old.first);
     delkv(oldkv);
@@ -371,13 +372,13 @@ void Config::setv(const tchar *key1, const tchar *val1, ...) {
     while ((arg = va_arg(vl, const tchar *)) != NULL)
 	sect = sect == NULL ? arg : NULL;
     va_end(vl);
-    slen = sect ? strlen(sect) : 0;
+    slen = sect ? tstrlen(sect) : 0;
     lock();
-    set(key1, strlen(key1), val1, strlen(val1), sect, slen);
+    set(key1, tstrlen(key1), val1, tstrlen(val1), sect, slen);
     va_start(vl, val1);
     while ((arg = va_arg(vl, const tchar *)) != NULL) {
 	if (key) {
-	    set(key, strlen(key), arg, strlen(arg), sect, slen);
+	    set(key, tstrlen(key), arg, tstrlen(arg), sect, slen);
 	    key = NULL;
 	} else {
 	    key = arg;

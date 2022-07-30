@@ -117,13 +117,13 @@ public:
     }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = NULL, bool append = false);
-    void set(const char *key, const char *val, const char *sect = NULL) {
+    void set(const tchar *key, const tchar *val, const tchar *sect = NULL) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	return set(key, tstrlen(key), val, tstrlen(val), sect, sect ?
 	    tstrlen(sect) : 0);
     }
-    void set(const string &key, const string &val, const string &sect) {
+    void set(const tstring &key, const tstring &val, const tstring &sect) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	return set(key.c_str(), key.size(), val.c_str(), val.size(),
@@ -210,8 +210,8 @@ private:
     bool expandkv(const KV *kv, tstring &val) const;
     const KV *getkv(const tchar *key, const tchar *sect) const;
     bool parse(tistream &is);
-    void set(const char *key, size_t klen, const char *val, size_t vlen, const
-	char *sect, size_t slen, bool append = false);
+    void set(const tchar *key, size_t klen, const tchar *val, size_t vlen, const
+	tchar *sect, size_t slen, bool append = false);
     static void delkv(const KV *kv) { delete [] (char *)kv; }
     static const KV *newkv(const tchar *key, size_t klen, const tchar *val,
 	size_t vlen);

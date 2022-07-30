@@ -382,7 +382,8 @@ protected:
 class BLISTER SpinLock: nocopy {
 public:
     explicit SpinLock(uint lmt = 16):
-#if CPLUSPLUS >= 11 && !defined(__GNUC__)
+#ifdef _WIN32
+#elif CPLUSPLUS >= 11 && !defined(__GNUC__)
 	lck(ATOMIC_FLAG_INIT),
 #else
 	lck(0),

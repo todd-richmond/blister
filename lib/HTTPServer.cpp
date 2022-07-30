@@ -242,6 +242,7 @@ void HTTPServerSocket::scan(char *buf, ulong len, bool append) {
     readable(readhdrs, rto);
 }
 
+#pragma warning(disable: 26430)
 void HTTPServerSocket::parse(void) {
     char *p, *pp, *start, *end;
     char *buf = data;

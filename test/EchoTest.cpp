@@ -386,6 +386,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	dlogi(Log::mod(T("echo")), Log::cmd(T("echo")), Log::kv(T("addr"),
 	    sa.str()), Log::kv(T("data"), path));
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
+	if (sa.host() == T("*"))
+	    sa.host(T("localhost"));
 	et.connect(sa, sockets, delay, tmt, wait);
 	Thread::MainThread.priority(10);
 	last = Timing::now();
