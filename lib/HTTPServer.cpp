@@ -170,7 +170,8 @@ void HTTPServerSocket::readpost() {
 	    } else {
 		while ((c = chunkmap[(uchar)postdata[pos]]) >= 0) {
 		    chunksize = chunksize * 16 + (ulong)c;
-		    ++pos;
+		    if (++pos == postin)
+			break;
 		}
 		if (c != -2 || pos == chunkin) {
 		    error(400);

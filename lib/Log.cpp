@@ -115,7 +115,6 @@ bool Log::LogFile::close(void) {
     len = 0;
     if (fd < 0)
 	return false;
-    unlock();
     ::close(fd);
     fd = -1;
     return true;

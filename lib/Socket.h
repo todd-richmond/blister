@@ -171,11 +171,7 @@ public:
     ushort size(void) const { return size(family()); }
     const tstring str(void) const { return str(host()); }
     bool v4mapped(void) const {
-	const in6_addr &sa6 = addr.sa6.sin6_addr;
-
-	return ipv6() && sa6.s6_addr16[0] == 0 && sa6.s6_addr16[1] == 0 &&
-	    sa6.s6_addr16[2] == 0 && sa6.s6_addr16[3] == 0 &&
-	    sa6.s6_addr16[4] == 0 && sa6.s6_addr16[5] == 0xFFFF;
+	return ipv6() && IN6_IS_ADDR_V4MAPPED(&addr.sa6.sin6_addr);
     }
 
     static bool dgram(Proto proto) {
