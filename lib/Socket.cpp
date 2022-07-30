@@ -223,7 +223,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
     if (portno) {
 	tchar portstr[8];
 
-	tsprintf(portstr, T("%uu"), portno);
+	tsprintf(portstr, T("%u"), portno);
 	return set(host, portstr, proto);
     } else {
 	return set(host, (tchar *)NULL, proto);
@@ -478,8 +478,7 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
 	return false;
     if (msec != SOCK_INFINITE)
 	blocking(false);
-    if (check(::connect(sbuf->sock, (sockaddr *)(const sockaddr *)sa,
-	sa.size()))) {
+    if (check(::connect(sbuf->sock, sa, sa.size()))) {
 	ret = true;
     } else if (blocked() && msec > 0 && msec != SOCK_INFINITE) {
 	int err = 0;
