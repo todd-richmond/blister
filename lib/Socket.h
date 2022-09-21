@@ -152,6 +152,10 @@ public:
     const tstring ipstr(void) const { return str(ip()); }
     bool ipv4(void) const { return family() == AF_INET; }
     bool ipv6(void) const { return family() == AF_INET6; }
+    bool localhost(void) const {
+	return ip() == "127.0.0.1" || ip() == "::1" || proto() ==
+	    Sockaddr::UNIX;
+    }
 #ifndef _WIN32
     const char *path(void) const {
 	return family() == AF_UNIX ? *addr.sau.sun_path == '\0' ?
