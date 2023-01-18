@@ -79,8 +79,14 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
 
     ZERO(hints);
     hints.ai_family = families[proto];
-    if (!host || !*host || *host == '*' || !tstricmp(host, T("INADDR_ANY")) ||
-	!tstricmp(host, T("IN6ADDR_ANY"))) {
+    if (!host || !*host || *host == '*' || !tstricmp(host, T("IN6ADDR_ANY"))) {
+	hints.ai_family = proto == TCP || proto == TCP4 || proto == TCP6 ?
+	    families[TCP4] : families[UDP6];
+	hints.ai_flags = AI_PASSIVE;
+	host = NULL;
+    } else if (!tstricmp(host, T("INADDR_ANY"))) {
+	hints.ai_family = proto == TCP || proto == TCP4 ? families[TCP4] :
+	    families[UDP4];
 	hints.ai_flags = AI_PASSIVE;
 	host = NULL;
     } else if (istdigit(*host)) {
@@ -486,7 +492,7 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
 
 	sset.set(sbuf->sock);
 	ret = sset.opoll(oset, eset, msec) && oset.get(sbuf->sock) &&
-	    check(getsockopt(SOL_SOCKET, SO_ERROR, err)) && !err;
+	    check(getsockopt(SOL_SOCKET, SO_ERROR, err)) && !(sbuf->err = err);
     }
     if (msec != SOCK_INFINITE) {
 	int e = sbuf->err;
