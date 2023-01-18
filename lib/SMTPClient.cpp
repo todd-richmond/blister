@@ -806,26 +806,21 @@ uint RFC822Addr::parse(const tchar *addrs) {
 	phrases.clear();
 	routes.clear();
     }
-    if ((!tstrrchr(addrs, '<') && !tstrrchr(addrs, ';') &&
-	!tstrrchr(addrs, ',')) || !tstrrchr(addrs, '>')) {
-	s = buf = new tchar[len + 2];
-	s[0] = '<';
-	memcpy(s + 1, addrs, len - 1);
-	s[len] = '>';
-	s[len + 1] = '\0';
-    } else {
-	s = buf = new tchar[len];
-	memcpy(s, addrs, len);
-    }
+    s = buf = new tchar[len];
+    memcpy(s, addrs, len);
     while (tok) {
 	tok = parse_phrase(s, phrase, T(",@<;:"));
 	switch (tok) {			// NOLINT
 	case ',':
 	case '\0':
 	case ';':
+	    // include local mbox
+	    if (phrase && *phrase)
+		parse_append(NULL, NULL, phrase, NULL);
 	    continue;
 	case ':':
-	    parse_append(NULL, NULL, phrase, NULL);
+	    // ignore group prefix and only return real addresses
+	    // parse_append(NULL, NULL, phrase, NULL);
 	    continue;
 	case '@':
 	    tok = parse_domain(s, d, n);
