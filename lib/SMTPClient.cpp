@@ -985,12 +985,11 @@ int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
 
 bool RFC822Addr::skip_whitespace(tchar *&in) {
     tchar c;
-    uint cmt = 0;
     tchar *s = in;
 
     while ((c = *s) != 0) {
 	if (c == '(') {
-	    cmt = 1;
+	    uint cmt = 1;
 	    ++s;
 	    while (cmt && (c = *s) != 0 && !(c == '\n' && s[1] != ' ' && s[1] !=
 		'\t')) {

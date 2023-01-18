@@ -154,7 +154,6 @@ void HTTPServerSocket::readpost() {
 	    if (postin <= pos)
 		break;
 
-	    char c;
 	    ulong chunksize = 0;
 	    const char *lf = (const char *)memchr(postdata + pos, '\n', postin -
 		pos);
@@ -168,6 +167,8 @@ void HTTPServerSocket::readpost() {
 		    left = 0;
 		}
 	    } else {
+		char c;
+
 		while ((c = chunkmap[(uchar)postdata[pos]]) >= 0) {
 		    chunksize = chunksize * 16 + (ulong)c;
 		    if (++pos == postin)

@@ -131,7 +131,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     }
     s += (tchar)'\n';
     for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
-	tchar buf[128], sbuf[16];
+	tchar buf[128];
 	ulong sum = 0;
 	timing_t tot;
 
@@ -150,7 +150,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    else
 		tsprintf(cbuf, T("%5lu"), stats->cnt / 1U);
 	    if (tot) {
-		tchar abuf[16];
+		tchar abuf[16], sbuf[16];
 
 		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key + (klen < sizeof
 		    (buf) - 19 ? 0 : klen - sizeof (buf) + 19), format(tot,
