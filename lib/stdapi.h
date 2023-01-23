@@ -955,7 +955,7 @@ using namespace std::tr1;
 #define STL_UNORDERED_SET_H	<unordered_set>
 #endif
 
-// narrow / wide sring routines
+// narrow / wide string routines
 extern BLISTER const wstring _achartowstring(const char *s, size_t len);
 extern BLISTER const string _wchartoastring(const wchar *s, size_t len);
 

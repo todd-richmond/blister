@@ -597,7 +597,7 @@ void HTTPServerSocket::error(uint sts, bool close) {
     const char *p;
     static const char *err2xx[] = {
 	"OK", "Created", "Accepted", "Non-Authoritative Information",
-	"No Content", "Reset Content", "Parial Content"
+	"No Content", "Reset Content", "Partial Content"
     };
     static const char *err3xx[] = {
 	"Multiple Choices", "Moved Permanently", "Found", "See Other",

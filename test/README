@@ -17,8 +17,8 @@ class as well as serve as an example for Cfg, Log, Service, and Timing classes
 httpd - extremely simple, fast, example HTTP server that can serve files
 
 httpload - scriptable, multi-threaded HTTP load test with statistics reporting.
-Supports GET commands with optional keep-alives and POST commands with data from
+Supports GET commands with optional keep-alive and POST commands with data from
 a file or directory
 
 smtpload - scriptable, multi-threaded SMTP load test with statistics reporting.
-Supports random RCPT TO addressess and DATA from a file or directory
+Supports random RCPT TO addresses and DATA from a file or directory

@@ -386,7 +386,7 @@ private:
     int run(void);
     void wake(uint tasks);
     void wakeup(ulong msec);	// enter locked, leave unlocked for performance
-    static int worker(void *parm);
+    static int worker(void *param);
 
     SpinLock lock;
     msec_t due;

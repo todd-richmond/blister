@@ -207,8 +207,8 @@ int Dispatcher::run() {
     return 0;
 }
 
-int Dispatcher::worker(void *parm) {
-    return (static_cast<Dispatcher *>(parm))->run();
+int Dispatcher::worker(void *param) {
+    return (static_cast<Dispatcher *>(param))->run();
 }
 
 #ifdef DSP_WIN32_ASYNC

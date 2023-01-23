@@ -1,4 +1,4 @@
-Blister is an extremely fast, scaleable, C++ library for building async I/O
+Blister is an extremely fast, scalable, C++ library for building async I/O
 servers and clients. It includes optimized, lightweight logging, configuration,
 networking and process/thread control.
 
