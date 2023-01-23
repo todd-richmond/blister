@@ -134,9 +134,9 @@ public:
     operator const sockaddr *() const { return &addr.sa; }
     operator const sockaddr_in *() const { return &addr.sa4; }
     operator const sockaddr_in6 *() const { return &addr.sa6; }
-    #ifndef _WIN32
+#ifndef _WIN32
     operator const sockaddr_un *() const { return &addr.sau; }
-    #endif
+#endif
 
     const void *address(void) const;
     void clear(void) { ZERO(addr); name.clear(); }
@@ -588,7 +588,7 @@ inline bool SocketSet::unset(socket_t fd) {
 // socket streams
 typedef faststreambuf<Socket> socketbuf;
 
-class BLISTER isockstream : public istream {
+class BLISTER isockstream: public istream {
 public:
     explicit isockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	istream(NULL), sb(sz, p) { ios::init(&sb); }

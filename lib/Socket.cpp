@@ -81,7 +81,7 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
     hints.ai_family = families[proto];
     if (!host || !*host || *host == '*' || !tstricmp(host, T("IN6ADDR_ANY"))) {
 	hints.ai_family = proto == TCP || proto == TCP4 || proto == TCP6 ?
-	    families[TCP4] : families[UDP6];
+	    families[TCP6] : families[UDP6];
 	hints.ai_flags = AI_PASSIVE;
 	host = NULL;
     } else if (!tstricmp(host, T("INADDR_ANY"))) {
@@ -209,6 +209,11 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
 
     if (!host) {
 	p = NULL;
+    } else if (*host == ':' && host[1] == ':') {
+	if ((p = tstrchr(host + 2, ':')) != NULL) {
+	    s.assign(host, (tstring::size_type)(p - host));
+	    host = s.c_str();
+	}
     } else if (*host == '[') {
 	if ((p = tstrchr(host, ']')) == NULL)
 	    return false;
@@ -248,15 +253,15 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 	const uint sz = sizeof (addr.sau.sun_path);
 
 	addr.sau.sun_family = AF_UNIX;
-#ifndef __linux__	// no anonymous file support
-	strncpy(addr.sau.sun_path, host, sz);
-#else
+#ifdef __linux__	// anonymous file support
 	if (tstrchr(host, '/')) {
 	    strncpy(addr.sau.sun_path, host, sz);
 	} else {
 	    addr.sau.sun_path[0] = '\0';
 	    strncpy(addr.sau.sun_path + 1, host, sz - 1);
 	}
+#else
+	strncpy(addr.sau.sun_path, host, sz);
 #endif
 	addr.sau.sun_path[sz - 1] = '\0';
 	return true;
