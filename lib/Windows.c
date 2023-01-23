@@ -79,11 +79,11 @@ int gettimeofday(struct timeval *tv, struct timezone *tz) {
 	static int tzsetup;
 
 	if (!tzsetup) {
-	    TIME_ZONE_INFORMATION tzinfo;
+	    TIME_ZONE_INFORMATION tzi;
 
 	    tzset();
 	    tzsetup = 1;
-	    _daylight = GetTimeZoneInformation(&tzinfo) == TIME_ZONE_ID_DAYLIGHT;
+	    _daylight = GetTimeZoneInformation(&tzi) == TIME_ZONE_ID_DAYLIGHT;
 	}
 	tz->tz_minuteswest = _timezone / 60;
 	tz->tz_dsttime = _daylight;
@@ -155,7 +155,7 @@ static uint rename_lock(const wchar *path) {
 #if _MSC_VER < 1500
 void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
     int (*cfunc)(const void *, const void *)) {
-    const char *cbase = (char *)base;
+    const char *cbase = (const char *)base;
     size_t lim;
     const char *p;
 

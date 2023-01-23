@@ -256,7 +256,7 @@ bool Config::parse(tistream &is) {
 		if (s.empty()) {
 		} else if (s[0] == ';' || s[0] == '#') {
 		    if (s[s.size() - 1] != '\\') {
-			key = key.substr(0, sz - 1);
+			key.resize(sz - 1);
 			trim(key);
 			sz = key.size();
 			break;

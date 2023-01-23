@@ -134,7 +134,7 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
 int pidstat(pid_t pid, struct pidstat *psbuf) {
     if (!pid)
 	pid = getpid();
-    ZERO(*psbuf);
+    memset(psbuf, 0, sizeof (*psbuf));
 #if defined(__APPLE__)
     mach_msg_type_number_t msg_type = TASK_BASIC_INFO_COUNT;
     task_t task = MACH_PORT_NULL;

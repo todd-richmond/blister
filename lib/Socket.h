@@ -204,7 +204,7 @@ private:
 #ifdef _WIN32
     class BLISTER SockInit {
     public:
-	SockInit() { WSADATA w; (void)WSAStartup(2 | (0 << 8), &w); }
+	SockInit() { WSADATA w; (void)WSAStartup(MAKEWORD(2, 2), &w); }
 	~SockInit() { WSACleanup(); }
     };
 
