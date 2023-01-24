@@ -214,7 +214,6 @@ int Dispatcher::worker(void *param) {
 #ifdef DSP_WIN32_ASYNC
 
 int Dispatcher::onStart() {
-    uint count = 0;
     DispatchSocket *ds = NULL;
     DispatchTimer *dt = NULL;
     MSG msg;
@@ -231,10 +230,11 @@ int Dispatcher::onStart() {
     shutdown = false;
     workers = 0;
     while (!shutdown) {
+	uint count = 0;
+
 	GetMessage(&msg, wnd, 0, 0);
 	if (shutdown)
 	    break;
-	count = 0;
 	if (msg.message == socketmsg) {
 	    socketmap::const_iterator it;
 	    uint evt = WSAGETSELECTEVENT(msg.lParam);

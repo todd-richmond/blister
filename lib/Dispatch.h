@@ -282,7 +282,7 @@ private:
 	TimerSet(): split(0) {}
 	TimerSet(const TimerSet &) CPP_DELETE;
 
-	const TimerSet & operator =(const TimerSet &) CPP_DELETE;
+	TimerSet & operator =(const TimerSet &) CPP_DELETE;
 
 	bool empty(void) const { return unsorted.empty() && sorted.empty(); }
 	msec_t half(void) const { return split; }

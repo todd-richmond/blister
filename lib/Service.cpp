@@ -942,7 +942,6 @@ void Service::unsetsignal() {
 
 int Service::ctrl_handler(void *) {
     bool quit = false;
-    int sig;
     sigset_t sigs;
 
     sigpid = getpid();
@@ -951,6 +950,7 @@ int Service::ctrl_handler(void *) {
     while (!quit) {
 	tchar buf[16];
 	siginfo_t si;
+	int sig;
 	const tchar *str;
 #ifdef __linux__
 	sig = sigwaitinfo(&sigs, &si);
