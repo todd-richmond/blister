@@ -225,13 +225,11 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar
 
 bool Config::parse(tistream &is) {
     tstring key, s, sect, val;
-    uint line = 0;
     const tchar *p;
 
     if (!is)
 	return false;
     while (getline(is, key)) {
-	line++;
 	trim(key);
 	if (!tstrnicmp(key.c_str(), T("#include"), 8)) {
 	    key = key.substr(9, key.size() - 9);

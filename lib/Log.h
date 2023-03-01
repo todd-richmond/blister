@@ -155,6 +155,8 @@ public:
     void type(Type t) { _type = t; }
 
     bool close(void);
+    // main thread does not call TLS destruction
+    void destruct(void) { tls.erase(); }
     Log &endlog(void) {
 	Tlsdata &tlsd(*tls);
 

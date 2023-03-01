@@ -109,7 +109,7 @@ protected:
     static bool exiting;
     static bool restart;
     static Service *service;
-    static volatile pid_t sigpid;
+    static volatile pid_t sigpid, watchpid;
     static tstring srvcpath;
     static tstring ver;
 

@@ -48,7 +48,7 @@ bool Service::exiting;
 bool Service::restart;
 tstring Service::srvcpath;
 Service *Service::service;
-volatile pid_t Service::sigpid;
+volatile pid_t Service::sigpid, Service::watchpid;
 tstring Service::ver(T(__DATE__) T(" ") T(__TIME__));
 
 void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
@@ -93,7 +93,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	    size = sizeof (buf);
 	    if (RegQueryValueEx(key, T("Install Directory"), 0L, &type,
 		(LPBYTE)&buf, &size)) {
-		dlogw(Log::mod(id), Log::error(T("install key missing")));
+		dlog.warn(Log::mod(id), Log::error(T("install key missing")));
 	    } else {
 		full = buf;
 	    }
@@ -570,7 +570,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 
 	if ((status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
 	    s.c_str(), 0L, KEY_ALL_ACCESS, &key)) != ERROR_SUCCESS) {
-	    dloge(Log::mod(name), Log::error(
+	    dlog.err(Log::mod(name), Log::error(
 		T("unable to open performance registry")));
 	    return 1;
 	}
@@ -582,7 +582,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    status = RegQueryValueEx(key, T("First Help"), 0L,
 		&type, (LPBYTE)&help, &size);
 	if (status) {
-	    dloge(Log::mod(name), Log::error(
+	    dlog.err(Log::mod(name), Log::error(
 		T("unable to read performance counters")));
 	    RegCloseKey(key);
 	    return 1;
@@ -785,8 +785,8 @@ void Service::abort_handler(void) {
 	sa.sa_handler = abort_handler;
 	sigaction(SIGALRM, &sa, NULL);
 	alarm(5);
-	dlog << Log::Crit << Log::mod(service->name) << Log::cmd(T("abort")) <<
-	    Log::error(T("timeout")) << endlog;
+	dlog.crit(Log::mod(service->name), Log::cmd(T("abort")),
+	    Log::error(T("timeout")));
 	alarm(0);
     }
     _exit(-2);
@@ -1011,9 +1011,18 @@ int Service::ctrl_handler(void *) {
 	    str = buf;
 	    break;
 	}
+
+	uid_t uid = si.si_uid;
+	pid_t pid = si.si_pid;
+
+	if (pid == watchpid && si.si_code == SI_QUEUE) {
+	    uid = (si.si_value.sival_int >> 16) & 0xffff;
+	    pid = (si.si_value.sival_int & 0xffff);
+	}
 	// ignore signals we sent our own pg
-	if (si.si_pid != getpid() || si.si_code == SI_QUEUE) {
-	    dlogd(Log::mod(service->name), Log::kv(T("sig"), str));
+	if (pid != getpid() || si.si_code == SI_QUEUE) {
+	    dlog.info(Log::mod(service->name), Log::kv(T("sig"), str),
+		Log::kv(T("uid"), uid), Log::kv(T("pid"), pid));
 	    signal_handler(sig, &si, NULL);
 	}
     }
@@ -1039,7 +1048,7 @@ int Service::run(int argc, const tchar * const *argv) {
 	if (fpid > 0) {
 	    ::exit(0);
 	} else if (fpid == -1) {
-	    dloge(Log::mod(argv[0]), Log::cmd(T("fork")),
+	    dlog.err(Log::mod(argv[0]), Log::cmd(T("fork")),
 		Log::error(tstrerror(errno)));
 	    ::exit(1);
 	}
@@ -1106,7 +1115,7 @@ int Service::start(int argc, const tchar * const *argv) {
 	return run(argc, argv);
     } else if (fpid == -1) {
 	errnum = errno;
-	dloge(Log::mod(argv[0]), Log::cmd(T("fork")), Log::error(errstr()));
+	dlog.err(Log::mod(argv[0]), Log::cmd(T("fork")), Log::error(errstr()));
 	return -2;
     }
     ZERO(sa);
@@ -1339,6 +1348,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     if (ret && errnum)
 	tcerr << name << T(": ") << errstr() << endl;
     delete [] av;
+    dlog.destruct();
     return ret;
 }
 
@@ -1391,8 +1401,7 @@ int Service::onStart(int argc, const tchar * const *argv) {
 }
 
 void Service::onTimer(ulong timer) {
-    dlog << Log::Debug << Log::mod(name) << Log::cmd("timer") << Log::kv(T("id"),
-	timer) << endlog;
+    dlog.debug(Log::mod(name), Log::cmd("timer"), Log::kv(T("id"), timer));
 }
 
 const tchar *Service::status(Status s) {
@@ -1439,7 +1448,7 @@ bool Daemon::setids() {
     if (uid != (uid_t)-1) {
 	dlog.setids(uid, gid);
 	if (fchown(lckfd, uid, gid) || setgid(gid) || setuid(uid)) {
-	    dloge(Log::mod(name), Log::error(T("unable to set uid")));
+	    dlog.err(Log::mod(name), Log::error(T("unable to set uid")));
 	    return false;
 	} else {
 	    gid = (gid_t)-1;
@@ -1464,7 +1473,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	lckfd = ::open(tstringtoachar(lckfile), O_CREAT | O_CLOEXEC | O_WRONLY,
 	    S_IREAD | S_IWRITE);
 	if (lckfd == -1 || lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 1)) {
-	    dloge(Log::mod(name), Log::cmd(T("start")), T("sts=running"));
+	    dlog.err(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
+		T("running")));
 	    if (lckfd != -1)
 		::close(lckfd);
 	    lckfd = -1;
@@ -1510,13 +1520,13 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     watch = !console && cfg.get(T("watch.enable"), true);
     dlog.setmp(false);
     if (!cfg.get(T("enable"), true)) {
-	dlogn(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
+	dlog.note(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
 	    T("disabled")));
 	return 4;
     }
     if (sbuf.st_size)
-	dlogw(Log::mod(name), Log::error(T("restarting after abort")));
-    dlogn(Log::mod(name), Log::cmd(T("start")), Log::kv(T("host"),
+	dlog.warn(Log::mod(name), T("restarting after abort"));
+    dlog.note(Log::mod(name), Log::cmd(T("start")), Log::kv(T("host"),
 	Sockaddr::hostname()), Log::kv(T("dir"), installdir.c_str()),
 	Log::kv(T("instance"), instance), Log::kv(T("release"), ver));
 #ifndef _WIN32
@@ -1537,7 +1547,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    uidname = pwd->pw_name;
 	    dlog.setids(uid, gid);
 	    if (fchown(lckfd, uid, gid))
-		dloge(Log::mod(name), T(" unable to chown to uid "), uidname);
+		dlog.err(Log::mod(name), T(" unable to chown to uid "), uidname);
 	} else {
 	    dloge(Log::mod(name), T(" unknown uid "), uidname);
 	}
@@ -1566,9 +1576,11 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	dlog.stop();
 	do {
 	    time(&start);
+	    watchpid = getpid();
 	    child = fork();
 	    if (child == -1) {
-		dloge(Log::mod(name), Log::cmd(T("fork")), Log::error(errstr()));
+		dlog.err(Log::mod(name), Log::cmd(T("fork")),
+		    Log::error(errstr()));
 		sleep(cfg.get(T("watch.interval"), 60U) / 4);
 	    } else if (child) {
 		struct flock fl;
@@ -1584,10 +1596,10 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		sprintf(buf, "%lu\n%lu", (ulong)getpid(), (ulong)child);
 		if (lseek(lckfd, 0, SEEK_SET) || write(lckfd, buf, strlen(
 		    buf)) < 1) {
-		    dlogw(Log::mod(name), Log::cmd(T("watch")),
+		    dlog.warn(Log::mod(name), Log::cmd(T("watch")),
 			Log::kv(T("pid"), child), Log::error(errno));
 		} else {
-		    dlogd(Log::mod(name), Log::cmd(T("watch")),
+		    dlog.debug(Log::mod(name), Log::cmd(T("watch")),
 			Log::kv(T("pid"), child));
 		}
 		(void)lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
@@ -1617,7 +1629,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			ret = WIFEXITED(sts) ? WEXITSTATUS(sts) :
 			    WIFSIGNALED(sts) ? WTERMSIG(sts) : 0;
 			if (!qflag)
-			    dloga(Log::mod(name), Log::cmd(T("watch")),
+			    dlog.alert(Log::mod(name), Log::cmd(T("watch")),
 				Log::kv(T("pid"), child), Log::kv(T("sts"), ret),
 				Log::error(T("unexpected exit")),
 				Log::kv(T("duration"), time(NULL) - start));
@@ -1635,7 +1647,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 				SIGQUIT : SIGINT);
 			alarm(waitlmt);
 			if (waitpid(child, &sts, 0) == -1) {
-			    dlogn(Log::mod(name), Log::cmd(T("watch")),
+			    dlog.note(Log::mod(name), Log::cmd(T("watch")),
 				T("killing hung child"));
 			    if (kill(child * -1, SIGKILL))
 				kill(child, SIGKILL);
@@ -1644,11 +1656,11 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			}
 			alarm(0);
 			if (!qflag) {
-			    dlogw(Log::mod(name), Log::cmd(T("watch")),
+			    dlog.warn(Log::mod(name), Log::cmd(T("watch")),
 				Log::kv(T("pid"), child), Log::kv(T("mem"), kb),
 				Log::kv(T("max"), maxmem), T("restarted"));
 			} else if (!flg) {
-			    dlogn(Log::mod(name), Log::cmd(qflag == Fast ?
+			    dlog.note(Log::mod(name), Log::cmd(qflag == Fast ?
 				T("exit") : T("stop")), Log::kv(T("duration"),
 				time(NULL) - start), Log::kv(T("mem"), kb),
 				Log::kv(T("rss"), psbuf.rss));
@@ -1662,7 +1674,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    } else {
 		(void)lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 0);
 		if (!first) {
-		    dlogn(Log::mod(name), Log::cmd(T("start")),
+		    dlog.note(Log::mod(name), Log::cmd(T("start")),
 			Log::kv(T("host"), Sockaddr::hostname()),
 			Log::kv(T("dir"), installdir.c_str()),
 			Log::kv(T("instance"), instance),
@@ -1706,26 +1718,28 @@ void Daemon::onAbort() {
 	if (execl("/bin/sh", "/bin/sh", "-c", s.c_str(), (char *)0) < 0)
 #endif
 	{   // NOLINT
-	    dloge(Log::mod(name), Log::error(T("restart failed ")));
+	    dlog.err(Log::mod(name), Log::error(T("restart failed ")));
 	    _exit(1);
 	}
     }
     if (console)
-	dloga(Log::mod(name), T("aborting"));
+	dlog.alert(Log::mod(name), T("aborting"));
 }
 
 void Daemon::onPause(void) {
-    dlogn(Log::mod(name), Log::cmd(T("pause")));
+    dlog.note(Log::mod(name), Log::cmd(T("pause")));
 }
 
 void Daemon::onResume(void) {
-    dlogn(Log::mod(name), Log::cmd(T("resume")));
+    dlog.note(Log::mod(name), Log::cmd(T("resume")));
 }
 
 bool Daemon::onRefresh(void) {
+    cfg.lock();
     if (!cfgfile.empty() && !cfg.read(cfgfile.c_str())) {
-	dloga(Log::mod(name), Log::cmd(T("config")), Log::kv(T("file"),
+	dlog.alert(Log::mod(name), Log::cmd(T("config")), Log::kv(T("file"),
 	    cfgfile), Log::error(tstrerror(errno)));
+	cfg.unlock();
 	return false;
     }
     if (cfg.get(T("installdir")).empty())
@@ -1735,6 +1749,7 @@ bool Daemon::onRefresh(void) {
     instance = cfg.get(T("instance"), T("default"));
     if (!cfgfile.empty())
 	dlog.set(cfg);
+    cfg.unlock();
     Service::Timer::dmsec = cfg.get(T("watch.timeout"), Timer::dmsec / 1000) *
 	1000;
     if (!child && refreshed)
@@ -1745,12 +1760,12 @@ bool Daemon::onRefresh(void) {
 }
 
 void Daemon::onStop(bool fast) {
-    dlogi(Log::mod(name), Log::cmd(fast ? T("exit") : T("stop")));
+    dlog.info(Log::mod(name), Log::cmd(fast ? T("exit") : T("stop")));
     qflag = fast ? Fast : Slow;
 }
 
 void Daemon::onSigusr1(void) {
-    dlogn(Log::mod(name), Log::cmd(T("rollover")));
+    dlog.note(Log::mod(name), Log::cmd(T("rollover")));
     dlog.roll();
 }
 
