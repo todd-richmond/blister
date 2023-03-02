@@ -158,30 +158,28 @@ if(CHECK_CLANG_TIDY)
     if(PROGRAM_CLANG_TIDY)
 	execute_process(COMMAND bash -c "dirname $(dirname $(dirname $(clang -print-resource-dir)))" OUTPUT_VARIABLE CLANG_DIR OUTPUT_STRIP_TRAILING_WHITESPACE)
 	if(APPLE)
-            file(GLOB CLANG_C_INC
-                /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/include)
-	    list(APPEND CLANG_C_INC
-                --extra-arg=-isystem --extra-arg=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Kernel.framework/Versions/Current/Headers)
-            file(GLOB CLANG_CXX_INC ${CLANG_DIR}/include/c++/*)
-            file(GLOB CLANG_SYS_INC ${CLANG_DIR}/include/x86_64-*/c++/*)
-        else()
-            file(GLOB CLANG_C_INC ${CLANG_DIR}/lib64/clang/*/include)
-            file(GLOB CLANG_CXX_INC ${CLANG_DIR}/include/c++/*)
-            file(GLOB CLANG_SYS_INC ${CLANG_DIR}/include/x86_64-*/c++/*)
+	    execute_process(COMMAND bash -c "dirname $(dirname $(dirname ${CLANG_DIR}))" OUTPUT_VARIABLE osxdir OUTPUT_STRIP_TRAILING_WHITESPACE)
+	    set(osxdir "${osxdir}/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk")
+	    set(CLANG_C_INC ${osxdir}/usr/include)
+	    set(CLANG_SYS_INC ${osxdir}/System/Library/Frameworks/Kernel.framework/Versions/Current/Headers)
+	else()
+	    file(GLOB CLANG_C_INC ${CLANG_DIR}/lib*/clang/*/include)
+	    file(GLOB CLANG_SYS_INC ${CLANG_DIR}/include/x86_64-*/c++/*)
 	endif()
-        set(CMAKE_C_CLANG_TIDY ${PROGRAM_CLANG_TIDY} --quiet
-            --extra-arg=-isystem --extra-arg=${CLANG_C_INC}
-            --extra-arg=-isystem --extra-arg=${CLANG_SYS_INC})
-        set(CMAKE_CXX_CLANG_TIDY ${PROGRAM_CLANG_TIDY} --quiet
-            --extra-arg=-isystem --extra-arg=${CLANG_CXX_INC}
-            --extra-arg=-isystem --extra-arg=${CLANG_C_INC}
-            --extra-arg=-isystem --extra-arg=${CLANG_SYS_INC}
-            --extra-arg=-std=c++${CMAKE_CXX_STANDARD})
-        set(CMAKE_DISABLE_PRECOMPILE_HEADERS TRUE)
-        set(CMAKE_C_FLAGS "-Wno-pragmas")
-        set(CMAKE_C_COMPILE_OPTIONS_IPO)
-        set(CMAKE_CXX_FLAGS "-Wno-deprecated -Wno-pragmas")
-        set(CMAKE_CXX_COMPILE_OPTIONS_IPO)
+	file(GLOB CLANG_CXX_INC ${CLANG_DIR}/include/c++/*)
+	set(CMAKE_C_CLANG_TIDY ${PROGRAM_CLANG_TIDY} --quiet
+	    --extra-arg=-isystem --extra-arg=${CLANG_C_INC}
+	    --extra-arg=-isystem --extra-arg=${CLANG_SYS_INC})
+	set(CMAKE_CXX_CLANG_TIDY ${PROGRAM_CLANG_TIDY} --quiet
+	    --extra-arg=-isystem --extra-arg=${CLANG_CXX_INC}
+	    --extra-arg=-isystem --extra-arg=${CLANG_C_INC}
+	    --extra-arg=-isystem --extra-arg=${CLANG_SYS_INC}
+	    --extra-arg=-std=c++${CMAKE_CXX_STANDARD})
+	set(CMAKE_DISABLE_PRECOMPILE_HEADERS TRUE)
+	set(CMAKE_C_FLAGS "-Wno-pragmas")
+	set(CMAKE_C_COMPILE_OPTIONS_IPO)
+	set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated")
+	set(CMAKE_CXX_COMPILE_OPTIONS_IPO)
     else()
 	message(AUTHOR_WARNING "clang-tidy not available")
     endif()
