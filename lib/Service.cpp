@@ -1016,8 +1016,8 @@ int Service::ctrl_handler(void *) {
 	pid_t pid = si.si_pid;
 
 	if (pid == watchpid && si.si_code == SI_QUEUE) {
-	    uid = (si.si_value.sival_int >> 16) & 0xffff;
-	    pid = (si.si_value.sival_int & 0xffff);
+	    uid = (uid_t)(si.si_value.sival_int >> 16) & 0xffff;
+	    pid = (pid_t)(si.si_value.sival_int & 0xffff);
 	}
 	// ignore signals we sent our own pg
 	if (pid != getpid() || si.si_code == SI_QUEUE) {

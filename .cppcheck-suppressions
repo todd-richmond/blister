@@ -12,4 +12,5 @@ uninitMemberVar
 unmatchedSuppression
 unknownMacro
 unreadVariable
+useStlAlgorithm
 variableScope
