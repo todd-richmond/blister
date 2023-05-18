@@ -1050,7 +1050,7 @@ int Service::run(int argc, const tchar * const *argv) {
 	} else if (fpid == -1) {
 	    dlog.err(Log::mod(argv[0]), Log::cmd(T("fork")),
 		Log::error(tstrerror(errno)));
-	    ::exit(1);
+	    return 4;
 	}
 	if ((fd = ::open(T("/dev/null"), O_RDONLY)) != -1) {
 	    dup2(fd, 0);
@@ -1103,20 +1103,20 @@ bool Service::uninstall() {
 int Service::start(int argc, const tchar * const *argv) {
     pid_t fpid;
     uint loop = 5;
-    int ret = -4;
+    int ret = 5;
     struct sigaction sa;
     Status sts;
 
     while (loop-- && (sts = status()) == Stopping)
 	sleep(1);
     if (sts != Error && sts != Stopped)
-	return -1;
+	return 2;
     if (console || (fpid = fork()) == 0) {
 	return run(argc, argv);
     } else if (fpid == -1) {
 	errnum = errno;
 	dlog.err(Log::mod(argv[0]), Log::cmd(T("fork")), Log::error(errstr()));
-	return -2;
+	return 3;
     }
     ZERO(sa);
     sa.sa_handler = null_handler;
@@ -1129,7 +1129,7 @@ int Service::start(int argc, const tchar * const *argv) {
 	alarm(1);
 	if (waitpid(pid, &ret, 0) > 0) {
 	    ret = WIFEXITED(ret) ? WEXITSTATUS(ret) : WIFSIGNALED(ret) ?
-		WTERMSIG(ret) : -3;
+		WTERMSIG(ret) : 3;
 	    break;
 	}
     }
@@ -1242,28 +1242,28 @@ int Service::execute(int argc, const tchar * const *argv) {
 	    if (i == argc - 1) {
 		dlog.err(T("install directory required"));
 		delete [] av;
-		return -1;
+		return 1;
 	    }
 	    installdir = argv[++i];
 	} else if (tstreq(cmd, T("lockfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("lock filename required"));
 		delete [] av;
-		return -1;
+		return 1;
 	    }
 	    lckfile = argv[++i];
 	} else if (tstreq(cmd, T("logfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("log filename required"));
 		delete [] av;
-		return -1;
+		return 1;
 	    }
 	    logfile = argv[++i];
 	} else if (tstreq(cmd, T("outfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("output filename required"));
 		delete [] av;
-		return -1;
+		return 1;
 	    }
 	    outfile = argv[++i];
 	} else {
