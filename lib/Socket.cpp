@@ -496,8 +496,11 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
 	SocketSet sset(1), oset(1), eset(1);
 
 	sset.set(sbuf->sock);
-	ret = sset.opoll(oset, eset, msec) && oset.get(sbuf->sock) &&
-	    check(getsockopt(SOL_SOCKET, SO_ERROR, err)) && !(sbuf->err = err);
+	ret = sset.opoll(oset, eset, msec) && oset.get(sbuf->sock);
+	if (ret && check(getsockopt(SOL_SOCKET, SO_ERROR, err))) {
+	    sbuf->err = err;
+	    ret = !err;
+	}
     }
     if (msec != SOCK_INFINITE) {
 	int e = sbuf->err;
