@@ -109,9 +109,10 @@ protected:
     static bool exiting;
     static bool restart;
     static Service *service;
-    static volatile pid_t sigpid, watchpid;
+    static volatile pid_t sigpid;
     static tstring srvcpath;
     static tstring ver;
+    static volatile pid_t watchpid;
 
     void *open(uint mapsz);
     void exit(int code);

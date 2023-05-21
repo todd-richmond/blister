@@ -341,8 +341,22 @@ public:
 
     __forceinline C &operator *(void) const { return get(); }
     __forceinline C *operator ->(void) const { return &get(); }
-    void erase(void);
-    C &get(void) const;
+    void erase(void) {
+	C *c = (C *)tls_get(key);
+
+	tls_set(key, 0);
+	Thread::thread_cleanup(c, NULL);
+    }
+    C &get(void) const {
+	C *c = (C *)tls_get(key);
+
+	if (UNLIKELY(!c)) {
+	    c = new C;
+	    tls_set(key, c);
+	    Thread::thread_cleanup(c, cleanup);
+	}
+	return *c;
+    }
     __forceinline void set(C *c) const { tls_set(key, c); }
 
 protected:
@@ -1465,26 +1479,6 @@ private:
     static int init(void *thisp);
     friend class Thread;
 };
-
-template<class C>
-void ThreadLocalClass<C>::erase(void) {
-    C *c = (C *)tls_get(key);
-
-    tls_set(key, 0);
-    Thread::thread_cleanup(c, NULL);
-}
-
-template<class C>
-C &ThreadLocalClass<C>::get(void) const {
-    C *c = (C *)tls_get(key);
-
-    if (UNLIKELY(!c)) {
-	c = new C;
-	tls_set(key, c);
-	Thread::thread_cleanup(c, cleanup);
-    }
-    return *c;
-}
 
 #endif
 #endif // Thread_h

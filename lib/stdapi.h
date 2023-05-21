@@ -1246,13 +1246,13 @@ private:
 template <class C>
 class BLISTER ObjectList: nocopy {
 public:
-    struct Node: nocopy {
+    struct BLISTER Node: nocopy {
 	__forceinline Node(): next(NULL) {}
 
 	C *next;
     };
 
-    class const_iterator {
+    class BLISTER const_iterator {
     public:
 	__forceinline const_iterator(const C *c): cur(c) {}
 	__forceinline const_iterator(const const_iterator &it): cur(it.cur) {}
@@ -1387,7 +1387,7 @@ private:
 };
 
 template <class C>
-struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C> >::Node {
+struct ObjectListNode: ObjectList<ObjectListNode<C> >::Node {
     __forceinline ObjectListNode(const C &c): val(c) {}
 
     C val;
