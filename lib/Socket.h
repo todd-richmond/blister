@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2022 Todd Richmond
+ * Copyright 2001-2023 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
@@ -153,7 +153,9 @@ public:
     bool ipv4(void) const { return family() == AF_INET; }
     bool ipv6(void) const { return family() == AF_INET6; }
     bool localhost(void) const {
-	return ip() == "127.0.0.1" || ip() == "::1" || proto() ==
+	tstring ip(ip());
+
+	return ip == T("127.0.0.1") || ip == T("::1") || proto() ==
 	    Sockaddr::UNIX;
     }
 #ifndef _WIN32
