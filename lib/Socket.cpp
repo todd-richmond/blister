@@ -602,6 +602,7 @@ bool Socket::cork(bool on) {
 #ifdef CORK_VAL
     return setsockopt(IPPROTO_TCP, CORK_VAL, on) != 0;
 #else
+    (void)on;
     return true;
 #endif
 }
@@ -631,6 +632,7 @@ bool Socket::loopback(bool on) {
 #ifdef SO_USELOOPBACK
     return setsockopt(IPPROTO_TCP, SO_USELOOPBACK, on) != 0;
 #else
+    (void)on;
     return true;
 #endif
 }
