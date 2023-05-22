@@ -353,7 +353,11 @@ public:
 
 	return setsockopt(lvl, opt, i);
     }
-    bool nodelay(void) const { return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0; }
+    bool loopback(void) const;
+    bool loopback(bool on);
+    bool nodelay(void) const {
+	return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0;
+    }
     bool nodelay(bool on) { return setsockopt(IPPROTO_TCP, TCP_NODELAY, on); }
     bool reuseaddr(void) const { return getsockopt(SOL_SOCKET, SO_REUSEADDR) != 0; }
     bool reuseaddr(bool on) { return setsockopt(SOL_SOCKET, SO_REUSEADDR, on); }

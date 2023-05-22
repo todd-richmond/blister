@@ -619,6 +619,22 @@ bool Socket::linger(ushort sec) {
     return setsockopt(SOL_SOCKET, SO_LINGER, lg);
 }
 
+bool Socket::loopback(void) const {
+#ifdef SO_USELOOPBACK
+    return getsockopt(IPPROTO_TCP, SO_USELOOPBACK) != 0;
+#else
+    return true;
+#endif
+}
+
+bool Socket::loopback(bool on) {
+#ifdef SO_USELOOPBACK
+    return setsockopt(IPPROTO_TCP, SO_USELOOPBACK, on) != 0;
+#else
+    return true;
+#endif
+}
+
 bool Socket::peername(Sockaddr &sa) {
     socklen_t sz = sa.size();
 

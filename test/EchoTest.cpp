@@ -69,6 +69,7 @@ public:
 
 	virtual void start(void) {
 	    cork(false);
+	    loopback(true);
 	    nodelay(true);
 	    readable(input, tmt);
 	}
@@ -123,6 +124,7 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 	}
     } else {
 	cork(false);
+	loopback(true);
 	nodelay(true);
 	begin = Timing::now();
 	ready(output);
