@@ -83,7 +83,7 @@ endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_COMPILER_IS_CLANG)
     if(NOT SANITIZE_FLAGS)
-	set(SANITIZE_FLAGS "-D_FORTIFY_SOURCE=3")
+	set(SANITIZE_FLAGS "-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3")
     endif()
     set(COMMON_C_FLAGS "${SANITIZE_FLAGS} -ffast-math -march=native -pipe -Wall -Wconversion -Werror -Wextra -Wformat=2 -Wno-format-nonliteral -Wformat-security -Wno-format-y2k -Wmultichar -Wno-pragmas -Wredundant-decls -Wsign-conversion -Wstrict-aliasing -Wstrict-overflow=2 -Wno-unknown-pragmas -Wwrite-strings")
     set(COMMON_CXX_FLAGS "-fno-exceptions -fno-rtti -Wno-deprecated -Wnon-virtual-dtor -Woverloaded-virtual -Wsign-promo")
