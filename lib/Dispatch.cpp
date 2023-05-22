@@ -214,10 +214,7 @@ int Dispatcher::worker(void *param) {
 #ifdef DSP_WIN32_ASYNC
 
 int Dispatcher::onStart() {
-    DispatchSocket *ds = NULL;
-    DispatchTimer *dt = NULL;
     MSG msg;
-    msec_t now;
 
     if ((wnd = CreateWindow(DispatchClass, T("Dispatch Window"), 0, 0, 0,
 	CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, GetModuleHandle(NULL), 0)) == NULL) {
@@ -241,7 +238,8 @@ int Dispatcher::onStart() {
 
 	    lock.lock();
 	    if ((it = smap.find(msg.wParam)) != smap.end()) {
-		ds = static_cast<DispatchSocket *>(it->second);
+		DispatchSocket *ds = it->second;
+
 		if (ds->flags & DSP_Scheduled) {
 		    // uint err = WSAGETSELECTERROR(msg.lParam);
 		    if (evt & FD_READ)
@@ -275,6 +273,9 @@ int Dispatcher::onStart() {
 		removeTimer(*ds);
 	    }
 	} else if (msg.message == WM_TIMER) {
+	    DispatchTimer *dt;
+	    msec_t now;
+
 	    now = mticks();
 	    lock.lock();
 	    while ((dt = timers.get(now)) != NULL) {
@@ -739,8 +740,10 @@ void Dispatcher::wake(uint tasks) {
     uint woke = 0;
 
     if (!maxthreads) {
+#ifndef DSP_WIN32_ASYNC
 	if (polling)
 	    wakeup(0);
+#endif
 	return;
     }
     while (tasks && rlist && !shutdown) {
@@ -994,9 +997,6 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	due = tmt;
 	resched = true;
     }
-    if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll)))
-	cout << "tfr opt " << endl;
-    /*
     if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll))) {
 	if (UNLIKELY(resched))
 	    wakeup((ulong)(due - now));
@@ -1004,7 +1004,6 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	    lock.unlock();
 	return;
     }
-    */
     if (UNLIKELY(!ds.mapped)) {
 #ifdef DSP_EPOLL
 	op = EPOLL_CTL_ADD;
