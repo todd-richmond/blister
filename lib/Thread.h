@@ -329,42 +329,6 @@ protected:
     tlskey_t key;
 };
 
-/* Thread local storage for classes with proper destruction when theads exit */
-typedef void (*ThreadLocalFree)(void *data);
-
-template<class C>
-class BLISTER ThreadLocalClass: nocopy {
-public:
-    // cppcheck-suppress useInitializationList
-    ThreadLocalClass() { tls_init(key); }
-    ~ThreadLocalClass() { tls_free(key); }
-
-    __forceinline C &operator *(void) const { return get(); }
-    __forceinline C *operator ->(void) const { return &get(); }
-    void erase(void) {
-	C *c = (C *)tls_get(key);
-
-	tls_set(key, 0);
-	Thread::thread_cleanup(c, NULL);
-    }
-    C &get(void) const {
-	C *c = (C *)tls_get(key);
-
-	if (UNLIKELY(!c)) {
-	    c = new C;
-	    tls_set(key, c);
-	    Thread::thread_cleanup(c, cleanup);
-	}
-	return *c;
-    }
-    __forceinline void set(C *c) const { tls_set(key, c); }
-
-protected:
-    tlskey_t key;
-
-    static void cleanup(void *data) { delete (C *)data; }
-};
-
 /*
  * Thread synchronization classes
  * Condvar: condition variable around a Lock
@@ -1357,6 +1321,7 @@ private:
 };
 
 // Thread routines
+typedef void (*ThreadLocalFree)(void *data);
 typedef int (*ThreadRoutine)(void *userdata);
 typedef bool (Thread::*ThreadControlRoutine)(void);
 
@@ -1478,6 +1443,40 @@ private:
 
     static int init(void *thisp);
     friend class Thread;
+};
+
+/* Thread local storage for classes with proper destruction when theads exit */
+template<class C>
+class BLISTER ThreadLocalClass: nocopy {
+public:
+    // cppcheck-suppress useInitializationList
+    ThreadLocalClass() { tls_init(key); }
+    ~ThreadLocalClass() { tls_free(key); }
+
+    __forceinline C &operator *(void) const { return get(); }
+    __forceinline C *operator ->(void) const { return &get(); }
+    void erase(void) {
+	C *c = (C *)tls_get(key);
+
+	tls_set(key, 0);
+	Thread::thread_cleanup(c, NULL);
+    }
+    C &get(void) const {
+	C *c = (C *)tls_get(key);
+
+	if (UNLIKELY(!c)) {
+	    c = new C;
+	    tls_set(key, c);
+	    Thread::thread_cleanup(c, cleanup);
+	}
+	return *c;
+    }
+    __forceinline void set(C *c) const { tls_set(key, c); }
+
+protected:
+    tlskey_t key;
+
+    static void cleanup(void *data) { delete (C *)data; }
 };
 
 #endif

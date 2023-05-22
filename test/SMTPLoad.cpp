@@ -575,7 +575,7 @@ void SMTPLoad::print(tostream &os, usec_t last) {
     vector<LoadCmd *>::const_iterator it;
     ulong lusec = (ulong)(uticks() - last);
     ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
-    ulong ops = 0, tops = 0, err = 0, terr = 0, calls = 0;
+    ulong ops = 0, tops = 0, err = 0, terr = 0;
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
@@ -583,7 +583,6 @@ void SMTPLoad::print(tostream &os, usec_t last) {
 	cmd = *it;
 	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
 	    continue;
-	calls++;
 	ops += cmd->count;
 	tops += cmd->tcount;
 	err += cmd->err;

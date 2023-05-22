@@ -1194,7 +1194,7 @@ struct striless {
 
 // compile time string hashing
 #define STRING_HASH_PRE(i, d)	((
-#define STRING_HASH_POST(i, d)	* 101U) + (size_t)s[i])
+#define STRING_HASH_POST(i, d)	* 101UL) + (size_t)s[i])
 #define STRING_HASH(i) __forceinline StringHash(const tchar (&s)[i]): \
     hash(STDAPI_REPEAT(i, STRING_HASH_PRE, ~) 0 STDAPI_REPEAT(i, \
 	STRING_HASH_POST, ~)) {}

@@ -153,9 +153,9 @@ public:
     bool ipv4(void) const { return family() == AF_INET; }
     bool ipv6(void) const { return family() == AF_INET6; }
     bool localhost(void) const {
-	tstring ip(ip());
+	tstring s(ip());
 
-	return ip == T("127.0.0.1") || ip == T("::1") || proto() ==
+	return s == T("127.0.0.1") || s == T("::1") || proto() ==
 	    Sockaddr::UNIX;
     }
 #ifndef _WIN32
