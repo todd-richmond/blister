@@ -48,30 +48,19 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 	lck.wlock();
 	if ((it = tmap.find(key.hash())) == tmap.end()) {
 	    tmap[key] = stats;
-#if CPLUSPLUS >= 11
 	    lck.downlock();
-#endif
 	} else {
-#if CPLUSPLUS >= 11
 	    lck.downlock();
-#endif
 	    delete stats;
 	    stats = it->second;
 	}
     } else {
 	stats = it->second;
-#if CPLUSPLUS < 11
-	lck.uplock();
-#endif
     }
     ++stats->cnt;
     ++stats->cnts[slot];
     stats->tot += diff;
-#if CPLUSPLUS < 11
-    lck.wunlock();
-#else
     lck.runlock();
-#endif
 }
 
 void Timing::clear() {

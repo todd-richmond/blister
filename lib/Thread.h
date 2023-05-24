@@ -25,12 +25,12 @@
 typedef HANDLE thread_hdl_t;
 typedef DWORD thread_id_t;
 
+#define THREAD_BARRIER()	_ReadWriteBarrier()
 #define THREAD_EQUAL(x, y)	((x) == (y))
 #define THREAD_FENCE()		MemoryBarrier()
 #define THREAD_FUNC		uint __stdcall
 #define THREAD_HDL()		GetCurrentThread()
 #define THREAD_ID()		GetCurrentThreadId()
-#define THREAD_BARRIER()	_ReadWriteBarrier()
 #define THREAD_PAUSE()		YieldProcessor()
 #define THREAD_YIELD()		if (!SwitchToThread()) Sleep(0)
 
@@ -82,77 +82,16 @@ typedef pthread_t thread_id_t;
 #endif
 
 #define INFINITE		(ulong)-1
-#define THREAD_FUNC		void *
-#define THREAD_HDL()		pthread_self()
-#if CPLUSPLUS >= 11
 #define THREAD_BARRIER()	atomic_signal_fence(memory_order_acquire);
 #define THREAD_FENCE()		atomic_thread_fence(memory_order_relaxed);
+#define THREAD_FUNC		void *
+#define THREAD_HDL()		pthread_self()
 #if defined(__i386__) || defined(__x86_64__)
 #define THREAD_PAUSE()  	__builtin_ia32_pause()
-#endif
-#elif defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
-#define THREAD_BARRIER()	asm volatile("" ::: "memory")
-#define THREAD_FENCE()		asm volatile("mfence" ::: "memory")
-#if __GNUC_MAJOR__ < 5
-#define THREAD_PAUSE()		asm volatile("pause" ::: "memory")
-#else
-#define THREAD_PAUSE()  	__builtin_ia32_pause()
-#endif
 #endif
 #define THREAD_YIELD()		sched_yield()
 
 #ifdef __GNUC__
-
-#if defined(__arm__) && (__GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 4))
-
-#define NO_ATOMIC_ADD
-#define NO_ATOMIC_LOCK
-
-#elif __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 1)
-
-#if __GNUC__ < 4
-#include <bits/atomicity.h>
-#else
-#include <ext/atomicity.h>
-#endif
-
-typedef volatile _Atomic_word atomic_t;
-
-#define __sync_fetch_and_add	__exchange_and_add
-
-#define atomic_reference(i)	(__sync_fetch_and_add(&i, 1) + 1)
-#define atomic_release(i)	(__sync_fetch_and_add(&i, -1) - 1)
-
-#if (defined(__i386__) || defined(__x86_64__)) && defined(__GNUC__)
-
-inline void atomic_clr(atomic_t &lck) {
-    atomic_t r;
-
-    asm volatile(
-	"xchgl %0, %1"
-	: "=r" (r), "=m" (lck)
-	: "0" (0), "m" (lck)
-	: "memory");
-}
-
-inline atomic_t atomic_lck(atomic_t &lck) {
-    atomic_t r;
-
-    asm volatile(
-	"xchgl %0, %1"
-	: "=r" (r), "=m" (lck)
-	: "0" (1), "m" (lck)
-	: "memory");
-    return r;
-}
-
-#else
-
-#define NO_ATOMIC_LOCK
-
-#endif
-
-#else
 
 typedef volatile int atomic_t;
 
@@ -173,13 +112,6 @@ typedef volatile int atomic_t;
 
 #endif
 
-#else
-
-#define NO_ATOMIC_ADD
-#define NO_ATOMIC_LOCK
-
-#endif
-
 typedef pthread_key_t tlskey_t;
 
 #define tls_init(k)		ZERO(k); pthread_key_create(&k, NULL)
@@ -195,13 +127,9 @@ typedef pthread_key_t tlskey_t;
 
 #ifdef __cplusplus
 
-#if CPLUSPLUS >= 11
 #include <atomic>
-#else
-typedef volatile atomic_t atomic_flag;
-#endif
 #include <set>
-#include STL_UNORDERED_MAP_H
+#include <unordered_map>
 
 class Thread;
 class ThreadGroup;
@@ -1141,87 +1069,6 @@ public:
 
 private:
     mutable atomic_t cnt;
-};
-#endif
-
-/* Thread safe # template */
-#if CPLUSPLUS >= 11
-#define TSNumber atomic
-#else
-template<class C>
-class TSNumber: nocopy {
-public:
-    explicit TSNumber(C init = 0): c(init) {}
-    TSNumber(const TSNumber<C> &init): c(init) {}
-
-    operator C() const { TSLocker lkr(lck); return c; }
-    template<class N> bool operator ==(N n) const { TSLocker lkr(lck); return c == n; }
-    template<class N> bool operator !=(N n) const { TSLocker lkr(lck); return c != n; }
-    TSNumber<C> &operator ++(void) { TSLocker lkr(lck); ++c; return *this; }
-    C operator ++(int) { TSLocker lkr(lck); return c++; }
-    TSNumber<C> &operator --(void) { TSLocker lkr(lck); --c; return *this; }
-    C operator --(int) { TSLocker lkr(lck); return c--; }
-    template<class N> TSNumber<C> &operator =(const N &n) {
-	TSLocker lkr(lck); c = (C)n; return *this;
-    }
-    TSNumber<C> &operator =(const TSNumber<C> &n) { return operator =((C)n); }
-    template<class N> C operator +=(N n) { TSLocker lkr(lck); return c += (C)n; }
-    template<class N> C operator -=(N n) { TSLocker lkr(lck); return c -= (C)n; }
-    template<class N> C operator *=(N n) { TSLocker lkr(lck); return c *= (C)n; }
-    template<class N> C operator /=(N n) { TSLocker lkr(lck); return c /= (C)n; }
-    template<class N> C operator &=(N n) { TSLocker lkr(lck); return c &= (C)n; }
-    template<class N> C operator |=(N n) { TSLocker lkr(lck); return c |= (C)n; }
-    template<class N> C operator %=(N n) { TSLocker lkr(lck); return c %= (C)n; }
-    template<class N> C operator ^=(N n) { TSLocker lkr(lck); return c ^= (C)n; }
-    template<class N> C operator >>=(N n) { TSLocker lkr(lck); return c >>= n; }
-    template<class N> C operator <<=(N n) { TSLocker lkr(lck); return c <<= n; }
-
-    C load(void) const { TSLocker lkr(lck); return c; }
-    template<class N> C store(N n) { TSLocker lkr(lck); return c = (C)n; }
-    template<class N> C fetch_add(N n) {
-	TSLocker lkr(lck);
-	C ret = c;
-
-	c += (C)(n);
-	return ret;
-    }
-    template<class N> C fetch_and(N n) {
-	TSLocker lkr(lck);
-	C ret = c;
-
-	c &= (C)(n);
-	return ret;
-    }
-    template<class N> C fetch_or(N n) {
-	TSLocker lkr(lck);
-	C ret = c;
-
-	c |= (C)(n);
-	return ret;
-    }
-    template<class N> C fetch_sub(N n) {
-	TSLocker lkr(lck);
-	C ret = c;
-
-	c -= (C)(n);
-	return ret;
-    }
-    template<class N> C fetch_xor(N n) {
-	TSLocker lkr(lck);
-	C ret = c;
-
-	c ^= (C)(n);
-	return ret;
-    }
-    void lock(void) { lck.lock(); }
-    void unlock(void) { lck.unlock(); }
-
-protected:
-    volatile C c;
-    mutable SpinLock lck;
-    typedef FastSpinLocker TSLocker;
-
-    C *operator &();	// NOLINT
 };
 #endif
 

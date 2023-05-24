@@ -29,7 +29,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <fstream>
-#include STL_UNORDERED_MAP_H
+#include <unordered_map>
 #include "HTTPClient.h"
 #include "Log.h"
 
@@ -108,7 +108,7 @@ private:
     static int filecnt;
     static uint nextfile;
     static uint startfile;
-    static TSNumber<ulong> usec, tusec,	count, tcount;
+    static atomic<ulong> usec, tusec,	count, tcount;
     static vector<LoadCmd *> cmds;
 
     int onStart(void);
@@ -140,8 +140,8 @@ bool HTTPLoad::allfiles;
 int HTTPLoad::filecnt;
 uint HTTPLoad::nextfile;
 uint HTTPLoad::startfile;
-TSNumber<ulong> HTTPLoad::usec, HTTPLoad::tusec;
-TSNumber<ulong> HTTPLoad::count, HTTPLoad::tcount;
+atomic<ulong> HTTPLoad::usec, HTTPLoad::tusec;
+atomic<ulong> HTTPLoad::count, HTTPLoad::tcount;
 vector<HTTPLoad::LoadCmd *> HTTPLoad::cmds;
 
 bool HTTPLoad::expand(tchar *str, const attrmap &amap) {

@@ -19,8 +19,8 @@
 #define Dispatch_h
 
 #include <set>
-#include STL_UNORDERED_MAP_H
-#include STL_UNORDERED_SET_H
+#include <unordered_map>
+#include <unordered_set>
 #include "Config.h"
 #include "Log.h"
 #include "Socket.h"
@@ -109,9 +109,7 @@ public:
     static const ulong DSP_PREVIOUS = (ulong)-2;
     static const msec_t DSP_NEVER_DUE = (msec_t)-1;
 
-#if CPLUSPLUS >= 11
     DispatchTimer(const DispatchTimer &dt): DispatchTimer((DispatchObj &)dt) {}
-#endif
     explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
 	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
@@ -280,9 +278,9 @@ private:
 	    unsorted_timerset;
 
 	TimerSet(): split(0) {}
-	TimerSet(const TimerSet &) CPP_DELETE;
+	TimerSet(const TimerSet &) = delete;
 
-	TimerSet & operator =(const TimerSet &) CPP_DELETE;
+	TimerSet & operator =(const TimerSet &) = delete;
 
 	bool empty(void) const { return unsorted.empty() && sorted.empty(); }
 	msec_t half(void) const { return split; }

@@ -18,7 +18,7 @@
 #ifndef Config_h
 #define Config_h
 
-#include STL_UNORDERED_MAP_H
+#include <unordered_map>
 #include "Thread.h"
 
 /*

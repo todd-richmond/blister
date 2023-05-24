@@ -19,7 +19,7 @@
 #define Timing_h
 
 #include <vector>
-#include STL_UNORDERED_MAP_H
+#include <unordered_map>
 #include "Thread.h"
 
 /*
@@ -152,17 +152,10 @@ private:
 	}
 	~Stats() { free((char *)key); }
 
-#if CPLUSPLUS >= 11
-	TSNumber<ulong> cnt;
-	TSNumber<ulong> cnts[TIMINGSLOTS];
+	atomic<ulong> cnt;
+	atomic<ulong> cnts[TIMINGSLOTS];
 	const tchar *key;
-	TSNumber<timing_t> tot;
-#else
-	ulong cnt;
-	ulong cnts[TIMINGSLOTS];
-	const tchar *key;
-	timing_t tot;
-#endif
+	atomic<timing_t> tot;
     };
 
     struct BLISTER Tlsdata {

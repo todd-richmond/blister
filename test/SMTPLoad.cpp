@@ -29,7 +29,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <fstream>
-#include STL_UNORDERED_MAP_H
+#include <unordered_map>
 #include "Log.h"
 #include "SMTPClient.h"
 
@@ -110,7 +110,7 @@ private:
     static int filecnt;
     static uint nextfile;
     static uint startfile;
-    static TSNumber<ulong> usec, tusec, count, tcount;
+    static atomic<ulong> usec, tusec, count, tcount;
     static vector<LoadCmd *> cmds;
 
     int onStart(void);
@@ -141,8 +141,8 @@ bool SMTPLoad::allfiles;
 int SMTPLoad::filecnt;
 uint SMTPLoad::nextfile;
 uint SMTPLoad::startfile = 0;
-TSNumber<ulong> SMTPLoad::usec, SMTPLoad::tusec;
-TSNumber<ulong> SMTPLoad::count, SMTPLoad::tcount;
+atomic<ulong> SMTPLoad::usec, SMTPLoad::tusec;
+atomic<ulong> SMTPLoad::count, SMTPLoad::tcount;
 vector<SMTPLoad::LoadCmd *> SMTPLoad::cmds;
 
 bool SMTPLoad::expand(tchar *str, const attrmap &amap) {

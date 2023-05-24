@@ -73,9 +73,7 @@
 				WARN_DISABLE(w)
 
 #ifdef __cplusplus
-#if __cplusplus <= 199711L && !defined(__clang__) && !defined(_MSC_VER)
-#define CPLUSPLUS	8
-#elif __cplusplus <= 201103L
+#if __cplusplus <= 201103L
 #define CPLUSPLUS	11
 #elif __cplusplus <= 201402L
 #define CPLUSPLUS	14
@@ -914,46 +912,6 @@ EXTERNC_
 #include <string>
 
 using namespace std;
-#if _MSC_VER >= 1500 && _MSC_VER < 1600
-using namespace stdext;
-#endif
-
-#if CPLUSPLUS < 11
-#define CPP_DEFAULT		{}  // NOLINT
-#define CPP_DELETE
-#ifndef nullptr
-#define nullptr			NULL
-#endif
-#else
-#define CPP_DEFAULT		= default
-#define CPP_DELETE		= delete
-#endif
-
-// cross-compiler support for unordered maps and sets
-#if CPLUSPLUS < 11 && defined(__GNUC__) && (!defined(__clang_major__) || \
-    __clang_major__ < 5)
-#if GNUC_VERSION < 40300
-#define STL_UNORDERED_MAP_H	<ext/hash_map>
-#define STL_UNORDERED_SET_H	<ext/hash_set>
-#define unordered_map		hash_map
-#define unordered_multimap	hash_multimap
-#define unordered_set		hash_set
-#define unordered_multiset	hash_multiset
-
-using namespace __gnu_cxx;
-#else
-#define STL_UNORDERED_MAP_H	<tr1/unordered_map>
-#define STL_UNORDERED_SET_H	<tr1/unordered_set>
-
-namespace std { namespace tr1 {} }
-using namespace std::tr1;
-#endif
-
-#else
-
-#define STL_UNORDERED_MAP_H	<unordered_map>
-#define STL_UNORDERED_SET_H	<unordered_set>
-#endif
 
 // narrow / wide string routines
 extern BLISTER const wstring _achartowstring(const char *s, size_t len);
@@ -1235,11 +1193,11 @@ private:
 // prohibit object copies by subclassing this
 class BLISTER nocopy {
 protected:
-    __forceinline nocopy() CPP_DEFAULT;
+    __forceinline nocopy() = default;
 
 private:
-    nocopy(const nocopy &) CPP_DELETE;
-    const nocopy & operator =(const nocopy &) CPP_DELETE;
+    nocopy(const nocopy &) = delete;
+    const nocopy & operator =(const nocopy &) = delete;
 };
 
 // fast single linked object list

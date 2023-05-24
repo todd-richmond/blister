@@ -266,7 +266,7 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
 }
 
 bool SMTPClient::data(bool m, const tchar *txt) {
-    static TSNumber<uint64_t> nextmid(((uint64_t)time(NULL) << 18) & uticks());
+    static atomic<uint64_t> nextmid(((uint64_t)time(NULL) << 18) & uticks());
     char buf[64], gmtoff[16];
     int diff;
     char *encbuf;

@@ -104,10 +104,10 @@ public:
 static char *dbuf;
 static uint dsz;
 static EchoTest *etp;
-static TSNumber<uint> errs, ops;
-static TSNumber<long long> loops(MAXLLONG);
+static atomic<uint> errs, ops;
+static atomic<long long> loops(MAXLLONG);
 static volatile bool qflag;
-static TSNumber<usec_t> usecs;
+static atomic<usec_t> usecs;
 
 static inline bool loop_exit(void) { return --loops < 0 || qflag; }
 
