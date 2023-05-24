@@ -73,8 +73,8 @@ int gettimeofday(struct timeval *tv, struct timezone *tz) {
 
     GetSystemTimeAsFileTime(&ft.ft);
     usec = (ft.u64 - EPOCH_BIAS) / 10;
-    tv->tv_sec = (long)(usec / 1000000i64);
-    tv->tv_usec = (long)(usec % 1000000i64);
+    tv->tv_sec = (long)(usec / 1000000I64);
+    tv->tv_usec = (long)(usec % 1000000I64);
     if (tz) {
 	static int tzsetup;
 
@@ -517,7 +517,7 @@ void seekdir(DIR *dirp, long pos) {
 	pos -= dirp->dir.d_off;
     }
     while (pos--)
-	readdir(dirp);
+	(void)readdir(dirp);
 }
 
 void wseekdir(WDIR *dirp, long pos) {
@@ -847,7 +847,7 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
 #else
     buf->st_size = bhfi.nFileSizeLow;
 #endif
-    buf->st_ino = ((int64_t)(bhfi.nFileIndexHigh)) * (0x100000000i64) +
+    buf->st_ino = ((int64_t)(bhfi.nFileIndexHigh)) * (0x100000000I64) +
 	(int64_t)(bhfi.nFileIndexLow);
     return 0;
 }
@@ -1070,7 +1070,6 @@ static void cvtdate(int trantype, int datetype, int year, int month,
 	}
 	dstend.yr = year;
     }
-    return;
 }
 
 static int _isindst(const struct tm *tb) {

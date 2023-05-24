@@ -146,15 +146,15 @@ protected:
 #ifdef _WIN32
     typedef void (__stdcall *service_ctrl_t)(ulong cmd);
 
-    tstring host;
-    HANDLE maphdl;
-    void *map;
-    uint mapsz;
-    SERVICE_STATUS ssStatus;
-    SERVICE_STATUS_HANDLE hStatus;
     service_ctrl_t ctrlfunc;
     ulong checkpoint;
+    tstring host;
     SC_HANDLE hService, hSCManager;
+    SERVICE_STATUS_HANDLE hStatus;
+    void *map;
+    HANDLE maphdl;
+    uint mapsz;
+    SERVICE_STATUS ssStatus;
     static int __stdcall ctrl_handler(ulong sig);
     static long __stdcall exception_handler(_EXCEPTION_POINTERS *info);
     static void __stdcall service_handler(ulong sig);

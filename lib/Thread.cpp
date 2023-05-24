@@ -69,8 +69,10 @@ Process Process::start(tchar *const *args, const int *fds) {
 		si.hStdError = (HANDLE)(ullong)fds[2];
 	}
     }
-    while (*args)
-	cmd += *(args++) + ' ';
+    while (*args) {
+	cmd += *(args++);
+	cmd += ' ';
+    }
     if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL,
 	NULL, &si, &proc))
 	CloseHandle(proc.hThread);

@@ -120,19 +120,19 @@ Service::Timer::Timer(ulong msec): timer(NULL) {
 void Service::Timer::cancel() {
 }
 
-Service::Service(const tchar *servicename, const tchar *h): name(servicename),
-    bPause(false), errnum(0), ctrlfunc(NULL), gid(0), hStatus(0), hSCManager(0),
-    hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0), pid(0),
-    stStatus(Stopped), uid(0) {
+Service::Service(const tchar *servicename, const tchar *h): bPause(false),
+    errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0),
+    checkpoint(0), ctrlfunc(NULL), hService(0), hSCManager(0), hStatus(0),
+    map(NULL), maphdl(0), mapsz(0) {
     ZERO(ssStatus);
     if (h)
 	host = h;
 }
 
-Service::Service(const tchar *servicename, bool pauseable): name(servicename),
-    bPause(pauseable), errnum(0), ctrlfunc(service_handler), gid(0), hStatus(0),
-    hSCManager(0), hService(0), checkpoint(0), map(NULL), mapsz(0), maphdl(0),
-    pid(0), stStatus(Stopped), uid(0) {
+Service::Service(const tchar *servicename, bool pauseable): bPause(pauseable),
+    errnum(0), gid(0), name(servicename), pid(0),stStatus(Stopped), uid(0),
+    checkpoint(0), ctrlfunc(NULL), hService(0), hSCManager(0), hStatus(0),
+    map(NULL), maphdl(0), mapsz(0) {
     service = this;
     ZERO(ssStatus);
 }
@@ -547,9 +547,8 @@ void *Service::open(uint size) {
 Lock ServiceData::lock;
 
 ServiceData::ServiceData(const tchar *service, uint num, uint size):
-    count(0), counter(0), ctrs(num), data(NULL), datasz(0), help(0),
-    init(false), last(0), map(NULL), mapsz(size), name(service), offset(0) {
-}
+    count(0), counter(0), data(NULL), ctrs(num), datasz(0), mapsz(size),
+    help(0), init(false), last(0), offset(0), map(NULL), name(service) {}
 
 DWORD ServiceData::open(LPWSTR lpDeviceNames) {
     FastLocker lkr(lock);
@@ -568,8 +567,8 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	tstring s(T("SYSTEM\\CurrentControlSet\\Services\\") + name +
 	    T("\\Performance"));
 
-	if ((status = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-	    s.c_str(), 0L, KEY_ALL_ACCESS, &key)) != ERROR_SUCCESS) {
+	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+	    s.c_str(), 0L, KEY_ALL_ACCESS, &key) != ERROR_SUCCESS) {
 	    dlog.err(Log::mod(name), Log::error(
 		T("unable to open performance registry")));
 	    return 1;

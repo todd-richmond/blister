@@ -37,8 +37,8 @@ const wstring _achartowstring(const char *s, size_t len) {
 
     if (len == 0)
 	return L"";
-    else if ((sz = MultiByteToWideChar(CP_UTF8, 0, s, (int)len, sbuf,
-	sizeof (sbuf) / sizeof (wchar))) > 0)
+    else if (MultiByteToWideChar(CP_UTF8, 0, s, (int)len, sbuf,
+	sizeof (sbuf) / sizeof (wchar)) > 0)
 	return sbuf;
     else if ((sz = MultiByteToWideChar(CP_UTF8, 0, s, (int)len, NULL, 0)) == 0)
 	return L"";
@@ -58,8 +58,8 @@ const string _wchartoastring(const wchar *s, size_t len) {
 
     if (len == 0)
 	return "";
-    else if ((sz = WideCharToMultiByte(CP_UTF8, 0, s, (int)len, sbuf,
-	sizeof (sbuf), NULL, NULL)) > 0)
+    else if (WideCharToMultiByte(CP_UTF8, 0, s, (int)len, sbuf,
+	sizeof (sbuf), NULL, NULL) > 0)
 	return sbuf;
     else if ((sz = WideCharToMultiByte(CP_UTF8, 0, s, (int)len, NULL, 0, NULL,
 	NULL)) == 0)
