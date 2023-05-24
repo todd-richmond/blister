@@ -18,7 +18,7 @@
 #define LRUCache_h
 
 #include <list>
-#include STL_UNORDERED_MAP_H
+#include <unordered_map>
 #include "Thread.h"
 
 /*
