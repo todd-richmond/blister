@@ -30,9 +30,6 @@
 static const uint MAX_WAIT_TIME = 1 * 60 * 1000;
 static const uint MAX_IDLE_TIMER = 10 * 1000;
 static const uint MIN_IDLE_TIMER = 1 * 1000;
-#if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
-static const uint MAX_EVENTS = 128;
-#endif
 
 static const uint DSP_Socket = 0x0001;
 static const uint DSP_Detached = 0x0002;
@@ -108,6 +105,10 @@ typedef struct pollfd event_t;
 
 #define DSP_POLL
 
+#endif
+
+#if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
+static const uint MAX_EVENTS = 128;
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config),
