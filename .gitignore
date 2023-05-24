@@ -69,7 +69,6 @@ x64
 *.pdb
 *.swp
 *.tlog
-*.xml
 .DS_Store
 .cproject
 .idea

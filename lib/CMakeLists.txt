@@ -1,5 +1,6 @@
 set(blister_obj_INC_SOURCE Config.h Dispatch.h HTTPClient.h HTTPServer.h Log.h
-    MD5.h Service.h SMTPClient.h Socket.h stdapi.h Streams.h Timing.h Thread.h)
+    LRUCache.h MD5.h Service.h SMTPClient.h Socket.h stdapi.h Streams.h Timing.h
+    Thread.h)
 
 set(blister_obj_LIB_SOURCE Config.cpp Dispatch.cpp HTTPClient.cpp HTTPServer.cpp
     Log.cpp MD5.c Service.cpp Socket.cpp SMTPClient.cpp Thread.cpp Timing.cpp)
