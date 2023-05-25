@@ -130,7 +130,7 @@ Service::Service(const tchar *servicename, const tchar *h): bPause(false),
 }
 
 Service::Service(const tchar *servicename, bool pauseable): bPause(pauseable),
-    errnum(0), gid(0), name(servicename), pid(0),stStatus(Stopped), uid(0),
+    errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0),
     checkpoint(0), ctrlfunc(NULL), hService(0), hSCManager(0), hStatus(0),
     map(NULL), maphdl(0), mapsz(0) {
     service = this;
