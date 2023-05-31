@@ -1007,8 +1007,6 @@ inline const string wstringtoastring(const wstring &s) {
 #endif
 
 // useful string utils
-inline int to_lower(int c) { return _tolower((uchar)(c)); }
-inline int to_upper(int c) { return _toupper((uchar)(c)); }
 inline int stringcmp(const char *a, const char *b) { return strcmp(a, b); }
 inline int stringcmp(const wchar *a, const wchar *b) { return wcscmp(a, b); }
 inline int stringicmp(const char *a, const char *b) { return stricmp(a, b); }
@@ -1016,11 +1014,7 @@ inline int stringicmp(const wchar *a, const wchar *b) { return wcsicmp(a, b); }
 
 template<class C>
 inline bool stringeq(const C *a, const C *b) {
-    do {
-	if (*a != *b)
-	    return false;
-    } while (a++, *b++);
-    return true;
+    return strcmp(a, b) == 0;
 }
 
 template<class C>
@@ -1030,13 +1024,7 @@ inline bool stringeq(const C &a, const C &b) {
 
 template<class C>
 inline bool stringless(const C *a, const C *b) {
-    do {
-	if (*a < *b)
-	    return true;
-	else if (*a != *b)
-	    return false;
-    } while (a++, *b++);
-    return false;
+    return strcmp(a, b) < 0;
 }
 
 template<class C>
@@ -1044,28 +1032,29 @@ inline bool stringless(const C &a, const C &b) {
     return stringless(a.c_str(), b.c_str());
 }
 
+// Bernstein hash with xor improvement
 template<class C>
 inline size_t __no_sanitize_unsigned stringhash(const C *s) {
-    size_t ret = 0;
+    size_t ret = 5381;
 
     while (*s)
-	ret = ret * 101 + (size_t)*s++;
+	ret = ((ret << 5) + ret) ^ (size_t)*s++;	// faster than * 33
     return ret;
 }
 
 inline size_t __no_sanitize_unsigned stringihash(const char *s) {
-    size_t ret = 0;
+    size_t ret = 5381;
 
     while (*s)
-	ret = ret * 101 + (size_t)to_upper(*s++);
+	ret = ((ret << 5) + ret) ^ (size_t)toupper(*s++);
     return ret;
 }
 
 inline size_t __no_sanitize_unsigned stringihash(const wchar *s) {
-    size_t ret = 0;
+    size_t ret = 5381;
 
     while (*s)
-	ret = ret * 101 + (size_t)towupper((ushort)*s++);
+	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)*s++);
     return ret;
 }
 
@@ -1075,11 +1064,19 @@ struct ptrhash {
 };
 
 struct llonghash {
+#if SIZE_MAX == UINT32_MAX
     size_t operator ()(llong l) const { return (size_t)((l >> 32) ^ l); }
+#else
+    size_t operator ()(llong l) const { return (size_t)l; }
+#endif
 };
 
 struct ullonghash {
+#if SIZE_MAX == UINT32_MAX
     size_t operator ()(ullong u) const { return (size_t)((u >> 32) ^ u); }
+#else
+    size_t operator ()(ullong u) const { return (size_t)u; }
+#endif
 };
 
 template <class C>
@@ -1150,11 +1147,11 @@ struct striless {
     }
 };
 
-// compile time string hashing
+// compile time string hashing using Bernstein XOR algorithm for string keys
 #define STRING_HASH_PRE(i, d)	((
-#define STRING_HASH_POST(i, d)	* (size_t)101) + (size_t)s[i])
+#define STRING_HASH_POST(i, d)	* (size_t)33) ^ (size_t)s[i])
 #define STRING_HASH(i) __forceinline StringHash(const tchar (&s)[i]): \
-    hash(STDAPI_REPEAT(i, STRING_HASH_PRE, ~) 0 STDAPI_REPEAT(i, \
+    hash(STDAPI_REPEAT(i, STRING_HASH_PRE, ~) 5381 STDAPI_REPEAT(i, \
 	STRING_HASH_POST, ~)) {}
 
 class BLISTER StringHash {
