@@ -185,6 +185,7 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
 	sock.close();
 	return false;
     }
+    sock.nodelay(true);
     sock.rtimeout(rto);
     sock.wtimeout(wto);
     sstrm.rdbuf()->attach(sock);
@@ -307,8 +308,6 @@ loop:
 	ressz = tstrtoul(resp, NULL, 10);
     else
 	ressz = (ulong)-1;
-    if (keep && !sz && ressz != (ulong)-1)
-	sock.nodelay(true);
     if (ressz && ressz != (ulong)-1) {
 	if (ressz > sz) {
 	    delete [] result;
