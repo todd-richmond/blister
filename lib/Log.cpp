@@ -123,7 +123,7 @@ bool Log::LogFile::close(void) {
 void Log::LogFile::lock() {
     if (fd == -1)
 	reopen();
-    if (fd >= 0 && (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
+    if (fd >= 0 && (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, mp ? 0 : 1) ||
 	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1)) {
 	tcerr << T("unable to lock log ") << path << T(": ") <<
 	    tstrerror(errno) << endl;
