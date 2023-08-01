@@ -272,7 +272,7 @@ loop:
 	p++;
     sts = (uint)atoi(p);
     dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
-	Log::kv(T("path"), path), Log::kv(T("status"), sts));
+	Log::kv(T("path"), path), Log::kv(T("sts"), sts));
     while (getline(sstrm, s)) {		    // does not support folded hdrs
 	p = s.c_str();
 	while (*p == ' ' || *p == '\t')

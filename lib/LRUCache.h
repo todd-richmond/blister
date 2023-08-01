@@ -71,10 +71,11 @@ public:
     void clear(void) { FastLocker lkr(lock); purge(maxsz); }
     const C get(const void *data, ulong sz) {
 	C entry(data, sz);
+	typename lru_map::const_iterator it;
 	FastLocker lkr(lock);
-	typename lru_map::const_iterator it = cache_map.find(entry);
 
 	purge(0);
+	it = cache_map.find(entry);
 	if (it == cache_map.end()) {
 	    return entry;
 	} else {
