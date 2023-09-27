@@ -1,2 +1,2 @@
 #!/bin/bash
-rm -rf aclocal.m4 ar-lib autom4te.cache/ compile config.guess config.* configure COPYING depcomp install-sh libtool ltmain.sh Makefile Makefile.in missing */Debug */Release *.gch *.user */*.user xcode
+rm -rf aclocal.m4 ar-lib autom4te.cache/ compile config.guess config.* configure COPYING depcomp install-sh libtool ltmain.sh Makefile Makefile.in missing */Debug */Release *.gch *.user */*.user xcode CMakeFiles CMakeCache.txt */CMakeFiles */cmake_install.cmake
