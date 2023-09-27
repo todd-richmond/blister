@@ -57,11 +57,10 @@ static Log &_dlog(void) {
 
 Log &dlog(_dlog());
 
-Log &Log::operator <<(Log::Escalator &escalator) {
+Log &Log::append(Tlsdata &tlsd, Log::Escalator &escalator) {
     FastSpinLocker lkr(escalator.lck);
     ulong count;
     msec_t now = mticks() / 1000, start;
-    Tlsdata &tlsd(*tls);
 
     count = escalator.count;
     start = escalator.start;
@@ -394,7 +393,8 @@ bool Log::close(void) {
     return ffd.close();
 }
 
-void Log::endlog(Tlsdata &tlsd, Level clvl) {
+void Log::endlog(Tlsdata &tlsd) {
+    Level clvl = tlsd.clvl;
     size_t lvllen, tmlen;
     time_t now_sec;
     usec_t now_usec;
@@ -402,8 +402,6 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     size_t sz = (size_t)tlsd.strm.size();
     tchar tmp[16];
 
-    if (tlsd.suppress)
-	return;
     lck.lock();
     if (ffd.enable && clvl <= ffd.lvl) {
 	ffd.lock();
@@ -536,7 +534,7 @@ void Log::endlog(Tlsdata &tlsd, Level clvl) {
     lck.unlock();
     strbuf.erase(strbuf.size() - 1);
     tlsd.clvl = None;
-    tlsd.space = false;
+    tlsd.sep = '\0';
     tlsd.strm.reset();
     tlsd.suppress = true;
     if (syslogenable && clvl <= sysloglvl) {
@@ -616,26 +614,21 @@ void Log::format(const tchar *s) {
 }
 
 void Log::logv(int il, ...) {
-    Level l((Level)il);
+    Level l = (Level)il;
     const tchar *p;
-    bool space;
     Tlsdata &tlsd(*tls);
     va_list vl;
 
-    if (l > lvl)
+    if (l > lvl || tlsd.suppress)
 	return;
+    tlsd.clvl = l;
+    tlsd.sep = ' ';
     va_start(vl, il);
-    space = tlsd.space;
-    tlsd.space = false;
     while ((p = va_arg(vl, const tchar *)) != NULL) {
-	if (space)
-	    tlsd.strm << ' ';
-	else
-	    space = true;
-	tlsd.strm << p;
+	*this << p;
     }
     va_end(vl);
-    endlog(tlsd, l);
+    endlog(tlsd);
 }
 
 void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {
@@ -648,6 +641,7 @@ void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {
 }
 
 tostream &Log::quote(tostream &os, const tchar *s) {
+    bool quote = false;
     const tchar *p;
     static const uchar needquote[128] = {
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
@@ -661,20 +655,37 @@ tostream &Log::quote(tostream &os, const tchar *s) {
     };
 
     for (p = s; *p; p++) {
-	if ((ushort)*p > 127 || needquote[(uchar)*p]) {
-	    os << '"';
-	    for (p = s; *p; p++) {
-		tchar c = *p;
+	quote = quote || (ushort)*p > 127 || needquote[(uchar)*p];
+    }
+    if (quote) {
+	os << '"';
+	for (p = s; *p; p++) {
+	    char c = *p;
 
-		if (c == '"') {
-		    os << '\\' << '"';
-		} else if (c == '\\') {
-		    os << '\\' << '\\';
-		} else if (c == '\n') {
-		    os << '\\' << 'n';
-		} else if (c == '\r') {
-		    os << '\\' << 'r';
-		} else if ((uchar)c < ' ' && c != '\t') {
+	    switch (c) {
+	    case '"':
+		os << '\\' << '"';
+		break;
+	    case '\\':
+		os << '\\' << '\\';
+		break;
+	    case '\f':
+		os << '\\' << 'f';
+		break;
+	    case '\n':
+		os << '\\' << 'n';
+		break;
+	    case '\r':
+		os << '\\' << 'r';
+		break;
+	    case '\t':
+		os << '\t';
+		break;
+	    case '\v':
+		os << '\\' << 'v';
+		break;
+	    default:
+		if ((uchar)c < ' ') {
 		    tchar tmp[16];
 
 		    tsprintf(tmp, T("\\%03o"), (uint)c);
@@ -683,11 +694,11 @@ tostream &Log::quote(tostream &os, const tchar *s) {
 		    os << c;
 		}
 	    }
-	    os << '"';
-	    return os;
 	}
+	os << '"';
+    } else {
+	os.write(s, p - s);
     }
-    os.write(s, p - s);
     return os;
 }
 

@@ -56,9 +56,9 @@ class Config;
  * attr=val pairs with proper quoting
  *
  * dlog << Log::Warn << T("value=") << value << endlog;
+ * dlog.warn(T("value="), value);
  * dlogw(T("value="), value);
  * dlogw(Log::kv(T("value"), value));
- * DLOGW(T("value=") << value);
  */
 
 class BLISTER Log: nocopy {
@@ -68,7 +68,7 @@ public:
     };
     enum Type { Simple, Syslog, KeyVal, NoLevel, NoTime };
 
-    class Escalator {
+    class BLISTER Escalator {
     public:
 	Escalator(Level l1, Level l2, ulong per, ulong min, ulong to): count(0),
 	    mincount(min), period(per), timeout(to), level1(l1), level2(l2),
@@ -83,35 +83,20 @@ public:
 	msec_t start;
     };
 
-    template<class C>
-    class KV {
-    public:
-	KV(const tchar *k, const C &v): key(k), val(v) {}
-	KV(const tstring &k, const C &v): key(k.c_str()), val(v) {}
+    template<typename T>
+    struct KV {
+	KV(const tchar *k, const T &v): key(k), val(v) {}
+	KV(const tstring &k, const T &v): key(k.c_str()), val(v) {}
 
-	tostream &print(tostream &os) const {
-	    os << key << '=';
-	    return value(os);
-	}
-	tostream &printstr(tostream &os) const {
-	    os << key << '=';
-	    return Log::quote(os, val);
-	}
-
-    private:
 	const tchar *key;
-	const C &val;
-
-	tostream &value(tostream &os) const {
-	    bufferstream<tchar> buf;
-
-	    buf << val << '\0';
-	    return Log::quote(os, buf.str());
-	}
+	const T &val;
     };
 
     explicit Log(Level level = Info);
     ~Log();
+
+    template<typename T> Log &operator <<(const T &val) { return append(val); }
+    Log &operator <<(Escalator &e) { return append(e); }
 
     bool alertfile(void) const { return afd.enable; }
     void alertfile(bool b) { afd.enable = b; }
@@ -120,7 +105,7 @@ public:
     const tchar *alertname(void) const { return afd.filename(); }
     const tchar *alertpath(void) const { return afd.pathname(); }
     bool buffer(void) const { return bufenable; }
-    void buffer(bool enable);
+    void buffer(bool b);
     void buffer(uint sz = 32U * 1024, ulong msec = 1000) {
 	bufsz = sz; buftm = msec; buffer(true);
     }
@@ -129,7 +114,7 @@ public:
     bool file(void) const { return ffd.enable; }
     void file(bool b) { ffd.enable = b; }
     void file(Level l, const tchar *file = NULL, uint cnt = 0,
-	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
+	ulong sz = 10 * 1024 * 1024, ulong tm = 0);
     const tchar *filename(void) const { return ffd.filename(); }
     const tchar *filepath(void) const { return ffd.pathname(); }
     const tchar *format(void) const { return fmt.c_str(); }
@@ -140,10 +125,11 @@ public:
     void level(Level l) { ffd.lvl = lvl = l; }
     void level(const tchar *l) { level(str2enum(l)); }
     void mail(bool b) { mailenable = b; }
-    void mail(Level l, const tchar *to, const tchar *from = T("<>"),
-	const tchar *host = T("localhost"));
+    void mail(Level l, const tchar *to, const tchar *from = T("<>"), const tchar
+	*host = T("localhost"));
     const tchar *prefix(void) const { return tls->prefix.c_str(); }
     void prefix(const tchar *p) { tls->prefix = p ? p : T(""); }
+    void separate(bool b = true) { tls.get().sep = b ? ' ' : '\0'; }
     const tchar *source(void) const { return src.c_str(); }
     void source(const tchar *s) { src = s; }
     bool syslog(void) const { return syslogenable; }
@@ -154,6 +140,14 @@ public:
     Type type(void) const { return _type; }
     void type(Type t) { _type = t; }
 
+    template <typename T>
+    Log &append(const T &val) { return append(tls.get(), val); }
+    Log &append(const tchar *val) { return append(tls.get(), val); }
+    Log &append(char *val) { return append(tls.get(), (const tchar *)val); }
+    Log &append(Escalator &e) { return append(tls.get(), e); }
+    Log &append(Log::Level l) { return append(tls.get(), l); }
+    template<typename T>
+    Log &append(const KV<T> &val) { return append(tls.get(), val); }
     bool close(void);
     // main thread does not call TLS destruction
     void destruct(void) { tls.erase(); }
@@ -161,125 +155,71 @@ public:
 	Tlsdata &tlsd(*tls);
 
 	if (tlsd.clvl != None)
-	    endlog(tlsd, tlsd.clvl);
+	    endlog(tlsd);
 	return *this;
     }
     void flush(void) { Locker lkr(lck); _flush(); }
     void logv(int l, ...);
+    bool reopen(void) { Locker lkr(lck); return ffd.reopen(); }
     void roll(void) { Locker lkr(lck); ffd.roll(); }
     void set(const Config &cfg, const tchar *sect = T("log"));
     bool setids(uid_t uid, gid_t gid) const;
     void setmp(bool b = false);
     void start(void);
     void stop(void);
-    static tostream &quote(tostream &os, const tchar *s);
 
-    Log &operator <<(Escalator &escalator);
-    template<class C> Log &operator <<(const C &c) {
-	Tlsdata &tlsd(*tls);
+    template <typename... T>
+    void log(Log::Level l, const T&... args) {
+	if (l <= lvl) {
+	    Tlsdata &tlsd(*tls);
 
-	if (tlsd.clvl != None) {
-	    if (tlsd.space) {
-		tlsd.space = false;
-		tlsd.strm << ' ';
+	    if (!tlsd.suppress) {
+		tlsd.clvl = l;
+		_log(tlsd, args...);
+		endlog(tlsd);
 	    }
-	    tlsd.strm << c;
 	}
-	return *this;
     }
+    template <typename... T>
+    __forceinline void emerg(const T&... args) { log(Emerg, args...); }
+    template <typename... T>
+    __forceinline void alert(const T&... args) { log(Alert, args...); }
+    template <typename... T>
+    __forceinline void crit(const T&... args) { log(Crit, args...); }
+    template <typename... T>
+    __forceinline void err(const T&... args) { log(Err, args...); }
+    template <typename... T>
+    __forceinline void warn(const T&... args) { log(Warn, args...); }
+    template <typename... T>
+    __forceinline void note(const T&... args) { log(Note, args...); }
+    template <typename... T>
+    __forceinline void info(const T&... args) { log(Info, args...); }
+    template <typename... T>
+    __forceinline void debug(const T&... args) { log(Debug, args...); }
+    template <typename... T>
+    __forceinline void trace(const T&... args) { log(Trace, args...); }
 
-    Log &operator <<(Log::Level l) {
-	Tlsdata *tlsd;
-
-	if (l <= lvl && !(tlsd = &tls.get())->suppress)
-	    tlsd->clvl = l;
-	return *this;
+    template<typename T>
+    static const KV<T> kv(const tchar *key, const T &val) {
+	return KV<T>(key, val);
     }
-
-    template<class C>
-    Log &operator <<(const KV<C> &_kv) {
-	Tlsdata &tlsd(*tls);
-
-	if (tlsd.clvl != None) {
-	    if (tlsd.strm.size())
-		tlsd.strm << ' ';
-	    _kv.print(tlsd.strm);
-	    tlsd.space = true;
-	}
-	return *this;
+    template<typename T>
+    static const KV<T> kv(const tstring &key, const T &val) {
+	return KV<T>(key, val);
     }
-
-#define _func_(n, l) \
-    template<class C> void n(const C &c) { log(l, c); } \
-    template<class C, class D> void n(const C &c, const D &d) { log(l, c, d); } \
-    template<class C, class D, class E> void n(const C &c, const D &d, const E \
-	&e) { log(l, c, d, e); }\
-    template<class C, class D, class E, class F> void n(const C &c, const D &d, \
-	const E &e, const F &f) { log(l, c, d, e, f); } \
-    template<class C, class D, class E, class F, class G> void n(const C &c, \
-	const D &d, const E &e, const F &f, const G &g) { log(l, c, d, e, f, \
-	g); } \
-    template<class C, class D, class E, class F, class G, class H> void n( \
-	const C &c, const D &d, const E &e, const F &f, const G &g, const H \
-	&h) { log(l, c, d, e, f, g, h); }
-
-    _func_(emerg, Emerg)
-    _func_(alert, Alert)
-    _func_(crit, Crit)
-    _func_(err, Err)
-    _func_(warn, Warn)
-    _func_(note, Note)
-    _func_(info, Info)
-    _func_(debug, Debug)
-    _func_(trace, Trace)
-
-#undef _func_
-#define _log_(s) \
-    Tlsdata *tlsd; \
-    if (l <= lvl && !(tlsd = &tls.get())->suppress) { \
-	tlsd->strm << s; \
-	endlog(*tlsd, l); \
+    template<typename T>
+    static const KV<T> cmd(const T &val) {
+	return KV<T>("cmd", val);
     }
-
-    template<class C> void log(Level l, const C &c) { _log_(c); }
-    template<class C, class D> void log(Level l, const C &c, const D &d) {
-	_log_(c << ' ' << d);
+    template<typename T>
+    static const KV<T> error(const T &val) {
+	return KV<T>("err", val);
     }
-    template<class C, class D, class E> void log(Level l, const C &c,
-	const D &d, const E &e) {
-	_log_(c << ' ' << d << ' ' << e);
+    template<typename T>
+    static const KV<T> mod(const T &val) {
+	return KV<T>("mod", val);
     }
-    template<class C, class D, class E, class F> void log(Level l, const C &c,
-	const D &d, const E &e, const F &f) {
-	_log_(c << ' ' << d << ' ' << e << ' ' << f);
-    }
-    template<class C, class D, class E, class F, class G> void log(Level l,
-	const C &c, const D &d, const E &e, const F &f, const G &g) {
-	_log_(c << ' ' << d << ' ' << e << ' ' << f << ' ' << g);
-    }
-    template<class C, class D, class E, class F, class G, class H>
-	void log(Level l, const C &c, const D &d, const E &e, const F &f,
-	const G &g, const H &h) {
-	_log_(c << ' ' << d << ' ' << e << ' ' << f << ' ' << g << ' ' << h);
-    }
-
-#undef _log_
-
-    template<class C> static const KV<C> kv(const tchar *key, const C &val) {
-	return KV<C>(key, val);
-    }
-    template<class C> static const KV<C> kv(const tstring &key, const C &val) {
-	return KV<C>(key, val);
-    }
-    template<class C> static const KV<C> cmd(const C &c) {
-	return KV<C>(T("cmd"), c);
-    }
-    template<class C> static const KV<C> error(const C &c) {
-	return KV<C>(T("err"), c);
-    }
-    template<class C> static const KV<C> mod(const C &c) {
-	return KV<C>(T("mod"), c);
-    }
+    static tostream &quote(tostream &os, const tchar *s);
     static const tchar *section(void) { return T("log"); }
     static Level str2enum(const tchar *lvl);
 
@@ -310,7 +250,7 @@ private:
 	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m): cnt(0),
 	    gmt(false), mp(m), len(0), sec(0), sz(0), locked(false), lvl(dlvl),
 	    fd(-1) {
-	    set(dlvl, dfile, 3, 5UL * 1024 * 1024, 0);
+	    set(dlvl, dfile, 3, 5 * 1024 * 1024, 0);
 	    enable = denable;
 	}
 	~LogFile() { close(); }
@@ -320,7 +260,6 @@ private:
 	ulong length(void) const { return len; }
 	void length(ulong l) { len = l; }
 	const tchar *pathname(void) const { return path.c_str(); }
-	void unlock(void) const;
 
 	bool close(void);
 	void lock(void);
@@ -331,6 +270,7 @@ private:
 	void set(const Config &cfg, const tchar *sect, const tchar *sub,
 	    bool enable, const tchar *level, const tchar *file);
 	void set(Level lvl, const tchar *file, uint cnt, ulong sz, ulong sec);
+	void unlock(void) const;
 
     private:
 	int fd;
@@ -342,10 +282,10 @@ private:
 	tstring strbuf;
 	tbufferstream strm;
 	Level clvl;
-	bool space;
+	char sep;
 	bool suppress;
 
-	Tlsdata(): clvl(None), space(false), suppress(false) {}
+	Tlsdata(): clvl(None), sep('\0'), suppress(false) {}
     };
 
     Lock lck;
@@ -373,113 +313,145 @@ private:
     static const tchar * const LevelStr[];
     static const tchar * const LevelStr2[];
 
-    void endlog(Tlsdata &tlsd, Level lvl);
+    // optimized append for values never needing quotes
+    template <typename T>
+    Log &_append(Tlsdata &tlsd, const T &val) {
+	if (tlsd.clvl != None) {
+	    if (tlsd.sep == '=') {
+		tlsd.sep = ' ';
+	    } else if (tlsd.sep && tlsd.strm.size()) {
+		tlsd.strm << tlsd.sep;
+	    }
+	    tlsd.strm << val;
+	}
+	return *this;
+    }
+    // general append for values possibly needing quotes
+    template <typename T>
+    Log &append(Tlsdata &tlsd, const T &val) {
+	if (tlsd.clvl != None) {
+	    if (tlsd.sep == '=') {
+		tbufferstream buf;
+
+		buf << val << '\0';
+		quote(tlsd.strm, buf.str());
+		tlsd.sep = ' ';
+	    } else if (tlsd.sep && tlsd.strm.size()) {
+		tlsd.strm << tlsd.sep << val;
+	    } else {
+		tlsd.strm << val;
+	    }
+	}
+	return *this;
+    }
+    Log &append(Tlsdata &tlsd, const tchar *val) {
+	if (tlsd.clvl != None) {
+	    if (tlsd.sep == '=') {
+		quote(tlsd.strm, val);
+		tlsd.sep = ' ';
+	    } else {
+		if (tlsd.sep && tlsd.strm.size())
+		    tlsd.strm << tlsd.sep;
+		tlsd.strm << val;
+		if (*val && tlsd.strm.str()[tlsd.strm.size() - 1] == '=')
+		    tlsd.sep = '=';
+	    }
+	}
+	return *this;
+    }
+    __forceinline Log &append(Tlsdata &tlsd, tchar *val) {
+	return append(tlsd, (const tchar *)val);
+    }
+    Log &append(Tlsdata &tlsd, Escalator &e);
+    __forceinline Log &append(Tlsdata &tlsd, Log::Level l) {
+	if (l <= lvl && !tlsd.suppress)
+	    tlsd.clvl = l;
+	return *this;
+    }
+    template<typename T>
+    Log &append(Tlsdata &tlsd, const KV<T> &val) {
+	if (tlsd.clvl != None) {
+	    if (tlsd.strm.size())
+		tlsd.strm << ' ';
+	    tlsd.strm << val.key << '=';
+	    tlsd.sep = '=';
+	    append(val.val);
+	}
+	return *this;
+    }
+    void endlog(Tlsdata &tlsd);
     void _flush(void);
+    __forceinline void _log(Tlsdata &) {}
+    template <typename T, typename... U>
+    __forceinline void _log(Tlsdata &tlsd, const T &first, const U&...  rest) {
+	append(tlsd, first);
+	_log(tlsd, rest...);	// recursive call using pack expansion
+    }
+
 };
 
-template<> inline tostream &Log::KV<bool>::value(tostream &os) const {
-    return os << (val ? 't' : 'f');
+// optimized template specializations
+template<> inline Log &Log::append(Tlsdata &tlsd, const bool &val) {
+    return _append(tlsd, val ? 't' : 'f');
 }
-template<> inline tostream &Log::KV<const tchar *>::value(tostream &os) const {
-    return Log::quote(os, val);
+template<> inline Log &Log::append(Tlsdata &tlsd, const char &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<tchar *>::value(tostream &os) const {
-    return Log::quote(os, val);
+template<> inline Log &Log::append(Tlsdata &tlsd, const double &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<tstring>::value(tostream &os) const {
-    return Log::quote(os, val.c_str());
+template<> inline Log &Log::append(Tlsdata &tlsd, const float &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<char>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const int &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<double>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const llong &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<float>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const long &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<int>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const short &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<long>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const uchar &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<llong>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const uint &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<short>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const ullong &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<uchar>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const ulong &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<uint>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const ushort &val) {
+    return _append(tlsd, val);
 }
-template<> inline tostream &Log::KV<ulong>::value(tostream &os) const {
-    return os << val;
-}
-template<> inline tostream &Log::KV<ullong>::value(tostream &os) const {
-    return os << val;
-}
-template<> inline tostream &Log::KV<ushort>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const tstring &val) {
+    return append(tlsd, val.c_str());
 }
 #ifdef _UNICODE
-template<> inline tostream &Log::KV<wchar>::value(tostream &os) const {
-    return os << val;
+template<> inline Log &Log::append(Tlsdata &tlsd, const wchar &val) {
+    return _append(tlsd, val);
 }
 #endif
-
-template<class C> inline tostream &operator <<(tostream &os, const Log::KV<C>
-    &kv) {
-    return kv.print(os);
-}
-
-template<size_t N> inline tostream &operator <<(tostream &os, const
-    Log::KV<tchar[N]> &kv) {
-    return kv.printstr(os);
-}
 
 inline Log &operator <<(Log &l, Log &(* const func)(Log &)) { return func(l); }
 inline Log &endlog(Log &l) { return l.endlog(); }
 
 extern BLISTER Log &dlog;
 
-#define DLOGL(l, args)  { if (l <= dlog.level()) dlog << l << args << endlog; }
-#define DLOGM(args)	DLOGL(Log::Emerg, args)
-#define DLOGA(args)	DLOGL(Log::Alert, args)
-#define DLOGC(args)	DLOGL(Log::Crit, args)
-#define DLOGE(args)	DLOGL(Log::Err, args)
-#define DLOGW(args)	DLOGL(Log::Warn, args)
-#define DLOGN(args)	DLOGL(Log::Note, args)
-#define DLOGI(args)	DLOGL(Log::Info, args)
-#define DLOGD(args)	DLOGL(Log::Debug, args)
-#define DLOGT(args)	DLOGL(Log::Trace, args)
-
-#define dlogl(l, ...)   { if (l <= dlog.level()) dlog.log(l, __VA_ARGS__); }
-#define dlogm(...)	dlogl(Log::Emerg, __VA_ARGS__)
-#define dloga(...)	dlogl(Log::Alert, __VA_ARGS__)
-#define dlogc(...)	dlogl(Log::Crit, __VA_ARGS__)
-#define dloge(...)	dlogl(Log::Err, __VA_ARGS__)
-#define dlogw(...)	dlogl(Log::Warn, __VA_ARGS__)
-#define dlogn(...)	dlogl(Log::Note, __VA_ARGS__)
-#define dlogi(...)	dlogl(Log::Info, __VA_ARGS__)
-#define dlogd(...)	dlogl(Log::Debug, __VA_ARGS__)
-#define dlogt(...)	dlogl(Log::Trace, __VA_ARGS__)
-
-#define dlogvl(l, ...)  { \
-    if (l <= dlog.level()) \
-	dlog.logv(l, __VA_ARGS__, (char *)NULL); \
-}
-#define dlogvm(...)	dlogvl(Log::Emerg, __VA_ARGS__)
-#define dlogva(...)	dlogvl(Log::Alert, __VA_ARGS__)
-#define dlogvc(...)	dlogvl(Log::Crit, __VA_ARGS__)
-#define dlogve(...)	dlogvl(Log::Err, __VA_ARGS__)
-#define dlogvw(...)	dlogvl(Log::Warn, __VA_ARGS__)
-#define dlogvn(...)	dlogvl(Log::Note, __VA_ARGS__)
-#define dlogvi(...)	dlogvl(Log::Info, __VA_ARGS__)
-#define dlogvd(...)	dlogvl(Log::Debug, __VA_ARGS__)
-#define dlogvt(...)	dlogvl(Log::Trace, __VA_ARGS__)
+#define dlogm(...)	dlog.emerg(__VA_ARGS__)
+#define dloga(...)	dlog.alert(__VA_ARGS__)
+#define dlogc(...)	dlog.crit(__VA_ARGS__)
+#define dloge(...)	dlog.err(__VA_ARGS__)
+#define dlogw(...)	dlog.warn(__VA_ARGS__)
+#define dlogn(...)	dlog.note(__VA_ARGS__)
+#define dlogi(...)	dlog.info(__VA_ARGS__)
+#define dlogd(...)	dlog.debug(__VA_ARGS__)
+#define dlogt(...)	dlog.trace(__VA_ARGS__)
 
 #endif // _Log_h
