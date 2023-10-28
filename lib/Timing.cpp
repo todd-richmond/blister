@@ -121,6 +121,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     s += (tchar)'\n';
     for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
 	tchar buf[128];
+	size_t i;
 	ulong sum = 0;
 	timing_t tot;
 
@@ -183,6 +184,9 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 		s += buf;
 	    }
 	}
+	i = s.find_last_not_of(' ');
+	if (i != s.npos && ++i != s.size())
+	    s.erase(i);
 	s += (tchar)'\n';
     }
     return s;
@@ -207,8 +211,12 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
 	tsprintf(buf, T("%.2f"), (double)t / 1000.0);
     else if (t < 1000000LLU)
 	tsprintf(buf, T("%llu"), t / 1000LLU);
+    else if (t < 100000000LLU)
+        sprintf(buf, T("%.1fk"), (double)t / 1000000.0);
     else if (t < 1000000000LLU)
 	tsprintf(buf, T("%lluk"), t / 1000000LLU);
+    else if (t < 100000000000LLU)
+        sprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
     else if (t < 1000000000000LLU)
 	tsprintf(buf, T("%llum"), t / 1000000000LLU);
     else
