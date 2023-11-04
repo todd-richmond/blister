@@ -27,10 +27,10 @@ class Config;
 /*
  * The Log class logs program information at escalating levels patterned after
  * UNIX syslog. It has additional facilities to copy high priority log lines to
- * a separate alert file, mail recipient or syslog daemon. Also, there are
+ * a separate alert file, mail recipient or syslog daemon. There are also
  * performance enhancements including buffered writes (managed by background
- * thread) and code macros to reduce function calls for data that will be
- * ignored
+ * thread) and variadic macros to reduce function calls for data that will be
+ * ignored dlog?(...)
  *
  * Log levels include the 8 levels from syslog as well as "trace" that allows
  * better segregation of verbose, low level msgs from normal debug output. A
@@ -46,19 +46,22 @@ class Config;
  *   NoLevel: same as "Simple", but the log level is omitted
  *   NoTime: same as "Simple", but the log time is omitted
  *
+ * Logging a string that ends with '=' will quote the following argument if
+ * required. A kv() method eases logging quoted attr=val pairs
+ *
  * Log files can be configured for age, count and size limits. The class will
  * automatically rollover files based on extension number or timestamp. File
  * locking is managed both inter and intra process so that a single file can
  * be shared across multiple processes or child forks
  *
  * A global "dlog" object allows for the simplest functionality but other
- * objects can be instantiated as well. A kv() member function eases logging
- * attr=val pairs with proper quoting
+ * objects can be instantiated as well.
  *
  * dlog << Log::Warn << T("value=") << value << endlog;
  * dlog.warn(T("value="), value);
  * dlogw(T("value="), value);
  * dlogw(Log::kv(T("value"), value));
+ * dlog.append(Log::Warn).append(T("value=")).append(value).endlog();
  */
 
 class BLISTER Log: nocopy {
@@ -180,6 +183,7 @@ public:
 	    }
 	}
     }
+    Log &log(Log::Level l) { return append(l); }
     template <typename... T>
     __forceinline void emerg(const T&... args) { log(Emerg, args...); }
     template <typename... T>
@@ -444,14 +448,28 @@ inline Log &endlog(Log &l) { return l.endlog(); }
 
 extern BLISTER Log &dlog;
 
-#define dlogm(...)	dlog.emerg(__VA_ARGS__)
-#define dloga(...)	dlog.alert(__VA_ARGS__)
-#define dlogc(...)	dlog.crit(__VA_ARGS__)
-#define dloge(...)	dlog.err(__VA_ARGS__)
-#define dlogw(...)	dlog.warn(__VA_ARGS__)
-#define dlogn(...)	dlog.note(__VA_ARGS__)
-#define dlogi(...)	dlog.info(__VA_ARGS__)
-#define dlogd(...)	dlog.debug(__VA_ARGS__)
-#define dlogt(...)	dlog.trace(__VA_ARGS__)
+// performance macros to bypass computing ignored data
+#define LOGL(o, l, ...)	{ if (l <= o.level()) o.log(l, __VA_ARGS__); }
+
+#define logm(o, ...)	LOGL(o, Log::Emerg, __VA_ARGS__)
+#define loga(o, ...)	LOGL(o, Log::Alert, __VA_ARGS__)
+#define logc(o, ...)	LOGL(o, Log::Crit, __VA_ARGS__)
+#define loge(o, ...)	LOGL(o, Log::Err, __VA_ARGS__)
+#define logw(o, ...)	LOGL(o, Log::Warn, __VA_ARGS__)
+#define logn(o, ...)	LOGL(o, Log::Note, __VA_ARGS__)
+#define logi(o, ...)	LOGL(o, Log::Info, __VA_ARGS__)
+#define logd(o, ...)	LOGL(o, Log::Debug, __VA_ARGS__)
+#define logt(o, ...)	LOGL(o, Log::Trace, __VA_ARGS__)
+
+#define dlogl(l, ...)	LOGL(dlog, l,  __VA_ARGS__)
+#define dlogm(...)	logm(dlog, __VA_ARGS__)
+#define dloga(...)	loga(dlog, __VA_ARGS__)
+#define dlogc(...)	logc(dlog, __VA_ARGS__)
+#define dloge(...)	loge(dlog, __VA_ARGS__)
+#define dlogw(...)	logw(dlog, __VA_ARGS__)
+#define dlogn(...)	logn(dlog, __VA_ARGS__)
+#define dlogi(...)	logi(dlog, __VA_ARGS__)
+#define dlogd(...)	logd(dlog, __VA_ARGS__)
+#define dlogt(...)	logt(dlog, __VA_ARGS__)
 
 #endif // _Log_h
