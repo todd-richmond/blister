@@ -57,7 +57,7 @@ static Log &_dlog(void) {
 
 Log &dlog(_dlog());
 
-Log &Log::append(Tlsdata &tlsd, Log::Escalator &escalator) {
+Log &Log::log(Tlsdata &tlsd, Log::Escalator &escalator) {
     FastSpinLocker lkr(escalator.lck);
     ulong count;
     msec_t now = mticks() / 1000, start;

@@ -17,6 +17,7 @@
 
 #include "stdapi.h"
 #include "Config.h"
+#include "Log.h"
 
 int tmain(int argc, const tchar * const argv[]) {
     const tchar *attr = NULL, *file = T("-"), *prefix = NULL, *section = NULL,
@@ -27,6 +28,8 @@ int tmain(int argc, const tchar * const argv[]) {
     bool exists;
     int i;
 
+    dlog.warn().log("x=").log(2, 3).log(Log::kv("x", 2)).endlog();
+    dlogi(Log::kv("space", "a b"), true);
     for (i = 1; i < argc; i++) {
 	if (!tstrcmp(argv[i], T("-?")) || !tstrcmp(argv[i], T("--help"))) {
 	    break;

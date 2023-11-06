@@ -49,6 +49,9 @@ class Config;
  * Logging a string that ends with '=' will quote the following argument if
  * required. A kv() method eases logging quoted attr=val pairs
  *
+ * An Escalator will suppress similar logs either after or during x period of
+ * time for y minutes
+ *
  * Log files can be configured for age, count and size limits. The class will
  * automatically rollover files based on extension number or timestamp. File
  * locking is managed both inter and intra process so that a single file can
@@ -57,11 +60,11 @@ class Config;
  * A global "dlog" object allows for the simplest functionality but other
  * objects can be instantiated as well.
  *
- * dlog << Log::Warn << T("value=") << value << endlog;
- * dlog.warn(T("value="), value);
  * dlogw(T("value="), value);
  * dlogw(Log::kv(T("value"), value));
- * dlog.append(Log::Warn).append(T("value=")).append(value).endlog();
+ * dlog.warn(T("value="), value);
+ * dlog.warn().log(T("value=")).log(value).endlog();
+ * dlog << Log::Warn << T("value=") << value << endlog;
  */
 
 class BLISTER Log: nocopy {
@@ -88,7 +91,7 @@ public:
 
     template<typename T>
     struct KV {
-	KV(const tchar *k, const T &v): key(k), val(v) {}
+	__forceinline KV(const tchar *k, const T &v): key(k), val(v) {}
 	KV(const tstring &k, const T &v): key(k.c_str()), val(v) {}
 
 	const tchar *key;
@@ -98,8 +101,10 @@ public:
     explicit Log(Level level = Info);
     ~Log();
 
-    template<typename T> Log &operator <<(const T &val) { return append(val); }
-    Log &operator <<(Escalator &e) { return append(e); }
+    template<typename T>
+    __forceinline Log &operator <<(const T &val) { return log(val); }
+    __forceinline Log &operator <<(void(Log &)) { endlog(); return *this; }
+    __forceinline Log &operator <<(Escalator &e) { return log(e); }
 
     bool alertfile(void) const { return afd.enable; }
     void alertfile(bool b) { afd.enable = b; }
@@ -143,25 +148,32 @@ public:
     Type type(void) const { return _type; }
     void type(Type t) { _type = t; }
 
-    template <typename T>
-    Log &append(const T &val) { return append(tls.get(), val); }
-    Log &append(const tchar *val) { return append(tls.get(), val); }
-    Log &append(char *val) { return append(tls.get(), (const tchar *)val); }
-    Log &append(Escalator &e) { return append(tls.get(), e); }
-    Log &append(Log::Level l) { return append(tls.get(), l); }
-    template<typename T>
-    Log &append(const KV<T> &val) { return append(tls.get(), val); }
     bool close(void);
     // main thread does not call TLS destruction
     void destruct(void) { tls.erase(); }
-    Log &endlog(void) {
+    __forceinline void endlog(void) {
 	Tlsdata &tlsd(*tls);
 
 	if (tlsd.clvl != None)
 	    endlog(tlsd);
-	return *this;
     }
     void flush(void) { Locker lkr(lck); _flush(); }
+    template <typename T>
+    __forceinline Log &log(const T &val) { return log(tls.get(), val); }
+    __forceinline Log &log(const tchar *val) { return log(tls.get(), val); }
+    __forceinline Log &log(char *val) {
+	return log(tls.get(), (const tchar *)val);
+    }
+    __forceinline Log &log(Escalator &e) { return log(tls.get(), e); }
+    __forceinline Log &log(Log::Level l) { return log(tls.get(), l); }
+    template<typename T>
+    __forceinline Log &log(const KV<T> &val) { return log(tls.get(), val); }
+    template <typename T, typename... U>
+    __forceinline Log &log(const T &first, const U&...  rest) {
+	log(tls.get(), first, rest...);
+
+	return *this;
+    }
     void logv(int l, ...);
     bool reopen(void) { Locker lkr(lck); return ffd.reopen(); }
     void roll(void) { Locker lkr(lck); ffd.roll(); }
@@ -178,49 +190,57 @@ public:
 
 	    if (!tlsd.suppress) {
 		tlsd.clvl = l;
-		_log(tlsd, args...);
+		log(tlsd, args...);
 		endlog(tlsd);
 	    }
 	}
     }
-    Log &log(Log::Level l) { return append(l); }
     template <typename... T>
     __forceinline void emerg(const T&... args) { log(Emerg, args...); }
+    __forceinline Log &emerg(void) { return log(Emerg); }
     template <typename... T>
     __forceinline void alert(const T&... args) { log(Alert, args...); }
+    __forceinline Log &alert(void) { return log(Alert); }
     template <typename... T>
     __forceinline void crit(const T&... args) { log(Crit, args...); }
+    __forceinline Log &crit(void) { return log(Crit); }
     template <typename... T>
     __forceinline void err(const T&... args) { log(Err, args...); }
+    __forceinline Log &err(void) { return log(Err); }
     template <typename... T>
     __forceinline void warn(const T&... args) { log(Warn, args...); }
+    __forceinline Log &warn(void) { return log(Warn); }
     template <typename... T>
     __forceinline void note(const T&... args) { log(Note, args...); }
+    __forceinline Log &note(void) { return log(Note); }
     template <typename... T>
     __forceinline void info(const T&... args) { log(Info, args...); }
+    __forceinline Log &info(void) { return log(Info); }
     template <typename... T>
     __forceinline void debug(const T&... args) { log(Debug, args...); }
+    __forceinline Log &debug(void) { return log(Debug); }
     template <typename... T>
     __forceinline void trace(const T&... args) { log(Trace, args...); }
+    __forceinline Log &trace(void) { return log(Trace); }
 
     template<typename T>
-    static const KV<T> kv(const tchar *key, const T &val) {
+    static __forceinline const KV<T> kv(const tchar *key, const T &val) {
 	return KV<T>(key, val);
     }
     template<typename T>
-    static const KV<T> kv(const tstring &key, const T &val) {
+    static __forceinline const KV<T> kv(const tstring &key, const T &val) {
 	return KV<T>(key, val);
     }
     template<typename T>
-    static const KV<T> cmd(const T &val) {
+    static __forceinline const KV<T> cmd(const T &val) {
 	return KV<T>("cmd", val);
     }
     template<typename T>
-    static const KV<T> error(const T &val) {
+    static __forceinline const KV<T> error(const T &val) {
 	return KV<T>("err", val);
     }
     template<typename T>
-    static const KV<T> mod(const T &val) {
+    static __forceinline const KV<T> mod(const T &val) {
 	return KV<T>("mod", val);
     }
     static tostream &quote(tostream &os, const tchar *s);
@@ -317,12 +337,20 @@ private:
     static const tchar * const LevelStr[];
     static const tchar * const LevelStr2[];
 
-    // optimized append for values never needing quotes
+    void endlog(Tlsdata &tlsd);
+    void _flush(void);
     template <typename T>
-    Log &_append(Tlsdata &tlsd, const T &val) {
+    Log &log(Tlsdata &tlsd, const T &val) {
 	if (tlsd.clvl != None) {
 	    if (tlsd.sep == '=') {
 		tlsd.sep = ' ';
+		if (!is_fundamental<T>::value) {
+		    tbufferstream buf;
+
+		    buf << val << '\0';
+		    quote(tlsd.strm, buf.str());
+		    return *this;
+		}
 	    } else if (tlsd.sep && tlsd.strm.size()) {
 		tlsd.strm << tlsd.sep;
 	    }
@@ -330,25 +358,7 @@ private:
 	}
 	return *this;
     }
-    // general append for values possibly needing quotes
-    template <typename T>
-    Log &append(Tlsdata &tlsd, const T &val) {
-	if (tlsd.clvl != None) {
-	    if (tlsd.sep == '=') {
-		tbufferstream buf;
-
-		buf << val << '\0';
-		quote(tlsd.strm, buf.str());
-		tlsd.sep = ' ';
-	    } else if (tlsd.sep && tlsd.strm.size()) {
-		tlsd.strm << tlsd.sep << val;
-	    } else {
-		tlsd.strm << val;
-	    }
-	}
-	return *this;
-    }
-    Log &append(Tlsdata &tlsd, const tchar *val) {
+    Log &log(Tlsdata &tlsd, const tchar *val) {
 	if (tlsd.clvl != None) {
 	    if (tlsd.sep == '=') {
 		quote(tlsd.strm, val);
@@ -363,88 +373,45 @@ private:
 	}
 	return *this;
     }
-    __forceinline Log &append(Tlsdata &tlsd, tchar *val) {
-	return append(tlsd, (const tchar *)val);
+    __forceinline Log &log(Tlsdata &tlsd, tchar *val) {
+	return log(tlsd, (const tchar *)val);
     }
-    Log &append(Tlsdata &tlsd, Escalator &e);
-    __forceinline Log &append(Tlsdata &tlsd, Log::Level l) {
+    Log &log(Tlsdata &tlsd, Escalator &e);
+    __forceinline Log &log(Tlsdata &tlsd, Log::Level l) {
 	if (l <= lvl && !tlsd.suppress)
 	    tlsd.clvl = l;
 	return *this;
     }
     template<typename T>
-    Log &append(Tlsdata &tlsd, const KV<T> &val) {
+    Log &log(Tlsdata &tlsd, const KV<T> &val) {
 	if (tlsd.clvl != None) {
 	    if (tlsd.strm.size())
 		tlsd.strm << ' ';
 	    tlsd.strm << val.key << '=';
 	    tlsd.sep = '=';
-	    append(val.val);
+	    log(tlsd, val.val);
 	}
 	return *this;
     }
-    void endlog(Tlsdata &tlsd);
-    void _flush(void);
-    __forceinline void _log(Tlsdata &) {}
+    __forceinline void log(Tlsdata &) {}
     template <typename T, typename... U>
-    __forceinline void _log(Tlsdata &tlsd, const T &first, const U&...  rest) {
-	append(tlsd, first);
-	_log(tlsd, rest...);	// recursive call using pack expansion
+    __forceinline void log(Tlsdata &tlsd, const T &first, const U&...
+	rest) {
+	log(tlsd, first);
+	log(tlsd, rest...);	// recursive call using pack expansion
     }
-
 };
 
 // optimized template specializations
-template<> inline Log &Log::append(Tlsdata &tlsd, const bool &val) {
-    return _append(tlsd, val ? 't' : 'f');
+template<> inline Log &Log::log(Tlsdata &tlsd, const bool &val) {
+    return log(tlsd, val ? 't' : 'f');
 }
-template<> inline Log &Log::append(Tlsdata &tlsd, const char &val) {
-    return _append(tlsd, val);
+template<> inline Log &Log::log(Tlsdata &tlsd, const tstring &val) {
+    return log(tlsd, val.c_str());
 }
-template<> inline Log &Log::append(Tlsdata &tlsd, const double &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const float &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const int &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const llong &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const long &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const short &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const uchar &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const uint &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const ullong &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const ulong &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const ushort &val) {
-    return _append(tlsd, val);
-}
-template<> inline Log &Log::append(Tlsdata &tlsd, const tstring &val) {
-    return append(tlsd, val.c_str());
-}
-#ifdef _UNICODE
-template<> inline Log &Log::append(Tlsdata &tlsd, const wchar &val) {
-    return _append(tlsd, val);
-}
-#endif
 
 inline Log &operator <<(Log &l, Log &(* const func)(Log &)) { return func(l); }
-inline Log &endlog(Log &l) { return l.endlog(); }
+inline void endlog(Log &l) { l.endlog(); }
 
 extern BLISTER Log &dlog;
 
