@@ -102,9 +102,14 @@ Log &Log::log(Tlsdata &tlsd, Log::Escalator &escalator) {
 
 int Log::FlushThread::onStart(void) {
     Locker lkr(l.lck);
+    msec_t last = mticks(), now;
 
     while (!qflag) {
-	l.cv.wait(l.buftm ? l.buftm : INFINITE);
+	l.cv.wait(INFINITE);
+	now = mticks();
+	if (now - last < l.buftm && !qflag)
+	    l.cv.wait(l.buftm - (now - last));
+	last = now;
 	l._flush();
     }
     return 0;
@@ -522,9 +527,13 @@ void Log::endlog(Tlsdata &tlsd) {
     }
     if (ffd.enable && clvl <= ffd.lvl) {
 	if (ft.getState() == Running) {
+	    bool b = bufstrm.size() == 0;
+
 	    bufstrm.write(strbuf.data(), (streamsize)strbuf.size());
 	    if ((uint)bufstrm.size() > bufsz)
 		_flush();
+	    else if (b)
+		cv.set();
 	} else {
 	    ffd.print(strbuf);
 	}
