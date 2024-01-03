@@ -287,20 +287,15 @@ protected:
 
 class BLISTER SpinLock: nocopy {
 public:
-    explicit SpinLock(uint lmt = 16):
-#ifdef _WIN32
-#elif CPLUSPLUS >= 11 && !defined(__GNUC__)
-	lck(ATOMIC_FLAG_INIT),
-#else
-	lck(0),
-#endif
-	spins(Processor::count() == 1 ? 0 : lmt) {}
+    explicit SpinLock(uint lmt = 16): spins(Processor::count() == 1 ? 0 : lmt)
+	{}
     __forceinline __no_sanitize_thread void lock(void) {
-	if (testlock() || UNLIKELY(!trylock())) {
 #ifdef THREAD_PAUSE
-	    uint u = 0;
-
+	uint u = 0;
+#endif
+	while (!trylock()) {
 	    do {
+#ifdef THREAD_PAUSE
 		if (LIKELY(u < spins)) {
 		    ++u;
 		    THREAD_PAUSE();
@@ -308,41 +303,39 @@ public:
 		    u = 0;
 		    THREAD_YIELD();
 		}
-	    } while (LIKELY(testlock()) || UNLIKELY(!trylock()));
 #else
-	    do {
 		THREAD_YIELD();
-	    } while (LIKELY(testlock()) || UNLIKELY(!trylock()));
 #endif
+	    } while (testlock());
 	}
     }
-#if CPLUSPLUS >= 11 && !defined(__GNUC__)
     __forceinline bool testlock(void) const {
 #ifdef __cpp_lib_atomic_flag_test
 	return lck.test(memory_order_relaxed);
 #else
-	return false;
+	return lck.load(memory_order_relaxed);
 #endif
     }
     __forceinline __no_sanitize_thread bool trylock(void) {
+#ifdef __cpp_lib_atomic_flag_test
 	return !lck.test_and_set(memory_order_acquire);
+#else
+	return !lck.exchange(true, memory_order_acquire);
+#endif
     }
     __forceinline __no_sanitize_thread void unlock(void) {
+#ifdef __cpp_lib_atomic_flag_test
 	lck.clear(memory_order_release);
-    }
 #else
-    __forceinline __no_sanitize_thread bool testlock(void) const { return lck; }
-    __forceinline __no_sanitize_thread bool trylock(void) {
-	return !atomic_lck(lck);
-    }
-    __forceinline __no_sanitize_thread void unlock(void) { atomic_clr(lck); }
+	lck.store(false, memory_order_release);
 #endif
+    }
 
 private:
-#if CPLUSPLUS >= 11 && !defined(__GNUC__)
-    atomic_flag lck;
+#ifdef __cpp_lib_atomic_flag_test
+    atomic_flag lck = ATOMIC_FLAG_INIT;
 #else
-    atomic_t lck;
+    atomic<bool> lck;
 #endif
     const uint spins;
 };
