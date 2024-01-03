@@ -287,8 +287,11 @@ protected:
 
 class BLISTER SpinLock: nocopy {
 public:
-    explicit SpinLock(uint lmt = 16): spins(Processor::count() == 1 ? 0 : lmt)
-	{}
+    explicit SpinLock(uint lmt = 16):
+#ifndef __cpp_lib_atomic_flag_test
+	lck(false),
+#endif
+	spins(Processor::count() == 1 ? 0 : lmt) {}
     __forceinline __no_sanitize_thread void lock(void) {
 #ifdef THREAD_PAUSE
 	uint u = 0;
