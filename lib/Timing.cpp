@@ -216,7 +216,7 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
     else if (t < 1000000000LLU)
 	tsprintf(buf, T("%lluk"), t / 1000000LLU);
     else if (t < 100000000000LLU)
-        sprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
+        tsprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
     else if (t < 1000000000000LLU)
 	tsprintf(buf, T("%llum"), t / 1000000000LLU);
     else

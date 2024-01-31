@@ -22,6 +22,12 @@
 #include <vector>
 #include "Config.h"
 
+#ifdef WIN32
+#define ENDL "\r\n"
+#else
+#define ENDL '\n'
+#endif
+
 void Config::clear(void) {
     kvmap::iterator it;
     WLocker lkr(lck, !THREAD_ISSELF(locker));
@@ -39,10 +45,12 @@ void Config::erase(const tchar *key, const tchar *sect) {
     WLocker lkr(lck, !THREAD_ISSELF(locker));
 
     if (sect && *sect) {
-	tstring s(sect);
+	size_t klen = tstrlen(key);
+	size_t slen = tstrlen(sect);
+	tstring s;
 
-	s += '.';
-	s += key;
+	s.reserve(slen + 1 + klen);
+	s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
 	it = amap.find(s.c_str());
     } else {
 	it = amap.find(key);
@@ -178,10 +186,12 @@ const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
     kvmap::const_iterator it;
 
     if (sect && *sect) {
-	tstring s(sect);
+	size_t klen = tstrlen(key);
+	size_t slen = tstrlen(sect);
+	tstring s;
 
-	s += '.';
-	s += key;
+	s.reserve(slen + 1 + klen);
+	s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
 	it = amap.find(s.c_str());
     } else {
 	it = amap.find(key);
@@ -232,7 +242,7 @@ bool Config::parse(tistream &is) {
     while (getline(is, key)) {
 	trim(key);
 	if (!tstrnicmp(key.c_str(), T("#include"), 8)) {
-	    key = key.substr(9, key.size() - 9);
+	    key.erase(0, 9);
 	    trim(key);
 
 	    tifstream ifs(key.c_str());
@@ -272,7 +282,7 @@ bool Config::parse(tistream &is) {
 	} else {
 	    if (key[pos - 1] == '+')
 		append = true;
-	    val = key.substr(pos + 1, sz - pos);
+	    val.assign(key.c_str() + pos + 1, sz - pos);
 	    trim(val);
 	    key.erase(pos - (append ? 1 : 0), key.size());
 	    trim(key);
@@ -287,7 +297,7 @@ bool Config::parse(tistream &is) {
 		continue;
 	}
 	if (key[0] == '[') {
-	    sect = key.substr(1, key.size() - 2);
+	    sect.assign(key.c_str() +  1, key.size() - 2);
 	    trim(sect);
 	    p = sect.c_str();
 	    if (!tstricmp(p, T("common")) || !tstricmp(p, T("global")))
@@ -324,10 +334,10 @@ void Config::set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
     const KV *kv, *oldkv;
 
     if (slen) {
-	tstring s(sect);
+	tstring s;
 
-	s += '.';
-	s += key;
+	s.reserve(slen + 1 + klen);
+	s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
 	kv = newkv(s.c_str(), s.size(), val, vlen);
     } else {
 	kv = newkv(key, klen, val, vlen);
@@ -341,7 +351,6 @@ void Config::set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
     if (append) {
 	tstring s;
 
-	vlen = tstrlen(val);
 	delkv(kv);
 	if (oldkv->quote)
 	    s = oldkv->quote;
@@ -410,7 +419,7 @@ bool Config::write(tostream &os, bool inistyle) const {
 
     keys.reserve(amap.size());
     for (it = amap.begin(); it != amap.end(); ++it)
-	keys.push_back(it->first);
+	keys.emplace_back(it->first);
     if (inistyle) {
 	struct keyless cmp;
 
@@ -437,18 +446,18 @@ bool Config::write(tostream &os, bool inistyle) const {
 		if (cnt > 1 || (cnt == 1 && u + 1 < keys.size() &&
 		    !tstrncmp(keys[u + 1], sect.c_str(), sect.size()) &&
 		    keys[u + 1][sect.size()] == '.'))
-		    os << endl;
+		    os << ENDL;
 		cnt = 0;
 	    }
 	} else {
 	    if (tstrncmp(key, sect.c_str(), (size_t)(dot - key)) != 0) {
 		sect.assign(key, (size_t)(dot - key));
 		if (cnt) {
-		    os << endl;
+		    os << ENDL;
 		    cnt = 0;
 		}
 		if (inistyle)
-		    os << T("[") << sect << T("]") << endl;
+		    os << T("[") << sect << T("]") << ENDL;
 	    }
 	    if (inistyle)
 		key = dot + 1;
@@ -456,12 +465,12 @@ bool Config::write(tostream &os, bool inistyle) const {
 	++cnt;
 	os << key << '=';
 	if (kv->quote)
-	    os << kv->quote;
-	os << kv->val;
-	if (kv->quote)
-	    os << kv->quote;
-	os << endl;
+	    os << kv->quote << kv->val << kv->quote;
+	else
+	    os << kv->val;
+	os << ENDL;
     }
+    os.flush();
     return os.good();
 }
 
