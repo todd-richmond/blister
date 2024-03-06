@@ -483,6 +483,7 @@ inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
 
 inline void DispatchSocket::cancel(void) { dspr.cancelSocket(*this); }
 
+// cppcheck-suppress duplInheritedMember
 inline void DispatchSocket::close(void) { dspr.cancelSocket(*this, true); }
 
 inline void DispatchSocket::erase(void) { dspr.cancelSocket(*this, true, true); }

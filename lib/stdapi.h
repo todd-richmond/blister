@@ -1342,7 +1342,7 @@ private:
 };
 
 template <class C>
-struct ObjectListNode: ObjectList<ObjectListNode<C> >::Node {
+struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C> >::Node {
     __forceinline ObjectListNode(const C &c): val(c) {}
 
     C val;

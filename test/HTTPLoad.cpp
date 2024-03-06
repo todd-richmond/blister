@@ -48,7 +48,7 @@ public:
     static uint working(void) { return threads; }
     static void reset(bool all = false);
     static void uninit(void);
-    static void wait(ulong msec) { lock.lock(); cv.wait(msec); lock.unlock(); }
+    static void pause(ulong msec) { lock.lock(); cv.wait(msec); lock.unlock(); }
 
 private:
     class LoadCmd {
@@ -202,7 +202,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	DIR *dir;
 
 	if ((dir = opendir(tchartoachar(bodyfile))) != NULL) {
-	    struct dirent *ent;
+	    const struct dirent *ent;
 
 	    while (readdir(dir) != NULL)
 		bodycnt++;
@@ -319,7 +319,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 char *HTTPLoad::read(uint idx, usec_t &iousec) {
     int fd;
     char *ret = NULL;
-    tchar *file = body[idx];
+    const tchar *file = body[idx];
     ulong filelen = bodysz[idx];
 
     if (bodycache[idx]) {
@@ -784,7 +784,7 @@ int tmain(int argc, tchar *argv[]) {
     }
     do {
 	last = uticks();
-	HTTPLoad::wait(stattime);
+	HTTPLoad::pause(stattime);
 #ifdef _WIN32
 	while (kbhit()) {
 	    switch (getch()) {

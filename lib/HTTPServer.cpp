@@ -558,7 +558,8 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     char *str, bool close) {
     char buf[128];
     int i;
-    struct tm tmbuf, *tmptr;
+    struct tm tmbuf;
+    const struct tm *tmptr;
 
     hdrs.reset();
     ss.reset();

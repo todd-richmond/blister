@@ -38,6 +38,7 @@ public:
 
     void attach(const C &c) { fd = &c; }
     const char *str(void) const { return buf; }
+    // cppcheck-suppress nullPointer
     void str(char *p, streamsize sz) { setbuf(p, sz); }
     streamsize read(void *in, streamsize sz) { return xsgetn((char *)in, sz); }
     template<class T> streamsize read(T &t) { return read(t, sizeof (t)); }
@@ -114,7 +115,8 @@ public:
     }
 
     virtual int sync(void) {
-	char *pb = pbase(), *pp = pptr();
+	char *pb = pbase();
+	const char *pp = pptr();
 
 	if (pp > pb) {
 	    if (fd->write(pb, (uint)(pp - pb)) != pp - pb)

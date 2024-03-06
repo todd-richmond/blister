@@ -102,14 +102,12 @@ Log &Log::log(Tlsdata &tlsd, Log::Escalator &escalator) {
 
 int Log::FlushThread::onStart(void) {
     Locker lkr(l.lck);
-    msec_t last = mticks(), now;
 
     while (!qflag) {
+	// wake up on 1st buffered write
 	l.cv.wait(INFINITE);
-	now = mticks();
-	if (now - last < l.buftm && !qflag)
-	    l.cv.wait(l.buftm - (now - last));
-	last = now;
+	// sleep for buffer time before flush
+	l.cv.wait(l.buftm);
 	l._flush();
     }
     return 0;
@@ -179,8 +177,9 @@ bool Log::LogFile::reopen(void) {
 	if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
 	    char buf[PATH_MAX];
 	    time_t now = ::time(NULL);
-	    struct tm tmbuf, *tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(
-		&now, &tmbuf);
+	    struct tm tmbuf;
+	    const struct tm *tm = gmt ? gmtime_r(&now, &tmbuf) :
+		localtime_r(&now, &tmbuf);
 
 	    strftime(buf, sizeof (buf), tstringtoachar(file), tm);
 	    if (link(tstringtoachar(path), buf)) {
@@ -195,7 +194,7 @@ bool Log::LogFile::reopen(void) {
 
 void Log::LogFile::roll(void) {
     tDIR *dir;
-    struct tdirent *ent;
+    const struct tdirent *ent;
     uint files = 0;
     ino_t inode = 0;
     time_t now;
@@ -425,7 +424,8 @@ void Log::endlog(Tlsdata &tlsd) {
     now_usec %= 1000000;
     if (now_sec != last_sec) {
 	tchar tbuf[128];
-	struct tm tmbuf, *tm;
+	struct tm tmbuf;
+	const struct tm *tm;
 
 	tm = gmt ? gmtime_r(&now_sec, &tmbuf) : localtime_r(&now_sec, &tmbuf);
 	tstrftime(tbuf, sizeof (tbuf) / sizeof (tchar), fmt.c_str(), tm);
@@ -437,7 +437,8 @@ void Log::endlog(Tlsdata &tlsd) {
 	if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
 	    int diff;
 	    tchar gmtoff[16];
-	    struct tm tmbuf2, *tm2;
+	    struct tm tmbuf2;
+	    const struct tm *tm2;
 
 	    memcpy(&tmbuf, tm, sizeof (tmbuf));
 	    tm = &tmbuf;

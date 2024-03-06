@@ -102,8 +102,10 @@ public:
     ~Log();
 
     template<typename T>
+    // cppcheck-suppress returnTempReference
     __forceinline Log &operator <<(const T &val) { return log(val); }
     __forceinline Log &operator <<(void(Log &)) { endlog(); return *this; }
+    // cppcheck-suppress [constParameterReference, returnTempReference]
     __forceinline Log &operator <<(Escalator &e) { return log(e); }
 
     bool alertfile(void) const { return afd.enable; }
@@ -122,7 +124,7 @@ public:
     bool file(void) const { return ffd.enable; }
     void file(bool b) { ffd.enable = b; }
     void file(Level l, const tchar *file = NULL, uint cnt = 0,
-	ulong sz = 10 * 1024 * 1024, ulong tm = 0);
+	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
     const tchar *filename(void) const { return ffd.filename(); }
     const tchar *filepath(void) const { return ffd.pathname(); }
     const tchar *format(void) const { return fmt.c_str(); }
@@ -158,12 +160,14 @@ public:
 	    endlog(tlsd);
     }
     void flush(void) { Locker lkr(lck); _flush(); }
+    // cppcheck-suppress-begin returnTempReference
     template <typename T>
     __forceinline Log &log(const T &val) { return log(tls.get(), val); }
     __forceinline Log &log(const tchar *val) { return log(tls.get(), val); }
     __forceinline Log &log(char *val) {
 	return log(tls.get(), (const tchar *)val);
     }
+    // cppcheck-suppress constParameterReference
     __forceinline Log &log(Escalator &e) { return log(tls.get(), e); }
     __forceinline Log &log(Log::Level l) { return log(tls.get(), l); }
     template<typename T>
@@ -174,6 +178,7 @@ public:
 
 	return *this;
     }
+    // cppcheck-suppress-end returnTempReference
     void logv(int l, ...);
     bool reopen(void) { Locker lkr(lck); return ffd.reopen(); }
     void roll(void) { Locker lkr(lck); ffd.roll(); }
@@ -274,7 +279,7 @@ private:
 	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m): cnt(0),
 	    gmt(false), mp(m), len(0), sec(0), sz(0), locked(false), lvl(dlvl),
 	    fd(-1) {
-	    set(dlvl, dfile, 3, 5 * 1024 * 1024, 0);
+	    set(dlvl, dfile, 3, 5UL * 1024 * 1024, 0);
 	    enable = denable;
 	}
 	~LogFile() { close(); }
@@ -376,6 +381,7 @@ private:
     __forceinline Log &log(Tlsdata &tlsd, tchar *val) {
 	return log(tlsd, (const tchar *)val);
     }
+    // cppcheck-suppress constParameterReference
     Log &log(Tlsdata &tlsd, Escalator &e);
     __forceinline Log &log(Tlsdata &tlsd, Log::Level l) {
 	if (l <= lvl && !tlsd.suppress)

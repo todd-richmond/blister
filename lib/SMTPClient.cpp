@@ -1398,7 +1398,7 @@ time_t mkgmtime(const tm *tmp) {
     t = (t < 0) ? 0 : ((time_t) 1 << bits);
     while (true) {
 	int dir;
-	tm *newtm = gmtime_r(&t, &tmbuf);
+	const tm *newtm = gmtime_r(&t, &tmbuf);
 
 	if (newtm == NULL)
 	    return 0;

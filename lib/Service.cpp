@@ -793,6 +793,7 @@ void Service::abort_handler(void) {
 
 void Service::null_handler(int) {}
 
+// cppcheck-suppress constParameterCallback
 void Service::signal_handler(int sig, siginfo_t *si, void *) {
     bool paused = (service->stStatus == Paused);
 
@@ -1530,7 +1531,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	Log::kv(T("instance"), instance), Log::kv(T("release"), ver));
 #ifndef _WIN32
     rlimit rl;
-    passwd *pwd;
+    const passwd *pwd;
     string uidname = cfg.get(T("uid"));
 
     if (uidname.empty()) {
