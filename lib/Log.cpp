@@ -107,7 +107,8 @@ int Log::FlushThread::onStart(void) {
 	// wake up on 1st buffered write
 	l.cv.wait(INFINITE);
 	// sleep for buffer time before flush
-	l.cv.wait(l.buftm);
+	if (!qflag)
+	    l.cv.wait(l.buftm);
 	l._flush();
     }
     return 0;

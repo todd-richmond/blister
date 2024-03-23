@@ -1144,7 +1144,7 @@ public:
 	lck.unlock();
 	if (UNLIKELY(!w.sema4.wait(msec))) {
 	    lck.lock();
-	    for (Waiting **ww = (Waiting **)&head; *ww; ww = &(*ww)->next) {
+	    for (Waiting **ww = &head; *ww; ww = &(*ww)->next) {
 		if (*ww == &w) {
 		    *ww = w.next;
 		    --sz;
