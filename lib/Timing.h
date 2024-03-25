@@ -78,7 +78,7 @@ typedef usec_t timing_t;
 
 class BLISTER TimingKey: public StringHash {
 public:
-    __forceinline TimingKey(const DynamicString &ds): StringHash(ds),
+    __forceinline explicit TimingKey(const DynamicString &ds): StringHash(ds),
 	key(ds.s) {}
 
     TIMING_KEY(1) TIMING_KEY(2) TIMING_KEY(3) TIMING_KEY(4)
@@ -186,7 +186,7 @@ extern BLISTER Timing &dtiming;
 // time a code block including destructors
 class BLISTER TimingEntry: nocopy {
 public:
-    template<class C> __forceinline TimingEntry(const C &k, Timing &t =
+    template<class C> __forceinline explicit TimingEntry(const C &k, Timing &t =
 	dtiming): key(k), start(t.start()), timing(t) {}
     __forceinline ~TimingEntry() {
 	if (start != (timing_t)-1)
@@ -206,7 +206,7 @@ private:
 // time a function block including destructors
 class BLISTER TimingFrame: nocopy {
 public:
-    template<class C> __forceinline TimingFrame(const C &k, Timing &t =
+    template<class C> __forceinline explicit TimingFrame(const C &k, Timing &t =
 	dtiming): key(k), started(true), timing(t) {
 	timing.start(key);
     }

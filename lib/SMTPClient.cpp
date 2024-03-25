@@ -1357,6 +1357,8 @@ static void parse_rfc822space(const tchar *&s) {
 		case ')':
 		    cmt--;
 		    break;
+		default:
+		    break;
 		}
 		p++;
 	    }

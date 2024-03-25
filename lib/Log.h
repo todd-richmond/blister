@@ -164,7 +164,8 @@ public:
     template <typename T>
     __forceinline Log &log(const T &val) { return log(tls.get(), val); }
     __forceinline Log &log(const tchar *val) { return log(tls.get(), val); }
-    __forceinline Log &log(char *val) {
+    #pragma warning(disable : 26461)
+    __forceinline Log &log(tchar *val) {
 	return log(tls.get(), (const tchar *)val);
     }
     // cppcheck-suppress constParameterReference
@@ -238,15 +239,15 @@ public:
     }
     template<typename T>
     static __forceinline const KV<T> cmd(const T &val) {
-	return KV<T>("cmd", val);
+	return KV<T>(T("cmd"), val);
     }
     template<typename T>
     static __forceinline const KV<T> error(const T &val) {
-	return KV<T>("err", val);
+	return KV<T>(T("err"), val);
     }
     template<typename T>
     static __forceinline const KV<T> mod(const T &val) {
-	return KV<T>("mod", val);
+	return KV<T>(T("mod"), val);
     }
     static tostream &quote(tostream &os, const tchar *s);
     static const tchar *section(void) { return T("log"); }
@@ -378,6 +379,7 @@ private:
 	}
 	return *this;
     }
+    #pragma warning(disable : 26461)
     __forceinline Log &log(Tlsdata &tlsd, tchar *val) {
 	return log(tlsd, (const tchar *)val);
     }

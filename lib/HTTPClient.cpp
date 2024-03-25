@@ -246,9 +246,7 @@ loop:
     sent = (ulong)sock.writev(iov, 2) == (ulong)(req.size() + datasz);
     if (!sent ||
 	// shutdown causes huge cpu spikes on NT - not sure why
-#if 0
-	(!ka && !sock.shutdown(false, true)) ||
-#endif
+	// (!ka && !sock.shutdown(false, true)) ||
 	!getline(sstrm, s)) {
 	sock.close();
 	if (first && ka && (!sent || rto > (mticks() - start) + 200)) {

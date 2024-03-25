@@ -629,11 +629,11 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	    cv.wait(msec);
 	} else {
 	    ulong diff;
-	    msec_t start = mticks();
+	    msec_t ticks = mticks();
 
 	    if (!cv.wait(msec))
 		break;
-	    diff = (ulong)(mticks() - start);
+	    diff = (ulong)(mticks() - ticks);
 	    msec -= diff < msec ? diff : msec;
 	}
     } while (true);

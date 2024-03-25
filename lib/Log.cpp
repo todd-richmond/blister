@@ -671,7 +671,7 @@ tostream &Log::quote(tostream &os, const tchar *s) {
     if (quote) {
 	os << '"';
 	for (p = s; *p; p++) {
-	    char c = *p;
+	    tchar c = *p;
 
 	    switch (c) {
 	    case '"':

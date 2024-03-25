@@ -164,6 +164,7 @@ void Sockaddr::port(ushort port) {
     switch (family()) {
     case AF_INET: addr.sa4.sin_port = htons(port); break;
     case AF_INET6: addr.sa6.sin6_port = htons(port); break;
+    default: break;
     }
 }
 

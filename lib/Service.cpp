@@ -115,6 +115,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 
 Service::Timer::Timer(ulong msec): timer(NULL) {
     (void)msec;
+    (void)timer;
 }
 
 void Service::Timer::cancel() {
@@ -122,7 +123,7 @@ void Service::Timer::cancel() {
 
 Service::Service(const tchar *servicename, const tchar *h): bPause(false),
     errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0),
-    checkpoint(0), ctrlfunc(NULL), hService(0), hSCManager(0), hStatus(0),
+    ctrlfunc(NULL), checkpoint(0), hService(0), hSCManager(0), hStatus(0),
     map(NULL), maphdl(0), mapsz(0) {
     ZERO(ssStatus);
     if (h)
@@ -131,7 +132,7 @@ Service::Service(const tchar *servicename, const tchar *h): bPause(false),
 
 Service::Service(const tchar *servicename, bool pauseable): bPause(pauseable),
     errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0),
-    checkpoint(0), ctrlfunc(NULL), hService(0), hSCManager(0), hStatus(0),
+    ctrlfunc(NULL), checkpoint(0), hService(0), hSCManager(0), hStatus(0),
     map(NULL), maphdl(0), mapsz(0) {
     service = this;
     ZERO(ssStatus);
@@ -517,7 +518,7 @@ void Service::exit(int code) {
 }
 
 tstring Service::errstr() const {
-    tchar *msg;
+    tchar *msg = NULL;
     tstring s(T("Service Error"));
 
     if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
@@ -1218,7 +1219,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	return 1;
     }
 #endif
-    av = new const tchar *[(uint)argc + 1];
+    av = new const tchar *[(uint)(argc + 1)];
     path = argv[0];
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];

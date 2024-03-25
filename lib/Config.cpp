@@ -129,7 +129,7 @@ long Config::get(const tchar *key, long def, const tchar *sect) const {
     if (kv && kv->expand) {
 	tstring s;
 
-	return expandkv(kv, s) ? tstrtol(s.c_str(), NULL, 10) : def;
+	return expandkv(kv, s) ? stol(s) : def;
     }
     return kv ? tstrtol(kv->val, NULL, 10) : def;
 }
@@ -141,7 +141,7 @@ llong Config::get(const tchar *key, llong def, const tchar *sect) const {
     if (kv && kv->expand) {
 	tstring s;
 
-	return expandkv(kv, s) ? tstrtoll(s.c_str(), NULL, 10) : def;
+	return expandkv(kv, s) ? stoll(s) : def;
     }
     return kv ? tstrtoll(kv->val, NULL, 10) : def;
 }
@@ -153,7 +153,7 @@ ulong Config::get(const tchar *key, ulong def, const tchar *sect) const {
     if (kv && kv->expand) {
 	tstring s;
 
-	return expandkv(kv, s) ? tstrtoul(s.c_str(), NULL, 10) : def;
+	return expandkv(kv, s) ? stoul(s) : def;
     }
     return kv ? tstrtoul(kv->val, NULL, 10) : def;
 }
@@ -165,7 +165,7 @@ ullong Config::get(const tchar *key, ullong def, const tchar *sect) const {
     if (kv && kv->expand) {
 	tstring s;
 
-	return expandkv(kv, s) ? tstrtoull(s.c_str(), NULL, 10) : def;
+	return expandkv(kv, s) ? stoull(s) : def;
     }
     return kv ? tstrtoull(kv->val, NULL, 10) : def;
 }
@@ -177,7 +177,7 @@ double Config::get(const tchar *key, double def, const tchar *sect) const {
     if (kv && kv->expand) {
 	tstring s;
 
-	return expandkv(kv, s) ? tstrtod(s.c_str(), NULL) : def;
+	return expandkv(kv, s) ? stod(s) : def;
     }
     return kv ? tstrtod(kv->val, NULL) : def;
 }
@@ -254,7 +254,7 @@ bool Config::parse(tistream &is) {
 	if (key.empty() || key[0] == ';' || key[0] == '#' || key[0] == '=')
 	    continue;
 
-	bool append = false;
+	bool app = false;
 	tstring::size_type pos;
 	tstring::size_type sz = key.size();
 
@@ -281,10 +281,10 @@ bool Config::parse(tistream &is) {
 	    val.erase();
 	} else {
 	    if (key[pos - 1] == '+')
-		append = true;
+		app = true;
 	    val.assign(key.c_str() + pos + 1, sz - pos);
 	    trim(val);
-	    key.erase(pos - (append ? 1 : 0), key.size());
+	    key.erase(pos - (app ? 1 : 0), key.size());
 	    trim(key);
 	}
 	if (key.size() > 2 && key[0] == '*' && key[1] == '.') {
@@ -306,7 +306,7 @@ bool Config::parse(tistream &is) {
 	    continue;
 	}
 	set(key.c_str(), key.size(), val.c_str(), val.size(), sect.c_str(),
-	    sect.size(), append);
+	    sect.size(), app);
     }
     return true;
 }

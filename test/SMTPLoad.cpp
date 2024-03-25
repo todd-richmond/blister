@@ -764,6 +764,7 @@ int tmain(int argc, tchar *argv[]) {
 		break;
 	    case '?': tcout << T("(q)uit (r)eset (w)rite") << endl;
 		break;
+	    default: break;
 	    }
 	}
 #endif

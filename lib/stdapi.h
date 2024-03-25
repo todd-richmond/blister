@@ -1014,7 +1014,7 @@ inline int stringicmp(const wchar *a, const wchar *b) { return wcsicmp(a, b); }
 
 template<class C>
 inline bool stringeq(const C *a, const C *b) {
-    return strcmp(a, b) == 0;
+    return tstrcmp(a, b) == 0;
 }
 
 template<class C>
@@ -1024,7 +1024,7 @@ inline bool stringeq(const C &a, const C &b) {
 
 template<class C>
 inline bool stringless(const C *a, const C *b) {
-    return strcmp(a, b) < 0;
+    return tstrcmp(a, b) < 0;
 }
 
 template<class C>
@@ -1150,7 +1150,7 @@ struct striless {
 // compile time string hashing using Bernstein XOR algorithm for string keys
 #define STRING_HASH_PRE(i, d)	((
 #define STRING_HASH_POST(i, d)	* (size_t)33) ^ (size_t)s[i])
-#define STRING_HASH(i) __forceinline StringHash(const tchar (&s)[i]): \
+#define STRING_HASH(i) __forceinline explicit StringHash(const tchar (&s)[i]): \
     hash(STDAPI_REPEAT(i, STRING_HASH_PRE, ~) 5381 STDAPI_REPEAT(i, \
 	STRING_HASH_POST, ~)) {}
 
@@ -1209,7 +1209,7 @@ public:
 
     class BLISTER const_iterator {
     public:
-	__forceinline const_iterator(const C *c): cur(c) {}
+	__forceinline explicit const_iterator(const C *c): cur(c) {}
 	__forceinline const_iterator(const const_iterator &it): cur(it.cur) {}
 	__forceinline const C &operator *() const { return *cur; }
 	__forceinline const C *operator ->() const { return cur; }
@@ -1343,7 +1343,7 @@ private:
 
 template <class C>
 struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C> >::Node {
-    __forceinline ObjectListNode(const C &c): val(c) {}
+    __forceinline explicit ObjectListNode(const C &c): val(c) {}
 
     C val;
 };

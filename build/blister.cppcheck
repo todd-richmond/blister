@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="1">
+    <builddir>blister-cppcheck-build-dir</builddir>
+    <importproject>Blister.sln</importproject>
+    <analyze-all-vs-configs>false</analyze-all-vs-configs>
+    <check-headers>true</check-headers>
+    <check-unused-templates>true</check-unused-templates>
+    <max-ctu-depth>2</max-ctu-depth>
+    <max-template-recursion>100</max-template-recursion>
+    <vs-configurations>
+        <config>Release</config>
+        <config>Release Unicode</config>
+    </vs-configurations>
+    <suppressions>
+        <suppression>cstyleCast</suppression>
+        <suppression>missingIncludeSystem</suppression>
+        <suppression>noExplicitConstructor</suppression>
+        <suppression>unmatchedSuppression</suppression>
+        <suppression>useStlAlgorithm</suppression>
+    </suppressions>
+    <check-level-exhaustive/>
+    <project-name>blister</project-name>
+</project>

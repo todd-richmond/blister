@@ -942,7 +942,7 @@ int statvfs(const char *path, struct statvfs *buf) {
 
 int wstatvfs(const wchar *path, struct statvfs *buf) {
     ulong bytesPerSector, freeClusters, sectorsPerCluster, totalClusters;
-    wchar *cp;
+    const wchar *cp;
     int rc;
 
     /* try root directory. This doesn't handle filesystems not mapped
@@ -994,20 +994,12 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     return 0;
 }
 
-int _strcmp(const char *a, const char *b) {
-    for (; *a == *b; a++, b++)
-	if (*a == '\0')
-	    return 0;
-    return (*a < *b ? -1 : 1);
-}
-
 #define _BASE_YEAR	    70
 #define _LEAP_YEAR_ADJUST   17
 #define _MAX_YEAR	    138
 #define _BASE_DOW	    4
 #define DAY_MILLISEC	    (24L * 60L * 60L * 1000L)
 #define IS_LEAP_YEAR(year)  (((year) & 3) == 0)
-
 
 #ifdef _DLL
 int _lpdays[] = { -1, 30, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365 };

@@ -239,7 +239,9 @@ public:
     bool read(const tchar *file = NULL, const tchar *_pre = NULL, bool append =
 	false);
     // cppcheck-suppress duplInheritedMember
-    bool write(tostream &os, bool ini) const { return Config::write(os, ini); }
+    bool write(tostream &os, bool inifmt) const {
+	return Config::write(os, inifmt);
+    }
     bool write(void) const { return write(NULL, iniformat()); }
     bool write(const tchar *file, bool ini = false) const;
 
