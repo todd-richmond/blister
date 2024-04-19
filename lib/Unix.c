@@ -128,11 +128,7 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
     fl.l_whence = whence;
     fl.l_start = (off_t)start;
     fl.l_len = (off_t)len;
-#ifdef F_OFD_SETLK
-    return fcntl(fd, test ? F_OFD_SETLK : F_OFD_SETLKW, &fl);
-#else
     return fcntl(fd, test ? F_SETLK : F_SETLKW, &fl);
-#endif
 }
 
 int pidstat(pid_t pid, struct pidstat *psbuf) {
