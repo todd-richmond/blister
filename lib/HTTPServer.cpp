@@ -584,10 +584,12 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 	hdrs.write(buf, i);
     }
     _status = sts;
-    if (close)
+    if (close) {
 	hdrs << "Connection: close\r\n";
-    else
+	ka = false;
+    } else {
 	keepalive();
+    }
 }
 
 void HTTPServerSocket::header(const char *attr, const char *val) {

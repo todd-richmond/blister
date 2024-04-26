@@ -1518,7 +1518,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     if (!onRefresh())
 	return 3;
     buffer = cfg.get(T("log.file.buffer.enable"), false);
-    watch = !console && cfg.get(T("watch.enable"), true);
+    watch = cfg.get(T("watch.enable"), !console);
     dlog.setmp(false);
     if (!cfg.get(T("enable"), true)) {
 	dlog.note(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
