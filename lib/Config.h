@@ -67,7 +67,8 @@ public:
     bool iniformat(void) const { return ini; }
     const tstring &prefix(void) const { return pre; }
 
-    void append(const tchar *key, const tchar *val, const tchar *sect = NULL) {
+    Config &append(const tchar *key, const tchar *val, const tchar *sect =
+	NULL) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	return set(key, tstrlen(key), val, tstrlen(val), sect, sect ?
@@ -117,58 +118,62 @@ public:
     }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = NULL, bool append = false);
-    void set(const tchar *key, const tchar *val, const tchar *sect = NULL) {
+    Config &set(const tchar *key, const tchar *val, const tchar *sect = NULL) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	return set(key, tstrlen(key), val, tstrlen(val), sect, sect ?
 	    tstrlen(sect) : 0);
     }
-    void set(const tstring &key, const tstring &val, const tstring &sect) {
+    Config &set(const tstring &key, const tstring &val, const tstring &sect) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	return set(key.c_str(), key.size(), val.c_str(), val.size(),
 	    sect.c_str(), sect.size());
     }
-    void set(const tchar *key, const bool val, const tchar *sect = NULL) {
-	set(key, val ? T("t") : T("f"), sect);
+    Config &set(const tchar *key, const bool val, const tchar *sect = NULL) {
+	return set(key, val ? T("t") : T("f"), sect);
     }
-    void set(const tchar *key, double val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%g"), val); set(key, buf, sect);
+    Config &set(const tchar *key, double val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%g"), val); return set(key, buf, sect);
     }
-    void set(const tchar *key, float val, const tchar *sect = NULL) {
+    Config &set(const tchar *key, float val, const tchar *sect = NULL) {
 	tchar buf[24];
 	tsprintf(buf, T("%f"), (double)val);
-	set(key, buf, sect);
+	return set(key, buf, sect);
     }
-    void set(const tchar *key, int val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%d"), val); set(key, buf, sect);
+    Config &set(const tchar *key, int val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%d"), val); return set(key, buf, sect);
     }
-    void set(const tchar *key, long val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%ld"), val); set(key, buf, sect);
+    Config &set(const tchar *key, long val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%ld"), val); return set(key, buf, sect);
     }
-    void set(const tchar *key, llong val, const tchar *sect = NULL) {
-	tchar buf[48]; tsprintf(buf, T("%lld"), val); set(key, buf, sect);
+    Config &set(const tchar *key, llong val, const tchar *sect = NULL) {
+	tchar buf[48];
+	tsprintf(buf, T("%lld"), val);
+	return set(key, buf, sect);
     }
-    void set(const tchar *key, short val, const tchar *sect = NULL) {
-	tchar buf[16]; tsprintf(buf, T("%hd"), val); set(key, buf, sect);
+    Config &set(const tchar *key, short val, const tchar *sect = NULL) {
+	tchar buf[16]; tsprintf(buf, T("%hd"), val); return set(key, buf, sect);
     }
-    void set(const tchar *key, tchar val, const tchar *sect = NULL) {
-	tchar buf[2]; buf[0] = val; buf[1] = '\0'; set(key, buf, sect);
+    Config &set(const tchar *key, tchar val, const tchar *sect = NULL) {
+	tchar buf[2]; buf[0] = val; buf[1] = '\0'; return set(key, buf, sect);
     }
-    void set(const tchar *key, uint val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%u"), val); set(key, buf, sect);
+    Config &set(const tchar *key, uint val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%u"), val); return set(key, buf, sect);
     }
-    void set(const tchar *key, ulong val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%lu"), val); set(key, buf, sect);
+    Config &set(const tchar *key, ulong val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%lu"), val); return set(key, buf, sect);
     }
-    void set(const tchar *key, ullong val, const tchar *sect = NULL) {
+    Config &set(const tchar *key, ullong val, const tchar *sect = NULL) {
 	// cppcheck-suppress invalidPrintfArgType_uint
-	tchar buf[48]; tsprintf(buf, T("%llu"), val); set(key, buf, sect);
+	tchar buf[48];
+	tsprintf(buf, T("%llu"), val);
+	return set(key, buf, sect);
     }
-    void set(const tchar *key, ushort val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%hu"), val); set(key, buf, sect);
+    Config &set(const tchar *key, ushort val, const tchar *sect = NULL) {
+	tchar buf[24]; tsprintf(buf, T("%hu"), val); return set(key, buf, sect);
     }
-    void setv(const tchar *key, const tchar *val, ... /* , const tchar
+    Config &setv(const tchar *key, const tchar *val, ... /* , const tchar
 	*sect = NULL, NULL */);
     bool write(tostream &os) const { return write(os, ini); }
     bool write(tostream &os, bool ini) const;
@@ -210,8 +215,8 @@ private:
     bool expandkv(const KV *kv, tstring &val) const;
     const KV *getkv(const tchar *key, const tchar *sect) const;
     bool parse(tistream &is);
-    void set(const tchar *key, size_t klen, const tchar *val, size_t vlen, const
-	tchar *sect, size_t slen, bool append = false);
+    Config &set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
+	const tchar *sect, size_t slen, bool append = false);
     static void delkv(const KV *kv) { delete [] (char *)kv; }
     static const KV *newkv(const tchar *key, size_t klen, const tchar *val,
 	size_t vlen);

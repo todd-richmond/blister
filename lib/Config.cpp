@@ -74,7 +74,9 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	    break;
 
 	kvmap::const_iterator it;
-	tstring s(val, spos + 2, epos - spos - 2);
+	tstring::size_type off = val[spos + 2] == '*' && val[spos + 3] == '.' ?
+            2 : 0;
+        tstring s(val, spos + 2 + off, epos - spos - 2 - off);
 
 	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 && s.size() >
 	    pre.size() + 1 && s[pre.size()] == '.')
@@ -329,8 +331,8 @@ bool Config::read(tistream &is, const tchar *str, bool app) {
     return parse(is);
 }
 
-void Config::set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
-    const tchar *sect, size_t slen, bool append) {
+Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
+    vlen, const tchar *sect, size_t slen, bool append) {
     const KV *kv, *oldkv;
 
     if (slen) {
@@ -343,10 +345,10 @@ void Config::set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
 	kv = newkv(key, klen, val, vlen);
     }
 
-    pair<kvmap::iterator, bool> old(amap.emplace(kv->key, kv));
+    pair<kvmap::const_iterator, bool> old(amap.emplace(kv->key, kv));
 
     if (old.second)
-	return;
+	return *this;
     oldkv = old.first->second;
     if (append) {
 	tstring s;
@@ -368,9 +370,10 @@ void Config::set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
     amap.erase(old.first);
     delkv(oldkv);
     amap.emplace(kv->key, kv);
+    return *this;
 }
 
-void Config::setv(const tchar *key1, const tchar *val1, ...) {
+Config &Config::setv(const tchar *key1, const tchar *val1, ...) {
     const tchar *arg, *key = NULL, *sect = NULL;
     size_t slen;
     va_list vl;
@@ -393,6 +396,7 @@ void Config::setv(const tchar *key1, const tchar *val1, ...) {
     }
     unlock();
     va_end(vl);
+    return *this;
 }
 
 void Config::trim(tstring &s) {
