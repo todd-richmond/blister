@@ -36,7 +36,7 @@ int clock_gettime(int id, struct timespec *ts) {
 
 	if (!mti.denom)
 	    mach_timebase_info(&mti);
-	t = t * mti.numer / mti.denom;
+	t = t * mti.numer / mti.denom;		// codespell:ignore numer
 	ts->tv_sec  = t / (1000 * 1000 * 1000);
 	ts->tv_nsec = t % 1000;
 	return 0;
@@ -78,7 +78,7 @@ usec_t __no_sanitize("thread") uticks(void) {
 	}
 	atomic_clr(lck);
     }
-    return mach_absolute_time() * mti.numer / mti.denom;
+    return mach_absolute_time() * mti.numer / mti.denom; // codespell:ignore numer
 #elif defined(CLOCK_MONOTONIC)
     struct timespec ts;
 

@@ -1135,7 +1135,7 @@ bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
 
 bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
     size_t &outsz) {
-    string afile(tchartoachar(file));
+    string filestr(tchartotstring(file));
     static const char begin[] = "begin 644 ";
     static const char end[] = "\r\nend\r\n";
     static const uchar table[64] = {
@@ -1146,12 +1146,12 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
 	'X', 'Y', 'Z', '[', '\\', ']', '^', '_'
     };
 
-    outsz = (size_t)afile.size();
+    outsz = (size_t)filestr.size();
     if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) ==
 	NULL) // -V668
 	return false;
     memcpy(out, begin, sizeof (begin) - 1);
-    memcpy(out + sizeof (begin) - 1, afile.c_str(), outsz);
+    memcpy(out + sizeof (begin) - 1, filestr.c_str(), outsz);
     outsz += sizeof (begin) - 1;
     out[outsz++] = '\r';
     out[outsz++] = '\n';

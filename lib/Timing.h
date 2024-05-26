@@ -39,7 +39,7 @@
  *
  * direct: lowest overhead for basic or fine grained profile tasks
  *   function_c() {
- *     TimingEntry te(T("function_c"));
+ *     TimingEntry entry(T("function_c"));
  *     code_c();
  *   }
  *
