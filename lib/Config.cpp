@@ -98,7 +98,7 @@ const tstring Config::get(const tchar *key, const tchar *def, const tchar
     if (kv && kv->expand) {
 	tstring s;
 
-	return expandkv(kv, s) ? s : def ? def : empty;
+	return expandkv(kv, s) ? std::move(s) : def ? def : empty;
     }
     return kv ? kv->val : def ? def : empty;
 }
@@ -400,15 +400,12 @@ Config &Config::setv(const tchar *key1, const tchar *val1, ...) {
 }
 
 void Config::trim(tstring &s) {
-    tstring::size_type i, j;
+    tstring::size_type i, j = s.size();
 
-    for (j = s.size(); j; j--)
-	if (!istspace(s[j - 1]))
-	    break;
-    if (j < s.size())
+    while (UNLIKELY(j && istspace(s[--j])))
 	s.erase(j);
     for (i = 0; i < j; i++)
-	if (!istspace(s[i]))
+	if (LIKELY(!istspace(s[i])))
 	    break;
     if (i)
 	s.erase(0, i);
