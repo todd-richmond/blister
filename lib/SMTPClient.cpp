@@ -1135,7 +1135,7 @@ bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
 
 bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
     size_t &outsz) {
-    string filestr(tchartotstring(file));
+    string filestr = tchartotstring(file);
     static const char begin[] = "begin 644 ";
     static const char end[] = "\r\nend\r\n";
     static const uchar table[64] = {
