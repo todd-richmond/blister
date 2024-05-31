@@ -163,7 +163,6 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 }
 
 bool Log::LogFile::reopen(void) {
-    bool ret = true;
     struct stat sbuf;
 
     close();
@@ -172,25 +171,24 @@ bool Log::LogFile::reopen(void) {
 	tcerr << T("unable to open log ") << path << T(": ") <<
 	    tstrerror(errno) << endl;
 	fd = -3;
-	ret = false;
-    } else {
-	lock();
-	if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
-	    char buf[PATH_MAX];
-	    time_t now = ::time(NULL);
-	    struct tm tmbuf;
-	    const struct tm *tm = gmt ? gmtime_r(&now, &tmbuf) :
-		localtime_r(&now, &tmbuf);
+	return false;
+    }
+    lock();
+    if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
+	char buf[PATH_MAX];
+	time_t now = ::time(NULL);
+	struct tm tmbuf;
+	const struct tm *tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(&now,
+	    &tmbuf);
 
-	    strftime(buf, sizeof (buf), tstringtoachar(file), tm);
-	    if (link(tstringtoachar(path), buf)) {
-		::close(fd);
-		fd = -3;
-		ret = false;
-	    }
+	strftime(buf, sizeof (buf), tstringtoachar(file), tm);
+	if (link(tstringtoachar(path), buf)) {
+	    ::close(fd);
+	    fd = -3;
+	    return false;
 	}
     }
-    return ret;
+    return true;
 }
 
 void Log::LogFile::roll(void) {

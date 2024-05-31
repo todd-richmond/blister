@@ -1,7 +1,6 @@
 ---
 WarningsAsErrors: ''
 HeaderFilterRegex: '.*'
-AnalyzeTemporaryDtors: false
 FormatStyle:     none
 Checks: >
   *,
@@ -41,6 +40,7 @@ Checks: >
   -clang-diagnostic-pragma-pack,
   -clang-diagnostic-unknown-pragmas,
   -clang-diagnostic-unknown-warning-option,
+  -clang-diagnostic-unused-command-line-argument,
   -concurrency-mt-unsafe,
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-avoid-const-or-ref-data-members,
@@ -50,6 +50,7 @@ Checks: >
   -cppcoreguidelines-avoid-non-const-global-variables,
   -cppcoreguidelines-explicit-virtual-functions,
   -cppcoreguidelines-init-variables,
+  -cppcoreguidelines-macro-to-enum,
   -cppcoreguidelines-macro-usage,
   -cppcoreguidelines-narrowing-conversions,
   -cppcoreguidelines-no-malloc,
@@ -104,6 +105,7 @@ Checks: >
   -llvmlibc-callee-namespace,
   -llvmlibc-inline-function-decl,
   -llvmlibc-implementation-in-namespace,
+  -llvmlibc-inline-function-decl,
   -llvmlibc-restrict-system-libc-headers,
   -misc-const-correctness,
   -misc-include-cleaner,
@@ -129,7 +131,9 @@ Checks: >
   -modernize-use-using,
   -objc-*,
   -performance-avoid-endl,
+  -performance-enum-size,
   -performance-no-int-to-ptr,
+  -readability-avoid-nested-conditional-operator,
   -readability-braces-around-statements,
   -readability-function-cognitive-complexity,
   -readability-const-return-type,

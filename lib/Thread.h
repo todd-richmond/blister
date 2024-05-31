@@ -1027,32 +1027,6 @@ typedef FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> FastRLocker
 typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker;
 
 /* Fast reference counter class */
-#ifdef NO_ATOMIC_ADD
-class BLISTER RefCount: nocopy {
-public:
-    explicit RefCount(uint init = 1): cnt(init) {}
-
-    __forceinline operator bool(void) const { return referenced(); }
-    __forceinline bool referenced(void) const {
-	FastSpinLocker lkr(lck);
-
-	return cnt != 0;
-    }
-
-    __forceinline void reference(void) { FastSpinLocker lkr(lck); ++cnt; }
-    __forceinline bool release(void) {
-	FastSpinLocker lkr(lck);
-
-	return --cnt == 0;
-    }
-
-private:
-    uint cnt;
-    mutable SpinLock lck;
-};
-
-#else
-
 class BLISTER RefCount: nocopy {
 public:
     explicit RefCount(uint init = 1): cnt((int)init) {}
@@ -1066,7 +1040,6 @@ public:
 private:
     mutable atomic_t cnt;
 };
-#endif
 
 /* Last-in-first-out queue useful for thread pools */
 class BLISTER Lifo {
@@ -1082,23 +1055,15 @@ public:
     Lifo(): head(NULL), sz(0) {}
     ~Lifo() { close(); }
 
-    __forceinline operator bool(void) const {
-	FastSpinLocker lkr(lck);
-
-	return sz != 0;
-    }
-    __forceinline bool empty(void) const {
-	FastSpinLocker lkr(lck);
-
-	return sz == 0;
-    }
+    __forceinline operator bool(void) const { return size() != 0; }
+    __forceinline bool empty(void) const { return size() == 0; }
     __forceinline uint size(void) const {
 	FastSpinLocker lkr(lck);
 
 	return sz;
     }
     __forceinline uint broadcast(void) {
-	Waiting *w, *next;
+	Waiting *w, *ww;
 	uint ret;
 
 	lck.lock();
@@ -1107,10 +1072,10 @@ public:
 	ret = sz;
 	sz = 0;
 	lck.unlock();
-	while (w) {
-	    next = w->next;
+	while (LIKELY(w)) {
+	    ww = w->next;
 	    w->sema4.set();
-	    w = next;
+	    w = ww;
 	}
 	return ret;
     }
@@ -1121,19 +1086,18 @@ public:
 	return true;
     }
     __forceinline uint set(uint count = 1) {
-	lck.lock();
-	while (LIKELY(head && count)) {
-	    Waiting *w = head;
+	Waiting *w, *ww, *www;
 
-	    head = w->next;
+	lck.lock();
+	for (w = ww = head; w && count--; w = w->next)
 	    --sz;
-	    lck.unlock();
-	    w->sema4.set();
-	    if (!--count)
-		return 0;
-	    lck.lock();
-	}
+	head = w;
 	lck.unlock();
+	while (LIKELY(ww != w)) {
+	    www = ww->next;
+	    ww->sema4.set();
+	    ww = www;
+	}
 	return count;
     }
     __forceinline bool wait(Waiting &w, ulong msec = INFINITE) {

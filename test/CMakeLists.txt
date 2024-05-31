@@ -3,6 +3,9 @@ target_link_libraries(cfg blister_static)
 
 add_executable(daemonize Daemonize.cpp)
 target_link_libraries(daemonize blister_static)
+if(CMAKE_COMPILER_IS_GNUCXX)
+    target_link_libraries(daemonize -Werror=stack-usage=12288)
+endif()
 
 add_executable(dlog DLog.cpp)
 target_link_libraries(dlog blister_static)
