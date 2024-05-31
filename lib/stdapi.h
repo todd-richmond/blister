@@ -431,19 +431,14 @@ EXTERNC_
 #else // _WIN32
 
 #define _DARWIN_C_SOURCE
+#define _GNU_SOURCE
 #define _FILE_OFFSET_BITS	64
 #ifndef _LARGEFILE_SOURCE
 #define _LARGEFILE_SOURCE	1
 #define _LARGEFILE64_SOURCE	1
 #endif
-#ifndef _POSIX_PTHREAD_SEMANTICS
-#define _POSIX_PTHREAD_SEMANTICS
-#endif
 #ifndef _REENTRANT
 #define _REENTRANT
-#endif
-#ifndef _XOPEN_SOURCE
-#define _XOPEN_SOURCE		700
 #endif
 #define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_9
 #define __BSD_VISIBLE		1
