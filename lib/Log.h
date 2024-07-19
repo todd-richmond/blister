@@ -372,7 +372,7 @@ private:
 	    } else {
 		if (tlsd.sep && tlsd.strm.size())
 		    tlsd.strm << tlsd.sep;
-		if **val) {
+		if (*val) {
 		    tlsd.strm << val;
 		    if (tlsd.strm.str()[tlsd.strm.size() - 1] == '=')
 			tlsd.sep = '=';
