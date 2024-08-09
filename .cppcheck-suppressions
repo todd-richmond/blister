@@ -5,6 +5,7 @@ cstyleCast
 missingIncludeSystem
 missingOverride
 noExplicitConstructor
+normalCheckLevelMaxBranches
 postfixOperator
 preprocessorErrorDirective
 redundantContinue

@@ -165,8 +165,8 @@ public:
 	tchar buf[24]; tsprintf(buf, T("%lu"), val); return set(key, buf, sect);
     }
     Config &set(const tchar *key, ullong val, const tchar *sect = NULL) {
-	// cppcheck-suppress invalidPrintfArgType_uint
 	tchar buf[48];
+	// cppcheck-suppress invalidPrintfArgType_uint
 	tsprintf(buf, T("%llu"), val);
 	return set(key, buf, sect);
     }

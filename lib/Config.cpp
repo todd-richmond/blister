@@ -284,7 +284,7 @@ bool Config::parse(tistream &is) {
 	} else {
 	    if (key[pos - 1] == '+')
 		app = true;
-	    val.assign(key.c_str() + pos + 1, sz - pos);
+	    val.assign(key.c_str() + pos + 1, sz - pos - 1);
 	    trim(val);
 	    key.erase(pos - (app ? 1 : 0), key.size());
 	    trim(key);
