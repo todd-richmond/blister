@@ -197,7 +197,6 @@ void Log::LogFile::roll(void) {
     uint files = 0;
     ino_t inode = 0;
     time_t now;
-    tstring oldfile;
     tstring::size_type pos;
     tstring s1, s2, s3;
     struct stat sbuf;
@@ -226,6 +225,7 @@ void Log::LogFile::roll(void) {
 	for (;;) {
 	    ulong ext;
 	    ulong oldext = 0;
+	    tstring oldfile;
 	    ulong oldtime = (ulong)-1;
 
 	    files = 0;

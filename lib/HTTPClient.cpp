@@ -314,13 +314,14 @@ loop:
 	}
 	ret = (ulong)sstrm.read(result, (streamsize)ressz) == ressz;
     } else if (ressz) {
-	streamsize in;
-	char *newres;
 	ulong room = sz;
 
 	keep = false;
 	ressz = 0;
 	for (;;) {
+	    streamsize in;
+	    char *newres;
+
 	    if (!room) {
 		room = ressz ? ressz : 12UL * 1024;
 		sz = ressz + room;

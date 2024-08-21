@@ -396,7 +396,7 @@ bool Service::install(const tchar *file, const tchar *desc, const tchar * const
     tchar buf[PATH_MAX];
     size_t i;
     tchar *p = NULL;
-    tstring root, prog;
+    tstring prog;
 
     if (uninstall())
 	open();
@@ -405,6 +405,8 @@ bool Service::install(const tchar *file, const tchar *desc, const tchar * const
 	file = buf;
     }
     if (!desc) {
+	tstring root;
+
 	splitpath(file, NULL, root, prog);
 	prog[0] = (tchar)totupper(prog[0]);
 	for (i = 1; i < prog.size(); i++)
