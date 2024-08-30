@@ -402,8 +402,11 @@ Config &Config::setv(const tchar *key1, const tchar *val1, ...) {
 void Config::trim(tstring &s) {
     tstring::size_type i, j = s.size();
 
-    while (UNLIKELY(j && istspace(s[--j])))
+    while (LIKELY(j)) {
+	if (LIKELY(!istspace(s[--j])))
+	    break;
 	s.erase(j);
+    }
     for (i = 0; i < j; i++)
 	if (LIKELY(!istspace(s[i])))
 	    break;

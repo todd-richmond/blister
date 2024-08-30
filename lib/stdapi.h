@@ -431,8 +431,10 @@ EXTERNC_
 #else // _WIN32
 
 #define _DARWIN_C_SOURCE
-#define _GNU_SOURCE
 #define _FILE_OFFSET_BITS	64
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #ifndef _LARGEFILE_SOURCE
 #define _LARGEFILE_SOURCE	1
 #define _LARGEFILE64_SOURCE	1

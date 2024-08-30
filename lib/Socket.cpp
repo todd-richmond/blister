@@ -647,7 +647,7 @@ bool Socket::peername(Sockaddr &sa) {
 #include <linux/netfilter_ipv4.h>
 
 bool Socket::proxysockname(Sockaddr &sa) {
-    return check(getsockopt(SOL_IP, SO_ORIGINAL_DST, *(sockaddr *)sa.data()));
+    return check(getsockopt(SOL_IP, SO_ORIGINAL_DST, *sa.data()));
 }
 #endif
 

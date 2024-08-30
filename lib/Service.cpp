@@ -710,7 +710,7 @@ Service::Timer::Timer(ulong msec): timer(NULL) {
     ZERO(se);
     se.sigev_notify = SIGEV_SIGNAL;
     se.sigev_signo = SIGALRM;
-    se.sigev_value.sival_ptr = &timer;
+    se.sigev_value.sival_ptr = &timer;	// NOLINT
     if (msec == (ulong)-1 || timer_create(CLOCK_MONOTONIC, &se, &timer))
 	return;
     if (!msec)
@@ -810,7 +810,7 @@ void Service::signal_handler(int sig, siginfo_t *si, void *) {
     ZERO(se);
     se.sigev_notify = SIGEV_THREAD;
     se.sigev_notify_function = abort_handler;
-    se.sigev_value.sival_ptr = &timer;
+    se.sigev_value.sival_ptr = &timer;	// NOLINT
     if (timer_create(CLOCK_MONOTONIC, &se, &timer)) {
 	timer = NULL;
     } else {

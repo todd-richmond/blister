@@ -227,7 +227,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     }
     req += "\r\n";
     if (datasz) {
-	sprintf(buf, "Content-Length: %lu\r\n", (ulong)datasz);
+	sprintf(buf, "Content-Length: %lu\r\n", datasz);
 	req += buf;
     }
     if (ka)
