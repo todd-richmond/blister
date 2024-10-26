@@ -895,9 +895,11 @@ extern BLISTER int lockfile(int fd, short type, short whence, ulong start, ulong
     len, short test);
 extern BLISTER msec_t mticks(void);
 extern BLISTER usec_t uticks(void);
+#ifndef _WIN32
 WARN_PUSH_DISABLE(-Wshadow)
 extern BLISTER int pidstat(pid_t pid, struct pidstat *psbuf);
 WARN_POP()
+#endif
 EXTERNC_
 
 // common includes, defines and code for C++ software
