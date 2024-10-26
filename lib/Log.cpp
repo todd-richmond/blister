@@ -246,9 +246,8 @@ void Log::LogFile::roll(void) {
 		if (tstat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
 		    oldtime) {
 		    if ((pos = s3.rfind('.')) != s3.npos && pos < s3.size() -
-			// cppcheck-suppress bugprone-inc-dec-in-conditions
-			1 && isdigit((int)s3[++pos])) {
-			ext = tstrtoul(s3.c_str() + pos, NULL, 10);
+			1 && isdigit((int)s3[pos + 1])) {
+			ext = tstrtoul(s3.c_str() + pos + 1, NULL, 10);
 			// ensure older logs were not touched
 			if ((ext < oldext && path == file) || (ext > oldext &&
 			    file.size() > 12 && !tstrcmp(file.c_str() - 12,
