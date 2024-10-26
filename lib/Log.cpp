@@ -472,7 +472,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	strbuf += T("ll=");
 	WARN_PUSH_DISABLE(33011);
 	strbuf += LevelStr[clvl];
-	WARN_POP;
+	WARN_POP();
 	strbuf += ' ';
     } else if (_type != NoLevel && _type != NoTime) {
 	strbuf += LevelStr[clvl];

@@ -225,7 +225,7 @@ void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
 	if (func)
 	    func(data);
     }
-    WARN_POP;
+    WARN_POP();
 }
 
 Thread::Thread(thread_hdl_t handle, ThreadGroup *tg, bool aterm): cv(lck),

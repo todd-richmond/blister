@@ -219,7 +219,7 @@ private:
 
     const tstring str(const tstring &val) const;
 };
-WARN_POP
+WARN_POP()
 
 inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
     return os << addr.str();

@@ -41,8 +41,8 @@
 #define PRAGMA_STR(s)		__pragma(s)
 #define WARN_DISABLE(w)		PRAGMA_STR(warning(disable: w))
 #define WARN_ENABLE(w)		PRAGMA_STR(warning(enable: w))
-#define WARN_POP		PRAGMA_STR(warning(pop))
-#define WARN_PUSH		PRAGMA_STR(warning(push))
+#define WARN_POP()		PRAGMA_STR(warning(pop))
+#define WARN_PUSH()		PRAGMA_STR(warning(push))
 #elif defined(__GNUC__)
 #define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
     __GNUC_PATCHLEVEL__)
@@ -65,11 +65,11 @@
 #define PRAGMA_STR(s)		_Pragma (#s)
 #define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored #w)
 #define WARN_ENABLE(w)		PRAGMA_STR(GCC diagnostic warning #w)
-#define WARN_POP		PRAGMA_STR(GCC pop_options)
-#define WARN_PUSH		PRAGMA_STR(GCC push_options)
+#define WARN_POP()		PRAGMA_STR(GCC pop_options)
+#define WARN_PUSH()		PRAGMA_STR(GCC push_options)
 #endif
 
-#define WARN_PUSH_DISABLE(w)	WARN_PUSH \
+#define WARN_PUSH_DISABLE(w)	WARN_PUSH() \
 				WARN_DISABLE(w)
 
 #ifdef __cplusplus
@@ -895,10 +895,9 @@ extern BLISTER int lockfile(int fd, short type, short whence, ulong start, ulong
     len, short test);
 extern BLISTER msec_t mticks(void);
 extern BLISTER usec_t uticks(void);
-#pragma GCC push_options
-#pragma GCC diagnostic ignored "-Wshadow"
+WARN_PUSH_DISABLE(-Wshadow)
 extern BLISTER int pidstat(pid_t pid, struct pidstat *psbuf);
-#pragma GCC pop_options
+WARN_POP()
 EXTERNC_
 
 // common includes, defines and code for C++ software
