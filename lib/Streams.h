@@ -262,7 +262,7 @@ public:
 
     streamsize pcount(void) const { return sb.pcount(); }
     streamsize size(void) const { return pcount(); }
-    const C *str(void) const { return sb.str(); }
+    const C *str(void) const { return sb.buffer(); }
 
     void reset(void) { if (sb.pcount()) basic_ostream<C>::seekp(0, ios::beg); }
 
@@ -274,9 +274,7 @@ private:
 	streamsize pcount(void) const {
 	    return basic_stringbuf<C>::pptr() - basic_stringbuf<C>::pbase();
 	}
-	WARN_PUSH_DISABLE(26434)
-	const C *str(void) const { return basic_stringbuf<C>::pbase(); }
-	WARN_POP()
+	const C *buffer(void) const { return basic_stringbuf<C>::pbase(); }
     };
 
     bufferbuf sb;
