@@ -10,11 +10,11 @@ name: Microsoft C++ Code Analysis
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ $default-branch, $protected-branches ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ $default-branch, $protected-branches ]
   schedule:
-    - cron: '36 6 * * 2'
+    - cron: $cron-weekly
 
 env:
   # Path to the CMake build directory.
