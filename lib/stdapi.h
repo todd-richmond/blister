@@ -673,6 +673,7 @@ EXTERNC_
 #define T(str)		_T(str)
 
 #define tstring		wstring
+#define tstring_view	wstring_view
 #define tstrcmp		wcscmp
 #define tstricmp	wcsicmp
 #define tstrncmp	wcsncmp
@@ -764,6 +765,7 @@ typedef wchar tuchar;
 #define T(str)		str
 
 #define tstring		string
+#define tstring_view	string_view
 #define tstrcmp		strcmp
 #define tstricmp	stricmp
 #define tstrncmp	strncmp

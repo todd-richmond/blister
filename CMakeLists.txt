@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.10)
 foreach(policy IN ITEMS CMP0056 CMP0060 CMP0065 CMP0066 CMP0074 CMP0102)
     if(POLICY ${policy})
 	cmake_policy(SET ${policy} NEW)
