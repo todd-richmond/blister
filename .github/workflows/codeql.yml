@@ -13,11 +13,11 @@ name: "CodeQL Advanced"
 
 on:
   push:
-    branches: [ $default-branch, $protected-branches ]
+    branches: [ "master" ]
   pull_request:
-    branches: [ $default-branch, $protected-branches ]
+    branches: [ "master" ]
   schedule:
-    - cron: $cron-weekly
+    - cron: '25 0 * * 2'
 
 jobs:
   analyze:
@@ -45,8 +45,7 @@ jobs:
         include:
         - language: c-cpp
           build-mode: autobuild
-        #$codeql-languages-matrix
-        # CodeQL supports the following values keywords for 'language': $supported-codeql-languages
+        # CodeQL supports the following values keywords for 'language':  'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift'
         # Use `c-cpp` to analyze code written in C, C++ or both
         # Use 'java-kotlin' to analyze code written in Java, Kotlin or both
         # Use 'javascript-typescript' to analyze code written in JavaScript, TypeScript or both
