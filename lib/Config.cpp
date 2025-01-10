@@ -269,13 +269,15 @@ bool Config::parse(tistream &is) {
     if (!is)
 	return false;
     while (getline(is, line)) {
-	while (istspace(line.back()))
+	while (!line.empty() && istspace(line.back()))
 	    line.erase(line.size() - 1);
+	if (line.empty())
+	    continue;
 	while (line.back() == '\\') {
 	    tstring s;
 
 	    line.erase(line.size() - 1);
-	    while (istspace(line.back()))
+	    while (!line.empty() && istspace(line.back()))
 		line.erase(line.size() - 1);
 	    if (getline(is, s)) {
 		tstring_view sv(s);
