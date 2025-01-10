@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <fstream>
 #include <vector>
+#include <sys/stat.h>
 #include "Config.h"
 
 #ifdef WIN32
@@ -28,16 +29,19 @@
 #define ENDL '\n'
 #endif
 
+constexpr uint BUFSZ = 32 * 1024U;
+
 void Config::clear(void) {
-    kvmap::iterator it;
     WLocker lkr(lck, !THREAD_ISSELF(locker));
+    kvmap::size_type sz = amap.size(), u = sz;
+    const KV **kvs = new const KV *[sz];
 
-    while ((it = amap.begin()) != amap.end()) {
-	const KV *kv = it->second;
-
-	amap.erase(it);
-	delkv(kv);
-    }
+    for (kvmap::const_iterator it = amap.begin(); it != amap.end(); ++it)
+	kvs[--u] = it->second;
+    amap.clear();
+    for (u = 0; u < sz; ++u)
+	delkv(kvs[u]);
+    delete [] kvs;
 }
 
 void Config::erase(const tchar *key, const tchar *sect) {
@@ -89,18 +93,21 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
     return !val.empty();
 }
 
-const tstring Config::get(const tchar *key, const tchar *def, const tchar
-    *sect) const {
+const tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
+    const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
     static tstring empty;
 
-    if (kv && kv->expand) {
+    if (UNLIKELY(!kv)) {
+	return def ? def : empty;
+    } else if (UNLIKELY(kv->expand)) {
 	tstring s;
 
 	return expandkv(kv, s) ? std::move(s) : def ? def : empty;
+    } else {
+	return kv->val;
     }
-    return kv ? kv->val : def ? def : empty;
 }
 
 bool Config::get(const tchar *key, bool def, const tchar *sect) const {
@@ -108,18 +115,16 @@ bool Config::get(const tchar *key, bool def, const tchar *sect) const {
     const KV *kv = getkv(key, sect);
     tchar c;
 
-    if (kv) {
-	if (kv->expand) {
-	    tstring s;
-
-	    if (!expandkv(kv, s))
-		return def;
-	    c = (tchar)totlower(s[0]);
-	} else {
-	    c = (tchar)totlower(kv->val[0]);
-	}
-    } else {
+    if (UNLIKELY(!kv)) {
 	return def;
+    } else if (UNLIKELY(kv->expand)) {
+	tstring s;
+
+	if (!expandkv(kv, s))
+	    return def;
+	c = (tchar)totlower(s[0]);
+    } else {
+	c = (tchar)totlower(kv->val[0]);
     }
     return c == 't' || c == 'y' || c == '1';
 }
@@ -128,60 +133,75 @@ long Config::get(const tchar *key, long def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (kv && kv->expand) {
+    if (UNLIKELY(!kv)) {
+	return def;
+    } else if (UNLIKELY(kv->expand)) {
 	tstring s;
 
 	return expandkv(kv, s) ? stol(s) : def;
+    } else {
+	return tstrtol(kv->val, NULL, 10);
     }
-    return kv ? tstrtol(kv->val, NULL, 10) : def;
 }
 
 llong Config::get(const tchar *key, llong def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (kv && kv->expand) {
+    if (UNLIKELY(!kv)) {
+	return def;
+    } else if (UNLIKELY(kv->expand)) {
 	tstring s;
 
 	return expandkv(kv, s) ? stoll(s) : def;
+    } else {
+	return tstrtoll(kv->val, NULL, 10);
     }
-    return kv ? tstrtoll(kv->val, NULL, 10) : def;
 }
 
 ulong Config::get(const tchar *key, ulong def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (kv && kv->expand) {
+    if (UNLIKELY(!kv)) {
+	return def;
+    } else if (UNLIKELY(kv->expand)) {
 	tstring s;
 
 	return expandkv(kv, s) ? stoul(s) : def;
+    } else {
+	return tstrtoul(kv->val, NULL, 10);
     }
-    return kv ? tstrtoul(kv->val, NULL, 10) : def;
 }
 
 ullong Config::get(const tchar *key, ullong def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (kv && kv->expand) {
+    if (UNLIKELY(!kv)) {
+	return def;
+    } else if (UNLIKELY(kv->expand)) {
 	tstring s;
 
 	return expandkv(kv, s) ? stoull(s) : def;
+    } else {
+	return tstrtoull(kv->val, NULL, 10);
     }
-    return kv ? tstrtoull(kv->val, NULL, 10) : def;
 }
 
 double Config::get(const tchar *key, double def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (kv && kv->expand) {
+    if (UNLIKELY(!kv)) {
+	return def;
+    } else if (UNLIKELY(kv->expand)) {
 	tstring s;
 
 	return expandkv(kv, s) ? stod(s) : def;
+    } else {
+	return tstrtod(kv->val, NULL);
     }
-    return kv ? tstrtod(kv->val, NULL) : def;
 }
 
 const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
@@ -202,27 +222,32 @@ const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
 }
 
 // 1 allocation for key, val, state
-const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar
-    *val, size_t vlen) {
+const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
+    size_t vlen) {
     KV *kv = (KV *)new char[offsetof(KV, val) + klen + vlen + 2];
 
-    kv->expand = false;
-    if (vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen - 1] ==
-	val[0]) {
+    if (UNLIKELY(vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen -
+	1] == val[0])) {
 	kv->quote = val[0];
 	++val;
 	vlen -= 2;
     } else {
 	kv->quote = '\0';
     }
-    memcpy(kv->val, val, vlen);
+    memcpy(kv->val, val, vlen * sizeof (tchar));
     kv->val[vlen] = '\0';
-    kv->key = (const tchar *)memcpy(kv->val + vlen + 1, key, klen);
-    ((char *)kv->key)[klen] = '\0';
-    if (kv->quote != '\'') {
+    kv->key = (const tchar *)memcpy(kv->val + vlen + 1, key, klen * sizeof
+	(tchar));
+    ((tchar *)kv->key)[klen] = '\0';
+    kv->expand = false;
+    if (LIKELY(vlen > 3 && kv->quote != '\'')) {
 	const tchar *p = kv->val;
 
+#ifdef _UNICODE
 	while ((p = tstrchr(p, '$')) != NULL) {
+#else
+	while ((p = (const tchar *)memchr(p, '$', vlen)) != NULL) {
+#endif
 	    ++p;
 	    if ((*p == '{' || *p == '(') && tstrchr(p, *p == '(' ? ')' : '}') !=
 		NULL) {
@@ -236,79 +261,101 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar
 }
 
 bool Config::parse(tistream &is) {
-    tstring key, s, sect, val;
-    const tchar *p;
+    bool app;
+    tstring_view key, val;
+    tstring line, sect;
+    tstring::size_type pos;
 
     if (!is)
 	return false;
-    while (getline(is, key)) {
-	trim(key);
-	if (!tstrnicmp(key.c_str(), T("#include"), 8)) {
-	    key.erase(0, 9);
-	    trim(key);
+    while (getline(is, line)) {
+	while (istspace(line.back()))
+	    line.erase(line.size() - 1);
+	while (line.back() == '\\') {
+	    tstring s;
 
-	    tifstream ifs(key.c_str());
-
-	    if (!parse(ifs))
-		return false;
-	    continue;
-	}
-	if (key.empty() || key[0] == ';' || key[0] == '#' || key[0] == '=')
-	    continue;
-
-	bool app = false;
-	tstring::size_type pos;
-	tstring::size_type sz = key.size();
-
-	while (key[sz - 1] == '\\') {
+	    line.erase(line.size() - 1);
+	    while (istspace(line.back()))
+		line.erase(line.size() - 1);
 	    if (getline(is, s)) {
-		trim(s);
-		if (s.empty()) {
-		} else if (s[0] == ';' || s[0] == '#') {
-		    if (s[s.size() - 1] != '\\') {
-			key.resize(sz - 1);
-			trim(key);
-			sz = key.size();
-			break;
-		    }
-		} else {
-		    key.resize(sz - 1);
-		    key += s;
-		    sz = key.size();
-		}
+		tstring_view sv(s);
+
+		trim(sv);
+		if (!sv.empty())
+		    line += sv.front() == ';' || sv.front() == '#' ? "\\" : s;
 	    }
 	}
-	pos = key[0] == '[' ? key.npos : key.find('=');
-	if (pos == key.npos) {
-	    val.erase();
-	} else {
-	    if (key[pos - 1] == '+')
-		app = true;
-	    val.assign(key.c_str() + pos + 1, sz - pos - 1);
-	    trim(val);
-	    key.erase(pos - (app ? 1 : 0), key.size());
-	    trim(key);
-	}
-	if (key.size() > 2 && key[0] == '*' && key[1] == '.') {
-	    key.erase(0, 2);
-	} else if (!pre.empty()) {
-	    if (key.compare(0, pre.size(), pre) == 0 &&
-		key.size() > pre.size() + 1 && key[pre.size()] == '.')
-		key.erase(0, pre.size() + 1);
-	    else if (key.find('.') != key.npos)
-		continue;
-	}
-	if (key[0] == '[') {
-	    sect.assign(key.c_str() +  1, key.size() - 2);
-	    trim(sect);
-	    p = sect.c_str();
-	    if (!tstricmp(p, T("common")) || !tstricmp(p, T("global")))
-		sect.erase();
-	    ini = true;
+	key = line;
+	while (UNLIKELY(!key.empty() && istspace(key.back())))
+	    key.remove_suffix(1);
+	if (UNLIKELY(key.empty()))
 	    continue;
+	switch (key.front()) {
+	case ';':
+	case '=':
+	    break;
+	case '#':
+	    if (key.rfind(T("include"), 1) == 1) {
+		string file;
+		struct stat sbuf;
+
+		key.remove_prefix(9);
+		trim(key);
+		file.assign(key);
+		if (stat(file.c_str(), &sbuf)) {
+		    return false;
+		} else {
+		    tifstream is;
+
+		    reserve((ulong)sbuf.st_size);
+		    if (sbuf.st_size > BUFSZ)
+			is.rdbuf()->pubsetbuf(NULL, BUFSZ);
+		    is.open(file.c_str());
+		    if (!parse(is))
+			return false;
+		}
+	    }
+	    break;
+	case '[':
+	    key.remove_prefix(1);
+	    key.remove_suffix(1);
+	    trim(key);
+	    if (key == T("common") || key == T("global"))
+		sect.erase();
+	    else
+		sect.assign(key);
+	    ini = true;
+	    break;
+	default:
+	    app = false;
+	    pos = key.find('=');
+	    if (UNLIKELY(pos == key.npos)) {
+		val = "";
+	    } else {
+		val = key;
+		val.remove_prefix(pos + 1);
+		trim(val);
+		if (UNLIKELY(key[pos - 1] == '+')) {
+		    app = true;
+		    key.remove_suffix(key.size() - pos + 1);
+		} else {
+		    key.remove_suffix(key.size() - pos);
+		}
+		trim(key);
+	    }
+	    if (UNLIKELY(key[0] == '*' && key[1] == '.')) {
+		key.remove_prefix(2);
+	    } else if (!pre.empty()) {
+		if (key.compare(0, pre.size(), pre) == 0 &&
+		    key.size() > pre.size() + 1 && key[pre.size()] == '.')
+		    key.remove_prefix(pre.size() + 1);
+		else if (key.find('.') != key.npos)
+		    continue;
+	    }
+	    set(key.data(), key.size(), val.data(), val.size(), sect.data(),
+		sect.size(), app);
+	    break;
 	}
-	set(key.c_str(), key.size(), val.c_str(), val.size(), sect.c_str(),
-	    sect.size(), app);
     }
     return true;
 }
@@ -335,7 +382,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     vlen, const tchar *sect, size_t slen, bool append) {
     const KV *kv, *oldkv;
 
-    if (slen) {
+    if (UNLIKELY(slen)) {
 	tstring s;
 
 	s.reserve(slen + 1 + klen);
@@ -347,7 +394,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 
     pair<kvmap::const_iterator, bool> old(amap.emplace(kv->key, kv));
 
-    if (old.second)
+    if (LIKELY(old.second))
 	return *this;
     oldkv = old.first->second;
     if (append) {
@@ -394,24 +441,16 @@ Config &Config::setv(const tchar *key1, const tchar *val1, ...) {
 	    key = arg;
 	}
     }
-    unlock();
     va_end(vl);
+    unlock();
     return *this;
 }
 
-void Config::trim(tstring &s) {
-    tstring::size_type i, j = s.size();
-
-    while (LIKELY(j)) {
-	if (LIKELY(!istspace(s[--j])))
-	    break;
-	s.erase(j);
-    }
-    for (i = 0; i < j; i++)
-	if (LIKELY(!istspace(s[i])))
-	    break;
-    if (i)
-	s.erase(0, i);
+void Config::trim(tstring_view &s) {
+    while (UNLIKELY(!s.empty() && istspace(s.back())))
+	s.remove_suffix(1);
+    while (UNLIKELY(!s.empty() && istspace(s.front())))
+	s.remove_prefix(1);
 }
 
 bool Config::write(tostream &os, bool inistyle) const {
@@ -484,12 +523,21 @@ ConfigFile::ConfigFile(const tchar *file, const tchar *_pre): Config(_pre) {
 }
 
 bool ConfigFile::read(const tchar *file, const tchar *_pre, bool app) {
+    struct stat sbuf;
+
     if (file)
 	path = file;
+    if (stat(path.c_str(), &sbuf)) {
+	return false;
+    } else {
+	tifstream is;
 
-    tifstream is(path.c_str());
-
-    return read(is, _pre, app);
+	reserve((ulong)sbuf.st_size);
+	if (sbuf.st_size > BUFSZ)
+	    is.rdbuf()->pubsetbuf(NULL, BUFSZ);
+	is.open(path.c_str());
+	return read(is, _pre, app);
+    }
 }
 
 bool ConfigFile::write(const tchar *file, bool inistyle) const {

@@ -118,6 +118,7 @@ public:
     }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = NULL, bool append = false);
+    void reserve(ulong sz) { amap.reserve(amap.size() + sz / 40); }
     Config &set(const tchar *key, const tchar *val, const tchar *sect = NULL) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
@@ -220,7 +221,7 @@ private:
     static void delkv(const KV *kv) { delete [] (char *)kv; }
     static const KV *newkv(const tchar *key, size_t klen, const tchar *val,
 	size_t vlen);
-    static void trim(tstring &str);
+    static void trim(tstring_view &str);
 };
 
 inline tistream &operator >>(tistream &is, Config &cfg) {

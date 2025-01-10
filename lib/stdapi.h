@@ -1237,13 +1237,13 @@ public:
 
     ObjectList(): back(NULL), front(NULL), sz(0) {}
 
-    bool operator !(void) const { return front == NULL; }
-    operator bool(void) const { return front != NULL; }
+    __forceinline bool operator !(void) const { return front == NULL; }
+    __forceinline operator bool(void) const { return front != NULL; }
     const_iterator begin(void) const { return const_iterator(front); }
-    bool empty(void) const { return front == NULL; }
+    __forceinline bool empty(void) const { return front == NULL; }
     const_iterator end(void) const { return const_iterator(NULL); }
-    const C *peek(void) const { return front; }
-    uint size(void) const { return sz; }
+    __forceinline const C *peek(void) const { return front; }
+    __forceinline uint size(void) const { return sz; }
 
     void erase(void) { back = front = NULL; sz = 0; }
     void free(void) {
@@ -1295,18 +1295,15 @@ public:
 
 	if ((front = front->next) == NULL)
 	    back = NULL;
-	else
-	    obj->next = NULL;
+	obj->next = NULL;
 	--sz;
 	return obj;
     }
     void push_back(C &obj) {
-	if (back)
-	    back->next = &obj;
+	if (sz++)
+	    back = back->next = &obj;
 	else
-	    front = &obj;
-	back = &obj;
-	++sz;
+	    back = front = &obj;
     }
     void push_back(ObjectList &lst) {
 	if (lst.front) {

@@ -300,8 +300,8 @@ public:
     bool operator !(void) const { return sbuf->sock == SOCK_INVALID; }
     operator socket_t() const { return sbuf->sock; }
 
-    bool blocked(void) const { return ::blocked(sbuf->err); }
-    bool interrupted(void) const { return ::interrupted(sbuf->err); }
+    bool __forceinline blocked(void) const { return sbuf->blocked(); }
+    bool __forceinline interrupted(void) const { return sbuf->interrupted(); }
     int err(void) const { return sbuf->err; }
     void err(int err) const { sbuf->err = err; }
     const tstring errstr(void) const;
@@ -409,9 +409,10 @@ protected:
 	    blck(true), own(o) {}
 	~SocketBuf() { if (own) close(); }
 
-	bool blocked(void) const { return ::blocked(err); }
-	bool check(int ret) {
-	    if (ret == -1) {
+	bool __forceinline blocked(void) const { return ::blocked(err); }
+	bool __forceinline interrupted(void) const { return ::interrupted(err); }
+	bool __forceinline check(int ret) const {
+	    if (UNLIKELY(ret == -1)) {
 		err = sockerrno();
 		return false;
 	    } else {
@@ -419,6 +420,7 @@ protected:
 		return true;
 	    }
 	}
+
 	bool __no_sanitize_thread close(void) {
 	    if (sock == SOCK_INVALID) {
 		err = EINVAL;
@@ -438,7 +440,6 @@ protected:
 	    }
 	    return false;
 	}
-	bool interrupted(void) const { return ::interrupted(err); }
 	void unlink(const char *p) {
 	    if (strchr(p, '/')) {
 		if (path)

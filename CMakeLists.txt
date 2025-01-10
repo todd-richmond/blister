@@ -253,7 +253,7 @@ endif()
 add_custom_target(distclean)
 add_custom_command(
     COMMENT "Cleaning distribution"
-    COMMAND $(MAKE) ${CLEAN_COTIRE} clean
+    COMMAND $(MAKE) clean
     COMMAND find . -name .lto -o -name CMakeFiles -o -name CMakeCache.txt -o -name cmake_install.cmake -o -name \\*.ninja -o -name Makefile | xargs rm -rf
     TARGET distclean)
 

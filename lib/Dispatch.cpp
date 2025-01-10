@@ -995,13 +995,13 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     timers.set(ds, tmt);
     if (UNLIKELY(tmt < due)) {
 	due = tmt;
-	resched = true;
-    }
-    if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll))) {
-	if (UNLIKELY(resched))
+	if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll))) {
 	    wakeup((ulong)(due - now));
-	else
-	    lock.unlock();
+	    return;
+	}
+	resched = true;
+    } else if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll))) {
+	lock.unlock();
 	return;
     }
     if (UNLIKELY(!ds.mapped)) {
