@@ -307,13 +307,13 @@ bool Config::parse(tistream &is) {
 		if (stat(file.c_str(), &sbuf)) {
 		    return false;
 		} else {
-		    tifstream is;
+		    tifstream iis;
 
 		    reserve((ulong)sbuf.st_size);
 		    if (sbuf.st_size > BUFSZ)
-			is.rdbuf()->pubsetbuf(NULL, BUFSZ);
-		    is.open(file.c_str());
-		    if (!parse(is))
+			iis.rdbuf()->pubsetbuf(NULL, BUFSZ);
+		    iis.open(file.c_str());
+		    if (!parse(iis))
 			return false;
 		}
 	    }
