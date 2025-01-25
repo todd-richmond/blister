@@ -34,7 +34,7 @@ constexpr uint BUFSZ = 32 * 1024U;
 void Config::clear(void) {
     WLocker lkr(lck, !THREAD_ISSELF(locker));
     kvmap::size_type sz = amap.size(), u = sz;
-    const KV **kvs = new const KV *[sz];
+    const KV **kvs = new const KV *[(uint)sz];
 
     for (kvmap::const_iterator it = amap.begin(); it != amap.end(); ++it)
 	kvs[--u] = it->second;
