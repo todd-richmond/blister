@@ -176,6 +176,12 @@ public:
     bool set(const sockaddr &sa);
     ushort size(void) const { return size(family()); }
     const tstring str(void) const { return str(host()); }
+    bool v4addr(in_addr *addr4) const {
+	if (!v4mapped())
+	    return false;
+	memcpy(addr4, &addr.sa6.sin6_addr.s6_addr32[3], sizeof (*addr4));
+	return true;
+    }
     bool v4mapped(void) const {
 	return ipv6() && IN6_IS_ADDR_V4MAPPED(&addr.sa6.sin6_addr);
     }

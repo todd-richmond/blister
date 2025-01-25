@@ -149,8 +149,7 @@ bool Dispatcher::exec() {
 	    lock.lock();
 	    continue;
 	} else if (UNLIKELY((group = obj->group)->active)) {
-	    obj->flags &= ~DSP_Ready;
-	    obj->flags |= DSP_ReadyGroup;
+	    obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
 	    group->glist.push_back(*obj);
 	    continue;
 	}
@@ -166,13 +165,11 @@ bool Dispatcher::exec() {
 	group->active = false;
 	if (UNLIKELY(group->glist)) {
 	    if (obj->flags & DSP_Ready) {
-		obj->flags &= ~DSP_Ready;
-		obj->flags |= DSP_ReadyGroup;
+		obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
 		group->glist.push_back(*obj);
 	    }
 	    obj = group->glist.pop_front();
-	    obj->flags &= ~DSP_Ready;
-	    obj->flags |= DSP_ReadyGroup;
+	    obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
 	    rlist.push_back(*obj);
 	} else if (obj->flags & DSP_Ready) {
 	    rlist.push_back(*obj);
@@ -1195,9 +1192,9 @@ void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB
     if (!cb)
 	cb = connected;
     if (open(sa.family()) && blocking(false) && Socket::connect(sa))
-	ready(cb, false, DispatchConnect);
+	(void)ready(cb, false, DispatchConnect);
     else if (!blocked())
-	ready(cb, false, DispatchClose);
+	(void)ready(cb, false, DispatchClose);
     else
 	poll(cb, msec, DispatchConnect);
 }
