@@ -367,9 +367,10 @@ private:
     Log &log(Tlsdata &tlsd, const tchar *val) {
 	if (tlsd.clvl != None) {
 	    if (tlsd.sep == '=') {
-		quote(tlsd.strm, val);
+		if (val)
+		    quote(tlsd.strm, val);
 		tlsd.sep = ' ';
-	    } else {
+	    } else if (val) {
 		if (tlsd.sep && tlsd.strm.size())
 		    tlsd.strm << tlsd.sep;
 		if (*val) {
