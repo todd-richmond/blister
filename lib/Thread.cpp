@@ -523,7 +523,9 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 	grouplck.lock();
 	for (i = groups.begin(); i != groups.end(); ++i) {
 	    tg = *i;
-	    if (!THREAD_ISSELF(tg->master.id)) {
+	    if (THREAD_ISSELF(tg->master.id)) {
+		break;
+	    } else {
 		tg->cvlck.lock();
 		for (ii = tg->threads.begin(); ii != tg->threads.end(); ++ii) {
 		    if (THREAD_ISSELF((*ii)->id))
