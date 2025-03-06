@@ -200,7 +200,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     ulong datasz) {
     char buf[64];
     bool first = true;
-    iovec iov[2];
+    iovec iov[2]{};
     bool keep = false;
     const char *p, *pp;
     const tchar *resp;

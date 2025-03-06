@@ -35,10 +35,6 @@
 #define SERVICE_PREFIX T("service_")
 #endif
 
-#ifndef OPEN_MAX
-#define OPEN_MAX 2048
-#endif
-
 static const uint STATUS_LOOPS = 400;
 
 ulong Service::Timer::dmsec = 120;
@@ -1221,7 +1217,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	return 1;
     }
 #endif
-    av = new const tchar *[(uint)(argc + 1)];
+    av = new const tchar *[(uint)argc + 1];
     path = argv[0];
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];
@@ -1555,7 +1551,11 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    dloge(Log::mod(name), T(" unknown uid "), uidname);
 	}
     }
-    dlogd(Log::mod(name), Log::kv(T("uid"), uid == (uid_t)-1 ? getuid() :
+#ifndef OPEN_MAX
+#define OPEN_MAX 2048
+#endif
+    dlogd(Log::mod(name),
+	Log::kv(T("uid"), uid == (uid_t)-1 ? getuid() :
 	(uid_t)uid), Log::kv(T("gid"), gid <= 0 ? getgid() : (uid_t)gid),
 	Log::kv(T("maxfd"), getrlimit(RLIMIT_NOFILE, &rl) ? OPEN_MAX :
 	rl.rlim_cur));

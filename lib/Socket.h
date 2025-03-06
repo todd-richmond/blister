@@ -179,7 +179,11 @@ public:
     bool v4addr(in_addr *addr4) const {
 	if (!v4mapped())
 	    return false;
+#ifdef _WIN32
+	memcpy(addr4, &addr.sa6.sin6_addr.u.Byte[12], sizeof(*addr4));
+#else
 	memcpy(addr4, &addr.sa6.sin6_addr.s6_addr32[3], sizeof (*addr4));
+#endif
 	return true;
     }
     bool v4mapped(void) const {

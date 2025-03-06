@@ -130,10 +130,9 @@ public:
 	const char *p = gptr();
 
 	if (p == NULL) {
-	    uchar c;
+	    signed char c;
 
-	    return fd->read((char *)&c, sizeof (c)) == (int)sizeof (c) ?
-		(int)c : -1;
+	    return fd->read(&c, sizeof (c)) == (int)sizeof (c) ? c : -1;
 	} else if (p >= egptr()) {
 	    char *pb = pbase();
 	    streamsize left = (streamsize)(pptr() - pb);
@@ -217,7 +216,7 @@ public:
 	streamsize left = bufsz - (pp - pb);
 
 	if (left < sz) {
-	    iovec iov[2];
+	    iovec iov[2]{};
 	    long out;
 
 	    iov[0].iov_base = pb;

@@ -1192,9 +1192,9 @@ void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB
     if (!cb)
 	cb = connected;
     if (open(sa.family()) && blocking(false) && Socket::connect(sa))
-	(void)ready(cb, false, DispatchConnect);
+	ready(cb, false, DispatchConnect);
     else if (!blocked())
-	(void)ready(cb, false, DispatchClose);
+	ready(cb, false, DispatchClose);
     else
 	poll(cb, msec, DispatchConnect);
 }

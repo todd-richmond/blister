@@ -116,8 +116,8 @@
 #ifndef WIN32
 #define WIN32
 #endif
-#define _WIN32_WINNT	_WIN32_WINNT_WINBLUE
-#define NTDDI_VERSION	NTDDI_WIN8
+#define _WIN32_WINNT	_WIN32_WINNT_WIN10
+#define NTDDI_VERSION	NTDDI_WIN10
 #define NOIME
 #define NOMCX
 #define NOSERVICE
@@ -163,6 +163,7 @@ typedef __int64 _ino_t;	// -V677
 #undef ino_t
 #undef rename
 #undef stat
+#undef wstat
 #define stricmp		_stricmp
 #define wcsicmp		_wcsicmp
 
