@@ -115,7 +115,7 @@ private:
     static bool expand(tchar *str, const attrmap &amap = vars);
     static const tchar *format(ulong u);
     static const tchar *format(float f);
-    static char *read(uint idx, usec_t &iousec);
+    static char *load(uint idx, usec_t &iousec);
     static void add(const tchar *file);
     static uint next(void);
 };
@@ -316,7 +316,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     return true;
 }
 
-char *HTTPLoad::read(uint idx, usec_t &iousec) {
+char *HTTPLoad::load(uint idx, usec_t &iousec) {
     int fd;
     char *ret = NULL;
     const tchar *file = body[idx];
@@ -479,7 +479,7 @@ int HTTPLoad::onStart(void) {
 		expand(buf, lvars);
 		if (cmd->data.empty()) {
 		    uint u = allfiles ? next() : ((uint)rand() % bodycnt);
-		    char *d = read(u, io);
+		    char *d = load(u, io);
 
 		    hc.header(T("content-type"), T("application/octet-stream"));
 		    if (d) {

@@ -117,7 +117,7 @@ private:
     static bool expand(tchar *str, const attrmap &amap = vars);
     static const tchar *format(ulong u);
     static const tchar *format(float f);
-    static char *read(uint idx, usec_t &iousec);
+    static char *load(uint idx, usec_t &iousec);
     static void add(const tchar *file);
     static uint next(void);
 };
@@ -311,7 +311,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     return true;
 }
 
-char *SMTPLoad::read(uint idx, usec_t &iousec) {
+char *SMTPLoad::load(uint idx, usec_t &iousec) {
     int fd;
     char *ret = NULL;
     const tchar *file = body[idx];
@@ -484,7 +484,7 @@ int SMTPLoad::onStart(void) {
 		    ret = sc.data(false, buf) && sc.enddata();
 		} else {
 		    uint u = allfiles ? next() : ((uint)rand() % bodycnt);
-		    char *d = read(u, io);
+		    char *d = load(u, io);
 
 		    if (d) {
 			ret = sc.data(false, achartotchar(d)) &&
@@ -495,7 +495,7 @@ int SMTPLoad::onStart(void) {
 		}
 	    } else if (cmd->cmd == T("data")) {
 		uint u = allfiles ? next() : ((uint)rand() % bodycnt);
-		char *d = read(u, io);
+		char *d = load(u, io);
 
 		if (d) {
 		    ret = sc.data(d, bodysz[u]) && sc.enddata();
