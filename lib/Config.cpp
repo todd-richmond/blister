@@ -246,8 +246,8 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
 #ifdef _UNICODE
 	while ((p = tstrchr(p, '$')) != NULL) {
 #else
-	while ((p = (const tchar *)memchr(p, '$', vlen - (p - kv->val)) !=
-	    NULL) {
+	while ((p = (const tchar *)memchr(p, '$', vlen - (size_t)(p -
+	    kv->val))) != NULL) {
 #endif
 	    ++p;
 	    if ((*p == '{' || *p == '(') && tstrchr(p, *p == '(' ? ')' : '}') !=
