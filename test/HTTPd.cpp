@@ -30,7 +30,7 @@ protected:
 
     void exec(void) {
 	if (paused)
-	    return error(503);
+	    error(503);
 	HTTPServerSocket::exec();
     }
 };

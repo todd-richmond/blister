@@ -1,0 +1,16 @@
+// Hint files help the Visual Studio IDE interpret Visual C++ identifiers
+// such as names of functions and macros.
+// For more information see https://go.microsoft.com/fwlink/?linkid=865984
+#define __no_sanitize_unsigned
+#define ALIGN(c)
+#define EXTERNC         extern "C" {
+#define EXTERNC_        }
+#define BLISTER
+#define DLL_EXPORT
+#define DLL_IMPORT
+#define LIKELY(c)       (c)
+#define UNLIKELY(c)     (c)
+#define WARN_DISABLE(w)
+#define WARN_POP
+#define WARN_PUSH_DISABLE(w)
+#define WARN_PUSH
