@@ -30,6 +30,7 @@ Timing &dtiming(_dtiming());
 
 // -V::1020
 void Timing::add(const TimingKey &key, timing_t diff) {
+    const size_t hash = key.hash();
     timingmap::const_iterator it;
     uint slot;
     Stats *stats;
@@ -42,11 +43,11 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 	    break;
     }
     lck.rlock();
-    if ((it = tmap.find(key.hash())) == tmap.end()) {
+    if ((it = tmap.find(hash)) == tmap.end()) {
 	lck.runlock();
 	stats = new Stats(key);
 	lck.wlock();
-	if ((it = tmap.find(key.hash())) == tmap.end()) {
+	if ((it = tmap.find(hash)) == tmap.end()) {
 	    tmap[key] = stats;
 	    lck.downlock();
 	} else {

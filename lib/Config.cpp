@@ -30,6 +30,7 @@
 #endif
 
 constexpr uint BUFSZ = 32 * 1024U;
+constexpr uint KEYSZ = 256;
 
 void Config::clear(void) {
     WLocker lkr(lck, !THREAD_ISSELF(locker));
@@ -79,8 +80,8 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 
 	kvmap::const_iterator it;
 	tstring::size_type off = val[spos + 2] == '*' && val[spos + 3] == '.' ?
-            2 : 0;
-        tstring s(val, spos + 2 + off, epos - spos - 2 - off);
+	    2 : 0;
+	tstring s(val, spos + 2 + off, epos - spos - 2 - off);
 
 	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 && s.size() >
 	    pre.size() + 1 && s[pre.size()] == '.')
@@ -210,11 +211,21 @@ const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
     if (sect && *sect) {
 	size_t klen = tstrlen(key);
 	size_t slen = tstrlen(sect);
-	tstring s;
 
-	s.reserve(slen + 1 + klen);
-	s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
-	it = amap.find(s.c_str());
+	if (klen + slen + 2 < KEYSZ) {
+	    tchar buf[KEYSZ];
+
+	    memcpy(buf, sect, slen * sizeof (tchar));
+	    buf[slen] = (tchar)'.';
+	    memcpy(buf + slen + 1, key, (klen + 1) * sizeof (tchar));
+	    it = amap.find(buf);
+	} else {
+	    tstring s;
+
+	    s.reserve(slen + 1 + klen);
+	    s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
+	    it = amap.find(s.c_str());
+	}
     } else {
 	it = amap.find(key);
     }
