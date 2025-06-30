@@ -262,29 +262,11 @@ protected:
  * Condvar: condition variable around a Lock
  * Lock: fast lock that may spin before sleeping
  * Mutex: lock that does not spin before sleeping
- * RWLock: reader/writer lock. r->w uplock allow intervening writers
- * SpinLock: fastest lock with exponential backoff but no sleep
+ * RWLock: reader/writer lock. r->w uplock allows intervening writers
+ * SpinLock: fastest unfair spinning lock
  * SpinRWLock: fast spinning reader/writer lock
+ * TicketLock: fastest fair spinning lock
  */
-#if defined(NO_ATOMIC_LOCK)
-
-class BLISTER SpinLock: nocopy {
-public:
-    SpinLock() { pthread_spin_init(&lck, 0); }
-    ~SpinLock() { pthread_spin_destroy(&lck); }
-
-    __forceinline operator pthread_spinlock_t *(void) { return &lck; }
-
-    __forceinline void lock(void) { pthread_spin_lock(&lck); }
-    __forceinline bool trylock(void) { return pthread_spin_trylock(&lck) == 0; }
-    __forceinline void unlock(void) { pthread_spin_unlock(&lck); }
-
-protected:
-    pthread_spinlock_t lck;
-};
-
-#else
-
 class BLISTER SpinLock: nocopy {
 public:
     explicit SpinLock(uint lmt = 16):
@@ -293,10 +275,10 @@ public:
 #endif
 	spins(Processor::count() == 1 ? 0 : lmt) {}
     __forceinline __no_sanitize_thread void lock(void) {
-#ifdef THREAD_PAUSE
-	uint u = 0;
-#endif
 	while (!trylock()) {
+#ifdef THREAD_PAUSE
+	    uint u = 0;
+#endif
 	    do {
 #ifdef THREAD_PAUSE
 		if (LIKELY(u < spins)) {
@@ -343,11 +325,43 @@ private:
     const uint spins;
 };
 
-#endif
-
 typedef FastLockerTemplate<SpinLock> FastSpinLocker;
 typedef FastUnlockerTemplate<SpinLock> FastSpinUnlocker;
 typedef LockerTemplate<SpinLock> SpinLocker;
+
+class TicketLock: nocopy {
+public:
+    explicit TicketLock(uint lmt = 0): current(0), next(0), yield(lmt ? lmt :
+	Processor::count() / 2) {}
+    __forceinline void lock() {
+	uint pos;
+	uint ticket = next.fetch_add(1, memory_order_relaxed);
+
+	while ((pos = ticket - current.load(memory_order_acquire)) != 0) {
+#ifdef THREAD_PAUSE
+	    if (LIKELY(pos < yield))
+		THREAD_PAUSE();
+	    else
+		THREAD_YIELD();
+#else
+	    THREAD_YIELD();
+#endif
+	}
+    }
+    __forceinline void unlock() {
+	// slight improvement over current.fetch_add(1, memory_order_release);
+	current.store(current.load(memory_order_relaxed) + 1,
+	    memory_order_release);
+    }
+
+private:
+    atomic<uint> current, next;
+    const uint yield;
+};
+
+typedef FastLockerTemplate<TicketLock> FastTicketLocker;
+typedef FastUnlockerTemplate<TicketLock> FastTicketUnlocker;
+typedef LockerTemplate<TicketLock> TicketLocker;
 
 #ifdef _WIN32
 #define msleep(msec)	Sleep(msec)
