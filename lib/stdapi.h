@@ -1291,16 +1291,17 @@ public:
 	--sz;
 	return obj;
     }
-    C *pop_front(void) {
+    __forceinline C *pop_front(void) {
 	C *obj = front;
 
 	if ((front = front->next) == NULL)
 	    back = NULL;
-	obj->next = NULL;
+	else
+	    obj->next = NULL;
 	--sz;
 	return obj;
     }
-    void push_back(C &obj) {
+    __forceinline void push_back(C &obj) {
 	if (sz++)
 	    back = back->next = &obj;
 	else
@@ -1318,7 +1319,7 @@ public:
 	    lst.sz = 0;
 	}
     }
-    void push_front(C &obj) {
+    __forceinline void push_front(C &obj) {
 	if ((obj.next = front) == NULL)
 	    back = &obj;
 	front = &obj;

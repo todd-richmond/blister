@@ -54,7 +54,21 @@ int clock_gettime(int id, struct timespec *ts) {
 #endif
 
 msec_t mticks(void) {
-#ifdef CLOCK_MONOTONIC_COARSE
+#if defined(__APPLE__)
+    static volatile atomic_t lck;
+    static struct mach_timebase_info mti;
+
+    if (UNLIKELY(!mti.denom)) {
+        while (atomic_lck(lck))
+	    THREAD_YIELD();
+	if (!mti.denom) {
+	    mach_timebase_info(&mti);
+	    mti.denom *= 1000000;
+	}
+	atomic_clr(lck);
+    }
+    return (mach_absolute_time() + 500000) * mti.numer / mti.denom; // codespell:ignore numer
+#elif defined(CLOCK_MONOTONIC_COARSE)
     struct timespec ts;
 
     clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
@@ -69,7 +83,7 @@ usec_t __no_sanitize("thread") uticks(void) {
     static volatile atomic_t lck;
     static struct mach_timebase_info mti;
 
-    if (!mti.denom) {
+    if (UNLIKELY(!mti.denom)) {
         while (atomic_lck(lck))
 	    THREAD_YIELD();
 	if (!mti.denom) {

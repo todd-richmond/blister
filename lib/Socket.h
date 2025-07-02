@@ -471,7 +471,7 @@ protected:
 	friend class Socket;
     };
 
-    bool check(int ret) const { return sbuf->check(ret); }
+    bool __forceinline check(int ret) const { return sbuf->check(ret); }
     bool rwpoll(bool rd) const;
 
     SocketBuf *sbuf;
