@@ -831,106 +831,92 @@ typedef FastLockerTemplate<Lock> FastLocker;
 
 class BLISTER SpinRWLock: nocopy {
 public:
-    SpinRWLock(): readers(0), wwaiting(0), writing(false) {}
+    SpinRWLock(): readers(0), uflag(false), wflag(false) {}
 
     __forceinline void downlock(void) {
-	FastSpinLocker lckr(lck);
-
-	++readers;
-	writing = false;
+	readers.fetch_add(1, memory_order_acquire);
+	wflag.store(false, memory_order_release);
     }
     __forceinline void rlock(void) {
-	FastSpinLocker lckr(lck);
-
-	while (UNLIKELY(writing || wwaiting))
-	    lckr.relock();
-	++readers;
-    }
-    __forceinline bool rtrylock(ulong spins = 0) {
-	FastSpinLocker lckr(lck);
-
-	while (writing || wwaiting) {
-	    if (LIKELY(!spins))
-		return false;
-	    --spins;
-	    lckr.relock();
+	for (;;) {
+	    while (UNLIKELY(wflag.load(memory_order_acquire)))
+		THREAD_YIELD();
+	    readers.fetch_add(1, memory_order_acquire);
+	    if (LIKELY(!wflag.load(memory_order_acquire)))
+		return;
+	    readers.fetch_sub(1, memory_order_release);
 	}
-	++readers;
+    }
+    __forceinline bool rtrylock(void) {
+	if (UNLIKELY(wflag.load(memory_order_acquire)))
+	    return false;
+	readers.fetch_add(1, memory_order_acquire);
+	if (UNLIKELY(wflag.load(memory_order_acquire))) {
+	    readers.fetch_sub(1, memory_order_release);
+	    return false;
+	}
 	return true;
     }
     __forceinline void runlock(void) {
-	FastSpinLocker lckr(lck);
-
-	--readers;
+	readers.fetch_sub(1, memory_order_release);
     }
-    __forceinline bool tryuplock(ulong spins = 0) {
-	FastSpinLocker lckr(lck);
+    bool tryuplock(void) {
+	bool b = false;
 
-	if (readers > 1 || writing) {
-	    if (LIKELY(!spins))
-		return false;
-	    ++wwaiting;
-	    do {
-		lckr.relock();
-	    } while ((readers > 1 || writing) && --spins);
-	    --wwaiting;
-	    if (!spins)
-		return false;
+	uflag.exchange(true, memory_order_acquire);
+	runlock();
+	if (!wflag.compare_exchange_strong(b, true, memory_order_acquire)) {
+	    uflag.store(false, memory_order_release);
+	    return false;
 	}
-	writing = true;
+	if (readers.load(memory_order_acquire)) {
+	    wflag.store(false, memory_order_release);
+	    uflag.store(false, memory_order_release);
+	    return false;
+	}
+	uflag.store(false, memory_order_release);
 	return true;
     }
     __forceinline void uplock(void) {
-	FastSpinLocker lckr(lck);
-
-	if (readers > 1 || writing) {
-	    ++wwaiting;
-	    do {
-		lckr.relock();
-	    } while (readers > 1 || writing);
-	    --wwaiting;
-	}
-	writing = true;
+	uflag.exchange(true, memory_order_acquire);
+	runlock();
+	while (readers.load(memory_order_acquire))
+	    THREAD_YIELD();
+	wlock();
+	uflag.store(false, memory_order_release);
     }
     __forceinline void wlock(void) {
-	FastSpinLocker lckr(lck);
+	for (;;) {
+	    bool b = false;
 
-	if (readers || writing) {
-	    ++wwaiting;
-	    do {
-		lckr.relock();
-	    } while (readers || writing);
-	    --wwaiting;
+	    if (LIKELY(wflag.compare_exchange_weak(b, true,
+		memory_order_acquire))) {
+		while (readers.load(memory_order_acquire))
+		    THREAD_YIELD();
+		return;;
+	    }
+	    THREAD_YIELD();
 	}
-	writing = true;
     }
-    __forceinline bool wtrylock(ulong spins = 0) {
-	FastSpinLocker lckr(lck);
+    __forceinline bool wtrylock() {
+	bool b = false;
 
-	if (readers || writing) {
-	    if (LIKELY(!spins))
-		return false;
-	    ++wwaiting;
-	    do {
-		lckr.relock();
-	    } while ((readers || writing) && --spins);
-	    --wwaiting;
-	    if (!spins)
-		return false;
+	if (UNLIKELY(!wflag.compare_exchange_strong(b, true,
+	    memory_order_acquire)))
+	    return false;
+	if (readers.load(memory_order_acquire)) {
+	    wflag.store(false, memory_order_release);
+	    return false;
 	}
-	writing = true;
 	return true;
     }
     __forceinline void wunlock(void) {
-	FastSpinLocker lckr(lck);
-
-	writing = false;
+	wflag.store(false, memory_order_release);
     }
 
 private:
-    SpinLock lck;
-    volatile ulong readers, wwaiting;
-    volatile bool writing;
+    atomic<uint> readers;
+    atomic<bool> uflag, wflag;
 };
 
 typedef LockerTemplate<SpinRWLock, &SpinRWLock::rlock, &SpinRWLock::runlock>
@@ -1069,13 +1055,9 @@ public:
     Lifo(): head(NULL), sz(0) {}
     ~Lifo() { close(); }
 
-    __forceinline operator bool(void) const { return size() != 0; }
-    __forceinline bool empty(void) const { return size() == 0; }
-    __forceinline uint size(void) const {
-	FastSpinLocker lkr(lck);
-
-	return sz;
-    }
+    __forceinline operator bool(void) const { return sz; }
+    __forceinline bool empty(void) const { return !sz; }
+    __forceinline uint size(void) const { return sz; }
     __forceinline uint broadcast(void) {
 	Waiting *w, *ww;
 	uint ret;

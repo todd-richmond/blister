@@ -425,10 +425,8 @@ protected:
 	    if (UNLIKELY(ret == -1)) {
 		err = sockerrno();
 		return false;
-	    } else {
-		err = 0;
-		return true;
 	    }
+	    return true;
 	}
 
 	bool __no_sanitize_thread close(void) {
