@@ -194,8 +194,7 @@ bool Sockaddr::service(const tchar *service, Proto proto) {
 bool Sockaddr::set(const addrinfo *ai) {
     family((sa_family_t)ai->ai_family);
     memcpy(&addr.sa, ai->ai_addr, ai->ai_addrlen);
-    memset((char *)&addr.sa + ai->ai_addrlen, 0, sizeof (addr.sa) -
-	ai->ai_addrlen);
+    memset((char *)&addr.sa + ai->ai_addrlen, 0, sizeof (addr) - ai->ai_addrlen);
     if (ai->ai_canonname)
 	name = achartotstring(ai->ai_canonname);
     else if ((family() == AF_INET && addr.sa4.sin_addr.s_addr == INADDR_ANY) ||
