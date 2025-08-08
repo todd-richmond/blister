@@ -588,7 +588,7 @@ const tchar *HTTPLoad::format(float f) {
     return format_buf;
 }
 
-inline float round(ulong count, ulong div) {
+static inline float round(ulong count, ulong div) {
     return div ? (float)count / ((float)div * 1.0F) : 0;
 }
 

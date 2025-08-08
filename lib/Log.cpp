@@ -202,13 +202,15 @@ void Log::LogFile::roll(void) {
     struct stat sbuf;
     tchar sep;
 
+    if (fd < 0)
+	return;
     if (!fstat(fd, &sbuf))
 	inode = sbuf.st_ino;
     close();
     if (!enable)
 	return;
     lock();
-    if (!fstat(fd, &sbuf) && mp && sbuf.st_ino != inode)
+    if (fd < 0 || (!fstat(fd, &sbuf) && mp && sbuf.st_ino != inode))
 	return;
     now = cnt && !sec ? (time_t)sbuf.st_ctime : ::time(NULL);
     s1 = path;

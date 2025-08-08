@@ -244,8 +244,7 @@ void EchoTest::EchoServerSocket::input() {
 void EchoTest::EchoServerSocket::output() {
     uint len;
 
-    if (error() || ((len = (uint)write(buf + out, (uint)(in - out))) ==
-	(uint)-1)) {
+    if (error() || ((len = (uint)write(buf + out, in - out)) == (uint)-1)) {
 	dloge(T("server write"), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	erase();

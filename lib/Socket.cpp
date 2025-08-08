@@ -192,8 +192,10 @@ bool Sockaddr::service(const tchar *service, Proto proto) {
 }
 
 bool Sockaddr::set(const addrinfo *ai) {
+    family((ushort)ai->ai_family);
     memcpy(&addr.sa, ai->ai_addr, ai->ai_addrlen);
-    memset((char *)&addr.sa + ai->ai_addrlen, 0, sizeof (addr) - ai->ai_addrlen);
+    memset((char *)&addr.sa + ai->ai_addrlen, 0, sizeof (addr.sa) -
+	ai->ai_addrlen);
     if (ai->ai_canonname)
 	name = achartotstring(ai->ai_canonname);
     else if ((family() == AF_INET && addr.sa4.sin_addr.s_addr == INADDR_ANY) ||
@@ -217,8 +219,10 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
 	    host = s.c_str();
 	}
     } else if (*host == '[') {
-	if ((p = tstrchr(host, ']')) == NULL)
+	if ((p = tstrchr(host, ']')) == NULL) {
+	    family(AF_UNSPEC);
 	    return false;
+	}
 	s.assign(host + 1, (tstring::size_type)(p - host - 1));
 	host = s.c_str();
 	p = tstrchr(p, ':');
@@ -245,6 +249,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 
 bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
     ZERO(addr);
+    family(AF_UNSPEC);
     name.erase();
 #ifndef _WIN32
     if (host && !tstrncmp(host, "unix:", 5)) {

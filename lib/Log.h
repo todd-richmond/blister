@@ -350,7 +350,7 @@ private:
 	if (tlsd.clvl != None) {
 	    if (tlsd.sep == '=') {
 		tlsd.sep = ' ';
-		if (!is_fundamental<T>::value) {
+		if (!is_fundamental_v<T>) {
 		    tbufferstream buf;
 
 		    buf << val << '\0';

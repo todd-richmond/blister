@@ -186,8 +186,8 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    }
 	}
 	i = s.find_last_not_of(' ');
-	if (i != s.npos && ++i != s.size())
-	    s.erase(i);
+	if (i != s.npos && i + 1 != s.size())
+	    s.erase(i + 1);
 	s += (tchar)'\n';
     }
     return s;

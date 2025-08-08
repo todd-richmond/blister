@@ -18,6 +18,7 @@ Checks: >
   -bugprone-macro-parentheses,
   -bugprone-narrowing-conversions,
   -bugprone-reserved-identifier,
+  -bugprone-nondeterministic-pointer-iteration-order,
   -bugprone-suspicious-string-compare,
   -cert-dcl16-c,
   -cert-dcl37-c,
@@ -56,6 +57,7 @@ Checks: >
   -cppcoreguidelines-no-malloc,
   -cppcoreguidelines-non-private-member-variables-in-classes,
   -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-prefer-member-initializer,
   -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
@@ -120,6 +122,7 @@ Checks: >
   -modernize-loop-convert,
   -modernize-macro-to-enum,
   -modernize-redundant-void-arg,
+  -modernize-type-traits,
   -modernize-use-auto,
   -modernize-use-default-member-init,
   -modernize-use-equals-default,
@@ -145,12 +148,13 @@ Checks: >
   -readability-isolate-declaration,
   -readability-magic-numbers,
   -readability-make-member-function-const,
+  -readability-math-missing-parentheses,
   -readability-misplaced-array-index,
   -readability-named-parameter,
   -readability-redundant-access-specifiers,
-  -cppcoreguidelines-prefer-member-initializer,
   -readability-simplify-boolean-expr,
-  -readability-static-accessed-through-instance
+  -readability-static-accessed-through-instance,
+  -readability-use-std-min-max
 CheckOptions:
   - key:             misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
     value:           1

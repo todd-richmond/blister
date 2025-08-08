@@ -50,17 +50,17 @@ int tmain(int argc, const tchar * const argv[]) {
 	    nonewline = true;
 	} else if (!tstrcmp(argv[i], T("-p")) ||
 	    !tstrcmp(argv[i], T("--prefix"))) {
-	    if (i + 1 == argc || argv[++i][0] == '-')
+	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
-	    prefix = argv[i];
+	    prefix = argv[++i];
 	} else if (!tstrcmp(argv[i], T("-q")) ||
 	    !tstrcmp(argv[i], T("--quiet"))) {
 	    quiet = true;
 	} else if (!tstrcmp(argv[i], T("-s")) ||
 	    !tstrcmp(argv[i], T("--section"))) {
-	    if (i + 1 == argc || argv[++i][0] == '-')
+	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
-	    section = argv[i];
+	    section = argv[++i];
 	} else if (!tstrcmp(argv[i], T("-u")) || !tstrcmp(argv[i],
 	    T("--update"))) {
 	    update = true;

@@ -235,7 +235,7 @@ public:
 	int type = SOCK_STREAM, bool reuse = true, int backlog = SOCK_BACKLOG,
 	DispatchObjCB cb = connection);
 
-    const Sockaddr address(void) const { return addr; }
+    const Sockaddr &address(void) const { return addr; }
     bool listen(const Sockaddr &addr, bool reuse = true, int backlog =
 	SOCK_BACKLOG, DispatchObjCB cb = NULL, bool start = true);
     bool listen(const tchar *addrstr, bool reuse = true, int backlog =
