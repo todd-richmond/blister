@@ -155,8 +155,7 @@ bool Dispatcher::exec() {
 	}
 	atomic_inc(running);
 	group->active = true;
-	obj->flags &= ~DSP_Ready;
-	obj->flags |= DSP_Active;
+	obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
 	lock.unlock();
 	obj->dcb(obj);
 	atomic_dec(running);
@@ -619,9 +618,9 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 
 	socketmap::const_iterator sit;
 
-	if (evt->fd == rsock)
+	if (UNLIKELY(evt->fd == rsock))
 	    ds = NULL;
-	else if ((sit = smap.find(evt->fd)) == smap.end())
+	else if (UNLIKELY((sit = smap.find(evt->fd)) == smap.end()))
 	    continue;
 	else
 	    ds = sit->second;
@@ -646,7 +645,7 @@ uint Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    reset();
 	    count++;
 	    continue;
-	} else if (ds->flags & DSP_Freed) {
+	} else if (UNLIKELY(ds->flags & DSP_Freed)) {
 	    continue;
 	}
 	if (DSP_EVENT_READ(evt)) {
@@ -1139,7 +1138,7 @@ bool Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	return false;
     } else {
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
-	if (obj.flags & DSP_Active)
+	if (UNLIKELY(obj.flags & DSP_Active))
 	    return false;
 	else if (UNLIKELY(hipri))
 	    rlist.push_front(obj);

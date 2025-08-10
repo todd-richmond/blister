@@ -58,9 +58,9 @@ void Timing::add(const TimingKey &key, timing_t diff) {
     } else {
 	stats = it->second;
     }
-    ++stats->cnt;
-    ++stats->cnts[slot];
-    stats->tot += diff;
+    stats->cnt.fetch_add(1, memory_order_relaxed);
+    stats->cnts[slot].fetch_add(1, memory_order_relaxed);
+    stats->tot.fetch_add(diff, memory_order_relaxed);
     lck.runlock();
 }
 
@@ -80,9 +80,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     timingmap::const_iterator it;
     uint last = 0, begin = 0;
     tstring s;
-    vector<const Stats *>::const_iterator sit;
     vector<const Stats *> sorted;
-    const Stats *stats;
     uint u;
     FastSpinRLocker lkr(lck);
     static const tchar *hdrs[TIMINGSLOTS] = {
@@ -96,8 +94,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     for (it = tmap.begin(); it != tmap.end(); ++it)
 	sorted.emplace_back(it->second);
     sort(sorted.begin(), sorted.end(), sort_key ? less_key : greater_time);
-    for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
-	stats = *sit;
+    for (const Stats *stats : sorted) {
 	for (u = TIMINGSLOTS - 1; u > last; u--) {
 	    if (stats->cnts[u]) {
 		last = u;
@@ -106,6 +103,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	}
     }
     begin = !columns || last < columns ? 0 : last - columns + 1;
+    s.reserve(sorted.size() * (columns ? 50 : 80) + 100);
     s = columns ? T("key                            msec   cnt   avg") :
 	T("key,msec,cnt,avg");
     for (u = begin; u <= last; u++) {
@@ -120,13 +118,12 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	}
     }
     s += (tchar)'\n';
-    for (sit = sorted.begin(); sit != sorted.end(); ++sit) {
+    for (const Stats *stats : sorted) {
 	tchar buf[128];
 	size_t i;
 	ulong sum = 0;
 	timing_t tot;
 
-	stats = *sit;
 	tot = stats->tot;
 	if (columns) {
 	    tchar cbuf[24];
@@ -245,11 +242,10 @@ void Timing::record(void) {
     if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
-	for (vector<tstring>::const_iterator it = tlsd.callers.begin();
-	    it != tlsd.callers.end(); ++it) {
+	for (const tstring &caller : tlsd.callers) {
 	    if (!s.empty())
 		s += T("->");
-	    s += *it;
+	    s += caller;
 	}
 	s += T("->");
 	s += key;
@@ -279,11 +275,10 @@ void Timing::record(const TimingKey &key) {
     if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
-	for (vector<tstring>::const_iterator it = tlsd.callers.begin();
-	    it != tlsd.callers.end(); ++it) {
+	for (const tstring &caller : tlsd.callers) {
 	    if (!s.empty())
 		s += T("->");
-	    s += *it;
+	    s += caller;
 	}
 	s += T("->");
 	s += (const tchar *)key;
