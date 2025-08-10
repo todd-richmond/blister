@@ -91,8 +91,8 @@ jobs:
       with:
         category: "/language:${{matrix.language}}"
 
-    - name: Upload result to GitHub Code Scanning
-      uses: github/codeql-action/upload-sarif@main
-      with:
-        category: ${{ matrix.app }}
-        sarif_file: results.sarif
+    #- name: Upload result to GitHub Code Scanning
+    #  uses: github/codeql-action/upload-sarif@main
+    #  with:
+    #    category: ${{ matrix.app }}
+    #    sarif_file: results.sarif
