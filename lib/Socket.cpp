@@ -93,9 +93,7 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
 	hints.ai_flags = AI_NUMERICHOST;
     } else {
 	hints.ai_flags = AI_CANONNAME;
-	 if (!tstrnicmp(host, T("localhost"), 9)) {
-	    hints.ai_family = families[TCP4];
-	 } else if (!tstrnicmp(host, T("ipv4:"), 5)) {
+	if (!tstrnicmp(host, T("ipv4:"), 5)) {
 	    hints.ai_family = families[TCP4];
 	    host += 5;
 	} else if (!tstrnicmp(host, T("ipv6:"), 5)) {

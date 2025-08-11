@@ -118,7 +118,7 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 	} else {
 	    ++errs;
 	    dtiming.add(T("error"), 0);
-	    dloge(T("client connect"), msg == DispatchTimeout ? T("timeout") :
+	    dloge(T("client connect="), msg == DispatchTimeout ? T("timeout") :
 		T("close"));
 	    timeout(start, wait);
 	}
@@ -140,7 +140,7 @@ void EchoTest::EchoClientSocket::input() {
 	} else {
 	    ++errs;
 	    dtiming.add(T("error"), 0);
-	    dloge(T("client read"), msg == DispatchTimeout ? T("timeout") :
+	    dloge(T("client read="), msg == DispatchTimeout ? T("timeout") :
 		T("close"));
 	    timeout(start, wait);
 	}
@@ -153,7 +153,7 @@ void EchoTest::EchoClientSocket::input() {
 	    ++ops;
 	    usecs += usec;
 	    dtiming.add(T("echo"), usec);
-	    dlogt(T("client read"), len);
+	    dlogt(T("client read="), len);
 	    // coverity[dont_call : FALSE ]
 	    // NOLINTNEXTLINE
 	    timeout(repeat, wait + (wait < 2000 ? 0 : (uint)rand() % 50));
@@ -161,7 +161,7 @@ void EchoTest::EchoClientSocket::input() {
     } else if (loops.load() <= 0 || qflag) {
 	erase();
     } else {
-	dlogd(T("client partial read"), len);
+	dlogd(T("client partial read="), len);
 	readable(input, tmt);
     }
 }
@@ -179,16 +179,16 @@ void EchoTest::EchoClientSocket::output() {
 	} else {
 	    ++errs;
 	    dtiming.add(T("error"), 0);
-	    dloge(T("client write"), msg == DispatchTimeout ? T("timeout") :
+	    dloge(T("client write="), msg == DispatchTimeout ? T("timeout") :
 		T("close"));
 	    timeout(start, wait);
 	}
     } else if ((out += len) == dsz) {
 	in = 0;
-	dlogt(T("client write"), len);
+	dlogt(T("client write="), len);
 	readable(input, tmt);
     } else {
-	dlogd(T("client partial write"), len);
+	dlogd(T("client partial write="), len);
 	writeable(output, tmt);
     }
 }
@@ -215,7 +215,7 @@ void EchoTest::EchoServerSocket::input() {
 
     if (error() || ((in = (uint)read(tmp, sizeof (tmp))) == (uint)-1)) {
 	if (loops.load() > 0 && !qflag)
-	    dloge(T("server read"), msg == DispatchTimeout ? T("timeout") :
+	    dloge(T("server read="), msg == DispatchTimeout ? T("timeout") :
 		T("close"));
 	erase();
     } else if (in == 0) {
@@ -223,13 +223,13 @@ void EchoTest::EchoServerSocket::input() {
     } else if (in == 1 && tmp[0] == '\0') {
 	erase();
     } else if ((out = (uint)write(tmp, in)) == (uint)-1) {
-	dloge(T("server write failed:"), errstr());
+	dloge(T("server write="), errstr());
 	erase();
     } else if (in == out) {
-	dlogt(T("server write"), out);
+	dlogt(T("server write="), out);
 	readable(input);
     } else {
-	dlogd(T("server partial write"), out);
+	dlogd(T("server partial write="), out);
 	in -= out;
 	if (oldin < in) {
 	    delete [] buf;
@@ -245,17 +245,17 @@ void EchoTest::EchoServerSocket::output() {
     uint len;
 
     if (error() || ((len = (uint)write(buf + out, in - out)) == (uint)-1)) {
-	dloge(T("server write"), msg == DispatchTimeout ? T("timeout") :
+	dloge(T("server write="), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	erase();
 	return;
     }
     out += len;
     if (out == in) {
-	dlogt(T("server write"), len);
+	dlogt(T("server write="), len);
 	readable(input);
     } else {
-	dlogd(T("server partial write"), len);
+	dlogd(T("server partial write="), len);
 	writeable(output);
     }
 }
