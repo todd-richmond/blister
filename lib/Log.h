@@ -18,6 +18,7 @@
 #ifndef Log_h
 #define Log_h
 
+#include <type_traits>
 #include "Socket.h"
 #include "Streams.h"
 #include "Thread.h"
