@@ -152,10 +152,10 @@ private:
 	}
 	~Stats() { free((char *)key); }
 
-	atomic<ulong> cnt;
-	atomic<ulong> cnts[TIMINGSLOTS];
+	atomic_uint_fast32_t cnt;
+	atomic_uint_fast32_t cnts[TIMINGSLOTS];
 	const tchar *key;
-	atomic<timing_t> tot;
+	atomic_uint_fast64_t tot;
     };
 
     struct BLISTER Tlsdata {
