@@ -132,11 +132,11 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    for (u = 0; u <= begin; u++)
 		sum += stats->cnts[u];
 	    if (stats->cnt >= 10000000UL)
-		tsprintf(cbuf, T("%4lum"), stats->cnt / 1000000UL);
+		tsprintf(cbuf, T("%4lum"), (ulong)stats->cnt / 1000000UL);
 	    else if (stats->cnt >= 10000UL)
-		tsprintf(cbuf, T("%4luk"), stats->cnt / 1000UL);
+		tsprintf(cbuf, T("%4luk"), (ulong)stats->cnt / 1000UL);
 	    else
-		tsprintf(cbuf, T("%5lu"), stats->cnt / 1U);
+		tsprintf(cbuf, T("%5lu"), (ulong)stats->cnt / 1U);
 	    if (tot) {
 		tchar abuf[16], sbuf[16];
 
@@ -160,8 +160,8 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    }
 	    if (quote)
 		s += (tchar)'"';
-	    tsprintf(buf, T(",%llu,%lu,%lu"), (ullong)tot, stats->cnt / 1U,
-		(ulong)(tot / stats->cnt));
+	    tsprintf(buf, T(",%llu,%lu,%lu"), (ullong)tot, (ulong)stats->cnt /
+		1U, (ulong)(tot / stats->cnt));
 	}
 	s += buf;
 	for (u = begin; u <= last && tot; u++) {
@@ -242,12 +242,10 @@ void Timing::record(void) {
     if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
-	for (const tstring &c : tlsd.callers) {
-	    if (!s.empty())
-		s += T("->");
-	    s += c;
+	for (const tstring &caller : tlsd.callers) {
+	    s += caller;
+	    s += T("->");
 	}
-	s += T("->");
 	s += key;
 	add(s.c_str(), diff);
     }
@@ -275,12 +273,10 @@ void Timing::record(const TimingKey &key) {
     if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
-	for (const tstring &c : tlsd.callers) {
-	    if (!s.empty())
-		s += T("->");
-	    s += c;
+	for (const tstring &caller : tlsd.callers) {
+	    s += caller;
+	    s += T("->");
 	}
-	s += T("->");
 	s += (const tchar *)key;
 	add(s.c_str(), diff);
     }

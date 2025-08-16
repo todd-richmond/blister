@@ -266,7 +266,7 @@ void EchoTest::connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
 	EchoClientSocket *ecs = new EchoClientSocket(*this, sa, tmt, wait);
 
 	ecs->detach();
-	ecs->start(u * (count < wait / delay ? wait / count : delay));
+	ecs->start(u * (!delay || count < wait / delay ? wait / count : delay));
     }
 }
 
