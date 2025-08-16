@@ -267,13 +267,34 @@ protected:
  * SpinRWLock: fast spinning reader/writer lock
  * TicketLock: fastest fair spinning lock
  */
+#ifdef __cpp_lib_atomic_flag_test
+class BLISTER atomic_bit: public atomic_flag {
+public:
+    explicit atomic_bit(void) { clear(); }
+};
+
+#else
+
+class BLISTER atomic_bit: private atomic_bool {
+public:
+    explicit atomic_bit(void): atomic_bool(false) {}
+
+    __forceinline void clear(memory_order order = memory_order_release) {
+	store(false, order);
+    }
+    __forceinline bool test(memory_order order = memory_order_relaxed) const {
+	return load(order);
+    }
+    __forceinline bool test_and_set(memory_order order = memory_order_acquire) {
+	return exchange(true, order);
+    }
+};
+#endif
+
 class BLISTER SpinLock: nocopy {
 public:
-    explicit SpinLock(uint lmt = 16):
-#ifndef __cpp_lib_atomic_flag_test
-	lck(false),
-#endif
-	spins(Processor::count() == 1 ? 0 : lmt) {}
+    explicit SpinLock(uint lmt = 16): spins(Processor::count() == 1 ? 0 : lmt) {
+    }
     __forceinline __no_sanitize_thread void lock(void) {
 	while (!trylock()) {
 #ifdef THREAD_PAUSE
@@ -295,33 +316,17 @@ public:
 	}
     }
     __forceinline bool testlock(void) const {
-#ifdef __cpp_lib_atomic_flag_test
 	return lck.test(memory_order_relaxed);
-#else
-	return lck.load(memory_order_relaxed);
-#endif
     }
     __forceinline __no_sanitize_thread bool trylock(void) {
-#ifdef __cpp_lib_atomic_flag_test
 	return !lck.test_and_set(memory_order_acquire);
-#else
-	return !lck.exchange(true, memory_order_acquire);
-#endif
     }
     __forceinline __no_sanitize_thread void unlock(void) {
-#ifdef __cpp_lib_atomic_flag_test
 	lck.clear(memory_order_release);
-#else
-	lck.store(false, memory_order_release);
-#endif
     }
 
 private:
-#ifdef __cpp_lib_atomic_flag_test
-    atomic_flag lck = ATOMIC_FLAG_INIT;
-#else
-    atomic<bool> lck;
-#endif
+    atomic_bit lck;
     const uint spins;
 };
 
@@ -355,7 +360,7 @@ public:
     }
 
 private:
-    atomic<uint> current, next;
+    atomic_uint_fast16_t current, next;
     const uint yield;
 };
 
@@ -831,27 +836,23 @@ typedef FastLockerTemplate<Lock> FastLocker;
 
 class BLISTER SpinRWLock: nocopy {
 public:
-    SpinRWLock(): readers(0), uflag(false), wflag(false) {}
+    SpinRWLock(): readers(0) {}
 
     __forceinline void downlock(void) {
 	readers.fetch_add(1, memory_order_acquire);
-	wflag.store(false, memory_order_release);
+	wflag.clear(memory_order_release);
     }
     __forceinline void rlock(void) {
 	for (;;) {
-	    while (UNLIKELY(wflag.load(memory_order_acquire)))
-		THREAD_YIELD();
 	    readers.fetch_add(1, memory_order_acquire);
-	    if (LIKELY(!wflag.load(memory_order_acquire)))
+	    if (LIKELY(!wflag.test(memory_order_acquire)))
 		return;
 	    readers.fetch_sub(1, memory_order_release);
 	}
     }
     __forceinline bool rtrylock(void) {
-	if (UNLIKELY(wflag.load(memory_order_acquire)))
-	    return false;
 	readers.fetch_add(1, memory_order_acquire);
-	if (UNLIKELY(wflag.load(memory_order_acquire))) {
+	if (UNLIKELY(wflag.test(memory_order_acquire))) {
 	    readers.fetch_sub(1, memory_order_release);
 	    return false;
 	}
@@ -861,62 +862,54 @@ public:
 	readers.fetch_sub(1, memory_order_release);
     }
     bool tryuplock(void) {
-	bool b = false;
-
-	uflag.exchange(true, memory_order_acquire);
+	uflag.test_and_set(memory_order_acquire);
 	runlock();
-	if (!wflag.compare_exchange_strong(b, true, memory_order_acquire)) {
-	    uflag.store(false, memory_order_release);
+	if (wflag.test_and_set(memory_order_acquire)) {
+	    uflag.clear(memory_order_release);
 	    return false;
 	}
 	if (readers.load(memory_order_acquire)) {
-	    wflag.store(false, memory_order_release);
-	    uflag.store(false, memory_order_release);
+	    wflag.clear(memory_order_release);
+	    uflag.clear(memory_order_release);
 	    return false;
 	}
-	uflag.store(false, memory_order_release);
+	uflag.clear( memory_order_release);
 	return true;
     }
     __forceinline void uplock(void) {
-	uflag.exchange(true, memory_order_acquire);
+	uflag.test_and_set(memory_order_acquire);
 	runlock();
 	while (readers.load(memory_order_acquire))
 	    THREAD_YIELD();
 	wlock();
-	uflag.store(false, memory_order_release);
+	uflag.clear(memory_order_release);
     }
     __forceinline void wlock(void) {
 	for (;;) {
-	    bool b = false;
-
-	    if (LIKELY(wflag.compare_exchange_weak(b, true,
-		memory_order_acquire))) {
+	    if (LIKELY(!wflag.test_and_set(memory_order_acquire))) {
 		while (readers.load(memory_order_acquire))
 		    THREAD_YIELD();
-		return;;
+		return;
 	    }
 	    THREAD_YIELD();
 	}
     }
     __forceinline bool wtrylock() {
-	bool b = false;
-
-	if (UNLIKELY(!wflag.compare_exchange_strong(b, true,
-	    memory_order_acquire)))
+	if (UNLIKELY(wflag.test_and_set(memory_order_acquire)))
 	    return false;
 	if (readers.load(memory_order_acquire)) {
-	    wflag.store(false, memory_order_release);
+	    wflag.clear(memory_order_release);
 	    return false;
 	}
 	return true;
     }
     __forceinline void wunlock(void) {
-	wflag.store(false, memory_order_release);
+	wflag.clear(memory_order_release);
     }
 
 private:
-    atomic<uint> readers;
-    atomic<bool> uflag, wflag;
+    atomic_uint_fast16_t readers;
+    atomic_bit uflag, wflag;
 };
 
 typedef LockerTemplate<SpinRWLock, &SpinRWLock::rlock, &SpinRWLock::runlock>
