@@ -340,9 +340,9 @@ public:
 	Processor::count() / 2) {}
     __forceinline void lock() {
 	uint pos;
-	uint ticket = next.fetch_add(1, memory_order_relaxed);
+	uint ticket = (uint)next.fetch_add(1, memory_order_relaxed);
 
-	while ((pos = ticket - current.load(memory_order_acquire)) != 0) {
+	while ((pos = ticket - (uint)current.load(memory_order_acquire)) != 0) {
 #ifdef THREAD_PAUSE
 	    if (LIKELY(pos < yield))
 		THREAD_PAUSE();
