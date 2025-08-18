@@ -286,7 +286,7 @@ public:
 	return load(order);
     }
     __forceinline bool test_and_set(memory_order order = memory_order_acquire) {
-	return exchange(true, order);
+	return !compare_exchange_strong(false, true, order);
     }
 };
 #endif
@@ -852,11 +852,10 @@ public:
     }
     __forceinline bool rtrylock(void) {
 	readers.fetch_add(1, memory_order_acquire);
-	if (UNLIKELY(wflag.test(memory_order_acquire))) {
-	    readers.fetch_sub(1, memory_order_release);
-	    return false;
-	}
-	return true;
+	if (LIKELY(!wflag.test(memory_order_acquire)))
+	    return true;
+	readers.fetch_sub(1, memory_order_release);
+	return false;
     }
     __forceinline void runlock(void) {
 	readers.fetch_sub(1, memory_order_release);
@@ -873,7 +872,7 @@ public:
 	    uflag.clear(memory_order_release);
 	    return false;
 	}
-	uflag.clear( memory_order_release);
+	uflag.clear(memory_order_release);
 	return true;
     }
     __forceinline void uplock(void) {

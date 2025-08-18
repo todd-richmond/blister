@@ -1099,7 +1099,7 @@ static inline void encode(const void *input, size_t len, void *output, size_t
     }
     if (n) {
 	char c1 = in[0];
-	char c2 = n == 1 ? (char)'\0' : in[1];
+	char c2 = n == 1 ? '\0' : in[1];
 
 	out[0] = ENC(c1 >> 2);
 	out[1] = ENC(((c1 << 4) & 060) | ((c2 >> 4) & 017));

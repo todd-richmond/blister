@@ -242,8 +242,8 @@ void Timing::record(void) {
     if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
-	for (const tstring &caller : tlsd.callers) {
-	    s += caller;
+	for (const tstring &c : tlsd.callers) {
+	    s += c;
 	    s += T("->");
 	}
 	s += key;
@@ -273,8 +273,8 @@ void Timing::record(const TimingKey &key) {
     if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
-	for (const tstring &caller : tlsd.callers) {
-	    s += caller;
+	for (const tstring &c : tlsd.callers) {
+	    s += c;
 	    s += T("->");
 	}
 	s += (const tchar *)key;
