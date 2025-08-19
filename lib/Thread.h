@@ -840,7 +840,7 @@ public:
 
     __forceinline void downlock(void) { state.store(1, memory_order_release); }
     __forceinline void rlock(void) {
-	uint32_t expected = state.load(std::memory_order_relaxed);
+	uint_fast32_t expected = state.load(std::memory_order_relaxed);
 
 	while (true) {
 	    if (UNLIKELY(expected & (WRITE_BIT | UPGRADE_BIT))) {
@@ -854,7 +854,7 @@ public:
 	}
     }
     __forceinline bool rtrylock(void) {
-	uint32_t expected = state.load(memory_order_relaxed);
+	uint_fast32_t expected = state.load(memory_order_relaxed);
 
 	while (true) {
 	    if (UNLIKELY(expected & (WRITE_BIT | UPGRADE_BIT)))
@@ -868,13 +868,13 @@ public:
 	state.fetch_sub(1, memory_order_release);
     }
     bool tryuplock(void) {
-	uint32_t expected = 1;
+	uint_fast32_t expected = 1;
 
 	return state.compare_exchange_strong(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed);
     }
     __forceinline void uplock(void) {
-	uint32_t expected = state.load(memory_order_relaxed);
+	uint_fast32_t expected = state.load(memory_order_relaxed);
 
 	while (!(expected & (WRITE_BIT | UPGRADE_BIT))) {
 	    if (state.compare_exchange_weak(expected, expected | UPGRADE_BIT,
@@ -889,7 +889,7 @@ public:
 	}
     }
     __forceinline void wlock(void) {
-	uint32_t expected = 0;
+	uint_fast32_t expected = 0;
 
 	while (!state.compare_exchange_weak(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed)) {
@@ -898,7 +898,7 @@ public:
 	}
     }
     __forceinline bool wtrylock() {
-	uint32_t expected = 0;
+	uint_fast32_t expected = 0;
 
 	return state.compare_exchange_strong(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed);
@@ -908,8 +908,8 @@ public:
 private:
     atomic_uint_fast32_t state;
 
-    static constexpr uint32_t UPGRADE_BIT = 1U << 30;
-    static constexpr uint32_t WRITE_BIT = 1U << 31;
+    static constexpr uint_fast32_t UPGRADE_BIT = 1U << 30;
+    static constexpr uint_fast32_t WRITE_BIT = 1U << 31;
 };
 
 typedef LockerTemplate<SpinRWLock, &SpinRWLock::rlock, &SpinRWLock::runlock>

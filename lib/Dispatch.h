@@ -80,7 +80,7 @@ protected:
 
     DispatchObjCB dcb;
     Dispatcher &dspr;
-    volatile uint flags;
+    uint flags;
     DispatchMsg msg;
 
 private:
@@ -364,9 +364,9 @@ private:
 
     friend class DispatchTimer;
     void addTimer(DispatchTimer &dt) {
-	FastSpinLocker lkr(lock);
-
+	timerlck.lock();
 	timers.insert(dt);
+	timerlck.unlock();
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
     void removeTimer(DispatchTimer &dt) {
@@ -386,17 +386,17 @@ private:
     void wakeup(ulong msec);	// enter locked, leave unlocked for performance
     static int worker(void *param);
 
-    SpinLock lock;
+    SpinLock objlck, socketlck, timerlck;
     msec_t due;
     ObjectList<DispatchObj> flist, rlist;
     Lifo lifo;
     uint maxthreads;
-    atomic_t running;
-    volatile bool shutdown;
+    atomic_uint_fast16_t running;
+    atomic_bool shutdown;
     socketmap smap;
     uint stacksz;
     TimerSet timers;
-    volatile uint workers;
+    atomic_uint_fast16_t workers;
 #ifdef DSP_WIN32_ASYNC
     volatile ulong interval;
     HWND wnd;
@@ -404,7 +404,7 @@ private:
     static const int DSP_TimerID = 1;
 #else
     int evtfd, wfd;
-    volatile bool polling;
+    atomic_bool polling;
     SocketSet rset, wset;
     Socket rsock, wsock;
 
