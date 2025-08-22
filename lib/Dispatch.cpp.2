@@ -153,12 +153,12 @@ bool Dispatcher::exec() {
 	    group->glist.push_back(*obj);
 	    continue;
 	}
+	atomic_inc(running);
 	group->active = true;
 	obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
 	objlck.unlock();
-	++running;
 	obj->dcb(obj);
-	--running;
+	atomic_dec(running);
 	objlck.lock();
 	obj->flags &= ~DSP_Active;
 	group->active = false;
@@ -172,8 +172,8 @@ bool Dispatcher::exec() {
 	    rlist.push_back(*obj);
 	} else if (obj->flags & DSP_Ready) {
 	    rlist.push_back(*obj);
-	} else if (UNLIKELY(obj->flags & (DSP_Freed | DSP_Socket)) ==
-	    DSP_Freed) {
+	}
+	if (UNLIKELY(obj->flags & DSP_Freed && !(obj->flags & DSP_Socket))) {
 	    objlck.unlock();
 	    delete obj;
 	    objlck.lock();
@@ -186,16 +186,22 @@ int Dispatcher::run() {
     Lifo::Waiting waiting;
 
     priority(-1);
+    cout << "wtfr1" << endl;
     objlck.lock();
+    cout << "wtfr2" << endl;
     while (exec()) {
 	bool b = workers == lifo.size() + 1;
 
+    cout << "wtfr3" << endl;
 	objlck.unlock();
 	b = lifo.wait(waiting, b ? INFINITE : MAX_WAIT_TIME);
+    cout << "wtfr4" << endl;
 	objlck.lock();
+    cout << "wtfr5" << endl;
 	if (!b)
 	    break;
     }
+    cout << "wtfr6" << endl;
     workers--;
     objlck.unlock();
     return 0;
@@ -221,6 +227,8 @@ int Dispatcher::onStart() {
     shutdown = false;
     workers = 0;
     while (!shutdown) {
+	uint count = 0;
+
 	GetMessage(&msg, wnd, 0, 0);
 	if (shutdown)
 	    break;
@@ -253,7 +261,7 @@ int Dispatcher::onStart() {
 			    ds->flags |= DSP_Closeable;
 		    }
 		    if (ready(*ds, ds->msg == DispatchAccept))
-			wake(1);
+			count++;
 		} else {
 		    if (evt & FD_READ)
 			ds->flags |= DSP_Readable;
@@ -268,8 +276,6 @@ int Dispatcher::onStart() {
 		timerlck.lock();
 		removeTimer(*ds);
 		timerlck.unlock();
-	    } else {
-		socketlck.unlock();
 	    }
 	} else if (msg.message == WM_TIMER) {
 	    DispatchTimer *dt;
@@ -277,7 +283,15 @@ int Dispatcher::onStart() {
 
 	    now = mticks();
 	    timerlck.lock();
-	    handleTimers(now);
+	    while ((dt = timers.get(now)) != NULL) {
+		timerlck.unlock();
+		objlck.lock();
+		dt->msg = DispatchTimeout;
+		if (ready(*dt, false))
+		    count++;
+		objlck.unlock();
+		timerlck.lock();
+	    }
 	    dt = timers.peek();
 	    if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
 		timers.reorder(now + MAX_IDLE_TIMER);
@@ -301,8 +315,8 @@ int Dispatcher::onStart() {
 		timerlck.unlock();
 		SetTimer(wnd, DSP_TimerID, interval, NULL);
 	    } else {
-		due = now + interval;
 		timerlck.unlock();
+		due = now + interval;
 	    }
 	} else {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
@@ -311,6 +325,8 @@ int Dispatcher::onStart() {
 	objlck.lock();
 	if (!maxthreads)
 	    exec();
+	else if (count)
+	    wake(count);
 	objlck.unlock();
     }
     KillTimer(wnd, DSP_TimerID);
@@ -411,9 +427,11 @@ int Dispatcher::onStart() {
     now = mticks();
     due = DispatchTimer::DSP_NEVER_DUE;
     while (!shutdown) {
+	uint count = 0;
 	DispatchTimer *dt;
 	uint msec;
 
+    cout << "mtfr1" << endl;
 	timerlck.lock();
 	dt = timers.peek();
 	if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
@@ -433,6 +451,7 @@ int Dispatcher::onStart() {
 	    due = now + msec;
 	}
 	timerlck.unlock();
+    cout << "mtfr2" << endl;
 	if (evtfd == -1) {
 	    socketlck.lock();
 	    irset = rset;
@@ -462,10 +481,13 @@ int Dispatcher::onStart() {
 	    if ((nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, msec ==
 		SOCK_INFINITE ? NULL : &ts)) == -1)
 		nevts = 0;
+    cout << "mtfr3" << endl;
 #endif
 	}
 	if (shutdown)
 	    break;
+	count = 0;
+	now = mticks();
 	polling = false;
 	if (evtfd == -1) {
 	    DispatchSocket *ds = NULL;
@@ -475,9 +497,12 @@ int Dispatcher::onStart() {
 		fd = orset[u];
 		socketlck.lock();
 		if ((sit = smap.find(fd)) == smap.end()) {
-		    socketlck.unlock();
-		    if (fd == rsock)
+		    if (fd == rsock) {
+			socketlck.unlock();
 			reset();
+		    } else {
+			socketlck.unlock();
+		    }
 		    continue;
 		}
 		rset.unset(fd);
@@ -496,7 +521,7 @@ int Dispatcher::onStart() {
 		    ds->msg = (ds->flags & DSP_SelectAccept) ? DispatchAccept :
 			DispatchRead;
 		    if (ready(*ds, ds->msg == DispatchAccept))
-			wake(1);
+			count++;
 		} else {
 		    ds->flags |= (ds->flags & DSP_SelectAccept) ?
 			DSP_Acceptable : DSP_Readable;
@@ -528,7 +553,7 @@ int Dispatcher::onStart() {
 		if (ds->flags & DSP_Scheduled) {
 		    ds->msg = DispatchWrite;
 		    if (ready(*ds))
-			wake(1);
+			count++;
 		} else {
 		    ds->flags |= DSP_Writeable;
 		}
@@ -564,7 +589,7 @@ int Dispatcher::onStart() {
 		if (ds->flags & DSP_Scheduled) {
 		    ds->msg = DispatchClose;
 		    if (ready(*ds))
-			wake(1);
+			count++;
 		} else {
 		    ds->flags |= DSP_Closeable;
 		}
@@ -575,20 +600,33 @@ int Dispatcher::onStart() {
 	    }
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 	} else {
+    cout << "mtfr4" << endl;
 	    objlck.lock();
-	    handleEvents(evts, (uint)nevts);
+	    count += handleEvents(evts, (uint)nevts);
+    cout << "mtfr5" << endl;
 	    objlck.unlock();
 #endif
 	}
-	now = mticks();
+    cout << "mtfr6" << endl;
 	timerlck.lock();
-	handleTimers(now);
+	while ((dt = timers.get(now)) != NULL) {
+	    timerlck.unlock();
+	    objlck.lock();
+	    dt->msg = DispatchTimeout;
+	    if (ready(*dt, false))
+		count++;
+	    objlck.unlock();
+	    timerlck.lock();
+	}
+    cout << "mtfr7" << endl;
 	timerlck.unlock();
 	objlck.lock();
-	rlist.push_front(flist);
 	if (!maxthreads)
 	    exec();
+	else if (count)
+	    wake(count);
 	objlck.unlock();
+    cout << "mtfr8" << endl;
     }
     cleanup();
     if (wfd != -1)
@@ -644,7 +682,9 @@ void Dispatcher::cleanup(void) {
 }
 
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
-void Dispatcher::handleEvents(const void *evts, uint nevts) {
+uint Dispatcher::handleEvents(const void *evts, uint nevts) {
+    uint count = 0;
+
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds;
 	const event_t *evt = (const event_t *)evts + u;
@@ -660,7 +700,6 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	} else {
 	    socketmap::const_iterator sit;
 
-	    objlck.unlock();
 	    socketlck.lock();
 	    if (UNLIKELY((sit = smap.find(evt->fd)) == smap.end())) {
 		socketlck.unlock();
@@ -669,7 +708,6 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		ds = sit->second;
 		socketlck.unlock();
 	    }
-	    objlck.lock();
 	}
 
 #elif defined(DSP_EPOLL)
@@ -689,9 +727,9 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	ds = static_cast<DispatchSocket *>(evt->udata);
 #endif
 	if (!ds) {
-	    objlck.unlock();
+    cout << "htfr1" << endl;
 	    reset();
-	    objlck.lock();
+	    count++;
 	    continue;
 	} else if (UNLIKELY(ds->flags & DSP_Freed)) {
 	    continue;
@@ -723,29 +761,23 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	}
 	if ((ds->flags & DSP_Scheduled) && ready(*ds, ds->msg ==
 	    DispatchAccept))
-	    wake(1);
+	    count++;
 	objlck.unlock();
+    cout << "htfr2" << endl;
 	timerlck.lock();
 	removeTimer(*ds);
 	timerlck.unlock();
+    cout << "htfr3" << endl;
 	objlck.lock();
     }
+    if (flist) {
+	if (!count)
+	    count = 1;
+	rlist.push_front(flist);
+    }
+    return count;
 }
 #endif
-
-void Dispatcher::handleTimers(msec_t now) {
-    DispatchTimer *dt;
-
-    while ((dt = timers.get(now)) != NULL) {
-	timerlck.unlock();
-	objlck.lock();
-	dt->msg = DispatchTimeout;
-	if (ready(*dt, false))
-	    wake(1);
-	objlck.unlock();
-	timerlck.lock();
-    }
-}
 
 #ifndef DSP_WIN32_ASYNC
 void Dispatcher::reset(void) {
@@ -792,6 +824,7 @@ void Dispatcher::onStop() {
 void Dispatcher::wake(uint tasks) {
     uint woke = 0;
 
+    cout << "tfr1" << endl;
     if (UNLIKELY(!maxthreads)) {
 #ifndef DSP_WIN32_ASYNC
 	if (polling) {
@@ -805,12 +838,13 @@ void Dispatcher::wake(uint tasks) {
     }
     while (tasks && rlist && !shutdown) {
 	uint sz = lifo.size();
-	uint wake = (uint)workers - (uint)running - sz;
+	uint wake = workers - (uint)running - sz;
 
 	if (wake >= rlist.size())
 	    break;
 	wake = rlist.size() - wake;
 	objlck.unlock();
+    cout << "tfr2" << endl;
 	if (wake < tasks)
 	    tasks = wake;
 	if (tasks >= sz && sz) {
@@ -826,12 +860,16 @@ void Dispatcher::wake(uint tasks) {
 
 		tasks--;
 		wake = 1;
+    cout << "tfr3" << endl;
 		objlck.lock();
+    cout << "tfr4" << endl;
 		if (workers >= maxthreads || shutdown)
 		    break;
 		workers++;
+    cout << "tfr5" << endl;
 		objlck.unlock();
 		t = new Thread();
+    cout << "tfr6" << endl;
 		t->start(worker, this, stacksz, this);
 		while ((t = wait(0)) != NULL)
 		    delete t;
@@ -841,8 +879,10 @@ void Dispatcher::wake(uint tasks) {
 	    }
 	}
 	woke += wake;
+    cout << "tfr7" << endl;
 	objlck.lock();
     }
+    cout << "tfr8" << endl;
 }
 
 // enter locked, leave unlocked
@@ -901,9 +941,9 @@ void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
 
 void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
     if (tm) {
-	msec_t now = 0;
+	msec_t now = mticks();
 	msec_t tmt = tm == DispatchTimer::DSP_NEVER ?
-	    DispatchTimer::DSP_NEVER_DUE : (now = mticks()) + tm;
+	    DispatchTimer::DSP_NEVER_DUE : now + tm;
 
 	timerlck.lock();
 	timers.set(dt, tmt);
@@ -914,14 +954,10 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
 	    timerlck.unlock();
 	}
     } else {
+	timerlck.lock();
+	removeTimer(dt);
+	timerlck.unlock();
 	objlck.lock();
-	if (UNLIKELY(dt.flags & DSP_Scheduled)) {
-	    objlck.unlock();
-	    timerlck.lock();
-	    removeTimer(dt);
-	    timerlck.unlock();
-	    objlck.lock();
-	}
 	if (ready(dt) && !workers)
 	    wake(1);
 	objlck.unlock();
@@ -1023,7 +1059,11 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 	    RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts,
 		MIN_EVENTS, &ts));
 	    objlck.lock();
-	    handleEvents(evts, nevts);
+	    if (nevts > 0) {
+		nevts = handleEvents(evts, nevts);
+		if (nevts > 1)
+		    wake(nevts - 1);
+	    }
 #endif
 	}
 #endif
@@ -1217,8 +1257,9 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	    &ts));
 	if (LIKELY(nevts > 0)) {
 	    objlck.lock();
-	    handleEvents(evts, nevts);
-	    rlist.push_front(flist);
+	    nevts = handleEvents(evts, nevts);
+	    if (nevts > 1)
+		wake(nevts - 1);
 	    objlck.unlock();
 	}
 #endif
@@ -1239,10 +1280,10 @@ void Dispatcher::addReady(DispatchObj &obj, bool hipri, DispatchMsg reason) {
 }
 
 void Dispatcher::cancelReady(DispatchObj &obj) {
-    objlck.lock();
+    FastSpinLocker lkr(objlck);
+
     if (obj.flags & DSP_ReadyAll)
 	removeReady(obj);
-    objlck.unlock();
 }
 
 void Dispatcher::removeReady(DispatchObj &obj) {

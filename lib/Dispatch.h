@@ -380,7 +380,8 @@ private:
 
     void cleanup(void);
     bool exec(void);
-    uint handleEvents(const void *evts, uint cnt);
+    void handleEvents(const void *evts, uint cnt);
+    void handleTimers(msec_t now);
     int run(void);
     void wake(uint tasks);
     void wakeup(ulong msec);	// enter locked, leave unlocked for performance

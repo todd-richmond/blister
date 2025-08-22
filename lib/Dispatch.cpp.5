@@ -268,8 +268,6 @@ int Dispatcher::onStart() {
 		timerlck.lock();
 		removeTimer(*ds);
 		timerlck.unlock();
-	    } else {
-		socketlck.unlock();
 	    }
 	} else if (msg.message == WM_TIMER) {
 	    DispatchTimer *dt;
@@ -475,9 +473,12 @@ int Dispatcher::onStart() {
 		fd = orset[u];
 		socketlck.lock();
 		if ((sit = smap.find(fd)) == smap.end()) {
-		    socketlck.unlock();
-		    if (fd == rsock)
+		    if (fd == rsock) {
+			socketlck.unlock();
 			reset();
+		    } else {
+			socketlck.unlock();
+		    }
 		    continue;
 		}
 		rset.unset(fd);
@@ -660,7 +661,6 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	} else {
 	    socketmap::const_iterator sit;
 
-	    objlck.unlock();
 	    socketlck.lock();
 	    if (UNLIKELY((sit = smap.find(evt->fd)) == smap.end())) {
 		socketlck.unlock();
@@ -669,7 +669,6 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		ds = sit->second;
 		socketlck.unlock();
 	    }
-	    objlck.lock();
 	}
 
 #elif defined(DSP_EPOLL)
@@ -741,7 +740,7 @@ void Dispatcher::handleTimers(msec_t now) {
 	objlck.lock();
 	dt->msg = DispatchTimeout;
 	if (ready(*dt, false))
-	    wake(1);
+	    wake(1);;
 	objlck.unlock();
 	timerlck.lock();
     }

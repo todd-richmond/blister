@@ -1192,10 +1192,13 @@ private:
 class BLISTER nocopy {
 protected:
     __forceinline nocopy() = default;
+    __forceinline ~nocopy() = default;
 
 private:
     nocopy(const nocopy &) = delete;
+    nocopy(const nocopy &&) = delete;
     const nocopy & operator =(const nocopy &) = delete;
+    const nocopy & operator =(const nocopy &&) = delete;
 };
 
 // fast single linked object list

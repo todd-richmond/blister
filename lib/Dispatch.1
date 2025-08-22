@@ -144,22 +144,22 @@ bool Dispatcher::exec() {
 	if (UNLIKELY(!obj)) {
 	    continue;
 	} else if (UNLIKELY(obj->flags & DSP_Freed)) {
-	    objlck.unlock();
+	    readylck.unlock();
 	    delete obj;
-	    objlck.lock();
+	    readylck.lock();
 	    continue;
 	} else if (UNLIKELY((group = obj->group)->active)) {
 	    obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
 	    group->glist.push_back(*obj);
 	    continue;
 	}
+	atomic_inc(running);
 	group->active = true;
 	obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
-	objlck.unlock();
-	++running;
+	readylck.unlock();
 	obj->dcb(obj);
-	--running;
-	objlck.lock();
+	atomic_dec(running);
+	readylck.lock();
 	obj->flags &= ~DSP_Active;
 	group->active = false;
 	if (UNLIKELY(group->glist)) {
@@ -172,11 +172,11 @@ bool Dispatcher::exec() {
 	    rlist.push_back(*obj);
 	} else if (obj->flags & DSP_Ready) {
 	    rlist.push_back(*obj);
-	} else if (UNLIKELY(obj->flags & (DSP_Freed | DSP_Socket)) ==
-	    DSP_Freed) {
-	    objlck.unlock();
+	}
+	if (UNLIKELY(obj->flags & DSP_Freed && !(obj->flags & DSP_Socket))) {
+	    readylck.unlock();
 	    delete obj;
-	    objlck.lock();
+	    readylck.lock();
 	}
     }
     return !shutdown;
@@ -186,18 +186,18 @@ int Dispatcher::run() {
     Lifo::Waiting waiting;
 
     priority(-1);
-    objlck.lock();
+    readylck.lock();
     while (exec()) {
 	bool b = workers == lifo.size() + 1;
 
-	objlck.unlock();
+	readylck.unlock();
 	b = lifo.wait(waiting, b ? INFINITE : MAX_WAIT_TIME);
-	objlck.lock();
+	readylck.lock();
 	if (!b)
 	    break;
     }
     workers--;
-    objlck.unlock();
+    readylck.unlock();
     return 0;
 }
 
@@ -221,6 +221,8 @@ int Dispatcher::onStart() {
     shutdown = false;
     workers = 0;
     while (!shutdown) {
+	uint count = 0;
+
 	GetMessage(&msg, wnd, 0, 0);
 	if (shutdown)
 	    break;
@@ -228,12 +230,11 @@ int Dispatcher::onStart() {
 	    socketmap::const_iterator it;
 	    uint evt = WSAGETSELECTEVENT(msg.lParam);
 
+	    readylck.lock();
 	    socketlck.lock();
 	    if ((it = smap.find(msg.wParam)) != smap.end()) {
 		DispatchSocket *ds = it->second;
 
-		socketlck.unlock();
-		objlck.lock();
 		if (ds->flags & DSP_Scheduled) {
 		    // uint err = WSAGETSELECTERROR(msg.lParam);
 		    if (evt & FD_READ)
@@ -253,7 +254,7 @@ int Dispatcher::onStart() {
 			    ds->flags |= DSP_Closeable;
 		    }
 		    if (ready(*ds, ds->msg == DispatchAccept))
-			wake(1);
+			count++;
 		} else {
 		    if (evt & FD_READ)
 			ds->flags |= DSP_Readable;
@@ -264,20 +265,24 @@ int Dispatcher::onStart() {
 		    if (evt & FD_CLOSE)
 			ds->flags |= DSP_Closeable;
 		}
-		objlck.unlock();
-		timerlck.lock();
+		socketlck.unlock();
 		removeTimer(*ds);
-		timerlck.unlock();
 	    } else {
 		socketlck.unlock();
 	    }
+	    readylck.unlock();
 	} else if (msg.message == WM_TIMER) {
 	    DispatchTimer *dt;
 	    msec_t now;
 
 	    now = mticks();
+	    readylck.lock();
 	    timerlck.lock();
-	    handleTimers(now);
+	    while ((dt = timers.get(now)) != NULL) {
+		dt->msg = DispatchTimeout;
+		if (ready(*dt, false))
+		    count++;
+	    }
 	    dt = timers.peek();
 	    if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
 		timers.reorder(now + MAX_IDLE_TIMER);
@@ -287,31 +292,31 @@ int Dispatcher::onStart() {
 		if (timers.empty()) {
 		    due = DispatchTimer::DSP_NEVER_DUE;
 		    interval = DispatchTimer::DSP_NEVER;
-		    timerlck.unlock();
 		    KillTimer(wnd, DSP_TimerID);
 		} else {
 		    due = now + MAX_IDLE_TIMER;
 		    interval = MAX_IDLE_TIMER;
-		    timerlck.unlock();
 		    SetTimer(wnd, DSP_TimerID, interval, NULL);
 		}
 	    } else if (dt->due < now + interval || interval < MIN_IDLE_TIMER) {
 		due = dt->due > now ? dt->due : now;
 		interval = (ulong)(dt->due - now);
-		timerlck.unlock();
 		SetTimer(wnd, DSP_TimerID, interval, NULL);
 	    } else {
 		due = now + interval;
-		timerlck.unlock();
 	    }
+	    timerlck.unlock();
+	    readylck.unlock();
 	} else {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
 	}
-	objlck.lock();
+	readylck.lock();
 	if (!maxthreads)
 	    exec();
-	objlck.unlock();
+	else if (count)
+	    wake(count);
+	readylck.unlock();
     }
     KillTimer(wnd, DSP_TimerID);
     cleanup();
@@ -404,18 +409,18 @@ int Dispatcher::onStart() {
 	RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, wfd, evts));
 #endif
     }
+    timerlck.lock();
+    due = DispatchTimer::DSP_NEVER_DUE;
     lifo.open();
     running = 0;
     shutdown = false;
     workers = 0;
     now = mticks();
-    due = DispatchTimer::DSP_NEVER_DUE;
     while (!shutdown) {
-	DispatchTimer *dt;
+	uint count = 0;
+	DispatchTimer *dt = timers.peek();
 	uint msec;
 
-	timerlck.lock();
-	dt = timers.peek();
 	if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
 	    timers.reorder(now + MAX_IDLE_TIMER);
 	    dt = timers.peek();
@@ -432,7 +437,6 @@ int Dispatcher::onStart() {
 	    msec = dt->due > now ? (uint)(dt->due - now) : 0;
 	    due = now + msec;
 	}
-	timerlck.unlock();
 	if (evtfd == -1) {
 	    socketlck.lock();
 	    irset = rset;
@@ -440,6 +444,7 @@ int Dispatcher::onStart() {
 	    socketlck.unlock();
 	}
 	polling = true;
+	timerlck.unlock();
 	if (evtfd == -1) {
 	    if (!SocketSet::iopoll(irset, orset, iwset, owset, oeset, msec)) {
 		orset.clear();
@@ -464,132 +469,101 @@ int Dispatcher::onStart() {
 		nevts = 0;
 #endif
 	}
+	count = 0;
+	now = mticks();
+	readylck.lock();
+	timerlck.lock();
+	polling = false;
 	if (shutdown)
 	    break;
-	polling = false;
 	if (evtfd == -1) {
 	    DispatchSocket *ds = NULL;
 	    socket_t fd;
 
+	    socketlck.lock();
 	    for (u = 0; u < orset.size(); u++) {
 		fd = orset[u];
-		socketlck.lock();
 		if ((sit = smap.find(fd)) == smap.end()) {
-		    socketlck.unlock();
-		    if (fd == rsock)
+		    if (fd == rsock) {
+			socketlck.unlock();
 			reset();
+			socketlck.lock();
+		    }
 		    continue;
 		}
 		rset.unset(fd);
 		ds = sit->second;
-		socketlck.unlock();
-		objlck.lock();
-		if (ds->flags & DSP_SelectWrite) {
-		    objlck.unlock();
-		    socketlck.lock();
+		if (ds->flags & DSP_SelectWrite)
 		    wset.unset(fd);
-		    socketlck.unlock();
-		    objlck.lock();
-		}
 		ds->flags &= ~DSP_SelectAll;
 		if (ds->flags & DSP_Scheduled) {
 		    ds->msg = (ds->flags & DSP_SelectAccept) ? DispatchAccept :
 			DispatchRead;
 		    if (ready(*ds, ds->msg == DispatchAccept))
-			wake(1);
+			count++;
 		} else {
 		    ds->flags |= (ds->flags & DSP_SelectAccept) ?
 			DSP_Acceptable : DSP_Readable;
 		}
-		objlck.unlock();
-		timerlck.lock();
 		removeTimer(*ds);
-		timerlck.unlock();
 	    }
 	    for (u = 0; u < owset.size(); u++) {
 		fd = owset[u];
-		socketlck.lock();
 		wset.unset(fd);
-		if ((sit = smap.find(fd)) == smap.end()) {
-		    socketlck.unlock();
+		if ((sit = smap.find(fd)) == smap.end())
 		    continue;
-		}
 		ds = sit->second;
-		socketlck.unlock();
-		objlck.lock();
-		if (ds->flags & DSP_SelectRead) {
-		    objlck.unlock();
-		    socketlck.lock();
+		if (ds->flags & DSP_SelectRead)
 		    rset.unset(fd);
-		    socketlck.unlock();
-		    objlck.lock();
-		}
 		ds->flags &= ~DSP_SelectAll;
 		if (ds->flags & DSP_Scheduled) {
 		    ds->msg = DispatchWrite;
 		    if (ready(*ds))
-			wake(1);
+			count++;
 		} else {
 		    ds->flags |= DSP_Writeable;
 		}
-		objlck.unlock();
-		timerlck.lock();
 		removeTimer(*ds);
-		timerlck.unlock();
 	    }
 	    for (u = 0; u < oeset.size(); u++) {
 		fd = oeset[u];
-		socketlck.lock();
-		if ((sit = smap.find(fd)) == smap.end()) {
-		    socketlck.unlock();
+		if ((sit = smap.find(fd)) == smap.end())
 		    continue;
-		}
 		ds = sit->second;
-		socketlck.unlock();
-		objlck.lock();
-		if (ds->flags & (DSP_SelectRead | DSP_SelectWrite)) {
-		    bool r = ds->flags & DSP_SelectRead;
-		    bool w = ds->flags & DSP_SelectWrite;
-
-		    objlck.unlock();
-		    socketlck.lock();
-		    if (r)
-			rset.unset(fd);
-		    if (w)
-			wset.unset(fd);
-		    socketlck.unlock();
-		    objlck.lock();
-		}
+		if (ds->flags & DSP_SelectRead)
+		    rset.unset(fd);
+		if (ds->flags & DSP_SelectWrite)
+		    wset.unset(fd);
 		ds->flags &= ~DSP_SelectAll;
 		if (ds->flags & DSP_Scheduled) {
 		    ds->msg = DispatchClose;
 		    if (ready(*ds))
-			wake(1);
+			count++;
 		} else {
 		    ds->flags |= DSP_Closeable;
 		}
-		objlck.unlock();
-		timerlck.lock();
 		removeTimer(*ds);
-		timerlck.unlock();
 	    }
+	    socketlck.unlock();
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 	} else {
-	    objlck.lock();
-	    handleEvents(evts, (uint)nevts);
-	    objlck.unlock();
+	    count += handleEvents(evts, (uint)nevts);
 #endif
 	}
-	now = mticks();
-	timerlck.lock();
-	handleTimers(now);
+	while ((dt = timers.get(now)) != NULL) {
+	    dt->msg = DispatchTimeout;
+	    if (ready(*dt, false))
+		count++;
+	}
 	timerlck.unlock();
-	objlck.lock();
-	rlist.push_front(flist);
 	if (!maxthreads)
 	    exec();
-	objlck.unlock();
+	else if (count)
+	    wake(count);
+	readylck.unlock();
+	timerlck.lock();
     }
+    timerlck.unlock();
     cleanup();
     if (wfd != -1)
 	close(wfd);
@@ -611,7 +585,7 @@ void Dispatcher::cleanup(void) {
 	    break;
 	delete t;
     }
-    objlck.lock();
+    readylck.lock();
     while (rlist) {
 	DispatchObj *obj = rlist.pop_front();
 
@@ -621,14 +595,11 @@ void Dispatcher::cleanup(void) {
 	    rlist.push_front(obj->group->glist);
 	if (obj->flags & DSP_ReadyGroup)
 	    obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
-	objlck.unlock();
 	if (obj->flags & DSP_Freed)
 	    delete obj;
 	else
 	    obj->terminate();
-	objlck.lock();
     }
-    objlck.unlock();
     while (flist)
 	delete flist.pop_front();
     timerlck.lock();
@@ -638,13 +609,16 @@ void Dispatcher::cleanup(void) {
 	timerlck.lock();
     }
     timerlck.unlock();
+    readylck.unlock();
     while (flist)
 	delete flist.pop_front();
     lifo.close();
 }
 
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
-void Dispatcher::handleEvents(const void *evts, uint nevts) {
+uint Dispatcher::handleEvents(const void *evts, uint nevts) {
+    uint count = 0;
+
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds;
 	const event_t *evt = (const event_t *)evts + u;
@@ -655,22 +629,16 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 #define DSP_EVENT_WRITE(evt)	evt->revents & POLLOUT
 #define DSP_ONESHOT(ds, flag)	ds->flags &= ~(flag);
 
-	if (UNLIKELY(evt->fd == rsock)) {
-	    ds = NULL;
-	} else {
-	    socketmap::const_iterator sit;
+	socketmap::const_iterator sit;
 
-	    objlck.unlock();
-	    socketlck.lock();
-	    if (UNLIKELY((sit = smap.find(evt->fd)) == smap.end())) {
-		socketlck.unlock();
-		continue;
-	    } else {
-		ds = sit->second;
-		socketlck.unlock();
-	    }
-	    objlck.lock();
-	}
+	socketlck.lock();
+	if (UNLIKELY(evt->fd == rsock))
+	    ds = NULL;
+	else if (UNLIKELY((sit = smap.find(evt->fd)) == smap.end()))
+	    continue;
+	else
+	    ds = sit->second;
+	socketlck.unlock();
 
 #elif defined(DSP_EPOLL)
 #define DSP_EVENT_ERR(evt)	evt->events & (EPOLLERR | EPOLLHUP)
@@ -689,9 +657,8 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	ds = static_cast<DispatchSocket *>(evt->udata);
 #endif
 	if (!ds) {
-	    objlck.unlock();
 	    reset();
-	    objlck.lock();
+	    count++;
 	    continue;
 	} else if (UNLIKELY(ds->flags & DSP_Freed)) {
 	    continue;
@@ -723,29 +690,17 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	}
 	if ((ds->flags & DSP_Scheduled) && ready(*ds, ds->msg ==
 	    DispatchAccept))
-	    wake(1);
-	objlck.unlock();
-	timerlck.lock();
+	    count++;
 	removeTimer(*ds);
-	timerlck.unlock();
-	objlck.lock();
     }
+    if (flist) {
+	if (!count)
+	    count = 1;
+	rlist.push_front(flist);
+    }
+    return count;
 }
 #endif
-
-void Dispatcher::handleTimers(msec_t now) {
-    DispatchTimer *dt;
-
-    while ((dt = timers.get(now)) != NULL) {
-	timerlck.unlock();
-	objlck.lock();
-	dt->msg = DispatchTimeout;
-	if (ready(*dt, false))
-	    wake(1);
-	objlck.unlock();
-	timerlck.lock();
-    }
-}
 
 #ifndef DSP_WIN32_ASYNC
 void Dispatcher::reset(void) {
@@ -768,13 +723,13 @@ bool Dispatcher::start(uint mthreads, uint stack) {
     maxthreads = mthreads;
     stacksz = stack ? stack : 128 * 1024;
     if (ThreadGroup::start(mthreads ? 8 * 1024 : stacksz, false, false)) {
-	objlck.lock();
+	readylck.lock();
 	while (shutdown && getMainThread().getState() == Running) {
-	    objlck.unlock();
+	    readylck.unlock();
 	    msleep(20);
-	    objlck.lock();
+	    readylck.lock();
 	}
-	objlck.unlock();
+	readylck.unlock();
     }
     return !shutdown;
 }
@@ -782,35 +737,33 @@ bool Dispatcher::start(uint mthreads, uint stack) {
 void Dispatcher::onStop() {
     if (shutdown)
 	return;
-    shutdown = true;
+    readylck.lock();
     timerlck.lock();
+    shutdown = true;
     wakeup(0);
     waitForMain();
 }
 
-// enter locked, leave locked
 void Dispatcher::wake(uint tasks) {
     uint woke = 0;
 
     if (UNLIKELY(!maxthreads)) {
 #ifndef DSP_WIN32_ASYNC
 	if (polling) {
-	    objlck.unlock();
 	    timerlck.lock();
 	    wakeup(0);
-	    objlck.lock();
 	}
 #endif
 	return;
     }
     while (tasks && rlist && !shutdown) {
 	uint sz = lifo.size();
-	uint wake = (uint)workers - (uint)running - sz;
+	uint wake = workers - (uint)running - sz;
 
 	if (wake >= rlist.size())
 	    break;
 	wake = rlist.size() - wake;
-	objlck.unlock();
+	readylck.unlock();
 	if (wake < tasks)
 	    tasks = wake;
 	if (tasks >= sz && sz) {
@@ -826,11 +779,11 @@ void Dispatcher::wake(uint tasks) {
 
 		tasks--;
 		wake = 1;
-		objlck.lock();
+		readylck.lock();
 		if (workers >= maxthreads || shutdown)
 		    break;
 		workers++;
-		objlck.unlock();
+		readylck.unlock();
 		t = new Thread();
 		t->start(worker, this, stacksz, this);
 		while ((t = wait(0)) != NULL)
@@ -841,7 +794,7 @@ void Dispatcher::wake(uint tasks) {
 	    }
 	}
 	woke += wake;
-	objlck.lock();
+	readylck.lock();
     }
 }
 
@@ -883,132 +836,101 @@ void Dispatcher::wakeup(ulong msec) {
 }
 
 void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
-    objlck.lock();
+    readylck.lock();
     if (dt.flags & DSP_ReadyAll) {
 	removeReady(dt);
-	objlck.unlock();
+	readylck.unlock();
 	return;
     }
-    dt.flags &= ~DSP_Scheduled;
-    objlck.unlock();
+    readylck.unlock();
     timerlck.lock();
-    if (del)
+    if (del) {
 	timers.erase(dt);
-    else
+    } else {
 	removeTimer(dt);
+	dt.flags &= ~DSP_Scheduled;
+    }
     timerlck.unlock();
 }
 
 void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
     if (tm) {
-	msec_t now = 0;
+	msec_t now = mticks();
 	msec_t tmt = tm == DispatchTimer::DSP_NEVER ?
-	    DispatchTimer::DSP_NEVER_DUE : (now = mticks()) + tm;
+	    DispatchTimer::DSP_NEVER_DUE : now + tm;
 
 	timerlck.lock();
 	timers.set(dt, tmt);
 	if (tmt < due) {
 	    due = tmt;
 	    wakeup((ulong)(due - now));
-	} else {
-	    timerlck.unlock();
+	    return;
 	}
+	timerlck.unlock();
     } else {
-	objlck.lock();
-	if (UNLIKELY(dt.flags & DSP_Scheduled)) {
-	    objlck.unlock();
-	    timerlck.lock();
-	    removeTimer(dt);
-	    timerlck.unlock();
-	    objlck.lock();
-	}
+	readylck.lock();
+	removeTimer(dt);
 	if (ready(dt) && !workers)
 	    wake(1);
-	objlck.unlock();
+	readylck.unlock();
     }
 }
 
 void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
     socket_t fd;
 
-    objlck.lock();
+    readylck.lock();
     if (ds.flags & DSP_Freed) {
-	objlck.unlock();
+	readylck.unlock();
 	return;
     }
     fd = ds.fd();
     if (ds.flags & DSP_ReadyAll) {
 	removeReady(ds);
     } else {
-	ds.flags &= ~DSP_Scheduled;
-	objlck.unlock();
 	timerlck.lock();
 	removeTimer(ds);
 	timerlck.unlock();
-	objlck.lock();
+	ds.flags &= ~DSP_Scheduled;
     }
     if (del)
 	ds.flags |= DSP_Freed;
     if (ds.mapped && fd != INVALID_SOCKET) {
 	ds.mapped = false;
 #ifdef DSP_WIN32_ASYNC
-	objlck.unlock();
 	socketlck.lock();
 	smap.erase(fd);
 	socketlck.unlock();
-	objlck.lock();
 	if (ds.flags & DSP_SelectAll) {
 	    ds.flags &= ~DSP_SelectAll;
-	    objlck.unlock();
+	    readylck.unlock();
 	    WSAAsyncSelect(fd, wnd, socketmsg, 0);
-	    objlck.lock();
+	    readylck.lock();
 	}
 #else
 	if (evtfd == -1) {
-	    bool erase = true;
-
-	    if (ds.flags & (DSP_SelectRead | DSP_SelectAccept)) {
-		objlck.unlock();
-		socketlck.lock();
-		smap.erase(fd);
+	    socketlck.lock();
+	    smap.erase(fd);
+	    socketlck.unlock();
+	    if (ds.flags & (DSP_SelectRead | DSP_SelectAccept))
 		rset.unset(fd);
-		socketlck.unlock();
-		erase = false;
-		objlck.lock();
-	    }
-	    if (ds.flags & DSP_SelectWrite) {
-		objlck.unlock();
-		socketlck.lock();
-		if (erase) {
-		    smap.erase(fd);
-		    erase = false;
-		}
+	    if (ds.flags & DSP_SelectWrite)
 		wset.unset(fd);
-		socketlck.unlock();
-		objlck.lock();
-	    }
-	    if (erase) {
-		objlck.unlock();
-		socketlck.lock();
-		smap.erase(fd);
-		socketlck.unlock();
-		objlck.lock();
-	    }
 	    ds.flags &= ~DSP_SelectAll;
 	} else if (ds.flags & DSP_SelectAll && !close) {
 #ifdef DSP_DEVPOLL
 	    ds.flags &= ~DSP_SelectAll;
-	    objlck.unlock();
+	    readylck.unlock();
 
 	    event_t evt = { fd, POLLREMOVE, 0 };
 
 	    RETRY(pwrite(evtfd, &evt, sizeof (evt), 0));
-	    objlck.lock();
+	    readylck.lock();
 #elif defined(DSP_EPOLL)
 	    ds.flags &= ~DSP_SelectAll;
-	    objlck.unlock();
+	    readylck.unlock();
 	    RETRY(epoll_ctl(evtfd, EPOLL_CTL_DEL, fd, 0));
-	    objlck.lock();
+	    readylck.lock();
 #elif defined(DSP_KQUEUE)
 	    event_t chgs[2], evts[MIN_EVENTS];
 	    uint nevts = 0;
@@ -1019,23 +941,27 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 	    if (ds.flags & DSP_SelectWrite)
 		EV_SET(&chgs[nevts++], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
 	    ds.flags &= ~DSP_SelectAll;
-	    objlck.unlock();
+	    readylck.unlock();
 	    RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts,
 		MIN_EVENTS, &ts));
-	    objlck.lock();
-	    handleEvents(evts, nevts);
+	    readylck.lock();
+	    if (nevts > 0) {
+		nevts = handleEvents(evts, nevts);
+		if (nevts > 1)
+		    wake(nevts - 1);
+	    }
 #endif
 	}
 #endif
     }
     if (del) {
 	flist.push_back(ds);
-	objlck.unlock();
+	readylck.unlock();
     } else if (close) {
-	objlck.unlock();
+	readylck.unlock();
 	ds.Socket::close();
     } else {
-	objlck.unlock();
+	readylck.unlock();
     }
 }
 
@@ -1072,7 +998,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT, EPOLLIN, EPOLLOUT, 0, 0, 0
     };
 #endif
-    objlck.lock();
+    readylck.lock();
     flags = ds.flags & DSP_IO;
     if (flags & ioarray[m]) {
 	if ((flags & DSP_Writeable) &&
@@ -1092,34 +1018,28 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	    ds.msg = DispatchClose;
 	}
 	(void)ready(ds, m == DispatchAccept);
-	objlck.unlock();
+	readylck.unlock();
 	return;
     }
     ds.flags |= DSP_Scheduled;
     ds.msg = DispatchNone;
+    timerlck.lock();
+    timers.set(ds, tmt);
     if (UNLIKELY(tmt < due)) {
 	due = tmt;
 	if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll))) {
-	    objlck.unlock();
-	    timerlck.lock();
-	    timers.set(ds, tmt);
 	    wakeup((ulong)(due - now));
+	    readylck.unlock();
 	    return;
 	}
-	objlck.unlock();
 	resched = true;
-    } else {
-	bool ret = LIKELY(sarray[m] == (ds.flags & DSP_SelectAll));
-
-	objlck.unlock();
-	timerlck.lock();
-	timers.set(ds, tmt);
+    } else if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll))) {
 	timerlck.unlock();
-	if (ret)
-	    return;
+	readylck.unlock();
+	return;
     }
+    socketlck.lock();
     if (UNLIKELY(!ds.mapped)) {
-	socketlck.lock();
 #ifdef DSP_EPOLL
 	op = EPOLL_CTL_ADD;
 #endif
@@ -1128,30 +1048,31 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 #endif
 	    smap[ds.fd()] = &ds;
 	ds.mapped = true;
-	socketlck.unlock();
     }
-    objlck.lock();
 #ifdef DSP_KQUEUE
     flags = ds.flags;
 #endif
     ds.flags &= ~(DSP_SelectAll | DSP_IO);
     ds.flags |= sarray[m];
-    objlck.unlock();
 #ifdef DSP_WIN32_ASYNC
+    socketlck.unlock();
+    timerlck.unlock();
+    readylck.unlock();
     if (UNLIKELY(WSAAsyncSelect(ds.fd(), wnd, socketmsg, sockevts[(int)m]))) {
-	objlck.lock();
+	readylck.lock();
 	ds.msg = DispatchClose;
 	(void)ready(ds);
-	objlck.unlock();
-	timerlck.lock();
 	removeTimer(*ds);
-	if (resched)
+	if (resched) {
+	    timerlck.lock();
 	    wakeup((ulong)(due - now));
-	else
-	    timerlck.unlock();
+	} else {
+	    readylck.unlock();
+	}
     } else if (UNLIKELY(resched)) {
 	timerlck.lock();
 	wakeup((ulong)(due - now));
+	readylck.unlock();
     }
 #else
     if (UNLIKELY(resched)) {
@@ -1161,7 +1082,6 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	    resched = false;
     }
     if (UNLIKELY(evtfd == -1)) {
-	socketlck.lock();
 	if (m == DispatchRead || m == DispatchReadWrite || m ==
 	    DispatchAccept || m == DispatchClose)
 	    rset.set(ds.fd());
@@ -1169,13 +1089,18 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	    DispatchConnect)
 	    wset.set(ds.fd());
 	socketlck.unlock();
+	timerlck.unlock();
 	if (resched)
 	    wsock.write("", 1);
+	readylck.unlock();
     } else {
+	socketlck.unlock();
+	readylck.unlock();
 #ifdef DSP_DEVPOLL
 	event_t evt = { ds.fd(), sockevts[m] | POLLERR | POLLHUP, 0 };
 
 	RETRY(pwrite(evtfd, &evt, sizeof (evt), 0));
+	timerlck.unlock();
 	if (UNLIKELY(resched))
 	    wsock.write("", 1);
 #elif defined(DSP_EPOLL)
@@ -1185,6 +1110,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	// | (uint)EPOLLET requires caller to read to completion
 	evt.events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLONESHOT;
 	RETRY(epoll_ctl(evtfd, op, ds.fd(), &evt));
+	timerlck.unlock();
 	if (UNLIKELY(resched))
 	    RETRY(eventfd_write(wfd, 1));
 #elif defined(DSP_KQUEUE)
@@ -1213,13 +1139,15 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	if (UNLIKELY(resched))
 	    EV_SET(&chgs[nevts++], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0,
 		(ulong)(due - now), NULL);
+	timerlck.unlock();
 	RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS,
 	    &ts));
 	if (LIKELY(nevts > 0)) {
-	    objlck.lock();
-	    handleEvents(evts, nevts);
-	    rlist.push_front(flist);
-	    objlck.unlock();
+	    readylck.lock();
+	    nevts = handleEvents(evts, nevts);
+	    if (nevts > 1)
+		wake(nevts - 1);
+	    readylck.unlock();
 	}
 #endif
     }
@@ -1227,22 +1155,21 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 }
 
 void Dispatcher::addReady(DispatchObj &obj, bool hipri, DispatchMsg reason) {
-    objlck.lock();
+    readylck.lock();
     obj.msg = reason;
     if (ready(obj, hipri) && !workers) {
-	objlck.unlock();
 	timerlck.lock();
 	wakeup(0);  // -V1020
     } else {
-	objlck.unlock();
+	readylck.unlock();
     }
 }
 
 void Dispatcher::cancelReady(DispatchObj &obj) {
-    objlck.lock();
+    FastSpinLocker lkr(readylck);
+
     if (obj.flags & DSP_ReadyAll)
 	removeReady(obj);
-    objlck.unlock();
 }
 
 void Dispatcher::removeReady(DispatchObj &obj) {
