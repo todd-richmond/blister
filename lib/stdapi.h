@@ -31,13 +31,8 @@
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
 #define DLL_LOCAL
-#if _MSVC_LANG >= 202002L
-#define LIKELY(c)		(c) [[likely]]
-#define UNLIKELY(c)		(c) [[unlikely]]
-#else
 #define LIKELY(c)		(c)
 #define UNLIKELY(c)		(c)
-#endif
 #define PRAGMA_STR(s)		__pragma(s)
 #define WARN_DISABLE(w)		PRAGMA_STR(warning(disable: w))
 #define WARN_ENABLE(w)		PRAGMA_STR(warning(enable: w))

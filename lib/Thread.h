@@ -286,7 +286,9 @@ public:
 	return load(order);
     }
     __forceinline bool test_and_set(memory_order order = memory_order_acquire) {
-	return !compare_exchange_strong(false, true, order);
+	bool b = false;
+
+	return !compare_exchange_strong(b, true, order);
     }
 };
 #endif
