@@ -360,13 +360,13 @@ private:
     void addReady(DispatchObj &obj, bool hipri, DispatchMsg reason);
     void cancelReady(DispatchObj &obj);
     void removeReady(DispatchObj &obj);
-    bool ready(DispatchObj &obj, bool hipri = false);
+    void ready(DispatchObj &obj, bool hipri = false);
 
     friend class DispatchTimer;
     void addTimer(DispatchTimer &dt) {
-	timerlck.lock();
+	tlock.lock();
 	timers.insert(dt);
-	timerlck.unlock();
+	tlock.unlock();
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
     void removeTimer(DispatchTimer &dt) {
@@ -383,11 +383,10 @@ private:
     void handleEvents(const void *evts, uint cnt);
     void handleTimers(msec_t now);
     int run(void);
-    void wake(uint tasks);
     void wakeup(ulong msec);	// enter locked, leave unlocked for performance
     static int worker(void *param);
 
-    SpinLock objlck, socketlck, timerlck;
+    SpinLock olock, slock, tlock;
     msec_t due;
     ObjectList<DispatchObj> flist, rlist;
     Lifo lifo;

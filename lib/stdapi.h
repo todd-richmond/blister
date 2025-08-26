@@ -1325,8 +1325,11 @@ public:
     }
     void push_front(ObjectList &lst) {
 	if (lst.back) {
-	    lst.back->next = front;
 	    front = lst.front;
+	    if (front)
+		lst.back->next = front;
+	    else
+		back = lst.back;
 	    lst.front = lst.back = NULL;
 	    sz += lst.sz;
 	    lst.sz = 0;
