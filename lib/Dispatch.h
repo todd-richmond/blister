@@ -45,6 +45,26 @@ enum DispatchMsg {
     DispatchConnect, DispatchClose, DispatchTimeout, DispatchNone
 };
 
+// Dispatch flags
+enum DispatchFlag: uint_fast32_t {
+    DSP_Socket = 0x0001,
+    DSP_Detached = 0x0002,
+    DSP_Connecting = 0x0004,
+    DSP_Scheduled = 0x0008,
+    DSP_Ready = 0x0010,
+    DSP_ReadyGroup = 0x0020,
+    DSP_Active = 0x0040,
+    DSP_Freed = 0x0080,
+    DSP_Acceptable = 0x0100,
+    DSP_Readable = 0x0200,
+    DSP_Writeable = 0x0400,
+    DSP_Closeable = 0x0800,
+    DSP_SelectAccept = 0x1000,
+    DSP_SelectRead = 0x2000,
+    DSP_SelectWrite = 0x4000,
+    DSP_SelectClose = 0x8000
+};
+
 class Dispatcher;
 
 // base classes for event objects
@@ -68,7 +88,7 @@ public:
     }
     DispatchMsg reason(void) const { return msg; }
 
-    void detach(void);
+    void detach(void) { flags |= DSP_Detached; }
     void ready(DispatchObjCB cb = NULL, bool hipri = false, DispatchMsg reason =
 	DispatchNone);
     virtual void cancel(void);
@@ -80,7 +100,7 @@ protected:
 
     DispatchObjCB dcb;
     Dispatcher &dspr;
-    uint flags;
+    uint_fast32_t flags;
     DispatchMsg msg;
 
 private:
@@ -398,7 +418,7 @@ private:
     TimerSet timers;
     atomic_uint_fast16_t workers;
 #ifdef DSP_WIN32_ASYNC
-    volatile ulong interval;
+    atomic_ulong interval;
     HWND wnd;
     static uint socketmsg;
     static const int DSP_TimerID = 1;

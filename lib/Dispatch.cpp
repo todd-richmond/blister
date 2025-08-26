@@ -27,40 +27,20 @@
 #endif
 #define RETRY(call) while (UNLIKELY((int)(call) == -1) && interrupted(errno))
 
-static const uint MAX_WAIT_TIME = 1 * 60 * 1000;
-static const uint MAX_IDLE_TIMER = 10 * 1000;
-static const uint MIN_IDLE_TIMER = 1 * 1000;
+static constexpr uint MAX_WAIT_TIME = 1 * 60 * 1000;
+static constexpr uint MAX_IDLE_TIMER = 10 * 1000;
+static constexpr uint MIN_IDLE_TIMER = 1 * 1000;
 
-static const uint DSP_Socket = 0x0001;
-static const uint DSP_Detached = 0x0002;
-static const uint DSP_Connecting = 0x0004;
-static const uint DSP_Scheduled = 0x0008;
-static const uint DSP_Ready = 0x0010;
-static const uint DSP_ReadyGroup = 0x0020;
-static const uint DSP_Active = 0x0040;
-static const uint DSP_Freed = 0x0080;
-
-static const uint DSP_Acceptable = 0x0100;
-static const uint DSP_Readable = 0x0200;
-static const uint DSP_Writeable = 0x0400;
-static const uint DSP_Closeable = 0x0800;
-static const uint DSP_IO = DSP_Acceptable | DSP_Readable | DSP_Writeable |
-    DSP_Closeable;
-
-static const uint DSP_SelectAccept = 0x1000;
-static const uint DSP_SelectRead = 0x2000;
-static const uint DSP_SelectWrite = 0x4000;
-static const uint DSP_SelectClose = 0x8000;
-static const uint DSP_SelectAll = DSP_SelectAccept | DSP_SelectRead |
-    DSP_SelectWrite | DSP_SelectClose;
-
-static const uint DSP_ReadyAll = DSP_Ready | DSP_ReadyGroup;
+static constexpr uint_fast32_t DSP_IO = DSP_Acceptable | DSP_Readable |
+    DSP_Writeable | DSP_Closeable;
+static constexpr uint_fast32_t DSP_ReadyAll = DSP_Ready | DSP_ReadyGroup;
+static constexpr uint_fast32_t DSP_SelectAll = DSP_SelectAccept |
+    DSP_SelectRead | DSP_SelectWrite | DSP_SelectClose;
 
 #ifdef DSP_WIN32_ASYNC
 #pragma comment(lib, "user32.lib")
 
 static const tchar *DispatchClass = T("DSP_CLASS");
-
 static uint Dispatcher::socketmsg;
 
 #elif defined(__linux__)
@@ -90,7 +70,7 @@ typedef epoll_event event_t;
 
 typedef struct kevent event_t;
 
-static const uint MIN_EVENTS = 32;
+static constexpr uint MIN_EVENTS = 32;
 
 #elif defined(__sun__)
 
@@ -108,7 +88,7 @@ typedef struct pollfd event_t;
 #endif
 
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
-static const uint MAX_EVENTS = 128;
+static constexpr uint MAX_EVENTS = 128;
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config),
@@ -966,17 +946,17 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool close, bool del) {
 }
 
 void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
-    uint flags;
+    uint_fast32_t flags;
     msec_t now = mticks();
     bool resched = false;
     msec_t tmt = timeout == DispatchTimer::DSP_NEVER ?
 	DispatchTimer::DSP_NEVER_DUE : now + timeout;
-    static const uint ioarray[] = {
+    static const uint_fast32_t ioarray[] = {
 	DSP_Readable | DSP_Closeable, DSP_Writeable | DSP_Closeable,
 	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable,
 	DSP_Writeable | DSP_Closeable, DSP_Closeable, 0, 0
     };
-    static const uint sarray[] = {
+    static const uint_fast32_t sarray[] = {
 	DSP_SelectRead, DSP_SelectWrite, DSP_SelectRead | DSP_SelectWrite,
 	DSP_SelectAccept, DSP_Connecting | DSP_SelectWrite, DSP_SelectClose, 0,
 	0
@@ -1023,6 +1003,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     ds.flags |= DSP_Scheduled;
     ds.msg = DispatchNone;
     if (UNLIKELY(tmt < due)) {
+	msec_t prev = due;
+
 	due = tmt;
 	if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll))) {
 	    olock.unlock();
@@ -1208,8 +1190,6 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	}
     }
 }
-
-void DispatchObj::detach(void) { flags |= DSP_Detached; }
 
 void DispatchObj::erase(void) {
     if (flags & (DSP_Active | DSP_ReadyAll | DSP_Scheduled | DSP_SelectAll)) {
