@@ -403,14 +403,14 @@ private:
     void handleEvents(const void *evts, uint cnt);
     void handleTimers(msec_t now);
     int run(void);
-    void wakeup(ulong msec);	// enter locked, leave unlocked for performance
+    void wakeup(ulong msec);
     static int worker(void *param);
 
-    SpinLock olock, slock, tlock;
     msec_t due;
     ObjectList<DispatchObj> flist, rlist;
     Lifo lifo;
     uint maxthreads;
+    SpinLock olock, slock, tlock;
     atomic_uint_fast16_t running;
     atomic_bool shutdown;
     socketmap smap;

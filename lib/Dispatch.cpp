@@ -748,16 +748,13 @@ void Dispatcher::onStop() {
     if (shutdown)
 	return;
     shutdown = true;
-    tlock.lock();
     wakeup(0);
     waitForMain();
 }
 
-// enter locked, leave unlocked
 void Dispatcher::wakeup(ulong msec) {
 #ifdef DSP_WIN32_ASYNC
     interval = msec;
-    tlock.unlock();
     do {
 	SetTimer(wnd, DSP_TimerID, msec, NULL);
     } while (interval > msec);
@@ -765,7 +762,6 @@ void Dispatcher::wakeup(ulong msec) {
     (void)msec;
     if (polling) {
 	polling = false;
-	tlock.unlock();
 	if (wsock.open()) {
 	    wsock.write("", 1);
 	} else {
@@ -784,8 +780,6 @@ void Dispatcher::wakeup(ulong msec) {
 	    RETRY(kevent(evtfd, &evt, 1, NULL, 0, &ts));
 #endif
 	}
-    } else {
-	tlock.unlock();
     }
 #endif
 }
@@ -815,12 +809,13 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
 
 	tlock.lock();
 	timers.set(dt, tmt);
-	if (tmt < due) {
+	if (tmt < due)
 	    due = tmt;
+	else
+	    tmt = 0;
+	tlock.unlock();
+	if (tmt)
 	    wakeup((ulong)(due - now));
-	} else {
-	    tlock.unlock();
-	}
     } else {
 	olock.lock();
 	if (UNLIKELY(dt.flags & DSP_Scheduled)) {
@@ -1002,20 +997,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     }
     ds.flags |= DSP_Scheduled;
     ds.msg = DispatchNone;
-    if (UNLIKELY(tmt < due)) {
-	msec_t prev = due;
-
-	due = tmt;
-	if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll))) {
-	    olock.unlock();
-	    tlock.lock();
-	    timers.set(ds, tmt);
-	    wakeup((ulong)(due - now));
-	    return;
-	}
-	olock.unlock();
-	resched = true;
-    } else {
+    if (LIKELY(tmt >= due)) {
 	bool ret = LIKELY(sarray[m] == (ds.flags & DSP_SelectAll));
 
 	olock.unlock();
@@ -1024,6 +1006,22 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	tlock.unlock();
 	if (ret)
 	    return;
+    } else {
+	if (LIKELY(sarray[m] == (ds.flags & DSP_SelectAll))) {
+	    olock.unlock();
+	    tlock.lock();
+	    timers.set(ds, tmt);
+	    if (tmt < due)
+		due = tmt;
+	    else
+		tmt = 0;
+	    tlock.unlock();
+	    if (tmt)
+		wakeup((ulong)(due - now));
+	    return;
+	}
+	olock.unlock();
+	resched = true;
     }
     if (UNLIKELY(!ds.mapped)) {
 	slock.lock();
@@ -1051,12 +1049,10 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	ready(ds);
 	tlock.lock();
 	removeTimer(*ds);
+	tlock.unlock();
 	if (resched)
 	    wakeup((ulong)(due - now));
-	else
-	    tlock.unlock();
     } else if (UNLIKELY(resched)) {
-	tlock.lock();
 	wakeup((ulong)(due - now));
     }
 #else
@@ -1155,7 +1151,7 @@ void Dispatcher::removeReady(DispatchObj &obj) {
     }
 }
 
-// enter locked, leave unlocked
+// enter locked, leave unlocked for performance
 void Dispatcher::ready(DispatchObj &obj, bool hipri) {
     if (UNLIKELY(obj.group->active)) {
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_ReadyGroup;
