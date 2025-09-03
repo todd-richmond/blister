@@ -141,13 +141,14 @@ public:
 	init();
 	timeout(cb, msec);
     }
-    virtual ~DispatchTimer();
+    virtual ~DispatchTimer() {}
 
     msec_t expires(void) const { return due; }
     ulong timeout(void) const { return to; }
 
     void timeout(DispatchObjCB cb, ulong msec = DSP_PREVIOUS);
     virtual void cancel(void);
+    virtual void erase(void);
 
 protected:
     struct compare {
@@ -176,9 +177,8 @@ public:
 	msec = DSP_NEVER);
     DispatchSocket(DispatchObj &parent, const Socket &sock, ulong msec =
 	DSP_NEVER);
-    virtual ~DispatchSocket() { close(); }
+    virtual ~DispatchSocket() {}
 
-    void close(void);
     virtual void cancel(void);
     virtual void erase(void);
 
@@ -312,20 +312,6 @@ private:
 		sorted.erase(&dt);
 	    unsorted.erase(&dt);
 	}
-	DispatchTimer *get(void) {
-	    unsorted_timerset::const_iterator it = unsorted.begin();
-
-	    if (it != unsorted.end()) {
-		DispatchTimer *dt = *it;
-
-		if (dt->due <= split)
-		    sorted.erase(dt);
-		unsorted.erase(it);
-		dt->due = DispatchTimer::DSP_NEVER_DUE;
-		return dt;
-	    }
-	    return NULL;
-	}
 	DispatchTimer *get(msec_t when) {
 	    sorted_timerset::const_iterator it = sorted.begin();
 
@@ -342,23 +328,20 @@ private:
 	}
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
 	DispatchTimer *peek(void) {
-	    return sorted.empty() ? NULL : *sorted.begin();
-	}
-	bool reorder(msec_t when) {
-	    bool ret = false;
+	    sorted_timerset::const_iterator it = sorted.begin();
 
+	    return it == sorted.end() ? NULL : *it;
+	}
+	void reorder(msec_t when) {
 	    for (unsorted_timerset::const_iterator it = unsorted.begin(); it !=
 		unsorted.end(); ++it) {
 		DispatchTimer *dt = *it;
 
-		if (dt->due != DispatchTimer::DSP_NEVER_DUE) {
-		    ret = true;
-		    if (dt->due > split && dt->due < when)
-			sorted.insert(dt);
-		}
+		if (dt->due != DispatchTimer::DSP_NEVER_DUE && dt->due >
+		    split && dt->due < when)
+		    sorted.insert(dt);
 	    }
 	    split = when;
-	    return ret;
 	}
 	void set(DispatchTimer &dt, msec_t when) {
 	    if (dt.due == when)
@@ -369,6 +352,12 @@ private:
 	    if (when <= split)
 		sorted.insert(&dt);
 	}
+	void terminate(void) {
+	    unsorted_timerset::const_iterator it;
+
+	    while ((it = unsorted.begin()) != unsorted.end())
+		(*it)->terminate();
+	}
 
     private:
 	sorted_timerset sorted;
@@ -378,7 +367,7 @@ private:
 
     friend class DispatchObj;
     void addReady(DispatchObj &obj, bool hipri, DispatchMsg reason);
-    void cancelReady(DispatchObj &obj);
+    void cancelReady(DispatchObj &ob, bool del = false);
     void removeReady(DispatchObj &obj);
     void ready(DispatchObj &obj, bool hipri = false);
 
@@ -390,12 +379,14 @@ private:
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
     void removeTimer(DispatchTimer &dt) {
+	tlock.lock();
 	timers.set(dt, DispatchTimer::DSP_NEVER_DUE);
+	tlock.unlock();
     }
     void setTimer(DispatchTimer &dt, ulong tm);
 
     friend class DispatchSocket;
-    void cancelSocket(DispatchSocket &ds, bool close = false, bool del = false);
+    void cancelSocket(DispatchSocket &ds, bool del = false);
     void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg);
 
     void cleanup(void);
@@ -479,21 +470,16 @@ protected:
 };
 
 inline void DispatchObj::cancel(void) { dspr.cancelReady(*this); }
-
+inline void DispatchObj::erase(void) { dspr.cancelReady(*this, true); }
 inline void DispatchObj::ready(DispatchObjCB cb, bool hipri, DispatchMsg
     reason) {
     callback(cb);
     dspr.addReady(*this, hipri, reason);
 }
 
-inline DispatchTimer::~DispatchTimer() {
-    dspr.cancelTimer(*this, true);
-}
-
 inline void DispatchTimer::cancel(void) { dspr.cancelTimer(*this); }
-
+inline void DispatchTimer::erase(void) { dspr.cancelTimer(*this, true); }
 inline void DispatchTimer::init(void) { dspr.addTimer(*this); }
-
 inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
     callback(cb);
     if (msec != DSP_PREVIOUS)
@@ -502,12 +488,7 @@ inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
 }
 
 inline void DispatchSocket::cancel(void) { dspr.cancelSocket(*this); }
-
-// cppcheck-suppress duplInheritedMember
-inline void DispatchSocket::close(void) { dspr.cancelSocket(*this, true); }
-
-inline void DispatchSocket::erase(void) { dspr.cancelSocket(*this, true, true); }
-
+inline void DispatchSocket::erase(void) { dspr.cancelSocket(*this, true); }
 inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg
     reason) {
     callback(cb);
