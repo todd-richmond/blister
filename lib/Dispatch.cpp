@@ -895,8 +895,6 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
     } else {
 	olock.unlock();
     }
-    if (del)
-	ds.Socket::close();
     cancelTimer(ds, del);
 }
 

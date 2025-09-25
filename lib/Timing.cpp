@@ -19,6 +19,8 @@
 #include <algorithm>
 #include "Timing.h"
 
+thread_local Timing::Tlsdata Timing::tls;
+
 // UNIX loaders may try to construct static objects > 1 time
 static Timing &_dtiming(void) {
     static Timing timing;
@@ -227,22 +229,21 @@ void Timing::record(void) {
     tstring caller;
     timing_t diff;
     const tchar *key;
-    Tlsdata &tlsd(*tls);
-    vector<tstring>::reverse_iterator rit = tlsd.callers.rbegin();
+    vector<tstring>::reverse_iterator rit = tls.callers.rbegin();
 
-    if (rit == tlsd.callers.rend()) {
+    if (rit == tls.callers.rend()) {
 	tcerr << T("timing mismatch for stack") << endl;
 	return;
     }
     caller = *rit;
-    tlsd.callers.pop_back();
-    diff = n - *(tlsd.starts.rbegin());
-    tlsd.starts.pop_back();
+    tls.callers.pop_back();
+    diff = n - *(tls.starts.rbegin());
+    tls.starts.pop_back();
     key = caller.c_str();
-    if (!caller.empty() && !tlsd.callers.empty()) {
+    if (!caller.empty() && !tls.callers.empty()) {
 	tstring s;
 
-	for (const tstring &c : tlsd.callers) {
+	for (const tstring &c : tls.callers) {
 	    s += c;
 	    s += T("->");
 	}
@@ -256,24 +257,23 @@ void Timing::record(const TimingKey &key) {
     timing_t n = now();
     tstring caller;
     timing_t diff;
-    Tlsdata &tlsd(*tls);
 
     do {
-	vector<tstring>::reverse_iterator it = tlsd.callers.rbegin();
+	vector<tstring>::reverse_iterator it = tls.callers.rbegin();
 
-	if (it == tlsd.callers.rend()) {
+	if (it == tls.callers.rend()) {
 	    tcerr << T("timing mismatch for ") << (const tchar *)key << endl;
 	    return;
 	}
 	caller = *it;
-	tlsd.callers.pop_back();
-	diff = n - *(tlsd.starts.rbegin());
-	tlsd.starts.pop_back();
+	tls.callers.pop_back();
+	diff = n - *(tls.starts.rbegin());
+	tls.starts.pop_back();
     } while (!caller.empty() && caller != (const tchar *)key);
-    if (!caller.empty() && !tlsd.callers.empty()) {
+    if (!caller.empty() && !tls.callers.empty()) {
 	tstring s;
 
-	for (const tstring &c : tlsd.callers) {
+	for (const tstring &c : tls.callers) {
 	    s += c;
 	    s += T("->");
 	}
@@ -284,26 +284,20 @@ void Timing::record(const TimingKey &key) {
 }
 
 void Timing::restart() {
-    Tlsdata &tlsd(*tls);
-
-    if (!tlsd.callers.empty()) {
-	tlsd.starts.pop_back();
-	tlsd.starts.emplace_back(now());
+    if (!tls.callers.empty()) {
+	tls.starts.pop_back();
+	tls.starts.emplace_back(now());
     }
 }
 
 void Timing::start(const TimingKey &key) {
-    Tlsdata &tlsd(*tls);
-
-    tlsd.callers.emplace_back((const tchar *)key);
-    tlsd.starts.emplace_back(now());
+    tls.callers.emplace_back((const tchar *)key);
+    tls.starts.emplace_back(now());
 }
 
 void Timing::stop(uint lvl) {
-    Tlsdata &tlsd(*tls);
-
-    while (lvl-- && !tlsd.callers.empty()) {
-	tlsd.callers.pop_back();
-	tlsd.starts.pop_back();
+    while (lvl-- && !tls.callers.empty()) {
+	tls.callers.pop_back();
+	tls.starts.pop_back();
     }
 }

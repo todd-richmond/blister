@@ -138,9 +138,9 @@ public:
     void mail(bool b) { mailenable = b; }
     void mail(Level l, const tchar *to, const tchar *from = T("<>"), const tchar
 	*host = T("localhost"));
-    const tchar *prefix(void) const { return tls->prefix.c_str(); }
-    void prefix(const tchar *p) { tls->prefix = p ? p : T(""); }
-    void separate(bool b = true) { tls.get().sep = b ? ' ' : '\0'; }
+    const tchar *prefix(void) const { return tlsd.prefix.c_str(); }
+    void prefix(const tchar *p) { tlsd.prefix = p ? p : T(""); }
+    void separate(bool b = true) { tlsd.sep = b ? ' ' : '\0'; }
     const tchar *source(void) const { return src.c_str(); }
     void source(const tchar *s) { src = s; }
     bool syslog(void) const { return syslogenable; }
@@ -152,31 +152,24 @@ public:
     void type(Type t) { _type = t; }
 
     bool close(void);
-    // main thread does not call TLS destruction
-    void destruct(void) { tls.erase(); }
-    __forceinline void endlog(void) {
-	Tlsdata &tlsd(*tls);
-
-	if (tlsd.clvl != None)
-	    endlog(tlsd);
-    }
+    __forceinline void endlog(void);
     void flush(void) { Locker lkr(lck); _flush(); }
     // cppcheck-suppress-begin returnTempReference
     template <typename T>
-    __forceinline Log &log(const T &val) { return log(tls.get(), val); }
-    __forceinline Log &log(const tchar *val) { return log(tls.get(), val); }
+    __forceinline Log &log(const T &val) { return append(val); }
+    __forceinline Log &log(const tchar *val) { return append(val); }
     #pragma warning(disable : 26461)
     __forceinline Log &log(tchar *val) {
-	return log(tls.get(), (const tchar *)val);
+	return append((const tchar *)val);
     }
     // cppcheck-suppress constParameterReference
-    __forceinline Log &log(Escalator &e) { return log(tls.get(), e); }
-    __forceinline Log &log(Log::Level l) { return log(tls.get(), l); }
+    __forceinline Log &log(Escalator &e) { return append(e); }
+    __forceinline Log &log(Log::Level l) { return append(l); }
     template<typename T>
-    __forceinline Log &log(const KV<T> &val) { return log(tls.get(), val); }
+    __forceinline Log &log(const KV<T> &val) { return append(val); }
     template <typename T, typename... U>
     __forceinline Log &log(const T &first, const U&...  rest) {
-	log(tls.get(), first, rest...);
+	append(first, rest...);
 
 	return *this;
     }
@@ -193,12 +186,10 @@ public:
     template <typename... T>
     void log(Log::Level l, const T&... args) {
 	if (l <= lvl) {
-	    Tlsdata &tlsd(*tls);
-
 	    if (!tlsd.suppress) {
 		tlsd.clvl = l;
-		log(tlsd, args...);
-		endlog(tlsd);
+		append(args...);
+		endlog();
 	    }
 	}
     }
@@ -321,7 +312,6 @@ private:
 
     Lock lck;
     Condvar cv;
-    ThreadLocalClass<Tlsdata> tls;
     LogFile afd, ffd;
     bool bufenable, mailenable, syslogenable;
     uint bufsz;
@@ -343,11 +333,11 @@ private:
     tstring::size_type upos;
     static const tchar * const LevelStr[];
     static const tchar * const LevelStr2[];
+    static thread_local Tlsdata tlsd;
 
-    void endlog(Tlsdata &tlsd);
     void _flush(void);
     template <typename T>
-    Log &log(Tlsdata &tlsd, const T &val) {
+    Log &append(const T &val) {
 	if (tlsd.clvl != None) {
 	    if (tlsd.sep == '=') {
 		tlsd.sep = ' ';
@@ -365,7 +355,7 @@ private:
 	}
 	return *this;
     }
-    Log &log(Tlsdata &tlsd, const tchar *val) {
+    Log &append(const tchar *val) {
 	if (tlsd.clvl != None) {
 	    if (tlsd.sep == '=') {
 		if (val)
@@ -386,42 +376,41 @@ private:
 	return *this;
     }
     #pragma warning(disable : 26461)
-    __forceinline Log &log(Tlsdata &tlsd, tchar *val) {
-	return log(tlsd, (const tchar *)val);
+    __forceinline Log &append(tchar *val) {
+	return append((const tchar *)val);
     }
     // cppcheck-suppress constParameterReference
-    Log &log(Tlsdata &tlsd, Escalator &e);
-    __forceinline Log &log(Tlsdata &tlsd, Log::Level l) {
+    Log &append(Escalator &e);
+    __forceinline Log &append(Log::Level l) {
 	if (l <= lvl && !tlsd.suppress)
 	    tlsd.clvl = l;
 	return *this;
     }
     template<typename T>
-    Log &log(Tlsdata &tlsd, const KV<T> &val) {
+    Log &append(const KV<T> &val) {
 	if (tlsd.clvl != None) {
 	    if (tlsd.strm.size())
 		tlsd.strm << ' ';
 	    tlsd.strm << val.key << '=';
 	    tlsd.sep = '=';
-	    log(tlsd, val.val);
+	    append(val.val);
 	}
 	return *this;
     }
-    __forceinline void log(Tlsdata &) {}
+    __forceinline void append() {}
     template <typename T, typename... U>
-    __forceinline void log(Tlsdata &tlsd, const T &first, const U&...
-	rest) {
-	log(tlsd, first);
-	log(tlsd, rest...);	// recursive call using pack expansion
+    __forceinline void append(const T &first, const U&... rest) {
+	append(first);
+	append(rest...);	// recursive call using pack expansion
     }
 };
 
 // optimized template specializations
-template<> inline Log &Log::log(Tlsdata &tlsd, const bool &val) {
-    return log(tlsd, val ? 't' : 'f');
+template<> inline Log &Log::append(const bool &val) {
+    return append(val ? 't' : 'f');
 }
-template<> inline Log &Log::log(Tlsdata &tlsd, const tstring &val) {
-    return log(tlsd, val.c_str());
+template<> inline Log &Log::append(const tstring &val) {
+    return append(val.c_str());
 }
 
 inline Log &operator <<(Log &l, Log &(* const func)(Log &)) { return func(l); }

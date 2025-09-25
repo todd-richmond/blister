@@ -22,8 +22,7 @@ static const thread_id_t NOID = (thread_id_t)-1;
 
 Lock ThreadGroup::grouplck;
 set<ThreadGroup *> ThreadGroup::groups;
-atomic_t ThreadGroup::next_id;
-ThreadLocal<Thread::ThreadLocalMap *> Thread::flocal;
+atomic_ulong ThreadGroup::next_id;
 ThreadGroup ThreadGroup::MainThreadGroup(false);
 Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
 
@@ -209,25 +208,6 @@ bool Processor::affinity(ullong mask) {
 #endif
 }
 
-void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
-    WARN_PUSH_DISABLE(26430);
-    ThreadLocalMap *fmap = flocal.get();
-
-    if (!fmap) {
-	fmap = new ThreadLocalMap();
-	flocal.set(fmap);
-    }
-    if (func) {
-	(*fmap)[data] = func;
-    } else if (data) {
-	func = (*fmap)[data];
-	fmap->erase(data);
-	if (func)
-	    func(data);
-    }
-    WARN_POP();
-}
-
 Thread::Thread(thread_hdl_t handle, ThreadGroup *tg, bool aterm): cv(lck),
     argument(NULL), autoterm(aterm), hdl(handle), id(NOID), main(NULL),
     retval(0), state(Running) {
@@ -247,13 +227,10 @@ Thread::~Thread() {
     }
     if (group)
 	group->remove(*this);
-    if (this == &MainThread)
-	thread_cleanup();
 }
 
 // set state and notify threadgroup
 void Thread::clear(void) {
-    thread_cleanup();
     lck.lock();
     if (id != NOID) {
 #ifdef _WIN32
@@ -339,18 +316,6 @@ bool Thread::resume(void) {
 #endif
     }
     return ret;
-}
-
-void Thread::thread_cleanup(void) {
-    ThreadLocalMap *fmap = flocal.get();
-
-    if (fmap) {
-	for (ThreadLocalMap::const_iterator it = fmap->begin(); it !=
-	    fmap->end(); ++it)
-	    it->second(it->first);
-	delete fmap;
-	flocal.set(NULL);
-    }
 }
 
 // setup thread and call it's main routine
@@ -500,7 +465,7 @@ bool Thread::wait(ulong timeout) {
 
 ThreadGroup::ThreadGroup(bool aterm): cv(cvlck), autoterm(aterm), state(Init) {
     grouplck.lock();
-    id = (thread_id_t)(ulong)atomic_inc(next_id);
+    id = (thread_id_t)++next_id;
     groups.insert(this);
     grouplck.unlock();
 }

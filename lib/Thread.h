@@ -34,31 +34,6 @@ typedef DWORD thread_id_t;
 #define THREAD_PAUSE()		YieldProcessor()
 #define THREAD_YIELD()		if (!SwitchToThread()) Sleep(0)
 
-typedef volatile LONG atomic_t;
-
-// atomic functions that return updated value
-#define atomic_reference(i)	InterlockedIncrement(&i)
-#define atomic_release(i)	InterlockedDecrement(&i)
-
-// atomic functions that return previous value
-#define atomic_add(i, j)	InterlockedExchangeAdd(&i, j)
-#define atomic_and(i, j)	InterlockedAnd(&i, j)
-#define atomic_bar()		_ReadWriteBarrier()
-#define atomic_clr(i)		InterlockedExchange(&i, 0)
-#define atomic_dec(i)		InterlockedExchangeAdd(&i, -1)
-#define atomic_exc(i, j)	InterlockedExchange(&i, j)
-#define atomic_inc(i)		InterlockedExchangeAdd(&i, 1)
-#define atomic_lck(i)		InterlockedExchange(&i, 1)
-#define atomic_or(i, j)		InterlockedOr(&i, j)
-#define atomic_xor(i, j)	InterlockedXor(&i, j)
-
-typedef DWORD tlskey_t;
-
-#define tls_init(k)		k = TlsAlloc()
-#define tls_free(k)		TlsFree(k)
-#define tls_get(k)		TlsGetValue(k)
-#define tls_set(k, v)		TlsSetValue(key, (void *)v)
-
 #else
 
 #include <errno.h>
@@ -90,49 +65,14 @@ typedef pthread_t thread_id_t;
 #define THREAD_PAUSE()  	__builtin_ia32_pause()
 #endif
 #define THREAD_YIELD()		sched_yield()
-
-#ifdef __GNUC__
-
-typedef volatile int atomic_t;
-
-#define atomic_reference(i)	__sync_add_and_fetch(&i, 1)
-#define atomic_release(i)	__sync_add_and_fetch(&i, -1)
-
-#define atomic_add(i, j)	__sync_fetch_and_add(&i, j)
-#define atomic_and(i, j)	__sync_fetch_and_and(&i, j)
-#define atomic_bar()		__sync_synchronize()
-#define atomic_clr(i)		__sync_lock_release(&i)
-// #define atomic_clr(i)	__sync_lock_test_and_set(&i, 0)
-#define atomic_dec(i)		__sync_fetch_and_add(&i, -1)
-#define atomic_exc(i, j)	__sync_fetch_exchange_not_implemented(&i, j)
-#define atomic_inc(i)		__sync_fetch_and_add(&i, 1)
-#define atomic_lck(i)		__sync_lock_test_and_set(&i, 1)
-#define atomic_or(i, j)		__sync_fetch_and_or(&i, j)
-#define atomic_xor(i, j)	__sync_fetch_and_xor(&i, j)
-
-#endif
-
-typedef pthread_key_t tlskey_t;
-
-#define tls_init(k)		ZERO(k); pthread_key_create(&k, NULL)
-#define tls_free(k)		pthread_key_delete(k)
-#define tls_get(k)		pthread_getspecific(k)
-#define tls_set(k, v)		pthread_setspecific(k, v)
-
 #endif
 
 #define THREAD_ISSELF(x)	THREAD_EQUAL(x, THREAD_ID())
-
-#define atomic_get(i)		atomic_add(i, 0)
 
 #ifdef __cplusplus
 
 #include <atomic>
 #include <set>
-#include <unordered_map>
-
-class Thread;
-class ThreadGroup;
 
 /* RAII locking templates */
 template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
@@ -236,33 +176,12 @@ public:
     static uint count(void);
 };
 
-/* Thread local storage for simple types */
-template<class C>
-class BLISTER ThreadLocal: nocopy {
-public:
-    // cppcheck-suppress useInitializationList
-    ThreadLocal() { tls_init(key); }
-    ~ThreadLocal() { tls_free(key); }
-
-    __forceinline ThreadLocal &operator =(const C c) { set(c); return *this; }
-    // cppcheck-suppress returnDanglingLifetime
-    __forceinline C *operator ->(void) const { return &get(); }
-    __forceinline operator bool(void) const { return tls_get(key) != NULL; }
-    __forceinline operator C() const { return (C)tls_get(key); }
-
-    __forceinline C get(void) const { return (C)tls_get(key); }
-    __forceinline void set(const C c) const { tls_set(key, c); }
-
-protected:
-    tlskey_t key;
-};
-
 /*
  * Thread synchronization classes
  * Condvar: condition variable around a Lock
  * Lock: fast lock that may spin before sleeping
  * Mutex: lock that does not spin before sleeping
- * RWLock: reader/writer lock. r->w uplock allows intervening writers
+ * RWLock: reader/writer lock with r->w tryuplock
  * SpinLock: fastest unfair spinning lock
  * SpinRWLock: fast spinning reader/writer lock
  * TicketLock: fastest fair spinning lock
@@ -404,6 +323,24 @@ protected:
     HANDLE hdl;
 };
 
+class BLISTER RWLock: nocopy {
+public:
+    __forceinline RWLock() { InitializeSRWLock(&lck); }
+    __forceinline ~RWLock() {}
+
+    __forceinline void rlock(void) { AcquireSRWLockShared(&lck); }
+    __forceinline bool rtrylock(void) { return TryAcquireSRWLockShared(&lck); }
+    __forceinline void runlock(void) { ReleaseSRWLockShared(&lck); }
+    __forceinline void wlock(void) { AcquireSRWLockExclusive(&lck); }
+    __forceinline bool wtrylock(void) {
+	return TryAcquireSRWLockExclusive(&lck);
+    }
+    __forceinline void wunlock(void) { ReleaseSRWLockExclusive(&lck); }
+
+private:
+    SRWLOCK lck;
+};
+
 class BLISTER Event: nocopy {
 public:
     explicit Event(bool manual = false, bool set = false, const tchar *name =
@@ -515,15 +452,13 @@ public:
     __forceinline bool wait(ulong msec = INFINITE) {
 	bool ret;
 
-	ilck.lock();
-	atomic_inc(waiting);
-	ilck.unlock();
+	++waiting;
 	lck.unlock();
 	ret = sema4.wait(msec);
 	olck.lock();
 	if (UNLIKELY(!ret))
 	    ret = sema4.trywait();
-	atomic_dec(waiting);
+	--waiting;
 	if (ret && !--pending)
 	    ilck.unlock();
 	olck.unlock();
@@ -536,7 +471,7 @@ private:
     Lock &lck;
     uint pending;
     Semaphore sema4;
-    atomic_t waiting;
+    atomic_uint_fast16_t waiting;
 };
 
 class BLISTER Process {
@@ -583,6 +518,26 @@ protected:
 };
 
 typedef Lock Mutex;
+
+class BLISTER RWLock: nocopy {
+public:
+    RWLock() { pthread_rwlock_init(&lck, NULL); }
+    ~RWLock() { pthread_rwlock_destroy(&lck); }
+
+    __forceinline void rlock(void) { pthread_rwlock_rdlock(&lck); }
+    __forceinline bool rtrylock(void) {
+	return !pthread_rwlock_tryrdlock(&lck);
+    }
+    __forceinline void runlock(void) { pthread_rwlock_unlock(&lck); }
+    __forceinline void wlock(void) { pthread_rwlock_wrlock(&lck); }
+    __forceinline bool wtrylock(void) {
+	return !pthread_rwlock_trywrlock(&lck);
+    }
+    __forceinline void wunlock(void) { pthread_rwlock_unlock(&lck); }
+
+private:
+    pthread_rwlock_t lck;
+};
 
 #ifdef __APPLE__
 #include <mach/mach_init.h>
@@ -875,21 +830,6 @@ public:
 	return state.compare_exchange_strong(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed);
     }
-    __forceinline void uplock(void) {
-	uint_fast32_t expected = state.load(memory_order_relaxed);
-
-	while (!(expected & (WRITE_BIT | UPGRADE_BIT))) {
-	    if (state.compare_exchange_weak(expected, expected | UPGRADE_BIT,
-		memory_order_acquire, memory_order_relaxed))
-		break;
-	}
-	expected = 1 | UPGRADE_BIT;
-	while (UNLIKELY(!state.compare_exchange_weak(expected, WRITE_BIT,
-	    memory_order_acquire, memory_order_relaxed))) {
-	    expected = 1 | UPGRADE_BIT;
-	    THREAD_YIELD();
-	}
-    }
     __forceinline void wlock(void) {
 	uint_fast32_t expected = 0;
 
@@ -923,99 +863,6 @@ typedef FastLockerTemplate<SpinRWLock, &SpinRWLock::rlock, &SpinRWLock::runlock>
 typedef FastLockerTemplate<SpinRWLock, &SpinRWLock::wlock, &SpinRWLock::wunlock>
     FastSpinWLocker;
 
-class BLISTER RWLock: nocopy {
-public:
-    RWLock(): rcv(lck), wcv(lck), readers(0), wwaiting(0), writing(false) {}
-
-    __forceinline void downlock(void) {
-	FastLocker lckr(lck);
-
-	++readers;
-	writing = false;
-	if (wwaiting)
-	    wcv.set();
-	else
-	    rcv.broadcast();
-    }
-    __forceinline void rlock(void) {
-	FastLocker lckr(lck);
-
-	while (UNLIKELY(writing || wwaiting))
-	    rcv.wait();
-	++readers;
-    }
-    __forceinline bool rtrylock(ulong msec = 0) {
-	FastLocker lckr(lck);
-
-	if (UNLIKELY(writing || wwaiting)) {
-	    if (!msec || !rcv.wait(msec))
-		return false;
-	}
-	++readers;
-	return true;
-    }
-    __forceinline void runlock(void) {
-	FastLocker lckr(lck);
-
-	if (UNLIKELY(!--readers && wwaiting))
-	    wcv.set();
-    }
-    __forceinline void uplock(void) {
-	FastLocker lckr(lck);
-
-	--readers;
-	if (readers) {
-	    ++wwaiting;
-	    do {
-		wcv.wait();
-	    } while (readers || writing);
-	    --wwaiting;
-	}
-	writing = true;
-    }
-    __forceinline void wlock(void) {
-	FastLocker lckr(lck);
-
-	while (readers || writing) {
-	    ++wwaiting;
-	    wcv.wait();
-	    --wwaiting;
-	}
-	writing = true;
-    }
-    __forceinline bool wtrylock(ulong msec = 0) {
-	FastLocker lckr(lck);
-
-	if (readers || writing) {
-	    if (!msec)
-		return false;
-	    ++wwaiting;
-	    if (!wcv.wait(msec)) {
-		--wwaiting;
-		return false;
-	    }
-	    --wwaiting;
-	}
-	writing = true;
-	return true;
-    }
-    __forceinline void wunlock(void) {
-	FastLocker lckr(lck);
-
-	writing = false;
-	if (LIKELY(wwaiting))
-	    wcv.set();
-	else
-	    rcv.broadcast();
-    }
-
-private:
-    Lock lck;
-    Condvar rcv, wcv;
-    volatile ulong readers, wwaiting;
-    volatile bool writing;
-};
-
 typedef LockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> RLocker;
 typedef LockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> WLocker;
 typedef FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> FastRLocker;
@@ -1024,16 +871,16 @@ typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker
 /* Fast reference counter class */
 class BLISTER RefCount: nocopy {
 public:
-    explicit RefCount(uint init = 1): cnt((int)init) {}
+    explicit RefCount(uint init = 1): cnt(init) {}
 
     __forceinline operator bool(void) const { return referenced(); }
-    __forceinline bool referenced(void) const { return atomic_get(cnt) != 0; }
+    __forceinline bool referenced(void) const { return cnt != 0; }
 
-    __forceinline void reference(void) { atomic_reference(cnt); }
-    __forceinline bool release(void) { return atomic_release(cnt) == 0; }
+    __forceinline void reference(void) { ++cnt; }
+    __forceinline bool release(void) { return --cnt == 0; }
 
 private:
-    mutable atomic_t cnt;
+    atomic_uint cnt;
 };
 
 /* Last-in-first-out queue useful for thread pools */
@@ -1119,7 +966,9 @@ private:
 };
 
 // Thread routines
-typedef void (*ThreadLocalFree)(void *data);
+class Thread;
+class ThreadGroup;
+
 typedef int (*ThreadRoutine)(void *userdata);
 typedef bool (Thread::*ThreadControlRoutine)(void);
 
@@ -1158,7 +1007,6 @@ public:
     bool suspend(void);
     bool terminate(void);
     bool wait(ulong timeout = INFINITE);
-    static void thread_cleanup(void *data, ThreadLocalFree func);
 
 protected:
     void end(int ret = 0);
@@ -1166,8 +1014,6 @@ protected:
     virtual void onStop(void) {}
 
 private:
-    typedef unordered_map<void *, ThreadLocalFree> ThreadLocalMap;
-
     mutable Lock lck;
     Condvar cv;
     void *argument;
@@ -1178,10 +1024,8 @@ private:
     ThreadRoutine main;
     int retval;
     volatile ThreadState state;
-    static ThreadLocal<ThreadLocalMap *> flocal;
 
     void clear(void);
-    void thread_cleanup(void);
     static int init(void *thisp);
     static THREAD_FUNC thread_init(void *thisp);
 
@@ -1237,44 +1081,10 @@ private:
     Thread master;
     static Lock grouplck;
     static set<ThreadGroup *> groups;
-    static atomic_t next_id;
+    static atomic_ulong next_id;
 
     static int init(void *thisp);
     friend class Thread;
-};
-
-/* Thread local storage for classes with proper destruction when theads exit */
-template<class C>
-class BLISTER ThreadLocalClass: nocopy {
-public:
-    // cppcheck-suppress useInitializationList
-    ThreadLocalClass() { tls_init(key); }
-    ~ThreadLocalClass() { tls_free(key); }
-
-    __forceinline C &operator *(void) const { return get(); }
-    __forceinline C *operator ->(void) const { return &get(); }
-    void erase(void) {
-	C *c = (C *)tls_get(key);
-
-	tls_set(key, 0);
-	Thread::thread_cleanup(c, NULL);
-    }
-    C &get(void) const {
-	C *c = (C *)tls_get(key);
-
-	if (UNLIKELY(!c)) {
-	    c = new C;
-	    tls_set(key, c);
-	    Thread::thread_cleanup(c, cleanup);
-	}
-	return *c;
-    }
-    __forceinline void set(C *c) const { tls_set(key, c); }
-
-protected:
-    tlskey_t key;
-
-    static void cleanup(void *data) { delete (C *)data; }
 };
 
 #endif

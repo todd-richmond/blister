@@ -47,6 +47,7 @@ const tchar * const Log::LevelStr2[] = {
     T("warning"), T("notice"), T("information"), T("debug"), T("trace"),
     T("suppress")
 };
+thread_local Log::Tlsdata Log::tlsd;
 
 // UNIX loaders may try to construct static objects > 1 time
 static Log &_dlog(void) {
@@ -57,7 +58,7 @@ static Log &_dlog(void) {
 
 Log &dlog(_dlog());
 
-Log &Log::log(Tlsdata &tlsd, Log::Escalator &escalator) {
+Log &Log::append(Log::Escalator &escalator) {
     FastSpinLocker lkr(escalator.lck);
     ulong count;
     msec_t now = mticks() / 1000, start;
@@ -398,15 +399,18 @@ bool Log::close(void) {
     return ffd.close();
 }
 
-void Log::endlog(Tlsdata &tlsd) {
+void Log::endlog(void) {
     Level clvl = tlsd.clvl;
     size_t lvllen, tmlen;
     time_t now_sec;
     usec_t now_usec;
     tstring &strbuf(tlsd.strbuf);
-    size_t sz = (size_t)tlsd.strm.size();
+    size_t sz;
     tchar tmp[16];
 
+    if (tlsd.clvl == None)
+	return;
+    sz = (size_t)tlsd.strm.size();
     lck.lock();
     if (ffd.enable && clvl <= ffd.lvl) {
 	ffd.lock();
@@ -627,7 +631,6 @@ void Log::format(const tchar *s) {
 void Log::logv(int il, ...) {
     Level l = (Level)il;
     const tchar *p;
-    Tlsdata &tlsd(*tls);
     va_list vl;
 
     if (l > lvl || tlsd.suppress)
@@ -639,7 +642,7 @@ void Log::logv(int il, ...) {
 	*this << p;
     }
     va_end(vl);
-    endlog(tlsd);
+    endlog();
 }
 
 void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {

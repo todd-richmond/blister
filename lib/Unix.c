@@ -22,6 +22,7 @@
 #if defined(__linux__)
 #include <linux/param.h>
 #elif defined(__APPLE__)
+#include <stdatomic.h>
 #include <mach/task.h>
 #include <mach/mach_init.h>
 #include <mach/mach_time.h>
@@ -55,17 +56,17 @@ int clock_gettime(int id, struct timespec *ts) {
 
 msec_t mticks(void) {
 #if defined(__APPLE__)
-    static volatile atomic_t lck;
+    static volatile atomic_flag lck = ATOMIC_FLAG_INIT;
     static struct mach_timebase_info mti;
 
     if (UNLIKELY(!mti.denom)) {
-        while (atomic_lck(lck))
+        while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
 	    THREAD_YIELD();
 	if (!mti.denom) {
 	    mach_timebase_info(&mti);
 	    mti.denom *= 1000000;
 	}
-	atomic_clr(lck);
+	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
     }
     return (mach_absolute_time() + 500000) * mti.numer / mti.denom; // codespell:ignore numer
 #elif defined(CLOCK_MONOTONIC_COARSE)
@@ -80,17 +81,17 @@ msec_t mticks(void) {
 
 usec_t __no_sanitize("thread") uticks(void) {
 #if defined(__APPLE__)
-    static volatile atomic_t lck;
+    static volatile atomic_flag lck = ATOMIC_FLAG_INIT;
     static struct mach_timebase_info mti;
 
     if (UNLIKELY(!mti.denom)) {
-        while (atomic_lck(lck))
+        while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
 	    THREAD_YIELD();
 	if (!mti.denom) {
 	    mach_timebase_info(&mti);
 	    mti.denom *= 1000;
 	}
-	atomic_clr(lck);
+	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
     }
     return mach_absolute_time() * mti.numer / mti.denom; // codespell:ignore numer
 #elif defined(CLOCK_MONOTONIC)

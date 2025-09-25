@@ -1347,7 +1347,6 @@ int Service::execute(int argc, const tchar * const *argv) {
     if (ret && errnum)
 	tcerr << name << T(": ") << errstr() << endl;
     delete [] av;
-    dlog.destruct();
     return ret;
 }
 
