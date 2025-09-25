@@ -152,7 +152,7 @@ public:
     void type(Type t) { _type = t; }
 
     bool close(void);
-    __forceinline void endlog(void);
+    void endlog(void);
     void flush(void) { Locker lkr(lck); _flush(); }
     // cppcheck-suppress-begin returnTempReference
     template <typename T>
