@@ -398,7 +398,7 @@ private:
     static int worker(void *param);
 
     msec_t due;
-    ObjectList<DispatchObj> flist, rlist;
+    ObjectList<DispatchObj> rlist;
     Lifo lifo;
     uint maxthreads;
     SpinLock olock, slock, tlock;

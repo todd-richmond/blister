@@ -137,8 +137,10 @@ bool Dispatcher::exec() {
 	    obj->dcb(obj);
 	    --running;
 	    olock.lock();
-	    obj->flags &= ~DSP_Active;
 	    group->active = false;
+	    obj->flags &= ~DSP_Active;
+	    if (UNLIKELY(obj->flags & DSP_Freed))
+		rlist.push_front(*obj);
 	    if (UNLIKELY(group->glist)) {
 		if (obj->flags & DSP_Ready) {
 		    obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
@@ -278,11 +280,9 @@ int Dispatcher::onStart() {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
 	}
-	if (flist || !maxthreads) {
+	if (!maxthreads) {
 	    olock.lock();
-	    rlist.push_front(flist);
-	    if (!maxthreads)
-		exec();
+	    exec();
 	    olock.unlock();
 	}
     }
@@ -572,6 +572,7 @@ void Dispatcher::cleanup(void) {
 	delete t;
     }
     lifo.close();
+    timers.terminate();
     while (rlist) {
 	DispatchObj *obj = rlist.pop_front();
 
@@ -586,9 +587,6 @@ void Dispatcher::cleanup(void) {
 	else
 	    obj->terminate();
     }
-    timers.terminate();
-    while (flist)
-	delete flist.pop_front();
 }
 
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
@@ -673,11 +671,6 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	else
 	    olock.unlock();
 	removeTimer(*ds);
-    }
-    if (flist) {
-	olock.lock();
-	rlist.push_front(flist);
-	olock.unlock();
     }
 }
 #endif
@@ -767,21 +760,21 @@ void Dispatcher::wakeup(ulong msec) {
 }
 
 void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
-    if (del) {
-	tlock.lock();
+    tlock.lock();
+    if (del)
 	timers.erase(dt);
-	tlock.unlock();
-    } else {
-	removeTimer(dt);
-    }
+    else
+	timers.set(dt, DispatchTimer::DSP_NEVER_DUE);
+    tlock.unlock();
     olock.lock();
-    if (dt.flags & DSP_ReadyAll) {
+    if (dt.flags & DSP_ReadyAll)
 	removeReady(dt);
-    } else if (del) {
-	dt.flags |= DSP_Freed;
-	flist.push_back(dt);
-    } else if (dt.flags & ~DSP_Scheduled) {
+    else
 	dt.flags &= ~DSP_Scheduled;
+    if (del) {
+	dt.flags |= DSP_Freed;
+	if (!(dt.flags & DSP_Active))
+	    rlist.push_front(dt);
     }
     olock.unlock();
 }
@@ -815,87 +808,85 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
 void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
     socket_t fd = ds.fd();
 
-    if (ds.mapped && fd != INVALID_SOCKET) {
-	ds.mapped = false;
+    cancelTimer(ds, del);
+    if (!ds.mapped || fd == INVALID_SOCKET)
+        return;
+    ds.mapped = false;
 #ifdef DSP_WIN32_ASYNC
-	slock.lock();
-	smap.erase(fd);
-	slock.unlock();
-	olock.lock();
-	if (ds.flags & DSP_SelectAll) {
-	    ds.flags &= ~DSP_SelectAll;
+    slock.lock();
+    smap.erase(fd);
+    slock.unlock();
+    olock.lock();
+    if (ds.flags & DSP_SelectAll) {
+	ds.flags &= ~DSP_SelectAll;
+	olock.unlock();
+	WSAAsyncSelect(fd, wnd, socketmsg, 0);
+    } else {
+	olock.unlock();
+    }
+#else
+    olock.lock();
+    if (evtfd == -1) {
+	bool erase = true;
+
+	if (ds.flags & (DSP_SelectRead | DSP_SelectAccept)) {
 	    olock.unlock();
-	    WSAAsyncSelect(fd, wnd, socketmsg, 0);
-	} else {
+	    slock.lock();
+	    smap.erase(fd);
+	    rset.unset(fd);
+	    slock.unlock();
+	    erase = false;
 	    olock.lock();
 	}
-#else
-	olock.lock();
-	if (evtfd == -1) {
-	    bool erase = true;
-
-	    if (ds.flags & (DSP_SelectRead | DSP_SelectAccept)) {
-		olock.unlock();
-		slock.lock();
-		smap.erase(fd);
-		rset.unset(fd);
-		slock.unlock();
-		erase = false;
-		olock.lock();
-	    }
-	    if (ds.flags & DSP_SelectWrite) {
-		olock.unlock();
-		slock.lock();
-		if (erase) {
-		    smap.erase(fd);
-		    erase = false;
-		}
-		wset.unset(fd);
-		slock.unlock();
-		olock.lock();
-	    }
-	    ds.flags &= ~DSP_SelectAll;
+	if (ds.flags & DSP_SelectWrite) {
 	    olock.unlock();
+	    slock.lock();
 	    if (erase) {
-		slock.lock();
 		smap.erase(fd);
-		slock.unlock();
+		erase = false;
 	    }
-	} else if (ds.flags & DSP_SelectAll && !del) {
-#ifdef DSP_DEVPOLL
-	    ds.flags &= ~DSP_SelectAll;
-	    olock.unlock();
-
-	    event_t evt = { fd, POLLREMOVE, 0 };
-
-	    RETRY(pwrite(evtfd, &evt, sizeof (evt), 0));
-#elif defined(DSP_EPOLL)
-	    ds.flags &= ~DSP_SelectAll;
-	    olock.unlock();
-	    RETRY(epoll_ctl(evtfd, EPOLL_CTL_DEL, fd, 0));
-#elif defined(DSP_KQUEUE)
-	    event_t chgs[2], evts[MIN_EVENTS];
-	    uint nevts = 0;
-	    static timespec ts = { 0, 0 };
-
-	    if (ds.flags & (DSP_SelectRead | DSP_SelectAccept))
-		EV_SET(&chgs[nevts++], fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
-	    if (ds.flags & DSP_SelectWrite)
-		EV_SET(&chgs[nevts++], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
-	    ds.flags &= ~DSP_SelectAll;
-	    olock.unlock();
-	    RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts,
-		MIN_EVENTS, &ts));
-	    handleEvents(evts, nevts);
-#endif
-	} else {
-	    olock.unlock();
+	    wset.unset(fd);
+	    slock.unlock();
+	    olock.lock();
 	}
+	ds.flags &= ~DSP_SelectAll;
+	olock.unlock();
+	if (erase) {
+	    slock.lock();
+	    smap.erase(fd);
+	    slock.unlock();
+	}
+    } else if (ds.flags & DSP_SelectAll) {
+#ifdef DSP_DEVPOLL
+	ds.flags &= ~DSP_SelectAll;
+	olock.unlock();
+
+	event_t evt = { fd, POLLREMOVE, 0 };
+
+	RETRY(pwrite(evtfd, &evt, sizeof (evt), 0));
+#elif defined(DSP_EPOLL)
+	ds.flags &= ~DSP_SelectAll;
+	olock.unlock();
+	RETRY(epoll_ctl(evtfd, EPOLL_CTL_DEL, fd, 0));
+#elif defined(DSP_KQUEUE)
+	event_t chgs[2], evts[MIN_EVENTS];
+	uint nevts = 0;
+	static timespec ts = { 0, 0 };
+
+	if (ds.flags & (DSP_SelectRead | DSP_SelectAccept))
+	    EV_SET(&chgs[nevts++], fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+	if (ds.flags & DSP_SelectWrite)
+	    EV_SET(&chgs[nevts++], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
+	ds.flags &= ~DSP_SelectAll;
+	olock.unlock();
+	RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS,
+	    &ts));
+	handleEvents(evts, nevts);
 #endif
     } else {
 	olock.unlock();
     }
-    cancelTimer(ds, del);
+#endif
 }
 
 void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
@@ -1066,7 +1057,8 @@ void Dispatcher::cancelReady(DispatchObj &obj, bool del) {
 	removeReady(obj);
     if (del) {
 	obj.flags |= DSP_Freed;
-	flist.push_back(obj);
+	if (!(obj.flags & DSP_Active))
+	    rlist.push_front(obj);
     }
     olock.unlock();
 }
@@ -1083,7 +1075,10 @@ void Dispatcher::removeReady(DispatchObj &obj) {
 
 // enter locked, leave unlocked for performance
 void Dispatcher::ready(DispatchObj &obj, bool hipri) {
-    if (UNLIKELY(obj.group->active)) {
+    if (UNLIKELY(obj.flags & DSP_Active)) {
+	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
+	olock.unlock();
+    } else if (UNLIKELY(obj.group->active)) {
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_ReadyGroup;
 	if (UNLIKELY(hipri))
 	    obj.group->glist.push_front(obj);
@@ -1092,10 +1087,6 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	olock.unlock();
     } else {
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
-	if (UNLIKELY(obj.flags & DSP_Active)) {
-	    olock.unlock();
-	    return;
-	}
 	if (UNLIKELY(hipri))
 	    rlist.push_front(obj);
 	else
