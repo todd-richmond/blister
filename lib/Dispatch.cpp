@@ -197,6 +197,11 @@ int Dispatcher::onStart() {
     shutdown = false;
     workers = 0;
     while (!shutdown) {
+	if (!maxthreads) {
+	    olock.lock();
+	    exec();
+	    olock.unlock();
+	}
 	GetMessage(&msg, wnd, 0, 0);
 	if (shutdown)
 	    break;
@@ -279,11 +284,6 @@ int Dispatcher::onStart() {
 	} else {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
-	}
-	if (!maxthreads) {
-	    olock.lock();
-	    exec();
-	    olock.unlock();
 	}
     }
     KillTimer(wnd, DSP_TimerID);
@@ -406,8 +406,18 @@ int Dispatcher::onStart() {
 	    due = now + msec;
 	}
 	tlock.unlock();
+	if (!maxthreads) {
+	    olock.lock();
+	    exec();
+	    olock.unlock();
+	}
+	if (shutdown)
+	    break;
 	polling = true;
 	if (evtfd == -1) {
+	    DispatchSocket *ds = NULL;
+	    socket_t fd;
+
 	    slock.lock();
 	    irset = rset;
 	    iwset = wset;
@@ -416,32 +426,7 @@ int Dispatcher::onStart() {
 		orset.clear();
 		owset.clear();
 	    }
-	} else {
-#ifdef DSP_DEVPOLL
-	    dvpoll dvp = { evts, MAX_EVENTS, msec };
-
-	    nevts = ioctl(evtfd, DP_POLL, &dvp);
-#elif defined(DSP_EPOLL)
-	    nevts = epoll_wait(evtfd, evts, MAX_EVENTS, (int)msec);
-#elif defined(DSP_KQUEUE)
-	    if (UNLIKELY(msec == SOCK_INFINITE)) {
-		nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, NULL);
-	    } else {
-		timespec ts = {
-		    (long)(msec / 1000), (long)((msec % 1000) * 1000000)
-		};
-
-		nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, &ts);
-	    }
-#endif
-	}
-	polling = false;
-	if (shutdown)
-	    break;
-	if (evtfd == -1) {
-	    DispatchSocket *ds = NULL;
-	    socket_t fd;
-
+	    polling = false;
 	    for (u = 0; u < orset.size(); u++) {
 		fd = orset[u];
 		if (fd == rsock) {
@@ -540,16 +525,27 @@ int Dispatcher::onStart() {
 		    olock.unlock();
 		}
 	    }
-#if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 	} else {
+#ifdef DSP_DEVPOLL
+	    dvpoll dvp = { evts, MAX_EVENTS, msec };
+
+	    nevts = ioctl(evtfd, DP_POLL, &dvp);
+#elif defined(DSP_EPOLL)
+	    nevts = epoll_wait(evtfd, evts, MAX_EVENTS, (int)msec);
+#elif defined(DSP_KQUEUE)
+	    if (UNLIKELY(msec == SOCK_INFINITE)) {
+		nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, NULL);
+	    } else {
+		timespec ts = {
+		    (long)(msec / 1000), (long)((msec % 1000) * 1000000)
+		};
+
+		nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, &ts);
+	    }
+	    polling = false;
 	    if (LIKELY(nevts != -1))
 		handleEvents(evts, (uint)nevts);
 #endif
-	}
-	if (!maxthreads) {
-	    olock.lock();
-	    exec();
-	    olock.unlock();
 	}
     }
     cleanup();
@@ -735,26 +731,26 @@ void Dispatcher::wakeup(ulong msec) {
     } while (interval > msec);
 #else
     (void)msec;
-    if (polling) {
-	polling = false;
-	if (wsock.open()) {
-	    wsock.write("", 1);
-	} else {
+    if (!polling)
+	return;
+    polling = false;
+    if (wsock.open()) {
+	wsock.write("", 1);
+    } else {
 #ifdef DSP_EPOLL
-	    RETRY(eventfd_write(wfd, 1));
+	RETRY(eventfd_write(wfd, 1));
 #elif defined(DSP_KQUEUE)
-	    event_t evt;
-	    static timespec ts = { 0, 0 };
+	event_t evt;
+	static timespec ts = { 0, 0 };
 
-	    if (msec)
-		EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, msec,
-		    NULL);
-	    else
-		EV_SET(&evt, 1, EVFILT_USER, EV_ENABLE | EV_ONESHOT,
-		    NOTE_TRIGGER, 0, NULL);
-	    RETRY(kevent(evtfd, &evt, 1, NULL, 0, &ts));
+	if (msec)
+	    EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, msec,
+		NULL);
+	else
+	    EV_SET(&evt, 1, EVFILT_USER, EV_ENABLE | EV_ONESHOT,
+		NOTE_TRIGGER, 0, NULL);
+	RETRY(kevent(evtfd, &evt, 1, NULL, 0, &ts));
 #endif
-	}
     }
 #endif
 }
@@ -779,21 +775,22 @@ void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
     olock.unlock();
 }
 
-void Dispatcher::setTimer(DispatchTimer &dt, ulong tm) {
-    if (LIKELY(tm)) {
+void Dispatcher::setTimer(DispatchTimer &dt, ulong msec) {
+    if (LIKELY(msec)) {
 	msec_t now = 0;
-	msec_t tmt = tm == DispatchTimer::DSP_NEVER ?
-	    DispatchTimer::DSP_NEVER_DUE : (now = mticks()) + tm;
+	msec_t tmt = msec == DispatchTimer::DSP_NEVER ?
+	    DispatchTimer::DSP_NEVER_DUE : (now = mticks()) + msec;
 
+	dt.flags |= DSP_Scheduled;
 	tlock.lock();
 	timers.set(dt, tmt);
-	if (tmt < due)
+	if (tmt < due) {
 	    due = tmt;
-	else
-	    tmt = 0;
-	tlock.unlock();
-	if (tmt)
+	    tlock.unlock();
 	    wakeup((ulong)(due - now));
+	} else {
+	    tlock.unlock();
+	}
     } else {
 	olock.lock();
 	if (UNLIKELY(dt.flags & DSP_Scheduled)) {
@@ -1091,19 +1088,29 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    rlist.push_front(obj);
 	else
 	    rlist.push_back(obj);
-	if (workers - running - lifo.size() >= rlist.size()) {
-	    olock.unlock();
-	    return;
-	}
 	olock.unlock();
-	if (!shutdown && maxthreads && lifo.set() && workers < maxthreads) {
-	    Thread *t;
+	if (!maxthreads && polling) {
+	    wakeup(0);
+	} else if (maxthreads && rlist && lifo.set()) {
+	    // 1+ threads about to pull from rlist or wait on lifo
+	    if (workers - running) {
+		while (workers == maxthreads) {
+		    if (!rlist || !lifo.set())
+			return;
+#ifdef THREAD_PAUSE
+		    THREAD_PAUSE();
+#endif
+		}
+	    }
+	    if (!shutdown && workers < maxthreads) {
+		Thread *t;
 
-	    workers++;
-	    t = new Thread();
-	    t->start(worker, this, stacksz, this);
-	    while ((t = wait(0)) != NULL)
-		delete t;
+		workers++;
+		t = new Thread();
+		t->start(worker, this, stacksz, this);
+		while ((t = wait(0)) != NULL)
+		    delete t;
+	    }
 	}
     }
 }
