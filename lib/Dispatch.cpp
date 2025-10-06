@@ -542,10 +542,10 @@ int Dispatcher::onStart() {
 
 		nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, &ts);
 	    }
+#endif
 	    polling = false;
 	    if (LIKELY(nevts != -1))
 		handleEvents(evts, (uint)nevts);
-#endif
 	}
     }
     cleanup();
