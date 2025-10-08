@@ -927,8 +927,10 @@ public:
 	Waiting *w, *ww, *www;
 
 	lck.lock();
-	for (w = ww = head; w && count--; w = w->next)
+	for (w = ww = head; w && count; w = w->next) {
+	    --count;
 	    --sz;
+	}
 	head = w;
 	lck.unlock();
 	while (LIKELY(ww != w)) {

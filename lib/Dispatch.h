@@ -402,7 +402,7 @@ private:
     Lifo lifo;
     uint maxthreads;
     SpinLock olock, slock, tlock;
-    atomic_uint_fast16_t running;
+    uint scanning;
     atomic_bool shutdown;
     socketmap smap;
     uint stacksz;

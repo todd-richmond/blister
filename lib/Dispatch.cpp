@@ -92,7 +92,7 @@ static constexpr uint MAX_EVENTS = 128;
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config),
-    due(DispatchTimer::DSP_NEVER_DUE), maxthreads(0), running(0),
+    due(DispatchTimer::DSP_NEVER_DUE), maxthreads(0), scanning(0),
     shutdown(true), stacksz(0), workers(0),
 #ifdef DSP_WIN32_ASYNC
     interval(DispatchTimer::DSP_NEVER), wnd(0)
@@ -132,11 +132,11 @@ bool Dispatcher::exec() {
 	} else {
 	    group->active = true;
 	    obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
-	    ++running;
+	    --scanning;
 	    olock.unlock();
 	    obj->dcb(obj);
-	    --running;
 	    olock.lock();
+	    ++scanning;
 	    group->active = false;
 	    obj->flags &= ~DSP_Active;
 	    if (UNLIKELY(obj->flags & DSP_Freed))
@@ -166,6 +166,7 @@ int Dispatcher::run() {
     while (exec()) {
 	bool b;
 
+	--scanning;
 	olock.unlock();
 	b = lifo.wait(waiting, workers > cpus ? INFINITE : MAX_WAIT_TIME);
 	olock.lock();
@@ -193,7 +194,7 @@ int Dispatcher::onStart() {
     }
     due = DispatchTimer::DSP_NEVER_DUE;
     lifo.open();
-    running = 0;
+    scanning = 0;
     shutdown = false;
     workers = 0;
     while (!shutdown) {
@@ -377,7 +378,7 @@ int Dispatcher::onStart() {
 #endif
     }
     lifo.open();
-    running = 0;
+    scanning = 0;
     shutdown = false;
     workers = 0;
     due = DispatchTimer::DSP_NEVER_DUE;
@@ -807,7 +808,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
 
     cancelTimer(ds, del);
     if (!ds.mapped || fd == INVALID_SOCKET)
-        return;
+	return;
     ds.mapped = false;
 #ifdef DSP_WIN32_ASYNC
     slock.lock();
@@ -1083,34 +1084,34 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    obj.group->glist.push_back(obj);
 	olock.unlock();
     } else {
+	bool b;
+
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
 	if (UNLIKELY(hipri))
 	    rlist.push_front(obj);
 	else
 	    rlist.push_back(obj);
+	b = maxthreads && scanning >= rlist.size();
+	if (!b)
+	    ++scanning;
 	olock.unlock();
-	if (!maxthreads && polling) {
-	    wakeup(0);
-	} else if (maxthreads && rlist && lifo.set()) {
-	    // 1+ threads about to pull from rlist or wait on lifo
-	    if (workers - running) {
-		while (workers == maxthreads) {
-		    if (!rlist || !lifo.set())
-			return;
-#ifdef THREAD_PAUSE
-		    THREAD_PAUSE();
-#endif
-		}
-	    }
-	    if (!shutdown && workers < maxthreads) {
-		Thread *t;
+	if (UNLIKELY(!maxthreads)) {
+	    if (polling)
+		wakeup(0);
+	} else if (UNLIKELY(b)) {
+	} else if (LIKELY(!lifo.set())) {
+	} else if (UNLIKELY(workers < maxthreads && !shutdown)) {
+	    Thread *t;
 
-		workers++;
-		t = new Thread();
-		t->start(worker, this, stacksz, this);
-		while ((t = wait(0)) != NULL)
-		    delete t;
-	    }
+	    workers++;
+	    t = new Thread();
+	    t->start(worker, this, stacksz, this);
+	    while ((t = wait(0)) != NULL)
+		delete t;
+	} else {
+	    olock.lock();
+	    --scanning;
+	    olock.unlock();
 	}
     }
 }
