@@ -132,11 +132,11 @@ bool Dispatcher::exec() {
 	} else {
 	    group->active = true;
 	    obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
-	    --scanning;
+	    scanning.fetch_sub(1, memory_order_relaxed);
 	    olock.unlock();
 	    obj->dcb(obj);
 	    olock.lock();
-	    ++scanning;
+	    scanning.fetch_add(1, memory_order_relaxed);
 	    group->active = false;
 	    obj->flags &= ~DSP_Active;
 	    if (UNLIKELY(obj->flags & DSP_Freed))
@@ -160,18 +160,37 @@ bool Dispatcher::exec() {
 int Dispatcher::run() {
     Lifo::Waiting waiting;
     static uint cpus = Processor::count();
+    static constexpr uint SPIN_COUNT = 100;
 
     priority(-1);
     olock.lock();
     while (exec()) {
 	bool b;
+	uint spins = 0;
 
-	--scanning;
+	scanning.fetch_sub(1, memory_order_relaxed);
 	olock.unlock();
-	b = lifo.wait(waiting, workers > cpus ? INFINITE : MAX_WAIT_TIME);
-	olock.lock();
-	if (!b)
-	    break;
+	// spin-wait before sleeping to reduce wake-up latency
+	while (spins < SPIN_COUNT) {
+	    if (rlist) {
+		olock.lock();
+		if (rlist) {
+		    scanning.fetch_add(1, memory_order_relaxed);
+		    break;
+		}
+		olock.unlock();
+	    }
+#ifdef THREAD_PAUSE
+	    THREAD_PAUSE();
+#endif
+	    ++spins;
+	}
+	if (spins >= SPIN_COUNT) {
+	    b = lifo.wait(waiting, workers > cpus ? INFINITE : MAX_WAIT_TIME);
+	    olock.lock();
+	    if (!b)
+		break;
+	}
     }
     workers--;
     olock.unlock();
@@ -1084,34 +1103,42 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    obj.group->glist.push_back(obj);
 	olock.unlock();
     } else {
-	bool b;
+	uint_fast16_t rsz;
 
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
 	if (UNLIKELY(hipri))
 	    rlist.push_front(obj);
 	else
 	    rlist.push_back(obj);
-	b = maxthreads && scanning >= rlist.size();
-	if (!b)
-	    ++scanning;
+	rsz = (uint_fast16_t)rlist.size();
 	olock.unlock();
 	if (UNLIKELY(!maxthreads)) {
 	    if (polling)
 		wakeup(0);
-	} else if (UNLIKELY(b)) {
-	} else if (LIKELY(!lifo.set())) {
-	} else if (UNLIKELY(workers < maxthreads && !shutdown)) {
-	    Thread *t;
+	    return;
+	}
+	for (;;) {
+	    uint_fast16_t s = scanning.load(memory_order_relaxed);
 
-	    workers++;
-	    t = new Thread();
-	    t->start(worker, this, stacksz, this);
-	    while ((t = wait(0)) != NULL)
-		delete t;
-	} else {
-	    olock.lock();
-	    --scanning;
-	    olock.unlock();
+	    if (s >= rsz) {
+		return;
+	    } else if (scanning.compare_exchange_weak(s, s + 1,
+		memory_order_acquire, memory_order_relaxed)) {
+		if (!lifo.set()) {
+		    return;
+		} else if (UNLIKELY(workers < maxthreads && !shutdown)) {
+		    Thread *t;
+
+		    workers++;
+		    t = new Thread();
+		    t->start(worker, this, stacksz, this);
+		    while ((t = wait(0)) != NULL)
+			delete t;
+		} else {
+		    scanning.fetch_sub(1, memory_order_relaxed);
+		}
+		return;
+	    }
 	}
     }
 }
