@@ -160,37 +160,33 @@ bool Dispatcher::exec() {
 int Dispatcher::run() {
     Lifo::Waiting waiting;
     static uint cpus = Processor::count();
-    static constexpr uint SPIN_COUNT = 100;
 
     priority(-1);
     olock.lock();
     while (exec()) {
 	bool b;
+#if defined(WAIT_DELAY) && defined(THREAD_PAUSE)
 	uint spins = 0;
+	static constexpr uint SPIN_COUNT = 64;
 
+	olock.unlock();
+	for (;;) {
+	    if (rlist || ++spins == SPIN_COUNT) {
+		olock.lock();
+		break;
+	    } else {
+		THREAD_PAUSE();
+	    }
+	}
+	if (rlist)
+	    continue;
+#endif
 	scanning.fetch_sub(1, memory_order_relaxed);
 	olock.unlock();
-	// spin-wait before sleeping to reduce wake-up latency
-	while (spins < SPIN_COUNT) {
-	    if (rlist) {
-		olock.lock();
-		if (rlist) {
-		    scanning.fetch_add(1, memory_order_relaxed);
-		    break;
-		}
-		olock.unlock();
-	    }
-#ifdef THREAD_PAUSE
-	    THREAD_PAUSE();
-#endif
-	    ++spins;
-	}
-	if (spins >= SPIN_COUNT) {
-	    b = lifo.wait(waiting, workers > cpus ? INFINITE : MAX_WAIT_TIME);
-	    olock.lock();
-	    if (!b)
-		break;
-	}
+	b = lifo.wait(waiting, workers > cpus ? INFINITE : MAX_WAIT_TIME);
+	olock.lock();
+	if (!b)
+	    break;
     }
     workers--;
     olock.unlock();
