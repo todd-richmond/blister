@@ -165,21 +165,25 @@ int Dispatcher::run() {
     olock.lock();
     while (exec()) {
 	bool b;
-#if defined(WAIT_DELAY) && defined(THREAD_PAUSE)
-	uint spins = 0;
-	static constexpr uint SPIN_COUNT = 64;
+#ifdef THREAD_PAUSE
+	// park threads in loop while more events are added
+	if (!polling.load(memory_order_relaxed)) {
+	    uint spins = 0;
+	    static constexpr uint SPIN_COUNT = 200;
 
-	olock.unlock();
-	for (;;) {
-	    if (rlist || ++spins == SPIN_COUNT) {
-		olock.lock();
-		break;
-	    } else {
-		THREAD_PAUSE();
+	    olock.unlock();
+	    for (;;) {
+	        if (rlist || ++spins == SPIN_COUNT ||
+		    !polling.load(memory_order_relaxed)) {
+		    olock.lock();
+		    break;
+		} else {
+		    THREAD_PAUSE();
+		}
 	    }
+	    if (rlist)
+		continue;
 	}
-	if (rlist)
-	    continue;
 #endif
 	scanning.fetch_sub(1, memory_order_relaxed);
 	olock.unlock();
@@ -218,7 +222,9 @@ int Dispatcher::onStart() {
 	    exec();
 	    olock.unlock();
 	}
+	polling.store(true, memory_order_relaxed);
 	GetMessage(&msg, wnd, 0, 0);
+	polling.store(false, memory_order_release);
 	if (shutdown)
 	    break;
 	if (msg.message == socketmsg) {
@@ -404,6 +410,7 @@ int Dispatcher::onStart() {
 
 	tlock.lock();
 	handleTimers(now);
+	polling.store(true, memory_order_relaxed);
 	dt = timers.peek();
 	if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
 	    timers.reorder(now + MAX_IDLE_TIMER);
@@ -429,7 +436,6 @@ int Dispatcher::onStart() {
 	}
 	if (shutdown)
 	    break;
-	polling = true;
 	if (evtfd == -1) {
 	    DispatchSocket *ds = NULL;
 	    socket_t fd;
@@ -442,7 +448,7 @@ int Dispatcher::onStart() {
 		orset.clear();
 		owset.clear();
 	    }
-	    polling = false;
+	    polling.store(false, memory_order_release);
 	    for (u = 0; u < orset.size(); u++) {
 		fd = orset[u];
 		if (fd == rsock) {
@@ -559,7 +565,7 @@ int Dispatcher::onStart() {
 		nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, &ts);
 	    }
 #endif
-	    polling = false;
+	    polling.store(false, memory_order_release);
 	    if (LIKELY(nevts != -1))
 		handleEvents(evts, (uint)nevts);
 	}
@@ -747,9 +753,9 @@ void Dispatcher::wakeup(ulong msec) {
     } while (interval > msec);
 #else
     (void)msec;
-    if (!polling)
+    if (!polling.load(memory_order_acquire))
 	return;
-    polling = false;
+    polling.store(false, memory_order_relaxed);
     if (wsock.open()) {
 	wsock.write("", 1);
     } else {
@@ -1109,7 +1115,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	rsz = (uint_fast16_t)rlist.size();
 	olock.unlock();
 	if (UNLIKELY(!maxthreads)) {
-	    if (polling)
+	    if (polling.load(memory_order_relaxed))
 		wakeup(0);
 	    return;
 	}
