@@ -961,7 +961,7 @@ public:
         return !sz.load(memory_order_relaxed);
     }
     __forceinline uint size(void) const {
-        return sz.load(memory_order_relaxed);
+        return (uint)sz.load(memory_order_relaxed);
     }
     __forceinline uint broadcast(void) {
 	Waiting *w, *ww;
@@ -972,7 +972,7 @@ public:
 	lck.lock();
 	w = head;
 	head = NULL;
-	ret = sz.load(memory_order_relaxed);
+	ret = (uint)sz.load(memory_order_relaxed);
 	sz.store(0, memory_order_relaxed);
 	lck.unlock();
 	while (LIKELY(w)) {
