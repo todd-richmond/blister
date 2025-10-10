@@ -27,6 +27,7 @@
 #define __no_sanitize_memory
 #define __no_sanitize_thread
 #define __no_sanitize_unsigned
+#define __builtin_prefetch(p, i, j)
 #define ALIGN(sz)		__declspec(align(sz))
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
@@ -1259,10 +1260,12 @@ public:
 	if (front == &obj) {
 	    if ((front = obj.next) == NULL)
 		back = NULL;
+	    else
+	    obj.next = NULL;
 	    --sz;
 	} else {
-	    for (C *p = front; p; p = p->next) {
-		if (p->next == &obj) {
+	    for (C *p = front; LIKELY(p); p = p->next) {
+		if (UNLIKELY(p->next == &obj)) {
 		    if ((p->next = obj.next) == NULL)
 			back = p;
 		    else
@@ -1281,7 +1284,7 @@ public:
 	} else {
 	    C *p = front;
 
-	    while (p->next != back)
+	    while (LIKELY(p->next != back))
 		p = p->next;
 	    back = p;
 	    back->next = NULL;

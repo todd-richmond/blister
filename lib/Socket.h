@@ -421,12 +421,11 @@ protected:
 
 	bool __forceinline blocked(void) const { return ::blocked(err); }
 	bool __forceinline interrupted(void) const { return ::interrupted(err); }
-	bool __forceinline check(int ret) const {
-	    if (UNLIKELY(ret == -1)) {
-		err = sockerrno();
-		return false;
-	    }
-	    return true;
+	bool __forceinline check(const int ret) const {
+	    if (LIKELY(ret != -1))
+		return true;
+	    err = sockerrno();
+	    return false;
 	}
 
 	bool __no_sanitize_thread close(void) {

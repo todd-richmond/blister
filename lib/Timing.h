@@ -112,7 +112,7 @@ public:
 
     static const uint TIMINGSLOTS = 10;
 
-    vector<tstring>::size_type depth(void) const { return tls.callers.size(); }
+    vector<tstring>::size_type depth(void) const { return tls->callers.size(); }
 
     template<class C> void __forceinline add(const C &key, timing_t diff) {
 	add(TimingKey(key), diff);
@@ -166,8 +166,8 @@ private:
     typedef unordered_map<size_t, Stats *> timingmap;
 
     mutable SpinRWLock lck;
+    ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
-    static thread_local Tlsdata tls;
 
     void erase(const TimingKey &key);
     void record(const TimingKey &key);

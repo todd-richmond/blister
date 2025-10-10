@@ -92,14 +92,14 @@ static constexpr uint MAX_EVENTS = 128;
 #endif
 
 Dispatcher::Dispatcher(const Config &config): cfg(config),
-    due(DispatchTimer::DSP_NEVER_DUE), maxthreads(0), scanning(0),
-    shutdown(true), stacksz(0), workers(0),
+    cache(0), due(DispatchTimer::DSP_NEVER_DUE), maxthreads(0), polling(false),
+    shutdown(true), scanning(0), workers(0),
 #ifdef DSP_WIN32_ASYNC
-    interval(DispatchTimer::DSP_NEVER), wnd(0)
+    interval(DispatchTimer::DSP_NEVER), wnd(0),
 #else
-    evtfd(-1), wfd(-1), polling(false), rsock(SOCK_STREAM), wsock(SOCK_STREAM)
+    evtfd(-1), wfd(-1), rsock(SOCK_STREAM), wsock(SOCK_STREAM),
 #endif
-    {
+    stacksz(0) {
 #ifdef DSP_WIN32_ASYNC
     if (!socketmsg) {
 	WNDCLASS wc;
@@ -173,7 +173,7 @@ int Dispatcher::run() {
 
 	    olock.unlock();
 	    for (;;) {
-	        if (rlist || ++spins == SPIN_COUNT ||
+		if (rlist || ++spins == SPIN_COUNT ||
 		    !polling.load(memory_order_relaxed)) {
 		    olock.lock();
 		    break;
@@ -275,6 +275,7 @@ int Dispatcher::onStart() {
 	    DispatchTimer *dt;
 	    msec_t now = mticks();
 
+	    cache = now;
 	    tlock.lock();
 	    handleTimers(now);
 	    dt = timers.peek();
@@ -307,6 +308,7 @@ int Dispatcher::onStart() {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
 	}
+	cache = 0;
     }
     KillTimer(wnd, DSP_TimerID);
     cleanup();
@@ -408,6 +410,7 @@ int Dispatcher::onStart() {
 	uint msec;
 	msec_t now = mticks();
 
+	cache = now;
 	tlock.lock();
 	handleTimers(now);
 	polling.store(true, memory_order_relaxed);
@@ -429,6 +432,7 @@ int Dispatcher::onStart() {
 	    due = now + msec;
 	}
 	tlock.unlock();
+	cache = 0;
 	if (!maxthreads) {
 	    olock.lock();
 	    exec();
@@ -654,6 +658,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    reset();
 	    continue;
 	}
+	__builtin_prefetch(ds, 0, 3);
 	olock.lock();
 	if (UNLIKELY(ds->flags & DSP_Freed)) {
 	    olock.unlock();
@@ -799,10 +804,17 @@ void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
 
 void Dispatcher::setTimer(DispatchTimer &dt, ulong msec) {
     if (LIKELY(msec)) {
-	msec_t now = 0;
-	msec_t tmt = msec == DispatchTimer::DSP_NEVER ?
-	    DispatchTimer::DSP_NEVER_DUE : (now = mticks()) + msec;
+	msec_t now, tmt;
 
+	if (msec == DispatchTimer::DSP_NEVER) {
+	    now = 0; 
+	    tmt = DispatchTimer::DSP_NEVER_DUE;
+	} else {
+	    now = cache;
+	    if (UNLIKELY(!now))
+		now = mticks();
+	    tmt = now + msec;
+	}
 	dt.flags |= DSP_Scheduled;
 	tlock.lock();
 	timers.set(dt, tmt);
@@ -982,7 +994,9 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     ds.msg = DispatchNone;
     olock.unlock();
     if (timeout != DispatchTimer::DSP_NEVER) {
-	now = mticks();
+	now = cache;
+	if (UNLIKELY(!now))
+	    now = mticks();
 	tmt = now + timeout;
 	tlock.lock();
 	timers.set(ds, tmt);

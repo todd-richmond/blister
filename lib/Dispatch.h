@@ -388,6 +388,8 @@ private:
     friend class DispatchSocket;
     void cancelSocket(DispatchSocket &ds, bool del = false);
     void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg);
+    void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg, msec_t
+	now);
 
     void cleanup(void);
     bool exec(void);
@@ -397,17 +399,13 @@ private:
     void wakeup(ulong msec);
     static int worker(void *param);
 
-    msec_t due;
+    alignas(64) msec_t cache, due;
     ObjectList<DispatchObj> rlist;
-    Lifo lifo;
     uint maxthreads;
-    SpinLock olock, slock, tlock;
-    atomic_uint_fast16_t scanning;
-    atomic_bool shutdown;
-    socketmap smap;
-    uint stacksz;
+    SpinLock olock, tlock;
+    atomic_bool polling, shutdown;
+    atomic_uint_fast16_t scanning, workers;
     TimerSet timers;
-    atomic_uint_fast16_t workers;
 #ifdef DSP_WIN32_ASYNC
     atomic_ulong interval;
     HWND wnd;
@@ -415,12 +413,15 @@ private:
     static const int DSP_TimerID = 1;
 #else
     int evtfd, wfd;
-    atomic_bool polling;
     SocketSet rset, wset;
     Socket rsock, wsock;
 
     void reset(void);
 #endif
+    Lifo lifo;
+    SpinLock slock;
+    socketmap smap;
+    uint stacksz;
 };
 
 template<class D, class C>

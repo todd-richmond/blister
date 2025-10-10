@@ -19,8 +19,6 @@
 #include <algorithm>
 #include "Timing.h"
 
-thread_local Timing::Tlsdata Timing::tls;
-
 // UNIX loaders may try to construct static objects > 1 time
 static Timing &_dtiming(void) {
     static Timing timing;
@@ -41,7 +39,7 @@ void Timing::add(const TimingKey &key, timing_t diff) {
     };
 
     for (slot = 0; slot < TIMINGSLOTS - 1; slot++) {
-	if (diff <= limits[slot])
+	if (LIKELY(diff <= limits[slot]))
 	    break;
     }
     lck.rlock();
@@ -79,12 +77,10 @@ void Timing::clear() {
 }
 
 const tstring Timing::data(bool sort_key, uint columns) const {
-    timingmap::const_iterator it;
     uint last = 0, begin = 0;
     tstring s;
     vector<const Stats *> sorted;
     uint u;
-    FastSpinRLocker lkr(lck);
     static const tchar *hdrs[TIMINGSLOTS] = {
 	T("10u"), T(".1m"), T("1m"), T("10m"), T(".1s"), T("1s"),
 	T("5s"), T("10s"), T("30s"), T("...")
@@ -92,9 +88,11 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 
     if (columns > TIMINGSLOTS)
 	columns = TIMINGSLOTS;
+    lck.rlock();
     sorted.reserve(tmap.size());
-    for (it = tmap.begin(); it != tmap.end(); ++it)
+    for (timingmap::const_iterator it = tmap.begin(); it != tmap.end(); ++it)
 	sorted.emplace_back(it->second);
+    lck.runlock();
     sort(sorted.begin(), sorted.end(), sort_key ? less_key : greater_time);
     for (const Stats *stats : sorted) {
 	for (u = TIMINGSLOTS - 1; u > last; u--) {
@@ -229,21 +227,22 @@ void Timing::record(void) {
     tstring caller;
     timing_t diff;
     const tchar *key;
-    vector<tstring>::reverse_iterator rit = tls.callers.rbegin();
+    Tlsdata &tlsd(*tls);
+    vector<tstring>::reverse_iterator rit = tlsd.callers.rbegin();
 
-    if (rit == tls.callers.rend()) {
+    if (rit == tlsd.callers.rend()) {
 	tcerr << T("timing mismatch for stack") << endl;
 	return;
     }
     caller = *rit;
-    tls.callers.pop_back();
-    diff = n - *(tls.starts.rbegin());
-    tls.starts.pop_back();
+    tlsd.callers.pop_back();
+    diff = n - *(tlsd.starts.rbegin());
+    tlsd.starts.pop_back();
     key = caller.c_str();
-    if (!caller.empty() && !tls.callers.empty()) {
+    if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
-	for (const tstring &c : tls.callers) {
+	for (const tstring &c : tlsd.callers) {
 	    s += c;
 	    s += T("->");
 	}
@@ -257,23 +256,24 @@ void Timing::record(const TimingKey &key) {
     timing_t n = now();
     tstring caller;
     timing_t diff;
+    Tlsdata &tlsd(*tls);
 
     do {
-	vector<tstring>::reverse_iterator it = tls.callers.rbegin();
+	vector<tstring>::reverse_iterator it = tlsd.callers.rbegin();
 
-	if (it == tls.callers.rend()) {
+	if (it == tlsd.callers.rend()) {
 	    tcerr << T("timing mismatch for ") << (const tchar *)key << endl;
 	    return;
 	}
 	caller = *it;
-	tls.callers.pop_back();
-	diff = n - *(tls.starts.rbegin());
-	tls.starts.pop_back();
+	tlsd.callers.pop_back();
+	diff = n - tlsd.starts.back();
+	tlsd.starts.pop_back();
     } while (!caller.empty() && caller != (const tchar *)key);
-    if (!caller.empty() && !tls.callers.empty()) {
+    if (!caller.empty() && !tlsd.callers.empty()) {
 	tstring s;
 
-	for (const tstring &c : tls.callers) {
+	for (const tstring &c : tlsd.callers) {
 	    s += c;
 	    s += T("->");
 	}
@@ -284,20 +284,26 @@ void Timing::record(const TimingKey &key) {
 }
 
 void Timing::restart() {
-    if (!tls.callers.empty()) {
-	tls.starts.pop_back();
-	tls.starts.emplace_back(now());
+    Tlsdata &tlsd(*tls);
+
+    if (!tlsd.callers.empty()) {
+	tlsd.starts.pop_back();
+	tlsd.starts.emplace_back(now());
     }
 }
 
 void Timing::start(const TimingKey &key) {
-    tls.callers.emplace_back((const tchar *)key);
-    tls.starts.emplace_back(now());
+    Tlsdata &tlsd(*tls);
+
+    tlsd.callers.emplace_back((const tchar *)key);
+    tlsd.starts.emplace_back(now());
 }
 
 void Timing::stop(uint lvl) {
-    while (lvl-- && !tls.callers.empty()) {
-	tls.callers.pop_back();
-	tls.starts.pop_back();
+    Tlsdata &tlsd(*tls);
+
+    while (lvl-- && !tlsd.callers.empty()) {
+	tlsd.callers.pop_back();
+	tlsd.starts.pop_back();
     }
 }

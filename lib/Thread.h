@@ -34,6 +34,13 @@ typedef DWORD thread_id_t;
 #define THREAD_PAUSE()		YieldProcessor()
 #define THREAD_YIELD()		if (!SwitchToThread()) Sleep(0)
 
+typedef DWORD tlskey_t;
+
+#define tls_init(k)		k = TlsAlloc()
+#define tls_free(k)		TlsFree(k)
+#define tls_get(k)		TlsGetValue(k)
+#define tls_set(k, v)		TlsSetValue(key, (void *)v)
+
 #else
 
 #include <errno.h>
@@ -65,6 +72,13 @@ typedef pthread_t thread_id_t;
 #define THREAD_PAUSE()  	__builtin_ia32_pause()
 #endif
 #define THREAD_YIELD()		sched_yield()
+
+typedef pthread_key_t tlskey_t;
+
+#define tls_init(k)		ZERO(k); pthread_key_create(&k, NULL)
+#define tls_free(k)		pthread_key_delete(k)
+#define tls_get(k)		pthread_getspecific(k)
+#define tls_set(k, v)		pthread_setspecific(k, v)
 #endif
 
 #define THREAD_ISSELF(x)	THREAD_EQUAL(x, THREAD_ID())
@@ -174,6 +188,48 @@ public:
     static ullong affinity(void);
     static bool affinity(ullong mask);
     static uint count(void);
+};
+
+/* Thread local storage for simple types */
+template<class C>
+class BLISTER ThreadLocal: nocopy {
+public:
+    // cppcheck-suppress useInitializationList
+    ThreadLocal() { tls_init(key); }
+    ~ThreadLocal() { tls_free(key); }
+
+    __forceinline ThreadLocal &operator =(C c) { set(c); return *this; }
+    __forceinline C *operator ->(void) const { return &get(); }
+    __forceinline operator bool(void) const { return tls_get(key) != NULL; }
+    __forceinline operator C() const { return (C)tls_get(key); }
+
+    __forceinline C get(void) const { return (C)tls_get(key); }
+    __forceinline void set(const C c) const { tls_set(key, c); }
+
+protected:
+    tlskey_t key;
+};
+
+/* Thread local storage for classes with proper destruction when theads exit */
+typedef void (*ThreadLocalFree)(void *data);
+
+template<class C>
+class BLISTER ThreadLocalClass: nocopy {
+public:
+    // cppcheck-suppress useInitializationList
+    ThreadLocalClass() { tls_init(key); }
+    ~ThreadLocalClass() { tls_free(key); }
+
+    __forceinline C &operator *(void) const { return get(); }
+    __forceinline C *operator ->(void) const { return &get(); }
+    void erase(void);
+    C &get(void) const;
+    __forceinline void set(C *c) const { tls_set(key, c); }
+
+protected:
+    tlskey_t key;
+
+    static void cleanup(void *data) { delete (C *)data; }
 };
 
 /*
@@ -894,21 +950,30 @@ public:
 	Waiting(): next(NULL) {}
     };
 
-    Lifo(): head(NULL), sz(0) {}
+    Lifo(): head(NULL), sz(0) { (void)unused;}
     ~Lifo() { close(); }
 
-    __forceinline operator bool(void) const { return sz; }
-    __forceinline bool empty(void) const { return !sz; }
-    __forceinline uint size(void) const { return sz; }
+    // Fast-path checks without lock for common case
+    __forceinline operator bool(void) const {
+        return sz.load(memory_order_relaxed);
+    }
+    __forceinline bool empty(void) const {
+        return !sz.load(memory_order_relaxed);
+    }
+    __forceinline uint size(void) const {
+        return sz.load(memory_order_relaxed);
+    }
     __forceinline uint broadcast(void) {
 	Waiting *w, *ww;
 	uint ret;
 
+	if (UNLIKELY(!sz.load(memory_order_acquire)))
+	    return 0;
 	lck.lock();
 	w = head;
 	head = NULL;
-	ret = sz;
-	sz = 0;
+	ret = sz.load(memory_order_relaxed);
+	sz.store(0, memory_order_relaxed);
 	lck.unlock();
 	while (LIKELY(w)) {
 	    ww = w->next;
@@ -920,18 +985,23 @@ public:
     bool close(void) { broadcast(); return true; }
     bool open(void) {
 	head = NULL;
-	sz = 0;
+	sz.store(0, memory_order_relaxed);
 	return true;
     }
     __forceinline uint set(uint count = 1) {
+	uint_fast16_t released;
 	Waiting *w, *ww, *www;
 
+	if (UNLIKELY(!sz.load(memory_order_acquire)))
+	    return count;
+	released = 0;
 	lck.lock();
 	for (w = ww = head; w && count; w = w->next) {
 	    --count;
-	    --sz;
+	    ++released;
 	}
 	head = w;
+	sz.fetch_sub(released, memory_order_relaxed);
 	lck.unlock();
 	while (LIKELY(ww != w)) {
 	    www = ww->next;
@@ -944,14 +1014,14 @@ public:
 	lck.lock();
 	w.next = head;
 	head = &w;
-	++sz;
+	sz.fetch_add(1, memory_order_relaxed);
 	lck.unlock();
 	if (UNLIKELY(!w.sema4.wait(msec))) {
 	    lck.lock();
 	    for (Waiting **ww = &head; *ww; ww = &(*ww)->next) {
 		if (*ww == &w) {
 		    *ww = w.next;
-		    --sz;
+		    sz.fetch_sub(1, memory_order_relaxed);
 		    lck.unlock();
 		    return false;
 		}
@@ -962,9 +1032,11 @@ public:
     }
 
 private:
-    Waiting *head;
+    alignas(64) Waiting *head;
     mutable SpinLock lck;
-    uint sz;
+    atomic_uint_fast16_t sz;
+    char unused[64 - sizeof (Waiting *) - sizeof (SpinLock) -
+	sizeof (atomic_uint)];
 };
 
 // Thread routines
@@ -1009,6 +1081,7 @@ public:
     bool suspend(void);
     bool terminate(void);
     bool wait(ulong timeout = INFINITE);
+    static void thread_cleanup(void *data, ThreadLocalFree func);
 
 protected:
     void end(int ret = 0);
@@ -1016,6 +1089,8 @@ protected:
     virtual void onStop(void) {}
 
 private:
+    typedef unordered_map<void *, ThreadLocalFree> ThreadLocalMap;
+
     mutable Lock lck;
     Condvar cv;
     void *argument;
@@ -1026,8 +1101,10 @@ private:
     ThreadRoutine main;
     int retval;
     volatile ThreadState state;
+    static ThreadLocal<ThreadLocalMap *> flocal;
 
     void clear(void);
+    void thread_cleanup(void);
     static int init(void *thisp);
     static THREAD_FUNC thread_init(void *thisp);
 
@@ -1088,6 +1165,26 @@ private:
     static int init(void *thisp);
     friend class Thread;
 };
+
+template<class C>
+void ThreadLocalClass<C>::erase(void) {
+    C *c = (C *)tls_get(key);
+
+    tls_set(key, 0);
+    Thread::thread_cleanup(c, NULL);
+}
+
+template<class C>
+C &ThreadLocalClass<C>::get(void) const {
+    C *c = (C *)tls_get(key);
+
+    if (UNLIKELY(!c)) {
+	c = new C;
+	tls_set(key, c);
+	Thread::thread_cleanup(c, cleanup);
+    }
+    return *c;
+}
 
 #endif
 #endif // Thread_h
