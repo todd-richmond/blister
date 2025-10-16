@@ -304,11 +304,11 @@ int Dispatcher::onStart() {
 		due = now + interval;
 		tlock.unlock();
 	    }
+	    cache = 0;
 	} else {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
 	}
-	cache = 0;
     }
     KillTimer(wnd, DSP_TimerID);
     cleanup();
@@ -321,6 +321,7 @@ int Dispatcher::onStart() {
 
 int Dispatcher::onStart() {
     SocketSet irset, iwset, orset, owset, oeset;
+    msec_t now;
     socketmap::const_iterator sit;
     uint u = 0;
 
@@ -401,16 +402,15 @@ int Dispatcher::onStart() {
 #endif
     }
     lifo.open();
+    cache = now = mticks();
+    due = DispatchTimer::DSP_NEVER_DUE;
     scanning = 0;
     shutdown = false;
     workers = 0;
-    due = DispatchTimer::DSP_NEVER_DUE;
     while (LIKELY(!shutdown)) {
 	DispatchTimer *dt;
 	uint msec;
-	msec_t now = mticks();
 
-	cache = now;
 	tlock.lock();
 	handleTimers(now);
 	polling.store(true, memory_order_relaxed);
@@ -432,7 +432,6 @@ int Dispatcher::onStart() {
 	    due = now + msec;
 	}
 	tlock.unlock();
-	cache = 0;
 	if (!maxthreads) {
 	    olock.lock();
 	    exec();
@@ -440,6 +439,7 @@ int Dispatcher::onStart() {
 	}
 	if (shutdown)
 	    break;
+	cache = 0;
 	if (evtfd == -1) {
 	    DispatchSocket *ds = NULL;
 	    socket_t fd;
@@ -452,6 +452,7 @@ int Dispatcher::onStart() {
 		orset.clear();
 		owset.clear();
 	    }
+	    cache = now = mticks();
 	    polling.store(false, memory_order_release);
 	    for (u = 0; u < orset.size(); u++) {
 		fd = orset[u];
@@ -569,6 +570,7 @@ int Dispatcher::onStart() {
 		nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, &ts);
 	    }
 #endif
+	    cache = now = mticks();
 	    polling.store(false, memory_order_release);
 	    if (LIKELY(nevts != -1))
 		handleEvents(evts, (uint)nevts);
@@ -807,7 +809,7 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong msec) {
 	msec_t now, tmt;
 
 	if (msec == DispatchTimer::DSP_NEVER) {
-	    now = 0; 
+	    now = 0;
 	    tmt = DispatchTimer::DSP_NEVER_DUE;
 	} else {
 	    now = cache;
