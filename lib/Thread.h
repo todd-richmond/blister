@@ -70,6 +70,8 @@ typedef pthread_t thread_id_t;
 #define THREAD_HDL()		pthread_self()
 #if defined(__i386__) || defined(__x86_64__)
 #define THREAD_PAUSE()  	__builtin_ia32_pause()
+#elif defined(__ARM_ARCH)
+#define THREAD_PAUSE()  	asm volatile("yield")
 #endif
 #define THREAD_YIELD()		sched_yield()
 
