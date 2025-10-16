@@ -199,6 +199,7 @@ public:
     ~ThreadLocal() { tls_free(key); }
 
     __forceinline ThreadLocal &operator =(C c) { set(c); return *this; }
+    // cppcheck-suppress returnDanglingLifetime
     __forceinline C *operator ->(void) const { return &get(); }
     __forceinline operator bool(void) const { return tls_get(key) != NULL; }
     __forceinline operator C() const { return (C)tls_get(key); }

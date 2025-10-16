@@ -168,19 +168,19 @@ int Dispatcher::run() {
 #ifdef THREAD_PAUSE
 	// park threads in loop while more events are added
 	if (!polling.load(memory_order_relaxed)) {
-	    uint spins = 0;
-	    static constexpr uint SPIN_COUNT = 200;
+	    uint spins;
+	    static constexpr uint SPIN_COUNT = 120;
 
 	    olock.unlock();
-	    for (;;) {
-		if (rlist || ++spins == SPIN_COUNT ||
-		    !polling.load(memory_order_relaxed)) {
-		    olock.lock();
-		    break;
-		} else {
+	    spins = 0;
+	    while (!rlist && ++spins != SPIN_COUNT &&
+		!polling.load(memory_order_relaxed)) {
+		if (UNLIKELY((spins & 0x3F) == 0x20))
+		    THREAD_YIELD();
+		else
 		    THREAD_PAUSE();
-		}
 	    }
+	    olock.lock();
 	    if (rlist)
 		continue;
 	}
@@ -408,7 +408,7 @@ int Dispatcher::onStart() {
     shutdown = false;
     workers = 0;
     while (LIKELY(!shutdown)) {
-	DispatchTimer *dt;
+	const DispatchTimer *dt;
 	uint msec;
 
 	tlock.lock();
@@ -966,7 +966,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	slock.unlock();
     }
     olock.lock();
-    flags = ds.flags & DSP_IO;
+    flags = ds.flags;
     if (flags & ioarray[m]) {
 	if ((flags & DSP_Writeable) &&
 	    (m == DispatchWrite || m == DispatchReadWrite || m ==
@@ -987,10 +987,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	ready(ds, m == DispatchAccept);
 	return;
     }
-    b = sarray[m] == (ds.flags & DSP_SelectAll);
-#ifdef DSP_KQUEUE
-    flags = ds.flags;
-#endif
+    b = sarray[m] == (flags & DSP_SelectAll);
     ds.flags &= ~(DSP_SelectAll | DSP_IO);
     ds.flags |= sarray[m] | DSP_Scheduled;
     ds.msg = DispatchNone;

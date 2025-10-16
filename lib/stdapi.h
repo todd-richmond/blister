@@ -1261,7 +1261,7 @@ public:
 	    if ((front = obj.next) == NULL)
 		back = NULL;
 	    else
-	    obj.next = NULL;
+		obj.next = NULL;
 	    --sz;
 	} else {
 	    for (C *p = front; LIKELY(p); p = p->next) {

@@ -69,6 +69,7 @@ Checks: >
   -cppcoreguidelines-pro-type-vararg,
   -cppcoreguidelines-special-member-functions,
   -cppcoreguidelines-use-default-member-init,
+  -cppcoreguidelines-use-enum-class,
   -fuchsia-default-arguments-calls,
   -fuchsia-default-arguments-declarations,
   -fuchsia-multiple-inheritance,
@@ -159,6 +160,7 @@ Checks: >
   -readability-redundant-access-specifiers,
   -readability-simplify-boolean-expr,
   -readability-static-accessed-through-instance,
+  -readability-use-concise-preprocessor-directives,
   -readability-use-std-min-max
 CheckOptions:
   - key:             misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
