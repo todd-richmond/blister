@@ -41,7 +41,7 @@ static constexpr uint_fast32_t DSP_SelectAll = DSP_SelectAccept |
 #pragma comment(lib, "user32.lib")
 
 static const tchar *DispatchClass = T("DSP_CLASS");
-static uint Dispatcher::socketmsg;
+uint Dispatcher::socketmsg;
 
 #elif defined(__linux__)
 
@@ -175,10 +175,11 @@ int Dispatcher::run() {
 	    spins = 0;
 	    while (!rlist && ++spins != SPIN_COUNT &&
 		!polling.load(memory_order_relaxed)) {
-		if (UNLIKELY((spins & 0x3F) == 0x20))
+		if (UNLIKELY((spins & 0x3F) == 0x20)) {
 		    THREAD_YIELD();
-		else
+		} else {
 		    THREAD_PAUSE();
+		}
 	    }
 	    olock.lock();
 	    if (rlist)
@@ -552,6 +553,7 @@ int Dispatcher::onStart() {
 		    olock.unlock();
 		}
 	    }
+#ifndef DSP_POLL
 	} else {
 #ifdef DSP_DEVPOLL
 	    dvpoll dvp = { evts, MAX_EVENTS, msec };
@@ -574,6 +576,7 @@ int Dispatcher::onStart() {
 	    polling.store(false, memory_order_release);
 	    if (LIKELY(nevts != -1))
 		handleEvents(evts, (uint)nevts);
+#endif
 	}
     }
     cleanup();
@@ -1014,7 +1017,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     if (UNLIKELY(WSAAsyncSelect(ds.fd(), wnd, socketmsg, sockevts[(int)m]))) {
 	olock.lock();
 	ds.msg = DispatchClose;
-	removeTimer(*ds);
+	removeTimer(ds);
 	ready(ds);
     }
 #else

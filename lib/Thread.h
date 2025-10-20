@@ -1039,7 +1039,7 @@ private:
     mutable SpinLock lck;
     atomic_uint_fast16_t sz;
     char unused[64 - sizeof (Waiting *) - sizeof (SpinLock) -
-	sizeof (atomic_uint)];
+	sizeof(atomic_uint_fast16_t)];
 };
 
 // Thread routines
