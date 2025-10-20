@@ -216,25 +216,6 @@ protected:
 /* Thread local storage for classes with proper destruction when theads exit */
 typedef void (*ThreadLocalFree)(void *data);
 
-template<class C>
-class BLISTER ThreadLocalClass: nocopy {
-public:
-    // cppcheck-suppress useInitializationList
-    ThreadLocalClass() { tls_init(key); }
-    ~ThreadLocalClass() { tls_free(key); }
-
-    __forceinline C &operator *(void) const { return get(); }
-    __forceinline C *operator ->(void) const { return &get(); }
-    void erase(void);
-    C &get(void) const;
-    __forceinline void set(C *c) const { tls_set(key, c); }
-
-protected:
-    tlskey_t key;
-
-    static void cleanup(void *data) { delete (C *)data; }
-};
-
 /*
  * Thread synchronization classes
  * Condvar: condition variable around a Lock
@@ -1169,25 +1150,40 @@ private:
     friend class Thread;
 };
 
-template<class C>
-void ThreadLocalClass<C>::erase(void) {
-    C *c = (C *)tls_get(key);
+template<class C> class BLISTER ThreadLocalClass: nocopy {
+public:
+    // cppcheck-suppress useInitializationList
+    ThreadLocalClass() { tls_init(key); }
+    ~ThreadLocalClass() { tls_free(key); }
 
-    tls_set(key, 0);
-    Thread::thread_cleanup(c, NULL);
-}
+    __forceinline C &operator*(void) const { return get(); }
+    __forceinline C *operator->(void) const { return &get(); }
+    void erase(void) {
+	C *c = (C *)tls_get(key);
 
-template<class C>
-C &ThreadLocalClass<C>::get(void) const {
-    C *c = (C *)tls_get(key);
+	tls_set(key, 0);
+	Thread::thread_cleanup(c, NULL);
+    }
+    __forceinline C &get(void) const {
+	C *c = (C *)tls_get(key);
 
-    if (UNLIKELY(!c)) {
-	c = new C;
+	if (UNLIKELY(!c))
+	    c = allocate();
+	return *c;
+    }
+    __forceinline void set(C *c) const { tls_set(key, c); }
+protected:
+    tlskey_t key;
+
+    C *allocate(void) const {
+	C *c = new C;
+
 	tls_set(key, c);
 	Thread::thread_cleanup(c, cleanup);
+	return c;
     }
-    return *c;
-}
+    static void cleanup(void *data) { delete (C *)data; }
+};
 
 #endif
 #endif // Thread_h
