@@ -88,6 +88,8 @@ typedef pthread_key_t tlskey_t;
 #ifdef __cplusplus
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <set>
 
 /* RAII locking templates */
@@ -470,49 +472,26 @@ public:
 
 class BLISTER Condvar: nocopy {
 public:
-    explicit Condvar(Lock &lock): lck(lock), pending(0), waiting(0) {}
+    explicit Condvar(Lock &lock): lck(lock) {
+	InitializeConditionVariable(&cv);
+    }
+    ~Condvar() {}
 
-    __forceinline void broadcast(void) { set((uint)-1); }
+    __forceinline void broadcast(void) {
+	WakeAllConditionVariable(&cv);
+    }
     __forceinline void set(uint count = 1) {
-	uint cnt;
-
-	olck.lock();
-	cnt = waiting - pending;
-	if (LIKELY(cnt)) {
-	    if (!pending) {
-		ilck.lock();
-		cnt = waiting - pending;
-	    }
-	    if (count < cnt)
-		cnt = count;
-	    pending += cnt;
-	    sema4.set(cnt);
-	}
-	olck.unlock();
+	while (count--)
+	    WakeConditionVariable(&cv);
     }
     __forceinline bool wait(ulong msec = INFINITE) {
-	bool ret;
-
-	++waiting;
-	lck.unlock();
-	ret = sema4.wait(msec);
-	olck.lock();
-	if (UNLIKELY(!ret))
-	    ret = sema4.trywait();
-	--waiting;
-	if (ret && !--pending)
-	    ilck.unlock();
-	olck.unlock();
-	lck.lock();
-	return ret;
+	return SleepConditionVariableCS(&cv, &lck.cs, msec)
+	    != 0;
     }
 
 private:
-    SpinLock ilck, olck;
     Lock &lck;
-    uint pending;
-    Semaphore sema4;
-    atomic_uint_fast16_t waiting;
+    CONDITION_VARIABLE cv;
 };
 
 class BLISTER Process {
@@ -784,47 +763,26 @@ protected:
 
 class BLISTER Condvar: nocopy {
 public:
-    explicit Condvar(Lock &lck): lock(lck) {
-#ifdef __APPLE__
-	pthread_cond_init(&cv, NULL);
-#else
-	pthread_condattr_t attr;
+    explicit Condvar(Lock &lck): lock(lck) {}
+    ~Condvar() {}
 
-	pthread_condattr_init(&attr);
-	pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
-	pthread_cond_init(&cv, &attr);
-	pthread_condattr_destroy(&attr);
-#endif
-    }
-    ~Condvar() { pthread_cond_destroy(&cv); }
-
-    __forceinline void broadcast(void) { pthread_cond_broadcast(&cv); }
+    __forceinline void broadcast(void) { cv.notify_all(); }
     __forceinline void set(uint count = 1) {
-	while (count) {
-	    pthread_cond_signal(&cv);
-	    --count;
-	}
+	while (count--)
+	    cv.notify_one();
     }
     __forceinline bool wait(ulong msec = INFINITE) {
 	if (msec == INFINITE) {
-	    return pthread_cond_wait(&cv, lock) == 0;
-	} else {
-	    timespec ts;
-#ifdef __APPLE__
-	    ts.tv_sec = (uint)(msec / 1000);
-	    ts.tv_nsec = (msec % 1000) * 1000000;
-	    return !pthread_cond_timedwait_relative_np(&cv, lock, &ts);
-#else
-	    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-	    time_adjust_msec(&ts, msec);
-	    return !pthread_cond_timedwait(&cv, lock, &ts);
-#endif
+	    cv.wait(lock);
+	    return true;
 	}
+	return cv.wait_for(lock, chrono::milliseconds(msec)) !=
+	    cv_status::timeout;
     }
 
 protected:
-    pthread_cond_t cv;
     Lock &lock;
+    condition_variable_any cv;
 };
 
 #endif
@@ -838,7 +796,7 @@ public:
 
     __forceinline void downlock(void) { state.store(1, memory_order_release); }
     __forceinline void rlock(void) {
-	uint_fast32_t expected = state.load(std::memory_order_relaxed);
+	uint_fast32_t expected = state.load(memory_order_relaxed);
 
 	while (true) {
 	    if (UNLIKELY(expected & (WRITE_BIT | UPGRADE_BIT))) {
@@ -940,13 +898,13 @@ public:
 
     // Fast-path checks without lock for common case
     __forceinline operator bool(void) const {
-        return sz.load(memory_order_relaxed);
+	return sz.load(memory_order_relaxed);
     }
     __forceinline bool empty(void) const {
-        return !sz.load(memory_order_relaxed);
+	return !sz.load(memory_order_relaxed);
     }
     __forceinline uint size(void) const {
-        return (uint)sz.load(memory_order_relaxed);
+	return (uint)sz.load(memory_order_relaxed);
     }
     __forceinline uint broadcast(void) {
 	Waiting *w, *ww;
