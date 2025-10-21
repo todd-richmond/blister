@@ -73,30 +73,13 @@
 
 typedef usec_t timing_t;
 
-#define TIMING_KEY(i) __forceinline TimingKey(const tchar (&k)[i]): \
-    StringHash(k), key(k) {}
-
 class BLISTER TimingKey: public StringHash {
 public:
     __forceinline explicit TimingKey(const DynamicString &ds): StringHash(ds),
 	key(ds.s) {}
-
-    TIMING_KEY(1) TIMING_KEY(2) TIMING_KEY(3) TIMING_KEY(4)
-    TIMING_KEY(5) TIMING_KEY(6) TIMING_KEY(7) TIMING_KEY(8)
-    TIMING_KEY(9) TIMING_KEY(10) TIMING_KEY(11) TIMING_KEY(12)
-    TIMING_KEY(13) TIMING_KEY(14) TIMING_KEY(15) TIMING_KEY(16)
-    TIMING_KEY(17) TIMING_KEY(18) TIMING_KEY(19) TIMING_KEY(20)
-    TIMING_KEY(21) TIMING_KEY(22) TIMING_KEY(23) TIMING_KEY(24)
-    TIMING_KEY(25) TIMING_KEY(26) TIMING_KEY(27) TIMING_KEY(28)
-    TIMING_KEY(29) TIMING_KEY(30) TIMING_KEY(31) TIMING_KEY(32)
-    TIMING_KEY(33) TIMING_KEY(34) TIMING_KEY(35) TIMING_KEY(36)
-    TIMING_KEY(37) TIMING_KEY(38) TIMING_KEY(39) TIMING_KEY(40)
-    TIMING_KEY(41) TIMING_KEY(42) TIMING_KEY(43) TIMING_KEY(44)
-    TIMING_KEY(45) TIMING_KEY(46) TIMING_KEY(47) TIMING_KEY(48)
-    TIMING_KEY(49) TIMING_KEY(50) TIMING_KEY(51) TIMING_KEY(52)
-    TIMING_KEY(53) TIMING_KEY(54) TIMING_KEY(55) TIMING_KEY(56)
-    TIMING_KEY(57) TIMING_KEY(58) TIMING_KEY(59) TIMING_KEY(60)
-    TIMING_KEY(61) TIMING_KEY(62) TIMING_KEY(63) TIMING_KEY(64)
+    template<size_t N>
+    __forceinline constexpr TimingKey(const tchar (&k)[N]): StringHash(k),
+	key(k) {}
 
     __forceinline operator const tchar *(void) const { return key; }
     size_t __forceinline hash(void) const { return operator size_t(); }

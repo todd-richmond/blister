@@ -586,75 +586,6 @@ EXTERNC_
 
 #define ZERO(x)		memset(&(x), 0, sizeof (x))
 
-// recursive macros for compile-time optimization
-#define STDAPI_REPEAT(i, m, d)	STDAPI_REPEAT_I(i, m, d)
-#define STDAPI_REPEAT_I(i, m, d)STDAPI_REPEAT_##i(m, d)
-#define STDAPI_REPEAT_0(m, d)
-#define STDAPI_REPEAT_1(m, d)	m(0, d)
-#define STDAPI_REPEAT_2(m, d)	STDAPI_REPEAT_1(m, d)	m(1, d)
-#define STDAPI_REPEAT_3(m, d)	STDAPI_REPEAT_2(m, d)	m(2, d)
-#define STDAPI_REPEAT_4(m, d)	STDAPI_REPEAT_3(m, d)	m(3, d)
-#define STDAPI_REPEAT_5(m, d)	STDAPI_REPEAT_4(m, d)	m(4, d)
-#define STDAPI_REPEAT_6(m, d)	STDAPI_REPEAT_5(m, d)	m(5, d)
-#define STDAPI_REPEAT_7(m, d)	STDAPI_REPEAT_6(m, d)	m(6, d)
-#define STDAPI_REPEAT_8(m, d)	STDAPI_REPEAT_7(m, d)	m(7, d)
-#define STDAPI_REPEAT_9(m, d)	STDAPI_REPEAT_8(m, d)	m(8, d)
-#define STDAPI_REPEAT_10(m, d)	STDAPI_REPEAT_9(m, d)	m(9, d)
-#define STDAPI_REPEAT_11(m, d)	STDAPI_REPEAT_10(m, d)	m(10, d)
-#define STDAPI_REPEAT_12(m, d)	STDAPI_REPEAT_11(m, d)	m(11, d)
-#define STDAPI_REPEAT_13(m, d)	STDAPI_REPEAT_12(m, d)	m(12, d)
-#define STDAPI_REPEAT_14(m, d)	STDAPI_REPEAT_13(m, d)	m(13, d)
-#define STDAPI_REPEAT_15(m, d)	STDAPI_REPEAT_14(m, d)	m(14, d)
-#define STDAPI_REPEAT_16(m, d)	STDAPI_REPEAT_15(m, d)	m(15, d)
-#define STDAPI_REPEAT_17(m, d)	STDAPI_REPEAT_16(m, d)	m(16, d)
-#define STDAPI_REPEAT_18(m, d)	STDAPI_REPEAT_17(m, d)	m(17, d)
-#define STDAPI_REPEAT_19(m, d)	STDAPI_REPEAT_18(m, d)	m(18, d)
-#define STDAPI_REPEAT_20(m, d)	STDAPI_REPEAT_19(m, d)	m(19, d)
-#define STDAPI_REPEAT_21(m, d)	STDAPI_REPEAT_20(m, d)	m(20, d)
-#define STDAPI_REPEAT_22(m, d)	STDAPI_REPEAT_21(m, d)	m(21, d)
-#define STDAPI_REPEAT_23(m, d)	STDAPI_REPEAT_22(m, d)	m(22, d)
-#define STDAPI_REPEAT_24(m, d)	STDAPI_REPEAT_23(m, d)	m(23, d)
-#define STDAPI_REPEAT_25(m, d)	STDAPI_REPEAT_24(m, d)	m(24, d)
-#define STDAPI_REPEAT_26(m, d)	STDAPI_REPEAT_25(m, d)	m(25, d)
-#define STDAPI_REPEAT_27(m, d)	STDAPI_REPEAT_26(m, d)	m(26, d)
-#define STDAPI_REPEAT_28(m, d)	STDAPI_REPEAT_27(m, d)	m(27, d)
-#define STDAPI_REPEAT_29(m, d)	STDAPI_REPEAT_28(m, d)	m(28, d)
-#define STDAPI_REPEAT_30(m, d)	STDAPI_REPEAT_29(m, d)	m(29, d)
-#define STDAPI_REPEAT_31(m, d)	STDAPI_REPEAT_30(m, d)	m(30, d)
-#define STDAPI_REPEAT_32(m, d)	STDAPI_REPEAT_31(m, d)	m(31, d)
-#define STDAPI_REPEAT_33(m, d)	STDAPI_REPEAT_32(m, d)	m(32, d)
-#define STDAPI_REPEAT_34(m, d)	STDAPI_REPEAT_33(m, d)	m(33, d)
-#define STDAPI_REPEAT_35(m, d)	STDAPI_REPEAT_34(m, d)	m(34, d)
-#define STDAPI_REPEAT_36(m, d)	STDAPI_REPEAT_35(m, d)	m(35, d)
-#define STDAPI_REPEAT_37(m, d)	STDAPI_REPEAT_36(m, d)	m(36, d)
-#define STDAPI_REPEAT_38(m, d)	STDAPI_REPEAT_37(m, d)	m(37, d)
-#define STDAPI_REPEAT_39(m, d)	STDAPI_REPEAT_38(m, d)	m(38, d)
-#define STDAPI_REPEAT_40(m, d)	STDAPI_REPEAT_39(m, d)	m(39, d)
-#define STDAPI_REPEAT_41(m, d)	STDAPI_REPEAT_40(m, d)	m(40, d)
-#define STDAPI_REPEAT_42(m, d)	STDAPI_REPEAT_41(m, d)	m(41, d)
-#define STDAPI_REPEAT_43(m, d)	STDAPI_REPEAT_42(m, d)	m(42, d)
-#define STDAPI_REPEAT_44(m, d)	STDAPI_REPEAT_43(m, d)	m(43, d)
-#define STDAPI_REPEAT_45(m, d)	STDAPI_REPEAT_44(m, d)	m(44, d)
-#define STDAPI_REPEAT_46(m, d)	STDAPI_REPEAT_45(m, d)	m(45, d)
-#define STDAPI_REPEAT_47(m, d)	STDAPI_REPEAT_46(m, d)	m(46, d)
-#define STDAPI_REPEAT_48(m, d)	STDAPI_REPEAT_47(m, d)	m(47, d)
-#define STDAPI_REPEAT_49(m, d)	STDAPI_REPEAT_48(m, d)	m(48, d)
-#define STDAPI_REPEAT_50(m, d)	STDAPI_REPEAT_49(m, d)	m(49, d)
-#define STDAPI_REPEAT_51(m, d)	STDAPI_REPEAT_50(m, d)	m(50, d)
-#define STDAPI_REPEAT_52(m, d)	STDAPI_REPEAT_51(m, d)	m(51, d)
-#define STDAPI_REPEAT_53(m, d)	STDAPI_REPEAT_52(m, d)	m(52, d)
-#define STDAPI_REPEAT_54(m, d)	STDAPI_REPEAT_53(m, d)	m(53, d)
-#define STDAPI_REPEAT_55(m, d)	STDAPI_REPEAT_54(m, d)	m(54, d)
-#define STDAPI_REPEAT_56(m, d)	STDAPI_REPEAT_55(m, d)	m(55, d)
-#define STDAPI_REPEAT_57(m, d)	STDAPI_REPEAT_56(m, d)	m(56, d)
-#define STDAPI_REPEAT_58(m, d)	STDAPI_REPEAT_57(m, d)	m(57, d)
-#define STDAPI_REPEAT_59(m, d)	STDAPI_REPEAT_58(m, d)	m(58, d)
-#define STDAPI_REPEAT_60(m, d)	STDAPI_REPEAT_59(m, d)	m(59, d)
-#define STDAPI_REPEAT_61(m, d)	STDAPI_REPEAT_60(m, d)	m(60, d)
-#define STDAPI_REPEAT_62(m, d)	STDAPI_REPEAT_61(m, d)	m(61, d)
-#define STDAPI_REPEAT_63(m, d)	STDAPI_REPEAT_62(m, d)	m(62, d)
-#define STDAPI_REPEAT_64(m, d)	STDAPI_REPEAT_63(m, d)	m(63, d)
-
 #ifndef O_NOATIME
 #define O_NOATIME	0
 #endif
@@ -1146,11 +1077,12 @@ struct striless {
 };
 
 // compile time string hashing using Bernstein XOR algorithm for string keys
-#define STRING_HASH_PRE(i, d)	((
-#define STRING_HASH_POST(i, d)	* (size_t)33) ^ (size_t)s[i])
-#define STRING_HASH(i) __forceinline explicit StringHash(const tchar (&s)[i]): \
-    hash(STDAPI_REPEAT(i, STRING_HASH_PRE, ~) 5381 STDAPI_REPEAT(i, \
-	STRING_HASH_POST, ~)) {}
+template<class C>
+constexpr size_t strhash_const(const C *s, size_t len, size_t idx = 0, size_t
+    hash = 5381) {
+    return idx == len ? hash : strhash_const(s, len, idx + 1, ((hash << 5) +
+	hash) ^ (size_t)s[idx]);
+}
 
 class BLISTER StringHash {
 public:
@@ -1161,23 +1093,9 @@ public:
     };
 
     __forceinline StringHash(const DynamicString &ds): hash(stringhash(ds.s)) {}
-
-    STRING_HASH(1) STRING_HASH(2) STRING_HASH(3) STRING_HASH(4)
-    STRING_HASH(5) STRING_HASH(6) STRING_HASH(7) STRING_HASH(8)
-    STRING_HASH(9) STRING_HASH(10) STRING_HASH(11) STRING_HASH(12)
-    STRING_HASH(13) STRING_HASH(14) STRING_HASH(15) STRING_HASH(16)
-    STRING_HASH(17) STRING_HASH(18) STRING_HASH(19) STRING_HASH(20)
-    STRING_HASH(21) STRING_HASH(22) STRING_HASH(23) STRING_HASH(24)
-    STRING_HASH(25) STRING_HASH(26) STRING_HASH(27) STRING_HASH(28)
-    STRING_HASH(29) STRING_HASH(30) STRING_HASH(31) STRING_HASH(32)
-    STRING_HASH(33) STRING_HASH(34) STRING_HASH(35) STRING_HASH(36)
-    STRING_HASH(37) STRING_HASH(38) STRING_HASH(39) STRING_HASH(40)
-    STRING_HASH(41) STRING_HASH(42) STRING_HASH(43) STRING_HASH(44)
-    STRING_HASH(45) STRING_HASH(46) STRING_HASH(47) STRING_HASH(48)
-    STRING_HASH(49) STRING_HASH(50) STRING_HASH(51) STRING_HASH(52)
-    STRING_HASH(53) STRING_HASH(54) STRING_HASH(55) STRING_HASH(56)
-    STRING_HASH(57) STRING_HASH(58) STRING_HASH(59) STRING_HASH(60)
-    STRING_HASH(61) STRING_HASH(62) STRING_HASH(63) STRING_HASH(64)
+    template<size_t N>
+    __forceinline constexpr explicit StringHash(const tchar (&s)[N]):
+	hash(strhash_const(s, N - 1)) {}
 
     __forceinline operator size_t(void) const { return hash; }
 
