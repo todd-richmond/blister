@@ -165,7 +165,7 @@ public:
     template <typename T>
     __forceinline Log &log(const T &val) { return log(tls.get(), val); }
     __forceinline Log &log(const tchar *val) { return log(tls.get(), val); }
-    #pragma warning(disable : 26461)
+#pragma warning(disable: 26461)
     __forceinline Log &log(tchar *val) {
 	return log(tls.get(), (const tchar *)val);
     }
@@ -195,7 +195,7 @@ public:
 	if (l <= lvl) {
 	    Tlsdata &tlsd(*tls);
 
-	    if (!tlsd.suppress) {
+	    if (LIKELY(!tlsd.suppress)) {
 		tlsd.clvl = l;
 		log(tlsd, args...);
 		endlog(tlsd);
@@ -385,14 +385,14 @@ private:
 	}
 	return *this;
     }
-    #pragma warning(disable : 26461)
+#pragma warning(disable: 26461)
     __forceinline Log &log(Tlsdata &tlsd, tchar *val) {
 	return log(tlsd, (const tchar *)val);
     }
     // cppcheck-suppress constParameterReference
     Log &log(Tlsdata &tlsd, Escalator &e);
     __forceinline Log &log(Tlsdata &tlsd, Log::Level l) {
-	if (l <= lvl && !tlsd.suppress)
+	if (l <= lvl && LIKELY(!tlsd.suppress))
 	    tlsd.clvl = l;
 	return *this;
     }

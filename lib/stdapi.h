@@ -28,7 +28,6 @@
 #define __no_sanitize_thread
 #define __no_sanitize_unsigned
 #define __builtin_prefetch(p, i, j)
-#define ALIGN(sz)		__declspec(align(sz))
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
 #define DLL_LOCAL
@@ -52,7 +51,6 @@
 #define __no_sanitize_memory	__no_sanitize("memory")
 #define __no_sanitize_thread	__no_sanitize("thread")
 #define __no_sanitize_unsigned	__no_sanitize("unsigned-integer-overflow")
-#define ALIGN(sz)		__attribute__((aligned(sz)))
 #define DLL_EXPORT		__attribute__((visibility("default")))
 #define DLL_IMPORT		__attribute__((visibility("default")))
 #define DLL_LOCAL		__attribute__((visibility("hidden")))
@@ -82,6 +80,7 @@
 #endif
 #define EXTERNC		extern "C" {
 #define EXTERNC_	}
+#define LAMBDA(m)	[this]() { m(); }
 #else
 #define EXTERNC
 #define EXTERNC_
@@ -723,6 +722,7 @@ EXTERNC_
 
 #define tfprintf	fwprintf
 #define tprintf		fwprintf
+#define tsnprintf	snwprintf
 #define tsprintf	swprintf
 #define tvfprintf	vfwprintf
 #define tvprintf	vfwprintf
@@ -815,6 +815,7 @@ typedef wchar tuchar;
 
 #define tfprintf	fprintf
 #define tprintf		fprintf
+#define tsnprintf	snprintf
 #define tsprintf	sprintf
 #define tvfprintf	vfprintf
 #define tvprintf	vfprintf

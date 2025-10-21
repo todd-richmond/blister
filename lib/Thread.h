@@ -287,7 +287,7 @@ public:
     }
 
 private:
-    atomic_bit lck;
+    alignas(64) atomic_bit lck;
     const uint spins;
 };
 
@@ -321,7 +321,8 @@ public:
     }
 
 private:
-    atomic_uint_fast16_t current, next;
+    alignas(64) atomic_uint_fast16_t current;
+    atomic_uint_fast16_t next;
     const uint yield;
 };
 
@@ -345,7 +346,7 @@ public:
     __forceinline void unlock(void) { LeaveCriticalSection(&cs); }
 
 protected:
-    CRITICAL_SECTION cs;
+    alignas(64) CRITICAL_SECTION cs;
 };
 
 class BLISTER Mutex: nocopy {
@@ -378,7 +379,7 @@ public:
     __forceinline void wunlock(void) { ReleaseSRWLockExclusive(&lck); }
 
 private:
-    SRWLOCK lck;
+    alignas(64) SRWLOCK lck;
 };
 
 class BLISTER Event: nocopy {
@@ -554,7 +555,7 @@ public:
     __forceinline void unlock(void) { (void)pthread_mutex_unlock(&mtx); }
 
 protected:
-    pthread_mutex_t mtx;
+    alignas(64) pthread_mutex_t mtx;
 };
 
 typedef Lock Mutex;
@@ -576,7 +577,7 @@ public:
     __forceinline void wunlock(void) { pthread_rwlock_unlock(&lck); }
 
 private:
-    pthread_rwlock_t lck;
+    alignas(64) pthread_rwlock_t lck;
 };
 
 #ifdef __APPLE__
@@ -934,7 +935,7 @@ public:
 	Waiting(): next(NULL) {}
     };
 
-    Lifo(): head(NULL), sz(0) { (void)unused;}
+    Lifo(): head(NULL), sz(0) {}
     ~Lifo() { close(); }
 
     // Fast-path checks without lock for common case
@@ -1016,11 +1017,9 @@ public:
     }
 
 private:
-    alignas(64) Waiting *head;
     mutable SpinLock lck;
+    Waiting *head;
     atomic_uint_fast16_t sz;
-    char unused[64 - sizeof (Waiting *) - sizeof (SpinLock) -
-	sizeof(atomic_uint_fast16_t)];
 };
 
 // Thread routines

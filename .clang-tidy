@@ -21,6 +21,7 @@ Checks: >
   -bugprone-reserved-identifier,
   -bugprone-nondeterministic-pointer-iteration-order,
   -bugprone-suspicious-string-compare,
+  -bugprone-unsafe-functions,
   -cert-dcl16-c,
   -cert-dcl37-c,
   -cert-dcl50-cpp,

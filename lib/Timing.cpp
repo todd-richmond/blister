@@ -39,28 +39,27 @@ void Timing::add(const TimingKey &key, timing_t diff) {
     };
 
     for (slot = 0; slot < TIMINGSLOTS - 1; slot++) {
-	if (LIKELY(diff <= limits[slot]))
+	if (diff <= limits[slot])
 	    break;
     }
     lck.rlock();
-    if ((it = tmap.find(hash)) == tmap.end()) {
+    it = tmap.find(hash);
+    if (UNLIKELY(it == tmap.end())) {
 	lck.runlock();
 	stats = new Stats(key);
 	lck.wlock();
-	if ((it = tmap.find(hash)) == tmap.end()) {
-	    tmap[key] = stats;
-	    lck.downlock();
-	} else {
-	    lck.downlock();
+	auto result = tmap.try_emplace(hash, stats);
+	lck.downlock();
+	if (!result.second) {
 	    delete stats;
-	    stats = it->second;
+	    stats = result.first->second;
 	}
     } else {
 	stats = it->second;
     }
     stats->cnt.fetch_add(1, memory_order_relaxed);
     stats->cnts[slot].fetch_add(1, memory_order_relaxed);
-    stats->tot.fetch_add(diff, memory_order_relaxed);
+    stats->tot.fetch_add(diff, memory_order_release);
     lck.runlock();
 }
 
@@ -210,11 +209,11 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
     else if (t < 1000000LLU)
 	tsprintf(buf, T("%llu"), t / 1000LLU);
     else if (t < 100000000LLU)
-        tsprintf(buf, T("%.1fk"), (double)t / 1000000.0);
+	tsprintf(buf, T("%.1fk"), (double)t / 1000000.0);
     else if (t < 1000000000LLU)
 	tsprintf(buf, T("%lluk"), t / 1000000LLU);
     else if (t < 100000000000LLU)
-        tsprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
+	tsprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
     else if (t < 1000000000000LLU)
 	tsprintf(buf, T("%llum"), t / 1000000000LLU);
     else

@@ -152,7 +152,7 @@ private:
 	}
 	~Stats() { free((char *)key); }
 
-	atomic_uint_fast32_t cnt;
+	alignas(64) atomic_uint_fast32_t cnt;
 	atomic_uint_fast32_t cnts[TIMINGSLOTS];
 	const tchar *key;
 	atomic_uint_fast64_t tot;
