@@ -796,29 +796,24 @@ public:
 
     __forceinline void downlock(void) { state.store(1, memory_order_release); }
     __forceinline void rlock(void) {
-	uint_fast32_t expected = state.load(memory_order_relaxed);
+	do {
+	    uint_fast32_t expected = state.load(memory_order_relaxed);
 
-	while (true) {
-	    if (UNLIKELY(expected & (WRITE_BIT | UPGRADE_BIT))) {
+	    if (UNLIKELY(expected & WRITE_BIT))
 		THREAD_YIELD();
-		expected = state.load(memory_order_relaxed);
-	    } else {
-		if (LIKELY(state.compare_exchange_weak(expected, expected + 1,
-		    memory_order_acquire, memory_order_relaxed)))
-		    return;
-	    }
-	}
+	    else if (LIKELY(state.compare_exchange_weak(expected, expected + 1,
+		memory_order_acquire, memory_order_relaxed)))
+		return;
+	} while (true);
     }
     __forceinline bool rtrylock(void) {
 	uint_fast32_t expected = state.load(memory_order_relaxed);
 
-	while (true) {
-	    if (UNLIKELY(expected & (WRITE_BIT | UPGRADE_BIT)))
-		return false;
-	    if (LIKELY(state.compare_exchange_weak(expected, expected + 1,
-		memory_order_acquire, memory_order_relaxed)))
-		return true;
-	}
+	if (UNLIKELY(expected & WRITE_BIT))
+	    return false;
+	else if (LIKELY(state.compare_exchange_weak(expected, expected + 1,
+	    memory_order_acquire, memory_order_relaxed)))
+	    return true;
     }
     __forceinline void runlock(void) {
 	state.fetch_sub(1, memory_order_release);
@@ -849,7 +844,6 @@ public:
 private:
     atomic_uint_fast32_t state;
 
-    static constexpr uint_fast32_t UPGRADE_BIT = 1U << 30;
     static constexpr uint_fast32_t WRITE_BIT = 1U << 31;
 };
 
