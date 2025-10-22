@@ -307,10 +307,11 @@ public:
 
 	while ((pos = ticket - (uint)current.load(memory_order_acquire)) != 0) {
 #ifdef THREAD_PAUSE
-	    if (LIKELY(pos < yield))
+	    if (LIKELY(pos < yield)) {
 		THREAD_PAUSE();
-	    else
+	    } else {
 		THREAD_YIELD();
+	    }
 #else
 	    THREAD_YIELD();
 #endif

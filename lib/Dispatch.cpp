@@ -537,17 +537,16 @@ int Dispatcher::onStart() {
 	    nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, &ts);
 	}
 #endif
-#ifndef DSP_POLL
-	cache = now = mticks();
 	polling.store(false, memory_order_release);
+	cache = now = mticks();
+#ifndef DSP_POLL
 	if (LIKELY(nevts != -1))
 	    handleEvents(evts, (uint)nevts);
 #endif
     }
     cleanup();
 #ifdef DSP_EPOLL
-    if (wfd != -1)
-	close(wfd);
+    close(wfd);
 #endif
 #ifndef DSP_POLL
     close(evtfd);
