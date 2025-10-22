@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2023 Todd Richmond
+ * Copyright 2001-2026 Todd Richmond
  *
  * This file is part of Blister - a light weight, scalable, high performance
  * C++ server framework.
