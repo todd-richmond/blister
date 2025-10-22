@@ -143,27 +143,33 @@ int Dispatcher::run() {
     olock.lock();
     while (exec()) {
 	bool b;
-#ifdef THREAD_PAUSE
 	// park threads in loop while more events are added
 	if (!polling.load(memory_order_relaxed)) {
 	    uint spins;
+#ifdef THREAD_PAUSE
 	    static constexpr uint SPIN_COUNT = 120;
+#else
+	    static constexpr uint SPIN_COUNT = 4;
+#endif
 
 	    olock.unlock();
 	    spins = 0;
 	    while (!rlist && ++spins != SPIN_COUNT &&
 		!polling.load(memory_order_relaxed)) {
+#ifdef THREAD_PAUSE
 		if (UNLIKELY((spins & 0x3F) == 0x20)) {
 		    THREAD_YIELD();
 		} else {
 		    THREAD_PAUSE();
 		}
+#else
+		THREAD_YIELD();
+#endif
 	    }
 	    olock.lock();
 	    if (rlist)
 		continue;
 	}
-#endif
 	scanning.fetch_sub(1, memory_order_relaxed);
 	olock.unlock();
 	b = lifo.wait(waiting, workers > cpus ? INFINITE : MAX_WAIT_TIME);
@@ -407,8 +413,6 @@ int Dispatcher::onStart() {
 	    exec();
 	    olock.unlock();
 	}
-	if (shutdown)
-	    break;
 	cache = 0;
 #ifdef DSP_POLL
 	DispatchSocket *ds = NULL;
