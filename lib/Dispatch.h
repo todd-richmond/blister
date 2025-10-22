@@ -432,7 +432,7 @@ private:
 #endif
 #endif
     Lifo lifo;
-#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL)
+#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
     SpinLock slock;
     socketmap smap;
 #endif

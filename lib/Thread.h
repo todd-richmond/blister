@@ -340,6 +340,8 @@ public:
     Lock() { InitializeCriticalSection(&cs); }
     ~Lock() { DeleteCriticalSection(&cs); }
 
+    __forceinline operator CRITICAL_SECTION *(void) { return &cs; }
+
     __forceinline void lock(void) { EnterCriticalSection(&cs); }
     __forceinline void spin(uint cnt) { SetCriticalSectionSpinCount(&cs, cnt); }
     __forceinline bool trylock(void) {
@@ -485,8 +487,7 @@ public:
 	    WakeConditionVariable(&cv);
     }
     __forceinline bool wait(ulong msec = INFINITE) {
-	return SleepConditionVariableCS(&cv, &lck.cs, msec)
-	    != 0;
+	return SleepConditionVariableCS(&cv, lck, msec) != 0;
     }
 
 private:
@@ -799,11 +800,12 @@ public:
 	do {
 	    uint_fast32_t expected = state.load(memory_order_relaxed);
 
-	    if (UNLIKELY(expected & WRITE_BIT))
+	    if (UNLIKELY(expected & WRITE_BIT)) {
 		THREAD_YIELD();
-	    else if (LIKELY(state.compare_exchange_weak(expected, expected + 1,
-		memory_order_acquire, memory_order_relaxed)))
+	    } else if (LIKELY(state.compare_exchange_weak(expected, expected +
+		1, memory_order_acquire, memory_order_relaxed))) {
 		return;
+	    }
 	} while (true);
     }
     __forceinline bool rtrylock(void) {

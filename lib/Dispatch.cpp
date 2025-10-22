@@ -308,15 +308,16 @@ int Dispatcher::onStart() {
 
 int Dispatcher::onStart() {
     msec_t now;
+#ifndef _WIN32
     sigset_t sigs;
-    socketmap::const_iterator sit;
 
     sigemptyset(&sigs);
     sigaddset(&sigs, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &sigs, NULL);
+#endif
 #ifdef DSP_POLL
-    Socket asock(SOCK_STREAM);
     Sockaddr addr(T("localhost"));
+    Socket asock(SOCK_STREAM);
     SocketSet irset, iwset, orset, owset, oeset;
     uint u = 0;
 
@@ -409,6 +410,7 @@ int Dispatcher::onStart() {
 #ifdef DSP_POLL
 	DispatchSocket *ds = NULL;
 	socket_t fd;
+	socketmap::const_iterator sit;
 
 	slock.lock();
 	irset = rset;
@@ -923,7 +925,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	ds.mapped = true;
 #ifdef DSP_EPOLL
 	op = EPOLL_CTL_ADD;
-#elif defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL)
+#elif defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
 	slock.lock();
 	smap[ds.fd()] = &ds;
 	slock.unlock();
