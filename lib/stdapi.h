@@ -955,14 +955,28 @@ template<class C>
 inline size_t __no_sanitize_unsigned stringhash(const C *s) {
     size_t ret = 5381;
 
+    while (s[0] && s[1] && s[2] && s[3]) {
+	ret = ((ret << 5) + ret) ^ (size_t)s[0];
+	ret = ((ret << 5) + ret) ^ (size_t)s[1];
+	ret = ((ret << 5) + ret) ^ (size_t)s[2];
+	ret = ((ret << 5) + ret) ^ (size_t)s[3];
+	s += 4;
+    }
     while (*s)
-	ret = ((ret << 5) + ret) ^ (size_t)*s++;	// faster than * 33
+	ret = ((ret << 5) + ret) ^ (size_t)*s++;
     return ret;
 }
 
 inline size_t __no_sanitize_unsigned stringihash(const char *s) {
     size_t ret = 5381;
 
+    while (s[0] && s[1] && s[2] && s[3]) {
+	ret = ((ret << 5) + ret) ^ (size_t)toupper(s[0]);
+	ret = ((ret << 5) + ret) ^ (size_t)toupper(s[1]);
+	ret = ((ret << 5) + ret) ^ (size_t)toupper(s[2]);
+	ret = ((ret << 5) + ret) ^ (size_t)toupper(s[3]);
+	s += 4;
+    }
     while (*s)
 	ret = ((ret << 5) + ret) ^ (size_t)toupper(*s++);
     return ret;
@@ -971,6 +985,13 @@ inline size_t __no_sanitize_unsigned stringihash(const char *s) {
 inline size_t __no_sanitize_unsigned stringihash(const wchar *s) {
     size_t ret = 5381;
 
+    while (s[0] && s[1] && s[2] && s[3]) {
+	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)s[0]);
+	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)s[1]);
+	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)s[2]);
+	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)s[3]);
+	s += 4;
+    }
     while (*s)
 	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)*s++);
     return ret;
