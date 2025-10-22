@@ -116,17 +116,16 @@ usec_t uticks(void) {
 
 static uint rename_lock(const wchar *path) {
     uint hash = 0;
-    static volatile int init;
+    static volatile bool init;
 
     if (!init) {
-	static volatile int init1;
+	static volatile bool init1;
 
 	if (init1) {
-            // cppcheck-suppress knownConditionTrueFalse
 	    while (!init)
 		usleep(1);
 	} else {
-	    init1 = TRUE;
+	    init1 = true;
 	    if ((lockhdl = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL,
 		PAGE_READWRITE, 0, HASH_SIZE * sizeof (long),
 		"rename_locks")) != NULL) {
@@ -137,7 +136,7 @@ static uint rename_lock(const wchar *path) {
 		    atexit(stdapi_cleanup);
 		}
 	    }
-	    init = TRUE;
+	    init = true;
 	}
     }
     while (*path) {
@@ -151,29 +150,6 @@ static uint rename_lock(const wchar *path) {
     }
     return hash;
 }
-
-#if _MSC_VER < 1500
-void *bsearch(const void *key, const void *base, size_t nmemb, size_t size,
-    int (*cfunc)(const void *, const void *)) {
-    const char *cbase = (const char *)base;
-    size_t lim;
-    const char *p;
-
-    for (lim = nmemb; lim != 0; lim >>= 1) {
-        int cmp;
-
-	p = cbase + (lim >> 1) * size;
-	cmp = (*cfunc)(key, p);
-	if (cmp == 0)
-	    return (void *)p;
-        else if (cmp > 0) {
-	    cbase = p + size;
-	    lim--;
-	}
-    }
-    return NULL;
-}
-#endif
 
 int close(int fd) {
     if (fd == -1)
@@ -517,7 +493,8 @@ void seekdir(DIR *dirp, long pos) {
 	pos -= dirp->dir.d_off;
     }
     while (pos--)
-	(void)readdir(dirp);
+	if (readdir(dirp))
+	    break;
 }
 
 void wseekdir(WDIR *dirp, long pos) {

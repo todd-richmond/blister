@@ -44,7 +44,7 @@ bool Service::exiting;
 bool Service::restart;
 tstring Service::srvcpath;
 Service *Service::service;
-volatile pid_t Service::sigpid, Service::watchpid;
+atomic<pid_t> Service::sigpid, Service::watchpid;
 tstring Service::ver(T(__DATE__) T(" ") T(__TIME__));
 
 void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
@@ -1217,7 +1217,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	return 1;
     }
 #endif
-    av = new const tchar *[(uint)(argc + 1)];
+    av = new const tchar *[(uint)argc + 1U];
     path = argv[0];
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];

@@ -136,6 +136,7 @@ typedef __int64 _ino_t;	// -V677
 #define __STDC__ 1
 #include <direct.h>
 #include <io.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #undef __STDC__
@@ -164,20 +165,6 @@ typedef __int64 _ino_t;	// -V677
 
 #ifndef __cplusplus
 #define inline		__inline
-#endif
-
-#if _MSC_VER < 1600
-#define EADDRNOTAVAIL   WSAEADDRNOTAVAIL
-#define EADDRINUSE	WSAEADDRINUSE
-#define ECONNABORTED	WSAECONNABORTED
-#define ECONNREFUSED	WSAECONNREFUSED
-#define ECONNRESET	WSAECONNRESET
-#define EINPROGRESS	WSAEINPROGRESS
-#define	ENOBUFS		WSAENOBUFS
-#define ENOTCONN	WSAENOTCONN
-#define ENOSR		ENOBUFS
-#define ETIMEDOUT	WSAETIMEDOUT
-#define EWOULDBLOCK	WSAEWOULDBLOCK
 #endif
 
 #define O_COMPRESSED	0x010000
@@ -443,6 +430,7 @@ EXTERNC_
 
 #include <unistd.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -450,7 +438,6 @@ EXTERNC_
 #include <strings.h>
 #include <sys/time.h>
 #include <sys/uio.h>
-
 #define __cdecl
 #define __declspec(x)
 #ifndef __fastcall

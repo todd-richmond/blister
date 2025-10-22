@@ -109,10 +109,10 @@ protected:
     static bool exiting;
     static bool restart;
     static Service *service;
-    static volatile pid_t sigpid;
+    static atomic< pid_t> sigpid;
     static tstring srvcpath;
     static tstring ver;
-    static volatile pid_t watchpid;
+    static atomic<pid_t> watchpid;
 
     void *open(uint mapsz);
     void exit(int code);
@@ -188,7 +188,7 @@ public:
 	PERF_DETAIL_NOVICE);
 
 private:
-    volatile int count;
+    atomic_int count;
     uint counter;
     char *data;
     uint ctrs, datasz, mapsz;
@@ -209,7 +209,7 @@ public:
 	false);
     virtual ~Daemon();
 
-    volatile Quit qflag;
+    atomic<Quit> qflag;
 
     Config &config(void) { return cfg; }
 

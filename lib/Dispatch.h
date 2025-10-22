@@ -126,7 +126,7 @@ private:
 
     Group *group;
 
-    DispatchObj &operator =(const DispatchObj &obj);
+    DispatchObj &operator =(const DispatchObj &obj) = delete;
     friend class Dispatcher;
     friend class ObjectList<DispatchObj>;
 };

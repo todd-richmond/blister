@@ -35,7 +35,7 @@
 
 typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
-static volatile bool qflag = false, rflag = false;
+static atomic_bool qflag = false, rflag = false;
 
 class HTTPLoad: public Thread {
 public:
@@ -96,7 +96,7 @@ private:
     static ulong muser;
     static uint mthread;
     static uint to;
-    static volatile long remain;
+    static atomic_long remain;
     static uint threads;
     static attrmap hdrs, vars;
     static uint bodycnt;
@@ -127,7 +127,7 @@ uint HTTPLoad::threads;
 ulong HTTPLoad::muser;
 uint HTTPLoad::mthread;
 bool HTTPLoad::dbg, HTTPLoad::ka, HTTPLoad::ruser;
-volatile long HTTPLoad::remain;
+atomic_long HTTPLoad::remain;
 uint HTTPLoad::to;
 attrmap HTTPLoad::hdrs;
 attrmap HTTPLoad::vars;

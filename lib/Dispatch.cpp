@@ -420,8 +420,8 @@ int Dispatcher::onStart() {
 	    orset.clear();
 	    owset.clear();
 	}
-	cache = now = mticks();
 	polling.store(false, memory_order_release);
+	cache = now = mticks();
 	for (u = 0; u < orset.size(); u++) {
 	    fd = orset[u];
 	    if (fd == rsock) {
@@ -537,9 +537,9 @@ int Dispatcher::onStart() {
 	    nevts = kevent(evtfd, NULL, 0, evts, MAX_EVENTS, &ts);
 	}
 #endif
+#ifndef DSP_POLL
 	polling.store(false, memory_order_release);
 	cache = now = mticks();
-#ifndef DSP_POLL
 	if (LIKELY(nevts != -1))
 	    handleEvents(evts, (uint)nevts);
 #endif

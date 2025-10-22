@@ -36,7 +36,7 @@
 typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
 
 static const tchar *default_host = T("localhost:25");
-static volatile bool qflag = false, rflag = false;
+static atomic_bool qflag = false, rflag = false;
 
 class SMTPLoad: public Thread {
 public:
@@ -98,7 +98,7 @@ private:
     static ulong muser;
     static uint mthread;
     static uint to;
-    static volatile long remain;
+    static atomic_long remain;
     static uint threads;
     static attrmap vars;
     static uint bodycnt;
@@ -129,7 +129,7 @@ uint SMTPLoad::threads;
 ulong SMTPLoad::muser;
 uint SMTPLoad::mthread;
 bool SMTPLoad::ruser;
-volatile long SMTPLoad::remain;
+atomic_long SMTPLoad::remain;
 uint SMTPLoad::to;
 attrmap SMTPLoad::vars;
 uint SMTPLoad::bodycnt;

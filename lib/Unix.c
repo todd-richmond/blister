@@ -56,7 +56,7 @@ int clock_gettime(int id, struct timespec *ts) {
 
 msec_t mticks(void) {
 #if defined(__APPLE__)
-    static volatile atomic_flag lck = ATOMIC_FLAG_INIT;
+    static atomic_flag lck = ATOMIC_FLAG_INIT;
     static struct mach_timebase_info mti;
 
     if (UNLIKELY(!mti.denom)) {
@@ -81,7 +81,7 @@ msec_t mticks(void) {
 
 usec_t __no_sanitize("thread") uticks(void) {
 #if defined(__APPLE__)
-    static volatile atomic_flag lck = ATOMIC_FLAG_INIT;
+    static atomic_flag lck = ATOMIC_FLAG_INIT;
     static struct mach_timebase_info mti;
 
     if (UNLIKELY(!mti.denom)) {

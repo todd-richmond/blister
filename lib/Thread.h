@@ -812,9 +812,8 @@ public:
     __forceinline bool rtrylock(void) {
 	uint_fast32_t expected = state.load(memory_order_relaxed);
 
-	return expected & WRITE_BIT &&
-	    state.compare_exchange_weak(expected, expected + 1,
-	    memory_order_acquire, memory_order_relaxed);
+	return expected & WRITE_BIT && state.compare_exchange_weak(expected,
+	    expected + 1, memory_order_acquire, memory_order_relaxed);
     }
     __forceinline void runlock(void) {
 	state.fetch_sub(1, memory_order_release);
@@ -1036,7 +1035,7 @@ private:
     thread_id_t id;
     ThreadRoutine main;
     int retval;
-    volatile ThreadState state;
+    atomic<ThreadState> state;
     static ThreadLocal<ThreadLocalMap *> flocal;
 
     void clear(void);
@@ -1091,7 +1090,7 @@ private:
     Condvar cv;
     bool autoterm;
     thread_id_t id;
-    volatile ThreadState state;
+    atomic<ThreadState> state;
     set<Thread *> threads;
     Thread master;
     static Lock grouplck;

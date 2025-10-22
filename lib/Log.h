@@ -263,7 +263,7 @@ private:
 
     private:
 	Log &l;
-	volatile bool qflag;
+	atomic_bool qflag;
 
 	int onStart(void);
     };
