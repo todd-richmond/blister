@@ -93,38 +93,41 @@ Dispatcher::Dispatcher(const Config &config): cfg(config),
 WARN_DISABLE(26430)
 bool Dispatcher::exec() {
     while (rlist && !shutdown) {
+	uint_fast32_t flags;
 	DispatchObj::Group *group;
 	DispatchObj *obj = rlist.pop_front();
 
 	if (UNLIKELY(!obj)) {
-	} else if (UNLIKELY(obj->flags & DSP_Freed)) {
+	} else if (UNLIKELY((flags = obj->flags) & DSP_Freed)) {
 	    olock.unlock();
 	    delete obj;
 	    olock.lock();
 	} else if (UNLIKELY((group = obj->group)->active)) {
-	    obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
+	    obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
 	    group->glist.push_back(*obj);
 	} else {
 	    group->active = true;
-	    obj->flags = (obj->flags & ~DSP_Ready) | DSP_Active;
+	    obj->flags = (flags & ~DSP_Ready) | DSP_Active;
 	    olock.unlock();
 	    scanning.fetch_sub(1, memory_order_release);
 	    obj->dcb(obj);
 	    scanning.fetch_add(1, memory_order_acquire);
 	    olock.lock();
 	    group->active = false;
-	    obj->flags &= ~DSP_Active;
-	    if (UNLIKELY(obj->flags & DSP_Freed))
-		rlist.push_front(*obj);
+	    flags = obj->flags &= ~DSP_Active;
 	    if (UNLIKELY(group->glist)) {
-		if (obj->flags & DSP_Ready) {
-		    obj->flags = (obj->flags & ~DSP_Ready) | DSP_ReadyGroup;
+		if (UNLIKELY(flags & DSP_Freed)) {
+		    rlist.push_front(*obj);
+		} else if (flags & DSP_Ready) {
+		    obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
 		    group->glist.push_back(*obj);
 		}
 		obj = group->glist.pop_front();
 		obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
 		rlist.push_back(*obj);
-	    } else if (obj->flags & DSP_Ready) {
+	    } else if (UNLIKELY(flags & DSP_Freed)) {
+		rlist.push_front(*obj);
+	    } else if (flags & DSP_Ready) {
 		rlist.push_back(*obj);
 	    }
 	}
