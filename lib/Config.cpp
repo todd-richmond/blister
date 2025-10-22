@@ -232,36 +232,42 @@ const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
 const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     size_t vlen) {
     KV *kv = (KV *)new char[offsetof(KV, val) + klen + vlen + 2];
+    tchar quote = '\0';
 
-    if (UNLIKELY(vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen -
-	1] == val[0])) {
-	kv->quote = val[0];
-	++val;
-	vlen -= 2;
-    } else {
-	kv->quote = '\0';
+    if (UNLIKELY(vlen > 1 && (val[0] == '"' || val[0] == '\''))) {
+	if (val[vlen - 1] == val[0]) {
+	    quote = val[0];
+	    ++val;
+	    vlen -= 2;
+	}
     }
+    kv->quote = quote;
     memcpy(kv->val, val, vlen * sizeof (tchar));
     kv->val[vlen] = '\0';
-    kv->key = (const tchar *)memcpy(kv->val + vlen + 1, key, klen * sizeof
-	(tchar));
-    ((tchar *)kv->key)[klen] = '\0';
+    kv->key = (tchar *)memcpy(kv->val + vlen + 1, key, klen * sizeof (tchar));
+    kv->key[klen] = '\0';
     kv->expand = false;
-    if (LIKELY(vlen > 3 && kv->quote != '\'')) {
-	const tchar *p = kv->val;
-
+    if (LIKELY(vlen > 3 && quote != '\'')) {
 #ifdef _UNICODE
-	while ((p = tstrchr(p, '$')) != NULL) {
+	const tchar *p = tstrchr(kv->val, '$');
 #else
-	while ((p = (const tchar *)memchr(p, '$', vlen - (size_t)(p -
-	    kv->val))) != NULL) {
+	const tchar *p = (const tchar *)memchr(kv->val, '$', vlen);
 #endif
+	while (p != NULL) {
 	    ++p;
-	    if ((*p == '{' || *p == '(') && tstrchr(p, *p == '(' ? ')' : '}') !=
-		NULL) {
-		kv->expand = true;
-		break;
+	    if (*p == '{' || *p == '(') {
+		tchar close = *p == '(' ? ')' : '}';
+		if (tstrchr(p, close) != NULL) {
+		    kv->expand = true;
+		    break;
+		}
 	    }
+#ifdef _UNICODE
+	    p = tstrchr(p, '$');
+#else
+	    size_t remaining = vlen - (size_t)(p - kv->val);
+	    p = (const tchar *)memchr(p, '$', remaining);
+#endif
 	}
     }
 #pragma warning(disable: 26402)

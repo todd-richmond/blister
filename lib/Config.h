@@ -185,7 +185,7 @@ public:
 
 private:
     struct BLISTER KV {
-	const tchar *key;
+	tchar *key;
 	bool expand;
 	tchar quote;
 	tchar val[];
