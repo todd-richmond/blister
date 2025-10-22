@@ -98,111 +98,104 @@ const tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
     const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
-    static tstring empty;
 
-    if (UNLIKELY(!kv)) {
-	return def ? def : empty;
-    } else if (UNLIKELY(kv->expand)) {
+    if (LIKELY(kv)) {
+	if (LIKELY(!kv->expand))
+	    return kv->val;
 	tstring s;
-
-	return expandkv(kv, s) ? std::move(s) : def ? def : empty;
-    } else {
-	return kv->val;
+	if (expandkv(kv, s))
+	    return s;
     }
+    return def ? tstring(def) : tstring();
 }
 
 bool Config::get(const tchar *key, bool def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
-    tchar c;
 
-    if (UNLIKELY(!kv)) {
-	return def;
-    } else if (UNLIKELY(kv->expand)) {
-	tstring s;
-
-	if (!expandkv(kv, s))
-	    return def;
-	c = (tchar)totlower(s[0]);
-    } else {
-	c = (tchar)totlower(kv->val[0]);
+    if (LIKELY(kv)) {
+	tchar c;
+	if (LIKELY(!kv->expand)) {
+	    c = (tchar)totlower(kv->val[0]);
+	} else {
+	    tstring s;
+	    if (!expandkv(kv, s))
+		return def;
+	    c = (tchar)totlower(s[0]);
+	}
+	return c == 't' || c == 'y' || c == '1';
     }
-    return c == 't' || c == 'y' || c == '1';
+    return def;
 }
 
 long Config::get(const tchar *key, long def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (UNLIKELY(!kv)) {
-	return def;
-    } else if (UNLIKELY(kv->expand)) {
+    if (LIKELY(kv)) {
+	if (LIKELY(!kv->expand))
+	    return tstrtol(kv->val, NULL, 10);
 	tstring s;
-
-	return expandkv(kv, s) ? stol(s) : def;
-    } else {
-	return tstrtol(kv->val, NULL, 10);
+	if (expandkv(kv, s))
+	    return stol(s);
     }
+    return def;
 }
 
 llong Config::get(const tchar *key, llong def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (UNLIKELY(!kv)) {
-	return def;
-    } else if (UNLIKELY(kv->expand)) {
+    if (LIKELY(kv)) {
+	if (LIKELY(!kv->expand))
+	    return tstrtoll(kv->val, NULL, 10);
 	tstring s;
-
-	return expandkv(kv, s) ? stoll(s) : def;
-    } else {
-	return tstrtoll(kv->val, NULL, 10);
+	if (expandkv(kv, s))
+	    return stoll(s);
     }
+    return def;
 }
 
 ulong Config::get(const tchar *key, ulong def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (UNLIKELY(!kv)) {
-	return def;
-    } else if (UNLIKELY(kv->expand)) {
+    if (LIKELY(kv)) {
+	if (LIKELY(!kv->expand))
+	    return tstrtoul(kv->val, NULL, 10);
 	tstring s;
-
-	return expandkv(kv, s) ? stoul(s) : def;
-    } else {
-	return tstrtoul(kv->val, NULL, 10);
+	if (expandkv(kv, s))
+	    return stoul(s);
     }
+    return def;
 }
 
 ullong Config::get(const tchar *key, ullong def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (UNLIKELY(!kv)) {
-	return def;
-    } else if (UNLIKELY(kv->expand)) {
+    if (LIKELY(kv)) {
+	if (LIKELY(!kv->expand))
+	    return tstrtoull(kv->val, NULL, 10);
 	tstring s;
-
-	return expandkv(kv, s) ? stoull(s) : def;
-    } else {
-	return tstrtoull(kv->val, NULL, 10);
+	if (expandkv(kv, s))
+	    return stoull(s);
     }
+    return def;
 }
 
 double Config::get(const tchar *key, double def, const tchar *sect) const {
     RLocker lkr(lck, !THREAD_ISSELF(locker));
     const KV *kv = getkv(key, sect);
 
-    if (UNLIKELY(!kv)) {
-	return def;
-    } else if (UNLIKELY(kv->expand)) {
+    if (LIKELY(kv)) {
+	if (LIKELY(!kv->expand))
+	    return tstrtod(kv->val, NULL);
 	tstring s;
-
-	return expandkv(kv, s) ? stod(s) : def;
-    } else {
-	return tstrtod(kv->val, NULL);
+	if (expandkv(kv, s))
+	    return stod(s);
     }
+    return def;
 }
 
 const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
@@ -211,18 +204,21 @@ const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
     if (sect && *sect) {
 	size_t klen = tstrlen(key);
 	size_t slen = tstrlen(sect);
+	size_t total = slen + 1 + klen;
 
-	if (klen + slen + 2 < KEYSZ) {
+	if (LIKELY(total + 1 < KEYSZ)) {
 	    tchar buf[KEYSZ];
+	    tchar *p = buf;
 
-	    memcpy(buf, sect, slen * sizeof (tchar));
-	    buf[slen] = (tchar)'.';
-	    memcpy(buf + slen + 1, key, (klen + 1) * sizeof (tchar));
+	    memcpy(p, sect, slen * sizeof (tchar));
+	    p += slen;
+	    *p++ = (tchar)'.';
+	    memcpy(p, key, (klen + 1) * sizeof (tchar));
 	    it = amap.find(buf);
 	} else {
 	    tstring s;
 
-	    s.reserve(slen + 1 + klen);
+	    s.reserve(total);
 	    s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
 	    it = amap.find(s.c_str());
 	}
@@ -281,16 +277,21 @@ bool Config::parse(tistream &is) {
     if (!is)
 	return false;
     while (getline(is, line)) {
-	while (!line.empty() && istspace(line.back()))
-	    line.erase(line.size() - 1);
-	if (line.empty())
+	size_t len = line.size();
+
+	while (len > 0 && istspace(line[len - 1]))
+	    --len;
+	if (len == 0)
 	    continue;
+	line.resize(len);
 	while (line.back() == '\\') {
 	    tstring s;
 
-	    line.erase(line.size() - 1);
-	    while (!line.empty() && istspace(line.back()))
-		line.erase(line.size() - 1);
+	    line.pop_back();
+	    len = line.size();
+	    while (len > 0 && istspace(line[len - 1]))
+		--len;
+	    line.resize(len);
 	    if (getline(is, s)) {
 		tstring_view sv(s);
 
@@ -299,11 +300,12 @@ bool Config::parse(tistream &is) {
 		    line += sv.front() == ';' || sv.front() == '#' ? "\\" : s;
 	    }
 	}
-	key = line;
-	while (UNLIKELY(!key.empty() && istspace(key.back())))
-	    key.remove_suffix(1);
-	if (UNLIKELY(key.empty()))
+	len = line.size();
+	while (UNLIKELY(len > 0 && istspace(line[len - 1])))
+	    --len;
+	if (UNLIKELY(len == 0))
 	    continue;
+	key = tstring_view(line.data(), len);
 	switch (key.front()) {
 	case ';':
 	case '=':
@@ -344,24 +346,32 @@ bool Config::parse(tistream &is) {
 	    app = false;
 	    pos = key.find('=');
 	    if (UNLIKELY(pos == key.npos)) {
-		val = "";
+		val = tstring_view();
 	    } else {
-		val = key;
-		val.remove_prefix(pos + 1);
-		trim(val);
-		if (UNLIKELY(key[pos - 1] == '+')) {
+		const tchar *kstart, *kend, *vstart, *vend;
+
+		if (UNLIKELY(pos > 0 && key[pos - 1] == '+')) {
 		    app = true;
-		    key.remove_suffix(key.size() - pos + 1);
-		} else {
-		    key.remove_suffix(key.size() - pos);
+		    --pos;
 		}
-		trim(key);
+		kstart = key.data();
+		kend = kstart + pos;
+		while (kend > kstart && istspace(kend[-1]))
+		    --kend;
+		vstart = key.data() + (app ? pos + 2 : pos + 1);
+		vend = key.data() + key.size();
+		while (vstart < vend && istspace(*vstart))
+		    ++vstart;
+		while (vend > vstart && istspace(vend[-1]))
+		    --vend;
+		key = tstring_view(kstart, (size_t)(kend - kstart));
+		val = tstring_view(vstart, (size_t)(vend - vstart));
 	    }
-	    if (UNLIKELY(key[0] == '*' && key[1] == '.')) {
+	    if (UNLIKELY(key.size() > 1 && key[0] == '*' && key[1] == '.')) {
 		key.remove_prefix(2);
 	    } else if (!pre.empty()) {
-		if (key.compare(0, pre.size(), pre) == 0 &&
-		    key.size() > pre.size() + 1 && key[pre.size()] == '.')
+		if (key.size() > pre.size() + 1 && key[pre.size()] == '.' &&
+		    key.compare(0, pre.size(), pre) == 0)
 		    key.remove_prefix(pre.size() + 1);
 		else if (key.find('.') != key.npos)
 		    continue;
@@ -461,10 +471,17 @@ Config &Config::setv(const tchar *key1, const tchar *val1, ...) {
 }
 
 void Config::trim(tstring_view &s) {
-    while (UNLIKELY(!s.empty() && istspace(s.back())))
-	s.remove_suffix(1);
-    while (UNLIKELY(!s.empty() && istspace(s.front())))
-	s.remove_prefix(1);
+    const tchar *start, *end;
+
+    if (UNLIKELY(s.empty()))
+	return;
+    start = s.data();
+    end = start + s.size();
+    while (end > start && istspace(end[-1]))
+	--end;
+    while (start < end && istspace(*start))
+	++start;
+    s = tstring_view(start, (size_t)(end - start));
 }
 
 bool Config::write(tostream &os, bool inistyle) const {
