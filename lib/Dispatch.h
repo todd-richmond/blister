@@ -31,6 +31,15 @@
  * select() is faster on Windows for normal fd set sizes
 #define DSP_WIN32_ASYNC
  */
+#define DSP_POLL
+#elif defined(__linux__)
+#define DSP_EPOLL
+#elif defined(BSD_BASE)
+#define DSP_KQUEUE
+#elif defined(__sun__)
+#define DSP_DEVPOLL
+#else
+#define DSP_POLL
 #endif
 
 #define DSP_DECLARE(cls, func) \
@@ -98,7 +107,7 @@ public:
 protected:
     void callback(DispatchObjCB cb) { if (cb) dcb = cb; }
 
-    DispatchObjCB dcb;
+    alignas(64) DispatchObjCB dcb;
     Dispatcher &dspr;
     uint_fast32_t flags;
     DispatchMsg msg;
@@ -395,32 +404,38 @@ private:
     bool exec(void);
     void handleEvents(const void *evts, uint cnt);
     void handleTimers(msec_t now);
+    void reset(void);
     int run(void);
     void wakeup(ulong msec);
     static int worker(void *param);
 
-    alignas(64) msec_t cache, due;
-    ObjectList<DispatchObj> rlist;
+    SpinLock olock;
     uint maxthreads;
-    SpinLock olock, tlock;
+    ObjectList<DispatchObj> rlist;
     atomic_bool polling, shutdown;
     atomic_uint_fast16_t scanning, workers;
+    SpinLock tlock;
+    msec_t cache, due;
     TimerSet timers;
 #ifdef DSP_WIN32_ASYNC
     atomic_ulong interval;
     HWND wnd;
     static uint socketmsg;
     static const int DSP_TimerID = 1;
-#else
-    int evtfd, wfd;
+#elif defined(DSP_POLL)
     SocketSet rset, wset;
     Socket rsock, wsock;
-
-    void reset(void);
+#else
+    int evtfd;
+#ifdef DSP_EPOLL
+    int wfd;
+#endif
 #endif
     Lifo lifo;
+#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL)
     SpinLock slock;
     socketmap smap;
+#endif
     uint stacksz;
 };
 

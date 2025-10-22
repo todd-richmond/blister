@@ -809,11 +809,9 @@ public:
     __forceinline bool rtrylock(void) {
 	uint_fast32_t expected = state.load(memory_order_relaxed);
 
-	if (UNLIKELY(expected & WRITE_BIT))
-	    return false;
-	else if (LIKELY(state.compare_exchange_weak(expected, expected + 1,
-	    memory_order_acquire, memory_order_relaxed)))
-	    return true;
+	return expected & WRITE_BIT &&
+	    state.compare_exchange_weak(expected, expected + 1,
+	    memory_order_acquire, memory_order_relaxed);
     }
     __forceinline void runlock(void) {
 	state.fetch_sub(1, memory_order_release);
