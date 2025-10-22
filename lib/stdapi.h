@@ -75,8 +75,10 @@
 #define CPLUSPLUS	17
 #elif __cplusplus <= 202002L
 #define CPLUSPLUS	20
-#else
+#elif __cplusplus <= 202302L
 #define CPLUSPLUS	23
+#else
+#define CPLUSPLUS	26
 #endif
 #define EXTERNC		extern "C" {
 #define EXTERNC_	}
@@ -1201,7 +1203,7 @@ public:
     __forceinline C *pop_front(void) {
 	C *obj = front;
 
-	if ((front = front->next) == NULL)
+	if ((front = obj->next) == NULL)
 	    back = NULL;
 	else
 	    obj->next = NULL;
@@ -1215,16 +1217,16 @@ public:
 	    back = front = &obj;
     }
     void push_back(ObjectList &lst) {
-	if (lst.front) {
-	    if (back)
-		back->next = lst.front;
-	    else
-		front = lst.front;
-	    back = lst.back;
-	    lst.front = lst.back = NULL;
-	    sz += lst.sz;
-	    lst.sz = 0;
-	}
+	if (!lst.front)
+	    return;
+	if (back)
+	    back->next = lst.front;
+	else
+	    front = lst.front;
+	back = lst.back;
+	sz += lst.sz;
+	lst.front = lst.back = NULL;
+	lst.sz = 0;
     }
     __forceinline void push_front(C &obj) {
 	if ((obj.next = front) == NULL)
