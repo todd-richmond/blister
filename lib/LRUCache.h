@@ -36,13 +36,33 @@ public:
 	    const uint64_t *p64 = (const uint64_t *)p;
 	    ulong s64 = s >> 3;
 
-	    for (ulong u = 0; u < s64; ++u)
-		h = h * 101 + p64[u];
-	    p += s64 << 3;
+	    while (s64 >= 4) {
+		h = h * 101 + p64[0];
+		h = h * 101 + p64[1];
+		h = h * 101 + p64[2];
+		h = h * 101 + p64[3];
+		p64 += 4;
+		s64 -= 4;
+	    }
+	    while (s64 > 0) {
+		h = h * 101 + *p64++;
+		--s64;
+	    }
+	    p = (const char *)p64;
 	    s &= 7;
 	}
-	for (ulong u = 0; u < s; ++u)
-	    h = h * 101 + (lruhash_t)p[u];
+	while (s >= 4) {
+	    h = h * 101 + (lruhash_t)p[0];
+	    h = h * 101 + (lruhash_t)p[1];
+	    h = h * 101 + (lruhash_t)p[2];
+	    h = h * 101 + (lruhash_t)p[3];
+	    p += 4;
+	    s -= 4;
+	}
+	while (s > 0) {
+	    h = h * 101 + (lruhash_t)*p++;
+	    --s;
+	}
 	hash = h;
     }
     LRUCacheEntry(const LRUCacheEntry &ce): data(ce.data), sz(ce.sz),
