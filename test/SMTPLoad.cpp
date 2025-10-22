@@ -231,7 +231,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	else if (filecnt < 0 && uint(-1 * filecnt) < bodycnt)
 	    startfile = bodycnt - uint(-1 * filecnt);
 	nextfile = startfile;
-	remain *= (bodycnt - startfile);
+	remain = remain * (bodycnt - startfile);
 	lock.unlock();
     }
     vars[T("host")] = host ? host : default_host;
