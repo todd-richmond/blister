@@ -400,6 +400,8 @@ bool Log::close(void) {
 
 void Log::endlog(Tlsdata &tlsd) {
     Level clvl = tlsd.clvl;
+    bool aenabled = afd.enable && clvl <= afd.lvl;
+    bool fenabled = ffd.enable && clvl <= ffd.lvl;
     size_t lvllen, tmlen;
     time_t now_sec;
     usec_t now_usec;
@@ -408,14 +410,14 @@ void Log::endlog(Tlsdata &tlsd) {
     tchar tmp[16];
 
     lck.lock();
-    if (ffd.enable && clvl <= ffd.lvl) {
+    if (fenabled) {
 	ffd.lock();
 	if (ffd.len + (ulong)bufstrm.size() >= ffd.sz) {
 	    _flush();
 	    ffd.roll();
 	}
     }
-    if (afd.enable && clvl <= afd.lvl) {
+    if (aenabled) {
 	afd.lock();
 	if (afd.len >= afd.sz)
 	    afd.roll();
@@ -471,12 +473,14 @@ void Log::endlog(Tlsdata &tlsd) {
     }
     tmlen = strbuf.size();
     if (_type == KeyVal) {
+	strbuf.reserve(strbuf.size() + 64 + sz);
 	strbuf += T("ll=");
 	WARN_PUSH_DISABLE(33011);
 	strbuf += LevelStr[clvl];
 	WARN_POP();
 	strbuf += ' ';
     } else if (_type != NoLevel && _type != NoTime) {
+	strbuf.reserve(strbuf.size() + 32 + sz);
 	strbuf += LevelStr[clvl];
 	if (_type == Syslog)
 	    strbuf += ':';
@@ -496,8 +500,14 @@ void Log::endlog(Tlsdata &tlsd) {
 	strbuf += tlsd.strm.str();
 	strbuf += '"';
     } else {
-	for (const tchar *p = tlsd.strm.str(); sz; ++p) {
-	    if ((uchar)*p < ' ' && *p != '\t') {
+	const tchar *p = tlsd.strm.str();
+	const tchar *end = p + sz;
+	const tchar *start = p;
+
+	while (p < end) {
+	    if (UNLIKELY((uchar)*p < ' ' && *p != '\t')) {
+		if (p > start)
+		    strbuf.append(start, (size_t)(p - start));
 		if (*p == '\n') {
 		    strbuf += T("\\n");
 		} else if (*p == '\r') {
@@ -506,14 +516,17 @@ void Log::endlog(Tlsdata &tlsd) {
 		    tsprintf(tmp, T("\\%03o"), (uint)*p);
 		    strbuf += tmp;
 		}
+		++p;
+		start = p;
 	    } else {
-		strbuf += *p;
+		++p;
 	    }
-	    --sz;
 	}
+	if (p > start)
+	    strbuf.append(start, (size_t)(p - start));
     }
     strbuf += '\n';
-    if (afd.enable && clvl <= afd.lvl) {
+    if (aenabled) {
 	if (src.empty()) {
 	    afd.print(strbuf);
 	} else {
@@ -527,7 +540,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	}
 	afd.unlock();
     }
-    if (ffd.enable && clvl <= ffd.lvl) {
+    if (fenabled) {
 	if (ft.getState() == Running) {
 	    bool b = bufstrm.size() == 0;
 
