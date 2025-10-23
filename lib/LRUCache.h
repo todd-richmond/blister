@@ -106,39 +106,31 @@ public:
     }
     const C get(const void *data, ulong sz) {
 	C entry(data, sz);
-	typename lru_map::const_iterator it;
-	Locker lkr(lock, false);
-	msec_t now;
+	msec_t now = LIKELY(maxtm) ? mticks() : 0;
+	Locker lkr(lock);
 
-	if (LIKELY(maxtm)) {
-	    now = mticks();
-	    lkr.lock();
-	    purge(0, now);
-	} else {
-	    lkr.lock();
-	    purge(0, 0);
-	}
-	it = cache_map.find(entry);
-	if (it == cache_map.end())
-	    return entry;
-	cache_list.splice(cache_list.begin(), cache_list, it->second);
 	if (LIKELY(maxtm))
-	    it->second->second.touch(now);
-	return it->second->second;
+	    purge(0, now);
+	typename lru_map::const_iterator it = cache_map.find(entry);
+	if (LIKELY(it != cache_map.end())) {
+	    cache_list.splice(cache_list.begin(), cache_list, it->second);
+	    if (LIKELY(maxtm))
+		it->second->second.touch(now);
+	    return it->second->second;
+	}
+	return entry;
     }
     bool put(C &entry, const void *data, ulong sz) {
-	typename lru_map::iterator it;
-	Locker lkr(lock, false);
-	msec_t now;
-
 	if (UNLIKELY(sz > maxsz)) {
 	    entry.data = NULL;
 	    entry.sz = 0;
 	    return false;
 	}
-	now = maxtm ? mticks() : 0;
-	lkr.lock();
-	it = cache_map.find(entry);
+
+	msec_t now = maxtm ? mticks() : 0;
+	Locker lkr(lock);
+	typename lru_map::iterator it = cache_map.find(entry);
+
 	if (it != cache_map.end()) {
 	    cursz -= it->second->second.sz;
 	    cache_list.erase(it->second);
@@ -148,7 +140,7 @@ public:
 	entry.data = data;
 	entry.sz = sz;
 	entry.touch(now);
-	cursz += entry.sz;
+	cursz += sz;
 	cache_list.push_front(lru_kv(entry, entry));
 	cache_map[entry] = cache_list.begin();
 	return true;
@@ -163,32 +155,35 @@ public:
     }
 
 private:
-    alignas(64) Lock lock;
+    Lock lock;
     lru_list cache_list;
     lru_map cache_map;
     ulong cursz, maxsz;
     msec_t maxtm;
 
-    __forceinline void pop(typename lru_list::const_reverse_iterator last) {
-	cursz -= last->second.sz;
-	delete [] (char *)last->second.data;
-	cache_map.erase(last->first);
-	cache_list.pop_back();
-    }
     void purge(ulong sz, msec_t now) {
-	typename lru_list::const_reverse_iterator last;
+	if (!maxtm || !now)
+	    return;
+	while (!cache_list.empty()) {
+	    const lru_kv &last = cache_list.back();
 
-	if (maxtm && now) {
-	    while ((last = cache_list.rbegin()) != cache_list.rend()) {
-		if (LIKELY(now - last->second.touch() > maxtm))
-		    pop(last);
-		else
-		    break;
+	    if (LIKELY(now - last.second.touch() > maxtm)) {
+		cursz -= last.second.sz;
+		delete [] (char *)last.second.data;
+		cache_map.erase(last.first);
+		cache_list.pop_back();
+	    } else {
+		break;
 	    }
 	}
-	while (UNLIKELY(cursz + sz > maxsz) && (last = cache_list.rbegin()) !=
-	    cache_list.rend())
-	    pop(last);
+	while (UNLIKELY(cursz + sz > maxsz) && !cache_list.empty()) {
+	    const lru_kv &last = cache_list.back();
+
+	    cursz -= last.second.sz;
+	    delete [] (char *)last.second.data;
+	    cache_map.erase(last.first);
+	    cache_list.pop_back();
+	}
     }
 };
 
