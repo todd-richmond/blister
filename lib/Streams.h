@@ -116,10 +116,11 @@ public:
 
     virtual int sync(void) {
 	char *pb = pbase();
-	const char *pp = pptr();
+	char *pp = pptr();
+	streamsize sz = pp - pb;
 
-	if (pp > pb) {
-	    if (fd->write(pb, (uint)(pp - pb)) != pp - pb)
+	if (LIKELY(sz > 0)) {
+	    if (UNLIKELY(fd->write(pb, (uint)sz) != (int)sz))
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
@@ -127,28 +128,30 @@ public:
     }
 
     virtual int underflow(void) {
-	const char *p = gptr();
+	char *gp = gptr();
 
-	if (p == NULL) {
+	if (UNLIKELY(gp == NULL)) {
 	    signed char c;
-
 	    return fd->read(&c, sizeof (c)) == (int)sizeof (c) ? c : -1;
-	} else if (p >= egptr()) {
-	    char *pb = pbase();
-	    streamsize left = (streamsize)(pptr() - pb);
-	    int sz;
-
-	    if (left) {
-		if ((sz = fd->write(pb, (uint)left)) != left && sz)
-		    return -1;
-		setp(pb, pb + bufsz);
-	    }
-	    if ((sz = fd->read(buf, (uint)bufsz)) == -1)
-		return -1;
-	    setg(buf, buf, buf + sz);
-	    return *buf;
 	}
-	return *p;
+	if (LIKELY(gp < egptr()))
+	    return *gp;
+
+	char *pb = pbase();
+	char *pp = pptr();
+	streamsize left = pp - pb;
+
+	if (left > 0) {
+	    int sz = fd->write(pb, (uint)left);
+	    if (UNLIKELY(sz != left && sz))
+		return -1;
+	    setp(pb, pb + bufsz);
+	}
+	int sz = fd->read(buf, (uint)bufsz);
+	if (UNLIKELY(sz == -1))
+	    return -1;
+	setg(buf, buf, buf + sz);
+	return *buf;
     }
 
     virtual int overflow(int i) {
@@ -165,39 +168,46 @@ public:
     }
 
     virtual streamsize xsgetn(char *p, streamsize size) {
-	streamsize left = (egptr() - gptr());
+	char *gp = gptr();
+	char *eg = egptr();
+	streamsize left = eg - gp;
 
-	if (left && left >= size) {
-	    memcpy(p, gptr(), (size_t)size);
+	if (LIKELY(left >= size)) {
+	    memcpy(p, gp, (size_t)size);
 	    gbump((int)size);
 	    return size;
 	}
 
-	int in;
+	if (left > 0) {
+	    memcpy(p, gp, (size_t)left);
+	    p += left;
+	}
 	char *pb = pbase();
+	char *pp = pptr();
 	streamsize sz = size - left;
+	streamsize outleft = pp - pb;
 
-	memcpy(p, gptr(), (size_t)left);
-	p += left;
-	left = (pptr() - pb);
-	if (left) {				// flush output
-	    if (fd->write(pb, (uint)left) != (int)left)
+	if (outleft) {				// flush output
+	    if (UNLIKELY(fd->write(pb, (uint)outleft) != (int)outleft))
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
 	setg(buf, buf, buf);
 	if (sz >= bufsz || !bufsz) {		// read directly into user buf
 	    while (sz) {
-		if ((in = fd->read(p, (uint)sz)) <= 0)
+		int in = fd->read(p, (uint)sz);
+
+		if (UNLIKELY(in <= 0))
 		    return size - sz;
 		p += in;
 		sz -= in;
 	    }
 	} else {				// read into stream buf
 	    while (sz) {
-		if ((in = fd->read(buf, (uint)bufsz)) <= 0) {
+		int in = fd->read(buf, (uint)bufsz);
+		if (UNLIKELY(in <= 0))
 		    return size - sz;
-		} else if (in < sz) {
+		if (in < sz) {
 		    memcpy(p, buf, (size_t)in);
 		    p += in;
 		    sz -= in;
@@ -212,31 +222,33 @@ public:
     }
 
     virtual streamsize xsputn(const char *p, streamsize sz) {
-	char *pb = pbase(), *pp = pptr();
-	streamsize left = bufsz - (pp - pb);
+	char *pb = pbase();
+	char *pp = pptr();
+	streamsize used = pp - pb;
+	streamsize left = bufsz - used;
 
-	if (left < sz) {
-	    iovec iov[2]{};
-	    long out;
-
-	    iov[0].iov_base = pb;
-	    iov[0].iov_len = (iovlen_t)(pp - pb);
-	    iov[1].iov_base = (char *)p;
-	    iov[1].iov_len = (iovlen_t)sz;
-	    out = fd->writev(iov, 2);
-	    setp(pb, pb + bufsz);
-	    return out == -1 || (ulong)out < (ulong)iov[0].iov_len ? -1 :
-		(streamsize)out - (streamsize)iov[0].iov_len;
-	} else if (sz) {
-	    memcpy(pp, p, (size_t)sz);
-	    pbump((int)sz);
-	} else {
-	    left = (streamsize)(pp - pb);
-	    if (left && fd->write(pb, (uint)left) != (int)left)
-		return -1;
-	    setp(pb, pb + bufsz);
+	if (LIKELY(sz <= left)) {
+	    if (LIKELY(sz > 0)) {
+		memcpy(pp, p, (size_t)sz);
+		pbump((int)sz);
+	    } else if (used > 0) {
+		if (UNLIKELY(fd->write(pb, (uint)used) != (int)used))
+		    return -1;
+		setp(pb, pb + bufsz);
+	    }
+	    return sz;
 	}
-	return sz;
+
+	iovec iov[2]{};
+	iov[0].iov_base = pb;
+	iov[0].iov_len = (iovlen_t)used;
+	iov[1].iov_base = (char *)p;
+	iov[1].iov_len = (iovlen_t)sz;
+	long out = fd->writev(iov, 2);
+
+	setp(pb, pb + bufsz);
+	return UNLIKELY(out == -1 || (ulong)out < (ulong)used) ? -1 :
+	    (streamsize)out - (streamsize)used;
     }
 
 private:

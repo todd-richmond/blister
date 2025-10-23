@@ -638,18 +638,16 @@ void Log::format(const tchar *s) {
 }
 
 void Log::logv(int il, ...) {
-    Level l = (Level)il;
-
-    if (UNLIKELY(l > lvl))
+    if (UNLIKELY((Level)il > lvl))
 	return;
+
     Tlsdata &tlsd(*tls);
-    if (UNLIKELY(tlsd.suppress))
-	return;
-
     const tchar *p;
     va_list vl;
 
-    tlsd.clvl = l;
+    if (UNLIKELY(tlsd.suppress))
+	return;
+    tlsd.clvl = (Level)il;
     tlsd.sep = ' ';
     va_start(vl, il);
     while ((p = va_arg(vl, const tchar *)) != NULL)

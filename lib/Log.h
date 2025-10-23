@@ -348,7 +348,7 @@ private:
     void _flush(void);
     template <typename T>
     Log &log(Tlsdata &tlsd, const T &val) {
-	if (tlsd.clvl != None) {
+	if (LIKELY(tlsd.clvl != None)) {
 	    if (tlsd.sep == '=') {
 		tlsd.sep = ' ';
 		if (!is_fundamental_v<T>) {
@@ -366,15 +366,15 @@ private:
 	return *this;
     }
     Log &log(Tlsdata &tlsd, const tchar *val) {
-	if (tlsd.clvl != None) {
+	if (LIKELY(tlsd.clvl != None)) {
 	    if (tlsd.sep == '=') {
 		if (val)
 		    quote(tlsd.strm, val);
 		tlsd.sep = ' ';
-	    } else if (val) {
+	    } else if (LIKELY(val)) {
 		if (tlsd.sep && tlsd.strm.size())
 		    tlsd.strm << tlsd.sep;
-		if (*val) {
+		if (LIKELY(*val)) {
 		    tlsd.strm << val;
 		    if (tlsd.strm.str()[tlsd.strm.size() - 1] == '=')
 			tlsd.sep = '=';
