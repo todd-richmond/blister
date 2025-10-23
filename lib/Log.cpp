@@ -639,18 +639,21 @@ void Log::format(const tchar *s) {
 
 void Log::logv(int il, ...) {
     Level l = (Level)il;
-    const tchar *p;
+
+    if (UNLIKELY(l > lvl))
+	return;
     Tlsdata &tlsd(*tls);
+    if (UNLIKELY(tlsd.suppress))
+	return;
+
+    const tchar *p;
     va_list vl;
 
-    if (l > lvl || tlsd.suppress)
-	return;
     tlsd.clvl = l;
     tlsd.sep = ' ';
     va_start(vl, il);
-    while ((p = va_arg(vl, const tchar *)) != NULL) {
+    while ((p = va_arg(vl, const tchar *)) != NULL)
 	*this << p;
-    }
     va_end(vl);
     endlog(tlsd);
 }
@@ -665,8 +668,6 @@ void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {
 }
 
 tostream &Log::quote(tostream &os, const tchar *s) {
-    bool quote = false;
-    const tchar *p;
     static const uchar needquote[128] = {
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // DLE - US
@@ -677,52 +678,60 @@ tostream &Log::quote(tostream &os, const tchar *s) {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // ` - o
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
     };
+    const tuchar *start = (const tuchar *)s;
+    const tuchar *p = start;
 
-    for (p = s; *p; p++) {
-	quote = quote || (ushort)*p > 127 || needquote[(uchar)*p];
-    }
-    if (quote) {
-	os << '"';
-	for (p = s; *p; p++) {
-	    tchar c = *p;
+    while (*p) {
+	tuchar c = *p;
 
-	    switch (c) {
-	    case '"':
-		os << '\\' << '"';
-		break;
-	    case '\\':
-		os << '\\' << '\\';
-		break;
-	    case '\f':
-		os << '\\' << 'f';
-		break;
-	    case '\n':
-		os << '\\' << 'n';
-		break;
-	    case '\r':
-		os << '\\' << 'r';
-		break;
-	    case '\t':
-		os << '\t';
-		break;
-	    case '\v':
-		os << '\\' << 'v';
-		break;
-	    default:
-		if ((uchar)c < ' ') {
-		    tchar tmp[16];
+	if (UNLIKELY(c > 127 || (c < 128 && needquote[c]))) {
+	    if (p == start) {
+		os << '"';
+	    } else {
+		os << '"';
+		os.write((const tchar *)start, p - start);
+	    }
+	    while (*p) {
+		c = *p++;
+		switch (c) {
+		case '"':
+		    os << '\\' << '"';
+		    break;
+		case '\\':
+		    os << '\\' << '\\';
+		    break;
+		case '\f':
+		    os << '\\' << 'f';
+		    break;
+		case '\n':
+		    os << '\\' << 'n';
+		    break;
+		case '\r':
+		    os << '\\' << 'r';
+		    break;
+		case '\t':
+		    os << '\t';
+		    break;
+		case '\v':
+		    os << '\\' << 'v';
+		    break;
+		default:
+		    if (LIKELY(c >= ' ')) {
+			os << c;
+		    } else {
+			tchar tmp[16];
 
-		    tsprintf(tmp, T("\\%03o"), (uint)c);
-		    os << tmp;
-		} else {
-		    os << c;
+			tsprintf(tmp, T("\\%03o"), (uint)c);
+			os << tmp;
+		    }
 		}
 	    }
+	    os << '"';
+	    return os;
 	}
-	os << '"';
-    } else {
-	os.write(s, p - s);
+	++p;
     }
+    os.write((const tchar *)start, p - start);
     return os;
 }
 
