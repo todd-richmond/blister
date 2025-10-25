@@ -132,7 +132,7 @@ public:
 
 	if (UNLIKELY(gp == NULL)) {
 	    signed char c;
-	    return fd->read(&c, sizeof (c)) == (int)sizeof (c) ? c : -1;
+	    return fd->read((char *)&c, sizeof (c)) == (int)sizeof (c) ? c : -1;
 	}
 	if (LIKELY(gp < egptr()))
 	    return *gp;

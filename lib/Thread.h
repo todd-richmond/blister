@@ -532,7 +532,7 @@ public:
     __forceinline operator pthread_mutex_t *(void) { return &mtx; }
 
     __forceinline void lock(void) { (void)pthread_mutex_lock(&mtx); }
-    __forceinline bool trylock(void) { return pthread_mutex_trylock(&mtx) == 0; }
+    __forceinline bool trylock(void) { return !pthread_mutex_trylock(&mtx); }
     __forceinline void unlock(void) { (void)pthread_mutex_unlock(&mtx); }
 
 protected:

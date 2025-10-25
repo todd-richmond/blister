@@ -1171,7 +1171,7 @@ public:
     const_iterator begin(void) const { return const_iterator(front); }
     __forceinline bool empty(void) const { return front == NULL; }
     const_iterator end(void) const { return const_iterator(NULL); }
-    __forceinline const C *peek(void) const { return front; }
+    __forceinline C *peek(void) const { return front; }
     __forceinline uint size(void) const { return sz; }
 
     void erase(void) { back = front = NULL; sz = 0; }
@@ -1187,13 +1187,13 @@ public:
     }
     void pop(C &obj) {
 	if (front == &obj) {
-	    if ((front = obj.next) == NULL)
+	    if ((front = (C *)obj.next) == NULL)
 		back = NULL;
 	    else
 		obj.next = NULL;
 	    --sz;
 	} else {
-	    for (C *p = front; LIKELY(p); p = p->next) {
+	    for (C *p = front; LIKELY(p); p = (C *)p->next) {
 		if (UNLIKELY(p->next == &obj)) {
 		    if ((p->next = obj.next) == NULL)
 			back = p;
@@ -1224,7 +1224,7 @@ public:
     __forceinline C *pop_front(void) {
 	C *obj = front;
 
-	if ((front = obj->next) == NULL)
+	if ((front = (C *)obj->next) == NULL)
 	    back = NULL;
 	else
 	    obj->next = NULL;
@@ -1232,10 +1232,12 @@ public:
 	return obj;
     }
     __forceinline void push_back(C &obj) {
-	if (sz++)
-	    back = back->next = &obj;
-	else
+	if (sz++) {
+	    back->next = &obj;
+	    back = (C *)back->next;
+	} else {
 	    back = front = &obj;
+	}
     }
     void push_back(ObjectList &lst) {
 	if (!lst.front)
@@ -1268,13 +1270,13 @@ public:
 	}
     }
 
-private:
+protected:
     C *back, *front;
     uint sz;
 };
 
 template <class C>
-struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C> >::Node {
+struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C>>::Node {
     __forceinline explicit ObjectListNode(const C &c): val(c) {}
 
     C val;
