@@ -77,7 +77,7 @@ enum DispatchFlag: uint_fast32_t {
 class Dispatcher;
 
 // base classes for event objects
-class BLISTER DispatchObj: ObjectList<DispatchObj>::Node {
+class BLISTER DispatchObj: public ObjectList<DispatchObj>::Node {
 public:
     typedef void (*DispatchObjCB)(DispatchObj *);
 
@@ -512,5 +512,77 @@ inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg
 	to = msec;
     dspr.pollSocket(*this, to, reason);
 }
+
+/*
+ * AsyncCondvar acts like a std::condition_variable, but queues a callback
+ * to be called instead of blocking the thread. The lock must be held
+ * but wait() returns with it unlocked
+ */
+class BLISTER AsyncCondvar: nocopy {
+public:
+    class BLISTER AsyncCondvarWaiter: public DispatchObj {
+    public:
+	explicit AsyncCondvarWaiter(AsyncCondvar &a):
+	    DispatchObj(a.dispatcher()), ac(a) {}
+
+	void wait(DispatchObjCB cb) {
+	    callback(cb);
+	    ac.wait(*this);
+	}
+	virtual void cancel(void) { ac.cancel(*this); }
+
+    private:
+	AsyncCondvar &ac;
+    };
+
+    AsyncCondvar(Dispatcher &d, Lock &l): dspr(d), lck(l), signaled(false) {}
+
+    __forceinline operator bool(void) const { return !waiters.empty(); }
+    __forceinline Dispatcher &dispatcher(void) const { return dspr; }
+    __forceinline uint numwaiters(void) const { return waiters.size(); }
+    __forceinline AsyncCondvarWaiter *peek(void) const {
+	return waiters.peek();
+    }
+
+    void broadcast(void) {
+	while (waiters)
+	    waiters.pop_front()->ready();
+    }
+    uint set(uint count = 1) {
+	uint woken = 0;
+
+	while (count && waiters) {
+		AsyncCondvarWaiter *waiter = waiters.pop_front();
+
+		waiter->ready();
+		--count;
+		++woken;
+	}
+	signaled = !woken;
+	return woken;
+    }
+    void wait(AsyncCondvarWaiter &waiter) {
+	if (signaled) {
+	    signaled = false;
+	    lck.unlock();
+	    waiter.ready();
+	} else  {
+	    waiters.push_back(waiter);
+	    lck.unlock();
+	}
+    }
+protected:
+    void cancel(AsyncCondvarWaiter &waiter) {
+	lck.lock();
+	waiters.pop(waiter);
+	lck.unlock();
+    }
+
+private:
+    Dispatcher &dspr;
+    Lock &lck;
+    atomic_bool signaled;
+    ObjectList<AsyncCondvarWaiter> waiters;
+};
 
 #endif // Dispatch_h
