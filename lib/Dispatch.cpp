@@ -791,7 +791,7 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong msec) {
 	dt.flags |= DSP_Scheduled;
 	tlock.lock();
 	timers.set(dt, tmt);
-	if (tmt < due) {
+	if (UNLIKELY(tmt < due)) {
 	    due = tmt;
 	    tlock.unlock();
 	    wakeup((ulong)(due - now));

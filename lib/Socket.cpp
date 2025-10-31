@@ -655,28 +655,35 @@ bool Socket::proxysockname(Sockaddr &sa) {
 }
 #endif
 
-bool Socket::rwpoll(bool rd) const {
-    uint msec = rd ? sbuf->rto : sbuf->wto;
-
-    if (msec == SOCK_INFINITE || !blocking())
-	return true;
-
-    bool ret;
+bool Socket::rpoll(void) const {
     SocketSet sset(1), ioset(1), eset(1);
 
     sset.set(sbuf->sock);
-    ret = (rd ? sset.ipoll(ioset, eset, msec) :
-	sset.opoll(ioset, eset, msec)) && !ioset.empty();
-    if (!ret)
+    if (sset.ipoll(ioset, eset, sbuf->rto) && !ioset.empty()) {
+	return true;
+    } else {
 	sbuf->err = WSAEWOULDBLOCK;
-    return ret;
+	return false;
+    }
+}
+
+bool Socket::wpoll(void) const {
+    SocketSet sset(1), ioset(1), eset(1);
+
+    sset.set(sbuf->sock);
+    if (sset.opoll(ioset, eset, sbuf->wto) && !ioset.empty()) {
+	return true;
+    } else {
+	sbuf->err = WSAEWOULDBLOCK;
+	return false;
+    }
 }
 
 int Socket::read(void *buf, uint sz) const {
     int in;
 
     do {
-	if (!rwpoll(true))
+	if (sbuf->rto != SOCK_INFINITE && blocking() && !rpoll())
 	    return -1;
 #ifdef __APPLE__
 	if (check(in = (int)::read(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz)))
@@ -699,7 +706,7 @@ int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
     int in;
 
     do {
-	if (!rwpoll(true))
+	if (sbuf->rto != SOCK_INFINITE && blocking() && !rpoll())
 	    return -1;
 	if (check(in = (int)recvfrom(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz,
 	    0, sa.data(), &asz)))
@@ -735,7 +742,7 @@ int Socket::write(const void *buf, uint sz) const {
     int out;
 
     do {
-	if (!rwpoll(false))
+	if (sbuf->wto != SOCK_INFINITE && blocking() && !wpoll())
 	    return -1;
 #ifdef __APPLE__
 	if (check(out = (int)::write(sbuf->sock, (const char *)buf,
@@ -754,7 +761,7 @@ int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
     int out;
 
     do {
-	if (!rwpoll(false))
+	if (sbuf->wto != SOCK_INFINITE && blocking() && !wpoll())
 	    return -1;
 	if (check(out = (int)sendto(sbuf->sock, (const char *)buf,
 	    (SOCK_SIZE_T)sz, 0, sa, sa.size())))

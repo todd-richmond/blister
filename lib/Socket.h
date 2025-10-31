@@ -469,7 +469,8 @@ protected:
     };
 
     bool __forceinline check(int ret) const { return sbuf->check(ret); }
-    bool rwpoll(bool rd) const;
+    bool rpoll(void) const;
+    bool wpoll(void) const;
 
     SocketBuf *sbuf;
 };
