@@ -56,7 +56,6 @@ enum DispatchMsg {
 
 // Dispatch flags
 enum DispatchFlag: uint_fast32_t {
-    DSP_Socket = 0x0001,
     DSP_Detached = 0x0002,
     DSP_Connecting = 0x0004,
     DSP_Scheduled = 0x0008,
@@ -87,6 +86,7 @@ public:
 	dspr(parent.dspr), flags(0), msg(DispatchNone),
 	group(&parent.group->add()) {}
     virtual ~DispatchObj() {
+	DispatchObj::cancel();
 	if (group->refcount.release())
 	    delete group;
     }
@@ -102,7 +102,6 @@ public:
 	DispatchNone);
     virtual void cancel(void);
     virtual void erase(void);
-    virtual void terminate(void);
 
 protected:
     void callback(DispatchObjCB cb) { if (cb) dcb = cb; }
@@ -128,7 +127,6 @@ private:
 
     DispatchObj &operator =(const DispatchObj &obj) = delete;
     friend class Dispatcher;
-    friend class ObjectList<DispatchObj>;
 };
 
 // handle objects with timeouts
@@ -150,7 +148,7 @@ public:
 	init();
 	timeout(cb, msec);
     }
-    virtual ~DispatchTimer() {}
+    virtual ~DispatchTimer() { DispatchTimer::cancel(); }
 
     msec_t expires(void) const { return due; }
     ulong timeout(void) const { return to; }
@@ -180,13 +178,15 @@ private:
 class BLISTER DispatchSocket: public DispatchTimer, public Socket {
 public:
     explicit DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =
-	DSP_NEVER);
-    DispatchSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER);
+	DSP_NEVER): DispatchTimer(d, msec), Socket(type), mapped(false) {}
+    DispatchSocket(Dispatcher &d, const Socket &s, ulong msec = DSP_NEVER):
+	DispatchTimer(d, msec), Socket(s), mapped(false) {}
     explicit DispatchSocket(DispatchObj &parent, int type = SOCK_STREAM, ulong
-	msec = DSP_NEVER);
-    DispatchSocket(DispatchObj &parent, const Socket &sock, ulong msec =
-	DSP_NEVER);
-    virtual ~DispatchSocket() {}
+	msec = DSP_NEVER): DispatchTimer(parent, msec), Socket(type),
+	mapped(false) {}
+    DispatchSocket(DispatchObj &parent, const Socket &s, ulong msec =
+	DSP_NEVER): DispatchTimer(parent, msec), Socket(s), mapped(false) {}
+    virtual ~DispatchSocket() { DispatchSocket::cancel(); }
 
     virtual void cancel(void);
     virtual void erase(void);
@@ -316,6 +316,12 @@ private:
 	size_t size(void) const { return unsorted.size(); }
 	size_t soon(void) const { return sorted.size(); }
 
+	void erase(void) {
+	    unsorted_timerset::const_iterator it;
+
+	    while ((it = unsorted.begin()) != unsorted.end())
+		(*it)->erase();
+	}
 	void erase(DispatchTimer &dt) {
 	    if (dt.due <= split)
 		sorted.erase(&dt);
@@ -361,12 +367,6 @@ private:
 	    if (when <= split)
 		sorted.insert(&dt);
 	}
-	void terminate(void) {
-	    unsorted_timerset::const_iterator it;
-
-	    while ((it = unsorted.begin()) != unsorted.end())
-		(*it)->terminate();
-	}
 
     private:
 	sorted_timerset sorted;
@@ -397,8 +397,6 @@ private:
     friend class DispatchSocket;
     void cancelSocket(DispatchSocket &ds, bool del = false);
     void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg);
-    void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg, msec_t
-	now);
 
     void cleanup(void);
     bool exec(void);
@@ -413,7 +411,7 @@ private:
     uint maxthreads;
     ObjectList<DispatchObj> rlist;
     atomic_bool polling, shutdown;
-    atomic_uint_fast16_t scanning, workers;
+    atomic_uint_fast32_t scanning, workers;
     SpinLock tlock;
     msec_t cache, due;
     TimerSet timers;
@@ -520,10 +518,9 @@ inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg
  */
 class BLISTER AsyncCondvar: nocopy {
 public:
-    class BLISTER AsyncCondvarWaiter: public DispatchObj {
+    class BLISTER Waiter: public DispatchObj {
     public:
-	explicit AsyncCondvarWaiter(AsyncCondvar &a):
-	    DispatchObj(a.dispatcher()), ac(a) {}
+	explicit Waiter(AsyncCondvar &a): DispatchObj(a.dispatcher()), ac(a) {}
 
 	void wait(DispatchObjCB cb) {
 	    callback(cb);
@@ -539,10 +536,8 @@ public:
 
     __forceinline operator bool(void) const { return !waiters.empty(); }
     __forceinline Dispatcher &dispatcher(void) const { return dspr; }
-    __forceinline uint numwaiters(void) const { return waiters.size(); }
-    __forceinline AsyncCondvarWaiter *peek(void) const {
-	return waiters.peek();
-    }
+    __forceinline uint size(void) const { return waiters.size(); }
+    __forceinline Waiter *peek(void) const { return waiters.peek(); }
 
     void broadcast(void) {
 	while (waiters)
@@ -552,16 +547,16 @@ public:
 	uint woken = 0;
 
 	while (count && waiters) {
-		AsyncCondvarWaiter *waiter = waiters.pop_front();
+	    Waiter *waiter = waiters.pop_front();
 
-		waiter->ready();
-		--count;
-		++woken;
+	    waiter->ready();
+	    --count;
+	    ++woken;
 	}
 	signaled = !woken;
 	return woken;
     }
-    void wait(AsyncCondvarWaiter &waiter) {
+    void wait(Waiter &waiter) {
 	if (signaled) {
 	    signaled = false;
 	    lck.unlock();
@@ -572,7 +567,7 @@ public:
 	}
     }
 protected:
-    void cancel(AsyncCondvarWaiter &waiter) {
+    void cancel(Waiter &waiter) {
 	lck.lock();
 	waiters.pop(waiter);
 	lck.unlock();
@@ -582,7 +577,7 @@ private:
     Dispatcher &dspr;
     Lock &lck;
     atomic_bool signaled;
-    ObjectList<AsyncCondvarWaiter> waiters;
+    ObjectList<Waiter> waiters;
 };
 
 #endif // Dispatch_h
