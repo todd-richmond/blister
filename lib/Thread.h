@@ -526,11 +526,11 @@ protected:
 
 class BLISTER SharedSemaphore: nocopy {
 public:
-    explicit Semaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
+    explicit SharedSemaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
 	if (init != (uint)-1)
 	    open(name, init);
     }
-    ~Semaphore() { close(); }
+    ~SharedSemaphore() { close(); }
 
     __forceinline operator HANDLE(void) const { return hdl; }
     __forceinline HANDLE handle(void) const { return hdl; }

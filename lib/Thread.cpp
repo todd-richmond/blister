@@ -41,17 +41,6 @@ tchar **Process::argv = __argv;
 tchar **Process::envv = _environ;
 #endif
 
-Mutex::Mutex(const tchar *name) {
-    if (name) {
-	tstring s(name);
-
-	s.replace(s.begin(), s.end(), '\\', '_');
-	hdl = CreateMutex(NULL, 0, s.c_str());
-    } else {
-	hdl = CreateMutex(NULL, 0, NULL);
-    }
-}
-
 Process Process::start(tchar *const *args, const int *fds) {
     tstring cmd;
     PROCESS_INFORMATION proc;
