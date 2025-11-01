@@ -692,91 +692,81 @@ public:
 	Waiting(): next(NULL) {}
     };
 
-    Lifo(): head(NULL), sz(0) {}
+    Lifo(): head(NULL) {}
     ~Lifo() { close(); }
 
-    // Fast-path checks without lock for common case
     __forceinline operator bool(void) const {
-	return sz.load(memory_order_relaxed);
-    }
-    __forceinline bool empty(void) const {
-	return !sz.load(memory_order_relaxed);
-    }
-    __forceinline uint size(void) const {
-	return (uint)sz.load(memory_order_relaxed);
+	return head.load(memory_order_relaxed) != NULL;
     }
     __forceinline uint broadcast(void) {
-	Waiting *w, *ww;
-	uint ret;
+	uint ret = 0;
+	Waiting *h, *ww;
 
-	if (UNLIKELY(!sz.load(memory_order_acquire)))
-	    return 0;
-	lck.lock();
-	w = head;
-	head = NULL;
-	ret = (uint)sz.load(memory_order_relaxed);
-	sz.store(0, memory_order_relaxed);
-	lck.unlock();
-	while (LIKELY(w)) {
-	    ww = w->next;
-	    w->sema4.set();
-	    w = ww;
+	h = head.exchange(NULL, memory_order_acquire);
+	while (LIKELY(h)) {
+	    ww = h->next;
+	    h->sema4.set();
+	    h = ww;
+	    ++ret;
 	}
 	return ret;
     }
-    bool close(void) { broadcast(); return true; }
-    bool open(void) {
-	head = NULL;
-	sz.store(0, memory_order_relaxed);
-	return true;
-    }
+    void close(void) { broadcast(); }
+    void open(void) { head.store(NULL, memory_order_relaxed); }
     __forceinline uint set(uint count = 1) {
-	uint_fast16_t released;
-	Waiting *w, *ww, *www;
+	uint c;
+	Waiting *h, *w, *ww;
 
-	if (UNLIKELY(!sz.load(memory_order_acquire)))
-	    return count;
-	released = 0;
-	lck.lock();
-	for (w = ww = head; w && count; w = w->next) {
-	    --count;
-	    ++released;
+	do {
+	    c = count;
+	    h = head.load(memory_order_acquire);
+	    if (UNLIKELY(!h))
+		return c;
+	    for (w = h; w && c; w = w->next)
+		--c;
+	} while (!head.compare_exchange_weak(h, w, memory_order_release,
+	    memory_order_acquire));
+	while (LIKELY(h != w)) {
+	    ww = h->next;
+	    h->sema4.set();
+	    h = ww;
 	}
-	head = w;
-	sz.fetch_sub(released, memory_order_relaxed);
-	lck.unlock();
-	while (LIKELY(ww != w)) {
-	    www = ww->next;
-	    ww->sema4.set();
-	    ww = www;
-	}
-	return count;
+	return c;
     }
     __forceinline bool wait(Waiting &w, ulong msec = INFINITE) {
-	lck.lock();
-	w.next = head;
-	head = &w;
-	sz.fetch_add(1, memory_order_relaxed);
-	lck.unlock();
+	Waiting *h;
+
+	do {
+	    h = head.load(memory_order_relaxed);
+	    w.next = h;
+	} while (!head.compare_exchange_weak(h, &w, memory_order_release,
+	    memory_order_relaxed));
 	if (UNLIKELY(!w.sema4.wait(msec))) {
-	    lck.lock();
-	    for (Waiting **ww = &head; *ww; ww = &(*ww)->next) {
-		if (*ww == &w) {
-		    *ww = w.next;
-		    sz.fetch_sub(1, memory_order_relaxed);
-		    lck.unlock();
+	    do {
+		Waiting *prev = NULL;
+		Waiting *ww;
+
+		ww = h = head.load(memory_order_acquire);
+		while (ww && ww != &w) {
+		    prev = ww;
+		    ww = ww->next;
+		}
+		if (!ww)
+		    return true;
+		if (prev) {
+		    prev->next = w.next;
+		    return false;
+		} else if (head.compare_exchange_strong(h, w.next,
+		    memory_order_release, memory_order_acquire)) {
 		    return false;
 		}
-	    }
-	    lck.unlock();
+	    } while (true);
 	}
 	return true;
     }
 
 private:
-    mutable SpinLock lck;
-    Waiting *head;
-    atomic_uint_fast16_t sz;
+    atomic<Waiting *> head;
 };
 
 // Thread routines
