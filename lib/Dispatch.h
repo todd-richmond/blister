@@ -313,6 +313,11 @@ private:
 
 	bool empty(void) const { return unsorted.empty() && sorted.empty(); }
 	msec_t half(void) const { return split; }
+	DispatchTimer *peek(void) const {
+	    sorted_timerset::const_iterator it = sorted.cbegin();
+
+	    return it == sorted.cend() ? NULL : *it;
+	}
 	size_t size(void) const { return unsorted.size(); }
 	size_t soon(void) const { return sorted.size(); }
 
@@ -342,14 +347,9 @@ private:
 	    return NULL;
 	}
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
-	DispatchTimer *peek(void) {
-	    sorted_timerset::const_iterator it = sorted.begin();
-
-	    return it == sorted.end() ? NULL : *it;
-	}
 	void reorder(msec_t when) {
-	    for (unsorted_timerset::const_iterator it = unsorted.begin(); it !=
-		unsorted.end(); ++it) {
+	    for (unsorted_timerset::const_iterator it = unsorted.cbegin(); it !=
+		unsorted.cend(); ++it) {
 		DispatchTimer *dt = *it;
 
 		if (dt->due != DispatchTimer::DSP_NEVER_DUE && dt->due >
@@ -359,9 +359,9 @@ private:
 	    split = when;
 	}
 	void set(DispatchTimer &dt, msec_t when) {
-	    if (dt.due == when)
+	    if (UNLIKELY(dt.due == when))
 		return;
-	    if (dt.due <= split)
+	    else if (UNLIKELY(dt.due <= split))
 		sorted.erase(&dt);
 	    dt.due = when;
 	    if (when <= split)

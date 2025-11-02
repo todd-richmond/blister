@@ -316,10 +316,10 @@ typedef _Semaphore<counting_semaphore<>> Semaphore;
 
 class BLISTER SpinLock: nocopy {
 public:
-    explicit SpinLock(uint lmt = 16): spins(Processor::count() == 1 ? 0 : lmt) {
+    explicit SpinLock(uint lmt = 64): spins(Processor::count() == 1 ? 0 : lmt) {
     }
     __forceinline __no_sanitize_thread void lock(void) {
-	while (!trylock()) {
+	while (UNLIKELY(!trylock())) {
 #ifdef THREAD_PAUSE
 	    uint u = 0;
 #endif
