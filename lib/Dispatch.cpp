@@ -92,6 +92,7 @@ Dispatcher::Dispatcher(const Config &config): cfg(config),
 
 WARN_DISABLE(26430)
 bool Dispatcher::exec() {
+    olock.lock();
     while (rlist && !shutdown) {
 	uint_fast32_t flags;
 	DispatchObj::Group *group;
@@ -132,6 +133,7 @@ bool Dispatcher::exec() {
 	    }
 	}
     }
+    olock.unlock();
     return !shutdown;
 }
 
@@ -140,45 +142,20 @@ int Dispatcher::run() {
     static uint cpus = Processor::count();
 
     priority(-1);
-    olock.lock();
     while (exec()) {
-	bool b;
-	// park threads in loop while more events are added
-	if (!polling.load(memory_order_relaxed)) {
-	    uint spins;
-#ifdef THREAD_PAUSE
-	    static constexpr uint SPIN_COUNT = 120;
-#else
-	    static constexpr uint SPIN_COUNT = 4;
-#endif
+	uint spins = 2;
 
-	    olock.unlock();
-	    spins = 0;
-	    while (!rlist && ++spins != SPIN_COUNT &&
-		!polling.load(memory_order_relaxed)) {
-#ifdef THREAD_PAUSE
-		if (UNLIKELY((spins & 0x3F) == 0x20)) {
-		    THREAD_YIELD();
-		} else {
-		    THREAD_PAUSE();
-		}
-#else
-		THREAD_YIELD();
-#endif
-	    }
-	    olock.lock();
-	    if (rlist)
-		continue;
+	// park threads in a loop while more events are being added
+	do {
+	    THREAD_YIELD();
+	} while (--spins && !rlist && !polling.load(memory_order_relaxed));
+	if (!rlist) {
+	    scanning.fetch_sub(1, memory_order_relaxed);
+	    if (!lifo.wait(waiting, workers > cpus ? INFINITE : MAX_WAIT_TIME))
+		break;
 	}
-	scanning.fetch_sub(1, memory_order_relaxed);
-	olock.unlock();
-	b = lifo.wait(waiting, workers > cpus ? INFINITE : MAX_WAIT_TIME);
-	olock.lock();
-	if (!b)
-	    break;
     }
     workers--;
-    olock.unlock();
     return 0;
 }
 
@@ -213,11 +190,8 @@ int Dispatcher::onStart() {
     shutdown = false;
     workers = 0;
     while (!shutdown) {
-	if (!maxthreads) {
-	    olock.lock();
+	if (!maxthreads)
 	    exec();
-	    olock.unlock();
-	}
 	polling.store(true, memory_order_relaxed);
 	GetMessage(&msg, wnd, 0, 0);
 	polling.store(false, memory_order_release);
@@ -408,11 +382,8 @@ int Dispatcher::onStart() {
 	    due = now + msec;
 	}
 	tlock.unlock();
-	if (!maxthreads) {
-	    olock.lock();
+	if (!maxthreads)
 	    exec();
-	    olock.unlock();
-	}
 	cache = 0;
 #ifdef DSP_POLL
 	DispatchSocket *ds = NULL;
