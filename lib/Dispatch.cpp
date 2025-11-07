@@ -93,45 +93,52 @@ Dispatcher::Dispatcher(const Config &config): cfg(config),
 WARN_DISABLE(26430)
 bool Dispatcher::exec() {
     olock.lock();
-    while (rlist && !shutdown) {
+    while (!shutdown) {
 	uint_fast32_t flags;
 	DispatchObj::Group *group;
-	DispatchObj *obj = rlist.pop_front();
+	DispatchObj *obj;
 
-	if (UNLIKELY(!obj)) {
-	} else if (UNLIKELY((flags = obj->flags) & DSP_Freed)) {
+	if (!rlist)
+	    break;
+	obj = rlist.pop_front();
+	if (UNLIKELY((flags = obj->flags) & DSP_Freed)) {
 	    olock.unlock();
 	    delete obj;
 	    olock.lock();
-	} else if (UNLIKELY((group = obj->group)->active)) {
-	    obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
-	    group->glist.push_back(*obj);
-	} else {
+	    continue;
+	}
+	if (UNLIKELY((group = obj->group) != NULL)) {
+	    if (group->active) {
+		obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
+		group->glist.push_back(*obj);
+		continue;
+	    }
 	    group->active = true;
-	    obj->flags = (flags & ~DSP_Ready) | DSP_Active;
-	    olock.unlock();
-	    scanning.fetch_sub(1, memory_order_release);
-	    obj->dcb(obj);
-	    scanning.fetch_add(1, memory_order_acquire);
-	    olock.lock();
+	}
+	obj->flags = (flags & ~DSP_Ready) | DSP_Active;
+	olock.unlock();
+	scanning.fetch_sub(1, memory_order_release);
+	obj->dcb(obj);
+	scanning.fetch_add(1, memory_order_acquire);
+	olock.lock();
+	flags = obj->flags &= ~DSP_Active;
+	if (UNLIKELY(flags & DSP_Freed))
+	    rlist.push_front(*obj);
+	if (UNLIKELY(group)) {
 	    group->active = false;
-	    flags = obj->flags &= ~DSP_Active;
 	    if (UNLIKELY(group->glist)) {
-		if (UNLIKELY(flags & DSP_Freed)) {
-		    rlist.push_front(*obj);
-		} else if (flags & DSP_Ready) {
+		if (flags & DSP_Ready && !(flags & DSP_Freed)) {
 		    obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
 		    group->glist.push_back(*obj);
 		}
 		obj = group->glist.pop_front();
 		obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
 		rlist.push_back(*obj);
-	    } else if (UNLIKELY(flags & DSP_Freed)) {
-		rlist.push_front(*obj);
-	    } else if (flags & DSP_Ready) {
-		rlist.push_back(*obj);
+		continue;
 	    }
 	}
+	if (UNLIKELY(flags & DSP_Ready))
+	    rlist.push_back(*obj);
     }
     olock.unlock();
     return !shutdown;
@@ -388,6 +395,7 @@ int Dispatcher::onStart() {
 #ifdef DSP_POLL
 	DispatchSocket *ds = NULL;
 	socket_t fd;
+	uint_fast32_t flags;
 	socketmap::const_iterator sit;
 
 	slock.lock();
@@ -418,15 +426,16 @@ int Dispatcher::onStart() {
 		}
 	    }
 	    olock.lock();
-	    if (ds->flags & DSP_SelectWrite) {
+	    flags = ds->flags;
+	    if (flags & DSP_SelectWrite) {
 		olock.unlock();
 		slock.lock();
 		wset.unset(fd);
 		slock.unlock();
 		olock.lock();
 	    }
-	    if (ds->flags & DSP_Scheduled) {
-		ds->msg = (ds->flags & DSP_SelectAccept) ? DispatchAccept :
+	    if (flags & DSP_Scheduled) {
+		ds->msg = (flags & DSP_SelectAccept) ? DispatchAccept :
 		    DispatchRead;
 		ds->flags &= ~DSP_SelectAll;
 		ready(*ds, ds->msg == DispatchAccept);
@@ -449,7 +458,8 @@ int Dispatcher::onStart() {
 	    slock.unlock();
 	    removeTimer(*ds);
 	    olock.lock();
-	    if (ds->flags & DSP_SelectRead) {
+	    flags = ds->flags;
+	    if (flags & DSP_SelectRead) {
 		olock.unlock();
 		slock.lock();
 		rset.unset(fd);
@@ -457,7 +467,7 @@ int Dispatcher::onStart() {
 		olock.lock();
 	    }
 	    ds->flags &= ~DSP_SelectAll;
-	    if (ds->flags & DSP_Scheduled) {
+	    if (flags & DSP_Scheduled) {
 		ds->msg = DispatchWrite;
 		ready(*ds);
 	    } else {
@@ -476,9 +486,10 @@ int Dispatcher::onStart() {
 	    slock.unlock();
 	    removeTimer(*ds);
 	    olock.lock();
-	    if (ds->flags & (DSP_SelectRead | DSP_SelectWrite)) {
-		bool r = ds->flags & DSP_SelectRead;
-		bool w = ds->flags & DSP_SelectWrite;
+	    flags = ds->flags;
+	    if (flags & (DSP_SelectRead | DSP_SelectWrite)) {
+		bool r = flags & DSP_SelectRead;
+		bool w = flags & DSP_SelectWrite;
 
 		olock.unlock();
 		slock.lock();
@@ -490,7 +501,7 @@ int Dispatcher::onStart() {
 		olock.lock();
 	    }
 	    ds->flags &= ~DSP_SelectAll;
-	    if (ds->flags & DSP_Scheduled) {
+	    if (flags & DSP_Scheduled) {
 		ds->msg = DispatchClose;
 		ready(*ds);
 	    } else {
@@ -550,7 +561,7 @@ void Dispatcher::cleanup(void) {
 
 	if (!obj)
 	    break;
-	if (obj->group->glist)
+	if (obj->group && obj->group->glist)
 	    rlist.push_front(obj->group->glist);
 	if (obj->flags & DSP_ReadyGroup)
 	    obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
@@ -563,6 +574,7 @@ void Dispatcher::cleanup(void) {
 
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 void Dispatcher::handleEvents(const void *evts, uint nevts) {
+    uint_fast32_t flags;
     uint_fast32_t s = scanning.load(memory_order_relaxed);
 
     if (!s) {
@@ -624,22 +636,23 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	__builtin_prefetch(ds, 0, 3);
 	removeTimer(*ds);
 	olock.lock();
-	if (UNLIKELY(ds->flags & DSP_Freed)) {
+	flags = ds->flags;
+	if (UNLIKELY(flags & DSP_Freed)) {
 	    olock.unlock();
 	    continue;
 	}
 	if (LIKELY(DSP_EVENT_READ(evt))) {
-	    if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
-		ds->msg = UNLIKELY(ds->flags & DSP_SelectAccept) ?
-		    DispatchAccept : DispatchRead;
+	    if (ds->msg == DispatchNone && (flags & DSP_Scheduled))
+		ds->msg = UNLIKELY(flags & DSP_SelectAccept) ?  DispatchAccept :
+		    DispatchRead;
 	    else
 		ds->flags |= DSP_Readable;
 	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectRead);
 	}
 	if (UNLIKELY(DSP_EVENT_WRITE(evt))) {
-	    if (ds->flags & DSP_Connecting)
+	    if (flags & DSP_Connecting)
 		ds->msg = DispatchConnect;
-	    else if (ds->msg == DispatchNone && (ds->flags & DSP_Scheduled))
+	    else if (ds->msg == DispatchNone && (flags & DSP_Scheduled))
 		ds->msg = DispatchWrite;
 	    else
 		ds->flags |= DSP_Writeable;
@@ -653,7 +666,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		ds->flags |= DSP_Closeable;
 	    DSP_ONESHOT(ds, DSP_SelectClose);
 	}
-	if (ds->flags & DSP_Scheduled)
+	if (flags & DSP_Scheduled)
 	    ready(*ds, ds->msg == DispatchAccept);
 	else
 	    olock.unlock();
@@ -1050,7 +1063,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
     if (UNLIKELY(obj.flags & DSP_Active)) {
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
 	olock.unlock();
-    } else if (UNLIKELY(obj.group->active)) {
+    } else if (UNLIKELY(obj.group && obj.group->active)) {
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_ReadyGroup;
 	if (UNLIKELY(hipri))
 	    obj.group->glist.push_front(obj);

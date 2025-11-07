@@ -54,8 +54,10 @@ enum DispatchMsg {
     DispatchConnect, DispatchClose, DispatchTimeout, DispatchNone
 };
 
+typedef uint_fast32_t dspflag_t;
+
 // Dispatch flags
-enum DispatchFlag: uint_fast32_t {
+enum DispatchFlag: dspflag_t {
     DSP_Detached = 0x0002,
     DSP_Connecting = 0x0004,
     DSP_Scheduled = 0x0008,
@@ -81,13 +83,16 @@ public:
     typedef void (*DispatchObjCB)(DispatchObj *);
 
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
-	dspr(d), flags(0), msg(DispatchNone), group(new Group) {}
+	dspr(d), flags(0), msg(DispatchNone), group(NULL) {}
     DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): dcb(cb),
-	dspr(parent.dspr), flags(0), msg(DispatchNone),
-	group(&parent.group->add()) {}
+	dspr(parent.dspr), flags(0), msg(DispatchNone), group(NULL) {
+	if (!parent.group)
+	    parent.group = new Group();
+	group = &parent.group->add();
+    }
     virtual ~DispatchObj() {
 	DispatchObj::cancel();
-	if (group->refcount.release())
+	if (group && group->refcount.release())
 	    delete group;
     }
 
@@ -108,7 +113,7 @@ protected:
 
     alignas(64) DispatchObjCB dcb;
     Dispatcher &dspr;
-    uint_fast32_t flags;
+    dspflag_t flags;
     DispatchMsg msg;
 
 private:

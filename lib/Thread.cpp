@@ -313,23 +313,6 @@ bool Thread::priority(int pri) {	// NOLINT
 #endif
 }
 
-bool Thread::resume(void) {
-    bool ret = false;
-    Locker lkr(lck);
-
-    if (state == Suspended) {
-	state = Running;
-#ifdef _WIN32
-	ret = ResumeThread(hdl) != -1;
-	if (!ret)
-	    state = Suspended;
-#else
-	ret = true;
-#endif
-    }
-    return ret;
-}
-
 void Thread::thread_cleanup(void) {
     ThreadLocalMap *fmap = flocal.get();
 
@@ -345,7 +328,6 @@ void Thread::thread_cleanup(void) {
 // setup thread and call it's main routine
 THREAD_FUNC Thread::thread_init(void *arg) {
     Thread *thread = static_cast<Thread *> (arg);
-    ThreadState istate = thread->state;
 
     thread->lck.lock();
     thread->id = THREAD_ID();
@@ -353,8 +335,6 @@ THREAD_FUNC Thread::thread_init(void *arg) {
     thread->state = Running;
     thread->cv.set();
     thread->lck.unlock();
-    if (istate == Suspended)
-	thread->suspend();
     thread->retval = (thread->main)(thread->argument);
     thread->clear();
     return 0;
@@ -415,30 +395,9 @@ bool Thread::stop(void) {
 
     if (state != Terminated) {
 	onStop();
-	if (state == Suspended)
-	    resume();
 	state = Terminated;
     }
     return true;
-}
-
-bool Thread::suspend() {
-    Locker lkr(lck);
-
-    if (state == Suspended) {
-	return true;
-    } else if (state == Running) {
-	state = Suspended;
-	lkr.unlock();
-#ifdef _WIN32
-	if (SuspendThread(hdl) != (DWORD)-1)	// -V720
-	    return true;
-#endif
-	lkr.lock();
-	if (state == Suspended)
-	    state = Running;
-    }
-    return false;
 }
 
 // terminate thread ungracefully

@@ -116,7 +116,7 @@ public:
 
     virtual int sync(void) {
 	char *pb = pbase();
-	char *pp = pptr();
+	const char *pp = pptr();
 	streamsize sz = pp - pb;
 
 	if (LIKELY(sz > 0)) {
@@ -138,7 +138,7 @@ public:
 	    return *gp;
 
 	char *pb = pbase();
-	char *pp = pptr();
+	const char *pp = pptr();
 	streamsize left = pp - pb;
 
 	if (left > 0) {
@@ -168,8 +168,8 @@ public:
     }
 
     virtual streamsize xsgetn(char *p, streamsize size) {
-	char *gp = gptr();
-	char *eg = egptr();
+	const char *gp = gptr();
+	const char *eg = egptr();
 	streamsize left = eg - gp;
 
 	if (LIKELY(left >= size)) {
@@ -183,7 +183,7 @@ public:
 	    p += left;
 	}
 	char *pb = pbase();
-	char *pp = pptr();
+	const char *pp = pptr();
 	streamsize sz = size - left;
 	streamsize outleft = pp - pb;
 

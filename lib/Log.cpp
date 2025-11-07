@@ -715,7 +715,7 @@ tostream &Log::quote(tostream &os, const tchar *s) {
 		    break;
 		default:
 		    if (LIKELY(c >= ' ')) {
-			os << c;
+			os << (tchar)c;
 		    } else {
 			tchar tmp[16];
 

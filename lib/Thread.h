@@ -794,7 +794,6 @@ public:
     ThreadState getState(void) const { FastLocker lkr(lck); return state; }
     ThreadGroup *getThreadGroup(void) const { return group; }
     bool running(void) const { return getState() == Running; }
-    bool suspended(void) const { return getState() == Suspended; }
     bool terminated(void) const { return getState() == Terminated; }
 
     operator thread_hdl_t(void) const { return hdl; }
@@ -802,13 +801,11 @@ public:
     bool operator !=(const Thread &t) const { return !operator ==(t); }
 
     bool priority(int pri = 0);			// -20 -> 20
-    bool resume(void);
     bool start(uint stacksz = 0, ThreadGroup *tg = NULL, bool suspend = false,
 	bool autoterm = false);
     bool start(ThreadRoutine main, void *data = NULL, uint stacksz = 0,
 	ThreadGroup *tg = NULL, bool suspend = false, bool autoterm = false);
     bool stop(void);
-    bool suspend(void);
     bool terminate(void);
     bool wait(ulong timeout = INFINITE);
     static void thread_cleanup(void *data, ThreadLocalFree func);
@@ -861,10 +858,8 @@ public:
 
     void priority(int pri = 0);
     void remove(Thread &thread);
-    void resume(void) { onResume(); control(Running, &Thread::resume); }
     bool start(uint stacksz = 0, bool suspend = false, bool autoterm = false);
     void stop(void) { onStop(); control(Terminated, &Thread::stop); }
-    void suspend(void) { onSuspend(); control(Suspended, &Thread::suspend); }
     void terminate(void) { control(Terminated, &Thread::terminate); }
     // only the caller may delete returned Thread
     Thread *wait(ulong msec = INFINITE, bool all = false);
