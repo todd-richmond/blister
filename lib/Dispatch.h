@@ -305,26 +305,21 @@ protected:
 private:
     typedef unordered_map<socket_t, DispatchSocket *> socketmap;
 
-    class BLISTER TimerSet {
+    class BLISTER TimerSet: ::nocopy {
     public:
 	typedef ::set<DispatchTimer *, DispatchTimer::compare> sorted_timerset;
-	typedef unordered_set<DispatchTimer *, ptrhash<DispatchTimer> >
+	typedef unordered_set<DispatchTimer *, ptrhash<DispatchTimer>>
 	    unsorted_timerset;
 
 	TimerSet(): split(0) {}
-	TimerSet(const TimerSet &) = delete;
 
-	TimerSet & operator =(const TimerSet &) = delete;
-
-	bool empty(void) const { return unsorted.empty() && sorted.empty(); }
+	bool empty(void) const { return unsorted.empty(); }
 	msec_t half(void) const { return split; }
 	DispatchTimer *peek(void) const {
 	    sorted_timerset::const_iterator it = sorted.cbegin();
 
 	    return it == sorted.cend() ? NULL : *it;
 	}
-	size_t size(void) const { return unsorted.size(); }
-	size_t soon(void) const { return sorted.size(); }
 
 	void erase(void) {
 	    unsorted_timerset::const_iterator it;
@@ -352,16 +347,20 @@ private:
 	    return NULL;
 	}
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
-	void reorder(msec_t when) {
+	DispatchTimer *reorder(msec_t when) {
+	    sorted_timerset::const_iterator hint = sorted.cend();
+
 	    for (unsorted_timerset::const_iterator it = unsorted.cbegin(); it !=
 		unsorted.cend(); ++it) {
 		DispatchTimer *dt = *it;
 
 		if (dt->due != DispatchTimer::DSP_NEVER_DUE && dt->due >
 		    split && dt->due < when)
-		    sorted.insert(dt);
+		    hint = sorted.insert(hint, dt);
 	    }
 	    split = when;
+	    hint = sorted.cbegin();
+	    return hint == sorted.cend() ? NULL : *hint;
 	}
 	void set(DispatchTimer &dt, msec_t when) {
 	    if (UNLIKELY(dt.due == when))

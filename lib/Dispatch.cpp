@@ -256,10 +256,8 @@ int Dispatcher::onStart() {
 	    tlock.lock();
 	    handleTimers(now);
 	    dt = timers.peek();
-	    if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
-		timers.reorder(now + MAX_IDLE_TIMER);
-		dt = timers.peek();
-	    }
+	    if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER)
+		dt = timers.reorder(now + MAX_IDLE_TIMER);
 	    if (dt == NULL) {
 		if (timers.empty()) {
 		    due = DispatchTimer::DSP_NEVER_DUE;
@@ -372,10 +370,8 @@ int Dispatcher::onStart() {
 	handleTimers(now);
 	polling.store(true, memory_order_relaxed);
 	dt = timers.peek();
-	if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER) {
-	    timers.reorder(now + MAX_IDLE_TIMER);
-	    dt = timers.peek();
-	}
+	if (dt == NULL && timers.half() < now + MIN_IDLE_TIMER)
+	    dt = timers.reorder(now + MAX_IDLE_TIMER);
 	if (dt == NULL) {
 	    if (timers.empty()) {
 		msec = SOCK_INFINITE;
@@ -633,7 +629,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    reset();
 	    continue;
 	}
-	__builtin_prefetch(ds, 0, 3);
+	__builtin_prefetch(ds, 1, 3);
 	removeTimer(*ds);
 	olock.lock();
 	flags = ds->flags;
