@@ -348,25 +348,31 @@ private:
 	}
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
 	DispatchTimer *reorder(msec_t when) {
-	    sorted_timerset::const_iterator hint = sorted.cend();
+	    sorted_timerset::iterator hint = sorted.end();
 
 	    for (unsorted_timerset::const_iterator it = unsorted.cbegin(); it !=
 		unsorted.cend(); ++it) {
 		DispatchTimer *dt = *it;
+		msec_t due = dt->due;
 
-		if (dt->due != DispatchTimer::DSP_NEVER_DUE && dt->due >
-		    split && dt->due < when)
+		if (due < when && due > split)
 		    hint = sorted.insert(hint, dt);
 	    }
 	    split = when;
-	    hint = sorted.cbegin();
-	    return hint == sorted.cend() ? NULL : *hint;
+	    return peek();
 	}
 	void set(DispatchTimer &dt, msec_t when) {
 	    if (UNLIKELY(dt.due == when))
 		return;
-	    else if (UNLIKELY(dt.due <= split))
+	    if (UNLIKELY(dt.due <= split)) {
+		if (when <= split) {
+		    sorted_timerset::node_type node = sorted.extract(&dt);
+		    dt.due = when;
+		    sorted.insert(std::move(node));
+		    return;
+		}
 		sorted.erase(&dt);
+	    }
 	    dt.due = when;
 	    if (when <= split)
 		sorted.insert(&dt);
