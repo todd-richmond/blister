@@ -205,14 +205,13 @@ int Dispatcher::onStart() {
 	if (shutdown)
 	    break;
 	if (msg.message == socketmsg) {
-	    socketmap::const_iterator it;
+	    DispatchSocket *ds;
 	    uint evt = WSAGETSELECTEVENT(msg.lParam);
 
 	    slock.lock();
-	    if ((it = smap.find(msg.wParam)) != smap.end()) {
-		DispatchSocket *ds = it->second;
-
-		slock.unlock();
+	    ds = get_socket(msg.wParam);
+	    slock.unlock();
+	    if (ds) {
 		olock.lock();
 		if (ds->flags & DSP_Scheduled) {
 		    // uint err = WSAGETSELECTERROR(msg.lParam);
@@ -247,8 +246,6 @@ int Dispatcher::onStart() {
 		    olock.unlock();
 		}
 		removeTimer(*ds);
-	    } else {
-		slock.unlock();
 	    }
 	} else if (msg.message == WM_TIMER) {
 	    DispatchTimer *dt;
@@ -394,7 +391,6 @@ int Dispatcher::onStart() {
 	DispatchSocket *ds = NULL;
 	socket_t fd;
 	uint_fast32_t flags;
-	socketmap::const_iterator sit;
 
 	slock.lock();
 	irset = rset;
@@ -414,14 +410,11 @@ int Dispatcher::onStart() {
 	    } else {
 		slock.lock();
 		rset.unset(fd);
-		if ((sit = smap.find(fd)) == smap.end()) {
-		    slock.unlock();
+		ds = get_socket(fd);
+		slock.unlock();
+		if (!ds)
 		    continue;
-		} else {
-		    ds = sit->second;
-		    slock.unlock();
-		    removeTimer(*ds);
-		}
+		removeTimer(*ds);
 	    }
 	    olock.lock();
 	    flags = ds->flags;
@@ -448,12 +441,10 @@ int Dispatcher::onStart() {
 	    fd = owset[u];
 	    slock.lock();
 	    wset.unset(fd);
-	    if ((sit = smap.find(fd)) == smap.end()) {
-		slock.unlock();
-		continue;
-	    }
-	    ds = sit->second;
+	    ds = get_socket(fd);
 	    slock.unlock();
+	    if (!ds)
+		continue;
 	    removeTimer(*ds);
 	    olock.lock();
 	    flags = ds->flags;
@@ -477,12 +468,10 @@ int Dispatcher::onStart() {
 	for (u = 0; u < oeset.size(); u++) {
 	    fd = oeset[u];
 	    slock.lock();
-	    if ((sit = smap.find(fd)) == smap.end()) {
-		slock.unlock();
-		continue;
-	    }
-	    ds = sit->second;
+	    ds = get_socket(fd);
 	    slock.unlock();
+	    if (!ds)
+		continue;
 	    removeTimer(*ds);
 	    olock.lock();
 	    flags = ds->flags;
@@ -602,16 +591,11 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	if (UNLIKELY(evt->fd == rsock)) {
 	    ds = NULL;
 	} else {
-	    socketmap::const_iterator sit;
-
 	    slock.lock();
-	    if (UNLIKELY((sit = smap.find(evt->fd)) == smap.end())) {
-		slock.unlock();
+	    ds = get_socket(evt->fd);
+	    slock.unlock();
+	    if (UNLIKELY(!ds)
 		continue;
-	    } else {
-		ds = sit->second;
-		slock.unlock();
-	    }
 	}
 
 #elif defined(DSP_EPOLL)

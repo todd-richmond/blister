@@ -303,7 +303,15 @@ protected:
     const Config &cfg;
 
 private:
+#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
     typedef unordered_map<socket_t, DispatchSocket *> socketmap;
+
+    __forceinline DispatchSocket *get_socket(socket_t fd) const {
+	socketmap::const_iterator it = smap.find(fd);
+
+	return it == smap.end() ? NULL : it->second;
+    }
+#endif
 
     class BLISTER TimerSet: ::nocopy {
     public:
