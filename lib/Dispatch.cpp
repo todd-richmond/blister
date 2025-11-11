@@ -233,6 +233,7 @@ int Dispatcher::onStart() {
 			    ds->flags |= DSP_Closeable;
 
 		    }
+		    ds->flags &= ~DSP_Scheduled;
 		    ready(*ds, ds->msg == DispatchAccept);
 		} else {
 		    if (evt & FD_READ)
@@ -434,7 +435,7 @@ int Dispatcher::onStart() {
 	    if (flags & DSP_Scheduled) {
 		ds->msg = (flags & DSP_SelectAccept) ? DispatchAccept :
 		    DispatchRead;
-		ds->flags &= ~DSP_SelectAll;
+		ds->flags &= ~(DSP_SelectAll | DSP_Scheduled);
 		ready(*ds, ds->msg == DispatchAccept);
 	    } else {
 		ds->flags |= (flags & DSP_SelectAccept) ? DSP_Acceptable :
@@ -465,6 +466,7 @@ int Dispatcher::onStart() {
 	    }
 	    ds->flags &= ~DSP_SelectAll;
 	    if (flags & DSP_Scheduled) {
+		ds->flags &= ~DSP_Scheduled;
 		ds->msg = DispatchWrite;
 		ready(*ds);
 	    } else {
@@ -499,6 +501,7 @@ int Dispatcher::onStart() {
 	    }
 	    ds->flags &= ~DSP_SelectAll;
 	    if (flags & DSP_Scheduled) {
+		ds->flags &= ~DSP_Scheduled;
 		ds->msg = DispatchClose;
 		ready(*ds);
 	    } else {
@@ -662,11 +665,13 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		ds->flags |= DSP_Closeable;
 	}
 	DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose | DSP_SelectRead |
-	    DSP_SelectWrite);
-	if (scheduled)
+	    DSP_SelectWrite | DSP_Scheduled);
+	if (scheduled) {
+	    ds->flags &= ~DSP_Scheduled;
 	    ready(*ds, ds->msg == DispatchAccept);
-	else
+	} else {
 	    olock.unlock();
+	}
     }
 }
 #endif
@@ -924,17 +929,17 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	if ((flags & DSP_Writeable) &&
 	    (m == DispatchWrite || m == DispatchReadWrite || m ==
 	    DispatchConnect)) {
-	    ds.flags &= ~DSP_Writeable;
+	    ds.flags &= ~(DSP_Writeable | DSP_Scheduled);
 	    ds.msg = m == DispatchConnect ? DispatchConnect : DispatchWrite;
 	} else if (LIKELY((flags & DSP_Readable) && (m == DispatchRead || m ==
 	    DispatchReadWrite))) {
-	    ds.flags &= ~DSP_Readable;
+	    ds.flags &= ~(DSP_Readable | DSP_Scheduled);
 	    ds.msg = DispatchRead;
 	} else if (flags & DSP_Acceptable) {
-	    ds.flags &= ~DSP_Acceptable;
+	    ds.flags &= ~(DSP_Acceptable | DSP_Scheduled);
 	    ds.msg = DispatchAccept;
 	} else if (flags & DSP_Closeable) {
-	    ds.flags &= ~DSP_Closeable;
+	    ds.flags &= ~(DSP_Closeable | DSP_Scheduled);
 	    ds.msg = DispatchClose;
 	}
 	ready(ds, m == DispatchAccept);
@@ -967,6 +972,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     if (UNLIKELY(WSAAsyncSelect(ds.fd(), wnd, socketmsg, sockevts[(int)m]))) {
 	removeTimer(ds);
 	olock.lock();
+	ds->flags &= ~DSP_Scheduled;
 	ds.msg = DispatchClose;
 	ready(ds);
     }
@@ -1030,11 +1036,6 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 void Dispatcher::addReady(DispatchObj &obj, bool hipri, DispatchMsg reason) {
     olock.lock();
     obj.msg = reason;
-    if (obj.flags & DSP_Scheduled) {
-	olock.unlock();
-	obj.cancel();
-	olock.lock();
-    }
     ready(obj, hipri);
 }
 
@@ -1077,16 +1078,14 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
     } else {
 	uint rsz;
 
-	obj.flags = (flags & ~DSP_Scheduled) | DSP_Ready;
-	/*
-	 * tfr
-	if (flags & ~DSP_Scheduled) {
+	if (flags & DSP_Scheduled) {
+	    olock.unlock();
 	    obj.cancel();
 	    obj.flags = (flags & ~DSP_Scheduled) | DSP_Ready;
+	    olock.lock();
 	} else {
 	    obj.flags |= DSP_Ready;
 	}
-	*/
 	if (UNLIKELY(hipri))
 	    rlist.push_front(obj);
 	else
