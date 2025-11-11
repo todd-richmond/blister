@@ -231,6 +231,7 @@ int Dispatcher::onStart() {
 			    ds->msg = DispatchClose;
 			else
 			    ds->flags |= DSP_Closeable;
+
 		    }
 		    ready(*ds, ds->msg == DispatchAccept);
 		} else {
@@ -436,8 +437,8 @@ int Dispatcher::onStart() {
 		ds->flags &= ~DSP_SelectAll;
 		ready(*ds, ds->msg == DispatchAccept);
 	    } else {
-		ds->flags |= (ds->flags & DSP_SelectAccept) ?
-		    DSP_Acceptable : DSP_Readable;
+		ds->flags |= (flags & DSP_SelectAccept) ? DSP_Acceptable :
+		    DSP_Readable;
 		ds->flags &= ~DSP_SelectAll;
 		olock.unlock();
 	    }
@@ -587,6 +588,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds;
 	const event_t *evt = (const event_t *)evts + u;
+	bool scheduled;
 
 #ifdef DSP_DEVPOLL
 #define DSP_EVENT_ERR(evt)	evt->revents & (POLLERR | POLLHUP)
@@ -633,36 +635,35 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	removeTimer(*ds);
 	olock.lock();
 	flags = ds->flags;
+	scheduled = flags & DSP_Scheduled;
 	if (UNLIKELY(flags & DSP_Freed)) {
 	    olock.unlock();
 	    continue;
 	}
 	if (LIKELY(DSP_EVENT_READ(evt))) {
-	    if (ds->msg == DispatchNone && (flags & DSP_Scheduled))
-		ds->msg = UNLIKELY(flags & DSP_SelectAccept) ?  DispatchAccept :
+	    if (scheduled)
+		ds->msg = UNLIKELY(flags & DSP_SelectAccept) ? DispatchAccept :
 		    DispatchRead;
 	    else
 		ds->flags |= DSP_Readable;
-	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectRead);
 	}
 	if (UNLIKELY(DSP_EVENT_WRITE(evt))) {
 	    if (flags & DSP_Connecting)
 		ds->msg = DispatchConnect;
-	    else if (ds->msg == DispatchNone && (flags & DSP_Scheduled))
+	    else if (ds->msg == DispatchNone && scheduled)
 		ds->msg = DispatchWrite;
 	    else
 		ds->flags |= DSP_Writeable;
-	    DSP_ONESHOT(ds, DSP_SelectWrite);
 	}
 	if (UNLIKELY(DSP_EVENT_ERR(evt))) {
-	    if (ds->msg == DispatchConnect || (ds->msg == DispatchNone &&
-		ds->flags & DSP_Scheduled))
+	    if (ds->msg == DispatchNone && scheduled)
 		ds->msg = DispatchClose;
 	    else
 		ds->flags |= DSP_Closeable;
-	    DSP_ONESHOT(ds, DSP_SelectClose);
 	}
-	if (flags & DSP_Scheduled)
+	DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose | DSP_SelectConnect |
+	    DSP_SelectRead | DSP_SelectWrite);
+	if (scheduled)
 	    ready(*ds, ds->msg == DispatchAccept);
 	else
 	    olock.unlock();
@@ -1029,6 +1030,11 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 void Dispatcher::addReady(DispatchObj &obj, bool hipri, DispatchMsg reason) {
     olock.lock();
     obj.msg = reason;
+    if (obj.flags & DSP_Scheduled) {
+	olock.unlock();
+	obj.cancel();
+	olock.lock();
+    }
     ready(obj, hipri);
 }
 
@@ -1056,8 +1062,10 @@ void Dispatcher::removeReady(DispatchObj &obj) {
 
 // enter locked, leave unlocked for performance
 void Dispatcher::ready(DispatchObj &obj, bool hipri) {
-    if (UNLIKELY(obj.flags & DSP_Active)) {
-	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
+    dspflag_t flags = obj.flags;
+
+    if (UNLIKELY(flags & DSP_Active)) {
+	obj.flags = (flags & ~DSP_Scheduled) | DSP_Ready;
 	olock.unlock();
     } else if (UNLIKELY(obj.group && obj.group->active)) {
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_ReadyGroup;
@@ -1069,7 +1077,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
     } else {
 	uint rsz;
 
-	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
+	obj.flags = (flags & ~DSP_Scheduled) | DSP_Ready;
 	if (UNLIKELY(hipri))
 	    rlist.push_front(obj);
 	else
