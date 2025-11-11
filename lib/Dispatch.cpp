@@ -661,8 +661,8 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    else
 		ds->flags |= DSP_Closeable;
 	}
-	DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose | DSP_SelectConnect |
-	    DSP_SelectRead | DSP_SelectWrite);
+	DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose | DSP_SelectRead |
+	    DSP_SelectWrite);
 	if (scheduled)
 	    ready(*ds, ds->msg == DispatchAccept);
 	else
@@ -1078,6 +1078,15 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	uint rsz;
 
 	obj.flags = (flags & ~DSP_Scheduled) | DSP_Ready;
+	/*
+	 * tfr
+	if (flags & ~DSP_Scheduled) {
+	    obj.cancel();
+	    obj.flags = (flags & ~DSP_Scheduled) | DSP_Ready;
+	} else {
+	    obj.flags |= DSP_Ready;
+	}
+	*/
 	if (UNLIKELY(hipri))
 	    rlist.push_front(obj);
 	else
