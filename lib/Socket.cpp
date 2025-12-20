@@ -223,7 +223,7 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
 	s.assign(host + 1, (tstring::size_type)(p - host - 1));
 	host = s.c_str();
 	p = tstrchr(p, ':');
-    } else if ((p = tstrchr(host, ':')) != NULL) {
+    } else if ((p = tstrrchr(host, ':')) != NULL) {
 	s.assign(host, (tstring::size_type)(p - host));
 	if (s == T("unix"))
 	    p = NULL;

@@ -177,15 +177,21 @@ bool Log::LogFile::reopen(void) {
     if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
 	char buf[PATH_MAX];
 	time_t now = ::time(NULL);
+	const struct tm *tm;
 	struct tm tmbuf;
-	const struct tm *tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(&now,
-	    &tmbuf);
 
-	strftime(buf, sizeof (buf), tstringtoachar(file), tm);
-	if (link(tstringtoachar(path), buf)) {
-	    ::close(fd);
-	    fd = -3;
-	    return false;
+	while (true) {
+	    tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(&now, &tmbuf);
+	    strftime(buf, sizeof (buf), tstringtoachar(file), tm);
+	    if (!link(path.c_str(), buf)) {
+		break;
+	    } else if (errno == EEXIST) {
+		++now;
+	    } else {
+		::close(fd);
+		fd = -3;
+		return false;
+	    }
 	}
     }
     return true;

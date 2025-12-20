@@ -610,7 +610,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 #define DSP_EVENT_ERR(evt)	evt->flags & (EV_EOF | EV_ERROR)
 #define DSP_EVENT_READ(evt)	evt->filter == EVFILT_READ && evt->data > 0
 #define DSP_EVENT_WRITE(evt)	evt->filter == EVFILT_WRITE && evt->data > 0
-#define DSP_ONESHOT(ds, flag)
+#define DSP_ONESHOT(ds, flag)	ds->flags &= ~DSP_Scheduled;
 
 	ds = static_cast<DispatchSocket *>(evt->udata);
 #endif
@@ -650,12 +650,10 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	}
 	DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose | DSP_SelectRead |
 	    DSP_SelectWrite | DSP_Scheduled);
-	if (scheduled) {
-	    ds->flags &= ~DSP_Scheduled;
+	if (scheduled)
 	    ready(*ds, ds->msg == DispatchAccept);
-	} else {
+	else
 	    olock.unlock();
-	}
     }
 }
 #endif
