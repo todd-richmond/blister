@@ -361,9 +361,9 @@ private:
 	    for (unsorted_timerset::const_iterator it = unsorted.cbegin(); it !=
 		unsorted.cend(); ++it) {
 		DispatchTimer *dt = *it;
-		msec_t due = dt->due;
+		msec_t msec = dt->due;
 
-		if (due < when && due > split)
+		if (msec < when && msec > split)
 		    hint = sorted.insert(hint, dt);
 	    }
 	    split = when;
