@@ -166,7 +166,7 @@ public:
     __forceinline Log &log(const T &val) { return log(tls.get(), val); }
     __forceinline Log &log(const tchar *val) { return log(tls.get(), val); }
 #pragma warning(disable: 26461)
-    __forceinline Log &log(tchar *val) {
+    __forceinline Log &log(tchar *val) {    // NOLINT
 	return log(tls.get(), (const tchar *)val);
     }
     // cppcheck-suppress constParameterReference

@@ -364,7 +364,7 @@ bool SockaddrList::insert(const tchar *host, const tchar *service,
 
     if (!ai)
 	return false;
-    for (addrinfo *elem = ai; elem; elem = elem->ai_next)
+    for (const addrinfo *elem = ai; elem; elem = elem->ai_next)
 	insert(Sockaddr(elem));
     freeaddrinfo(ai);
     return true;

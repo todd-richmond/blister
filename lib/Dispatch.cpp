@@ -230,7 +230,6 @@ int Dispatcher::onStart() {
 			    ds->msg = DispatchClose;
 			else
 			    ds->flags |= DSP_Closeable;
-
 		    }
 		    ds->flags &= ~DSP_Scheduled;
 		    ready(*ds, ds->msg == DispatchAccept);
@@ -594,7 +593,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    slock.lock();
 	    ds = get_socket(evt->fd);
 	    slock.unlock();
-	    if (UNLIKELY(!ds)
+	    if (UNLIKELY(!ds))
 		continue;
 	}
 
