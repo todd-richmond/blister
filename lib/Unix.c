@@ -56,7 +56,19 @@ int clock_gettime(int id, struct timespec *ts) {
 
 msec_t mticks(void) {
 #ifdef __APPLE__
-    return clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW_APPROX) / 1000000;
+    static atomic_flag lck = ATOMIC_FLAG_INIT;
+    static struct mach_timebase_info mti;
+
+    if (UNLIKELY(!mti.denom)) {
+	while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
+	    THREAD_YIELD();
+	if (!mti.denom) {
+	    mach_timebase_info(&mti);
+	    mti.denom *= 1000000;
+	}
+	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
+    }
+    return mach_approximate_time() * mti.numer / mti.denom; // codespell:ignore numer
 #else
     struct timespec ts;
 
