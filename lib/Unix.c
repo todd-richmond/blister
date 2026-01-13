@@ -55,37 +55,23 @@ int clock_gettime(int id, struct timespec *ts) {
 #endif
 
 msec_t mticks(void) {
-#if defined(__APPLE__)
-    static atomic_flag lck = ATOMIC_FLAG_INIT;
-    static struct mach_timebase_info mti;
-
-    if (UNLIKELY(!mti.denom)) {
-        while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
-	    THREAD_YIELD();
-	if (!mti.denom) {
-	    mach_timebase_info(&mti);
-	    mti.denom *= 1000000;
-	}
-	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
-    }
-    return (mach_absolute_time() + 500000) * mti.numer / mti.denom; // codespell:ignore numer
-#elif defined(CLOCK_MONOTONIC_COARSE)
+#ifdef __APPLE__
+    return clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW_APPROX) / 1000000;
+#else
     struct timespec ts;
 
     clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-    return (msec_t)ts.tv_sec * 1000 + (msec_t)(ts.tv_nsec + 500000) / 1000000;
-#else
-    return (msec_t)((uticks() + 500) / 1000);
+    return (msec_t)ts.tv_sec * 1000 + (msec_t)ts.tv_nsec / 1000000;
 #endif
 }
 
 usec_t __no_sanitize("thread") uticks(void) {
-#if defined(__APPLE__)
+#ifdef __APPLE__
     static atomic_flag lck = ATOMIC_FLAG_INIT;
     static struct mach_timebase_info mti;
 
     if (UNLIKELY(!mti.denom)) {
-        while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
+	while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
 	    THREAD_YIELD();
 	if (!mti.denom) {
 	    mach_timebase_info(&mti);
@@ -94,43 +80,11 @@ usec_t __no_sanitize("thread") uticks(void) {
 	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
     }
     return mach_absolute_time() * mti.numer / mti.denom; // codespell:ignore numer
-#elif defined(CLOCK_MONOTONIC)
+#else
     struct timespec ts;
 
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (usec_t)ts.tv_sec * 1000000 + (usec_t)ts.tv_nsec / 1000;
-#else
-    usec_t diff, now, save;
-    struct timeval tv;
-    static volatile usec_t lastusec, lastutick;
-
-    gettimeofday(&tv, NULL);
-    now = (usec_t)tv.tv_sec * 1000000 + tv.tv_usec;
-    diff = now - lastusec;
-    save = lastutick;
-    if (lastusec - now < 1000000) {
-	return lastutick;
-    } else if (diff > 1000000 && save == lastutick) {
-	// check for system time change
-	struct tms tbuf;
-	ulong ticks = times(&tbuf);
-	usec_t ticksdiff;
-	static ulong lastticks, tps;
-
-	if (!tps) {
-	    tps = sysconf(_SC_CLK_TCK);
-	    lastticks = ticks;
-	}
-	ticksdiff = ((usec_t)(ticks - lastticks) * (usec_t)1000000) / tps;
-	if (now < lastusec || diff > ticksdiff + 1000)
-	    diff = ticksdiff;
-	lastticks = ticks;
-    }
-    if (save == lastutick) {
-	lastutick += diff;
-	lastusec = now;
-    }
-    return lastutick;
 #endif
 }
 
