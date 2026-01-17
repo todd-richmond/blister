@@ -290,6 +290,11 @@ private:
     alignas(64) shared_mutex mtx;
 };
 
+typedef LockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> RLocker;
+typedef LockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> WLocker;
+typedef FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> FastRLocker;
+typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker;
+
 template<class C>
 class BLISTER _Semaphore: nocopy {
 public:
@@ -420,11 +425,6 @@ typedef FastLockerTemplate<SpinRWLock, &SpinRWLock::rlock, &SpinRWLock::runlock>
     FastSpinRLocker;
 typedef FastLockerTemplate<SpinRWLock, &SpinRWLock::wlock, &SpinRWLock::wunlock>
     FastSpinWLocker;
-
-typedef LockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> RLocker;
-typedef LockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> WLocker;
-typedef FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> FastRLocker;
-typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker;
 
 class TicketLock: nocopy {
 public:

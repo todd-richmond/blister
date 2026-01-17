@@ -32,6 +32,23 @@
 constexpr uint BUFSZ = 32 * 1024U;
 constexpr uint KEYSZ = 256;
 
+template<typename T>
+static T atou(const tchar *str) {
+    tchar c = *str;
+    T val = 0;
+
+    while (c >= '0' && c <= '9') {
+	val = val * 10 + (T)(c - '0');
+	c = *(++str);
+    }
+    return val;
+}
+
+template<typename T>
+static T atoi(const tchar *str) {
+    return *str == '-' ? -1 * atou<T>(str + 1) : atou<T>(str);
+}
+
 void Config::clear(void) {
     WLocker lkr(lck, !THREAD_ISSELF(locker));
     kvmap::size_type sz = amap.size(), u = sz;
@@ -134,10 +151,10 @@ long Config::get(const tchar *key, long def, const tchar *sect) const {
 
     if (LIKELY(kv)) {
 	if (LIKELY(!kv->expand))
-	    return tstrtol(kv->val, NULL, 10);
+	    return atoi<long>(kv->val);
 	tstring s;
 	if (expandkv(kv, s))
-	    return stol(s);
+	    return atoi<long>(s.c_str());
     }
     return def;
 }
@@ -148,10 +165,10 @@ llong Config::get(const tchar *key, llong def, const tchar *sect) const {
 
     if (LIKELY(kv)) {
 	if (LIKELY(!kv->expand))
-	    return tstrtoll(kv->val, NULL, 10);
+	    return atoi<llong>(kv->val);
 	tstring s;
 	if (expandkv(kv, s))
-	    return stoll(s);
+	    return atoi<llong>(s.c_str());
     }
     return def;
 }
@@ -162,10 +179,10 @@ ulong Config::get(const tchar *key, ulong def, const tchar *sect) const {
 
     if (LIKELY(kv)) {
 	if (LIKELY(!kv->expand))
-	    return tstrtoul(kv->val, NULL, 10);
+	    return atou<ulong>(kv->val);
 	tstring s;
 	if (expandkv(kv, s))
-	    return stoul(s);
+	    return atou<ulong>(s.c_str());
     }
     return def;
 }
@@ -176,10 +193,10 @@ ullong Config::get(const tchar *key, ullong def, const tchar *sect) const {
 
     if (LIKELY(kv)) {
 	if (LIKELY(!kv->expand))
-	    return tstrtoull(kv->val, NULL, 10);
+	    return atou<ullong>(kv->val);
 	tstring s;
 	if (expandkv(kv, s))
-	    return stoull(s);
+	    return atou<ullong>(s.c_str());
     }
     return def;
 }
@@ -190,10 +207,10 @@ double Config::get(const tchar *key, double def, const tchar *sect) const {
 
     if (LIKELY(kv)) {
 	if (LIKELY(!kv->expand))
-	    return tstrtod(kv->val, NULL);
+	    return atoi<long>(kv->val);
 	tstring s;
 	if (expandkv(kv, s))
-	    return stod(s);
+	    return atoi<long>(kv->val);
     }
     return def;
 }

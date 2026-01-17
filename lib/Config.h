@@ -18,6 +18,7 @@
 #ifndef Config_h
 #define Config_h
 
+#include <charconv>
 #include <unordered_map>
 #include "Thread.h"
 
@@ -119,60 +120,33 @@ public:
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = NULL, bool append = false);
     void reserve(ulong sz) { amap.reserve(amap.size() + sz / 40); }
+    template<typename T>
+    Config &set(const tchar *key, T val, const tchar *sect = NULL) {
+	tchar buf[64];
+	auto [ptr, ec] = to_chars(buf, buf + sizeof (buf), val);
+	WLocker lkr(lck, !THREAD_ISSELF(locker));
+
+	*ptr = '\0';
+	return set(key, tstrlen(key), buf, (size_t)(ptr - buf), sect, sect ?
+	    tstrlen(sect) : 0);
+    }
     Config &set(const tchar *key, const tchar *val, const tchar *sect = NULL) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	return set(key, tstrlen(key), val, tstrlen(val), sect, sect ?
 	    tstrlen(sect) : 0);
     }
+    Config &set(const tchar *key, const bool val, const tchar *sect = NULL) {
+	return set(key, val ? T("t") : T("f"), sect);
+    }
+    Config &set(const char *attr, char *val, const char *sect = NULL) {
+	return set(attr, (const char *)val, sect);
+    }
     Config &set(const tstring &key, const tstring &val, const tstring &sect) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
 
 	return set(key.c_str(), key.size(), val.c_str(), val.size(),
 	    sect.c_str(), sect.size());
-    }
-    Config &set(const tchar *key, const bool val, const tchar *sect = NULL) {
-	return set(key, val ? T("t") : T("f"), sect);
-    }
-    Config &set(const tchar *key, double val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%g"), val); return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, float val, const tchar *sect = NULL) {
-	tchar buf[24];
-	tsprintf(buf, T("%f"), (double)val);
-	return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, int val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%d"), val); return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, long val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%ld"), val); return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, llong val, const tchar *sect = NULL) {
-	tchar buf[48];
-	tsprintf(buf, T("%lld"), val);
-	return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, short val, const tchar *sect = NULL) {
-	tchar buf[16]; tsprintf(buf, T("%hd"), val); return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, tchar val, const tchar *sect = NULL) {
-	tchar buf[2]; buf[0] = val; buf[1] = '\0'; return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, uint val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%u"), val); return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, ulong val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%lu"), val); return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, ullong val, const tchar *sect = NULL) {
-	tchar buf[48];
-	// cppcheck-suppress invalidPrintfArgType_uint
-	tsprintf(buf, T("%llu"), val);
-	return set(key, buf, sect);
-    }
-    Config &set(const tchar *key, ushort val, const tchar *sect = NULL) {
-	tchar buf[24]; tsprintf(buf, T("%hu"), val); return set(key, buf, sect);
     }
     Config &setv(const tchar *key, const tchar *val, ... /* , const tchar
 	*sect = NULL, NULL */);
