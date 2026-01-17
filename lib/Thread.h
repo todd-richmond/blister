@@ -513,10 +513,10 @@ public:
 	close();
 	return (hdl = CreateEvent(NULL, manual, set, name)) != NULL;
     }
-    __forceinline bool pulse(void) { return PulseEvent(hdl) != 0; }
-    __forceinline bool reset(void) { return ResetEvent(hdl) != 0; }
-    __forceinline bool set(void) { return SetEvent(hdl) != 0; }
-    __forceinline bool wait(ulong msec = INFINITE) {
+    __forceinline bool pulse(void) const { return PulseEvent(hdl) != 0; }
+    __forceinline bool reset(void) const { return ResetEvent(hdl) != 0; }
+    __forceinline bool set(void) const { return SetEvent(hdl) != 0; }
+    __forceinline bool wait(ulong msec = INFINITE) const {
 	return WaitForSingleObject(hdl, msec) != WAIT_TIMEOUT;
     }
 
@@ -548,13 +548,13 @@ public:
 	    hdl = OpenSemaphore(SEMAPHORE_ALL_ACCESS, 0, name);
 	return hdl != NULL;
     }
-    __forceinline bool set(uint cnt = 1) {
+    __forceinline bool set(uint cnt = 1) const {
 	return ReleaseSemaphore(hdl, (LONG)cnt, NULL) != 0;
     }
-    __forceinline bool trywait(void) {
+    __forceinline bool trywait(void) const {
 	return WaitForSingleObject(hdl, 0) == WAIT_OBJECT_0;
     }
-    __forceinline bool wait(ulong msec = INFINITE) {
+    __forceinline bool wait(ulong msec = INFINITE) const {
 	return WaitForSingleObject(hdl, msec) == WAIT_OBJECT_0;
     }
 
@@ -573,7 +573,7 @@ public:
     static Process self;
 
     operator HANDLE(void) const { return hdl; }
-    bool mask(ulong m) { return SetProcessAffinityMask(hdl, m) != 0; }
+    bool mask(ulong m) const { return SetProcessAffinityMask(hdl, m) != 0; }
     static Process start(tchar * const *args, const int *fds = NULL);
 
 private:

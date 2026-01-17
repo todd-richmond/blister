@@ -482,13 +482,13 @@ void Log::endlog(Tlsdata &tlsd) {
     if (_type == KeyVal) {
 	strbuf.reserve(strbuf.size() + 64 + sz);
 	strbuf += T("ll=");
-	WARN_PUSH_DISABLE(33011);
-	strbuf += LevelStr[clvl];
-	WARN_POP();
+	if (clvl >= None && clvl <= Trace)
+	    strbuf += LevelStr2[clvl];
 	strbuf += ' ';
     } else if (_type != NoLevel && _type != NoTime) {
 	strbuf.reserve(strbuf.size() + 32 + sz);
-	strbuf += LevelStr[clvl];
+	if (clvl >= None && clvl <= Trace)
+	    strbuf += LevelStr[clvl];
 	if (_type == Syslog)
 	    strbuf += ':';
 	if (clvl == Err)

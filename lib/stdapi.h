@@ -803,9 +803,9 @@ static inline usec_t microtime(void) {
 
 static inline void time_adjust_msec(struct timespec *ts, ulong msec) {
     ts->tv_sec += (time_t)(msec / 1000U);
-    *(ulong *)&ts->tv_nsec += (msec % 1000U) * 1000000U;
-    if ((ulong)ts->tv_nsec > 1000000000U) {
-	*(ulong *)&ts->tv_nsec -= 1000000000U;
+    *(ulong *)&ts->tv_nsec += (msec % 1000U) * 1000000UL;
+    if ((ulong)ts->tv_nsec > 1000000000UL) {
+	*(ulong *)&ts->tv_nsec -= 1000000000UL;
 	++ts->tv_sec;
     }
 }

@@ -776,7 +776,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
     socket_t fd = ds.fd();
 
     cancelTimer(ds, del);
-    if (!ds.mapped || fd == INVALID_SOCKET)
+    if (!ds.mapped || fd == (socket_t)INVALID_SOCKET)
 	return;
 #ifdef DSP_WIN32_ASYNC
     slock.lock();
