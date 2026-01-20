@@ -131,8 +131,10 @@ public:
 	char *gp = gptr();
 
 	if (UNLIKELY(gp == NULL)) {
-	    signed char c;
-	    return fd->read((char *)&c, sizeof (c)) == (int)sizeof (c) ? c : -1;
+	    uchar c;
+
+	    return fd->read((char *)&c, sizeof (c)) == (int)sizeof (c) ?
+		(int)c : -1;
 	}
 	if (LIKELY(gp < egptr()))
 	    return *gp;
