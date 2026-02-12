@@ -207,10 +207,10 @@ double Config::get(const tchar *key, double def, const tchar *sect) const {
 
     if (LIKELY(kv)) {
 	if (LIKELY(!kv->expand))
-	    return atoi<long>(kv->val);
+	    return tstrtod(kv->val, NULL);
 	tstring s;
 	if (expandkv(kv, s))
-	    return atoi<long>(kv->val);
+	    return tstrtod(s.c_str(), NULL);
     }
     return def;
 }
@@ -262,7 +262,7 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     memcpy(kv->val, val, vlen * sizeof (tchar));
     kv->val[vlen] = '\0';
     kv->key = (tchar *)memcpy(kv->val + vlen + 1, key, klen * sizeof (tchar));
-    kv->key[klen] = '\0';
+    ((tchar *)kv->key)[klen] = '\0';
     kv->expand = false;
     if (LIKELY(vlen > 3 && quote != '\'')) {
 #ifdef _UNICODE

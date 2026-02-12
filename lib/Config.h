@@ -139,8 +139,8 @@ public:
     Config &set(const tchar *key, const bool val, const tchar *sect = NULL) {
 	return set(key, val ? T("t") : T("f"), sect);
     }
-    Config &set(const char *attr, char *val, const char *sect = NULL) {
-	return set(attr, (const char *)val, sect);
+    Config &set(const tchar *attr, tchar *val, const tchar *sect = NULL) {
+	return set(attr, (const tchar *)val, sect);
     }
     Config &set(const tstring &key, const tstring &val, const tstring &sect) {
 	WLocker lkr(lck, !THREAD_ISSELF(locker));
@@ -159,7 +159,7 @@ public:
 
 private:
     struct BLISTER KV {
-	tchar *key;
+	const tchar *key;
 	bool expand;
 	tchar quote;
 	tchar val[];
