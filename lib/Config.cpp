@@ -100,8 +100,8 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	    2 : 0;
 	tstring s(val, spos + 2 + off, epos - spos - 2 - off);
 
-	if (!pre.empty() && s.compare(0, pre.size(), pre) == 0 && s.size() >
-	    pre.size() + 1 && s[pre.size()] == '.')
+	if (!pre.empty() && s.starts_with(pre) && s.size() > pre.size() + 1 &&
+	    s[pre.size()] == '.')
 	    s.erase(0, pre.size() + 1);
 	it = amap.find(s.c_str());
 	if (it == amap.end())
@@ -394,7 +394,7 @@ bool Config::parse(tistream &is) {
 		key.remove_prefix(2);
 	    } else if (!pre.empty()) {
 		if (key.size() > pre.size() + 1 && key[pre.size()] == '.' &&
-		    key.compare(0, pre.size(), pre) == 0)
+		    key.starts_with(pre))
 		    key.remove_prefix(pre.size() + 1);
 		else if (key.find('.') != key.npos)
 		    continue;

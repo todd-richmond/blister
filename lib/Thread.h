@@ -18,6 +18,10 @@
 #ifndef Thread_h
 #define Thread_h
 
+#ifndef stdapi_h
+#include "stdapi.h"
+#endif
+
 #ifdef _WIN32
 #include <process.h>
 #include <windows.h>
