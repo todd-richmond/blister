@@ -205,13 +205,14 @@ int Dispatcher::onStart() {
 	if (shutdown)
 	    break;
 	if (msg.message == socketmsg) {
-	    DispatchSocket *ds;
+	    socketmap::const_iterator it;
 	    uint evt = WSAGETSELECTEVENT(msg.lParam);
 
 	    slock.lock();
-	    ds = get_socket(msg.wParam);
-	    slock.unlock();
-	    if (ds) {
+	    if ((it = smap.find(msg.wParam)) != smap.end()) {
+		DispatchSocket *ds = it->second;
+
+		slock.unlock();
 		olock.lock();
 		if (ds->flags & DSP_Scheduled) {
 		    // uint err = WSAGETSELECTERROR(msg.lParam);
@@ -231,7 +232,6 @@ int Dispatcher::onStart() {
 			else
 			    ds->flags |= DSP_Closeable;
 		    }
-		    ds->flags &= ~DSP_Scheduled;
 		    ready(*ds, ds->msg == DispatchAccept);
 		} else {
 		    if (evt & FD_READ)
@@ -245,6 +245,8 @@ int Dispatcher::onStart() {
 		    olock.unlock();
 		}
 		removeTimer(*ds);
+	    } else {
+		slock.unlock();
 	    }
 	} else if (msg.message == WM_TIMER) {
 	    DispatchTimer *dt;
@@ -390,6 +392,7 @@ int Dispatcher::onStart() {
 	DispatchSocket *ds = NULL;
 	socket_t fd;
 	uint_fast32_t flags;
+	socketmap::const_iterator sit;
 
 	slock.lock();
 	irset = rset;
@@ -409,11 +412,14 @@ int Dispatcher::onStart() {
 	    } else {
 		slock.lock();
 		rset.unset(fd);
-		ds = get_socket(fd);
-		slock.unlock();
-		if (!ds)
+		if ((sit = smap.find(fd)) == smap.end()) {
+		    slock.unlock();
 		    continue;
-		removeTimer(*ds);
+		} else {
+		    ds = sit->second;
+		    slock.unlock();
+		    removeTimer(*ds);
+		}
 	    }
 	    olock.lock();
 	    flags = ds->flags;
@@ -427,7 +433,7 @@ int Dispatcher::onStart() {
 	    if (flags & DSP_Scheduled) {
 		ds->msg = (flags & DSP_SelectAccept) ? DispatchAccept :
 		    DispatchRead;
-		ds->flags &= ~(DSP_SelectAll | DSP_Scheduled);
+		ds->flags &= ~DSP_SelectAll;
 		ready(*ds, ds->msg == DispatchAccept);
 	    } else {
 		ds->flags |= (flags & DSP_SelectAccept) ? DSP_Acceptable :
@@ -440,10 +446,12 @@ int Dispatcher::onStart() {
 	    fd = owset[u];
 	    slock.lock();
 	    wset.unset(fd);
-	    ds = get_socket(fd);
-	    slock.unlock();
-	    if (!ds)
+	    if ((sit = smap.find(fd)) == smap.end()) {
+		slock.unlock();
 		continue;
+	    }
+	    ds = sit->second;
+	    slock.unlock();
 	    removeTimer(*ds);
 	    olock.lock();
 	    flags = ds->flags;
@@ -456,7 +464,6 @@ int Dispatcher::onStart() {
 	    }
 	    ds->flags &= ~DSP_SelectAll;
 	    if (flags & DSP_Scheduled) {
-		ds->flags &= ~DSP_Scheduled;
 		ds->msg = DispatchWrite;
 		ready(*ds);
 	    } else {
@@ -467,10 +474,12 @@ int Dispatcher::onStart() {
 	for (u = 0; u < oeset.size(); u++) {
 	    fd = oeset[u];
 	    slock.lock();
-	    ds = get_socket(fd);
-	    slock.unlock();
-	    if (!ds)
+	    if ((sit = smap.find(fd)) == smap.end()) {
+		slock.unlock();
 		continue;
+	    }
+	    ds = sit->second;
+	    slock.unlock();
 	    removeTimer(*ds);
 	    olock.lock();
 	    flags = ds->flags;
@@ -489,7 +498,6 @@ int Dispatcher::onStart() {
 	    }
 	    ds->flags &= ~DSP_SelectAll;
 	    if (flags & DSP_Scheduled) {
-		ds->flags &= ~DSP_Scheduled;
 		ds->msg = DispatchClose;
 		ready(*ds);
 	    } else {
@@ -562,9 +570,12 @@ void Dispatcher::cleanup(void) {
 
 #if defined(DSP_DEVPOLL) || defined(DSP_EPOLL) || defined(DSP_KQUEUE)
 void Dispatcher::handleEvents(const void *evts, uint nevts) {
-    uint_fast32_t flags;
-    uint_fast32_t s = scanning.load(memory_order_relaxed);
+    //uint_fast32_t s = scanning.load(memory_order_relaxed);
+    uint cnt1 = 0, cnt2 = 0;
+    DispatchSocket *dss[MAX_EVENTS];
+    bool rst = false;
 
+    /*
     if (!s) {
 	uint diff = (nevts + 2) / 3;
 
@@ -576,10 +587,11 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		scanning.fetch_sub(diff, memory_order_relaxed);
 	}
     }
+    */
+    tlock.lock();
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds;
 	const event_t *evt = (const event_t *)evts + u;
-	bool scheduled;
 
 #ifdef DSP_DEVPOLL
 #define DSP_EVENT_ERR(evt)	evt->revents & (POLLERR | POLLHUP)
@@ -590,11 +602,16 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	if (UNLIKELY(evt->fd == rsock)) {
 	    ds = NULL;
 	} else {
+	    socketmap::const_iterator sit;
+
+	    tlock.unlock();
 	    slock.lock();
-	    ds = get_socket(evt->fd);
+	    if (UNLIKELY((sit = smap.find(evt->fd)) == smap.end()))
+		ds = NULL;
+	    else
+		ds = sit->second;
 	    slock.unlock();
-	    if (UNLIKELY(!ds))
-		continue;
+	    tlock.lock();
 	}
 
 #elif defined(DSP_EPOLL)
@@ -609,23 +626,32 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 #define DSP_EVENT_ERR(evt)	evt->flags & (EV_EOF | EV_ERROR)
 #define DSP_EVENT_READ(evt)	evt->filter == EVFILT_READ && evt->data > 0
 #define DSP_EVENT_WRITE(evt)	evt->filter == EVFILT_WRITE && evt->data > 0
-#define DSP_ONESHOT(ds, flag)	ds->flags &= ~DSP_Scheduled;
+#define DSP_ONESHOT(ds, flag)	ds->flags &= ~DSP_Scheduled
 
 	ds = static_cast<DispatchSocket *>(evt->udata);
 #endif
-	if (!ds) {
-	    reset();
+	if (UNLIKELY(!ds)) {
+	    rst = true;
 	    continue;
 	}
 	__builtin_prefetch(ds, 1, 3);
-	removeTimer(*ds);
-	olock.lock();
+	if (UNLIKELY(ds->flags & DSP_Freed))
+	    continue;
+	dss[cnt1++] = ds;
+	timers.set(*ds, DispatchTimer::DSP_NEVER_DUE);
+    }
+    tlock.unlock();
+    olock.lock();
+    for (uint u = 0; u < cnt1; u++) {
+	DispatchSocket *ds = dss[u];
+	const event_t *evt = (const event_t *)evts + u;
+	dspflag_t flags;
+	bool scheduled;
+
+	if (!ds)
+	    continue;
 	flags = ds->flags;
 	scheduled = flags & DSP_Scheduled;
-	if (UNLIKELY(flags & DSP_Freed)) {
-	    olock.unlock();
-	    continue;
-	}
 	if (LIKELY(DSP_EVENT_READ(evt))) {
 	    if (scheduled)
 		ds->msg = UNLIKELY(flags & DSP_SelectAccept) ? DispatchAccept :
@@ -647,13 +673,61 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    else
 		ds->flags |= DSP_Closeable;
 	}
-	DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose | DSP_SelectRead |
-	    DSP_SelectWrite | DSP_Scheduled);
-	if (scheduled)
-	    ready(*ds, ds->msg == DispatchAccept);
-	else
-	    olock.unlock();
+	if (scheduled) {
+	    if (UNLIKELY(flags & DSP_Active)) {
+		ds->flags |= DSP_Ready;
+	    } else if (UNLIKELY(ds->group && ds->group->active)) {
+		ds->flags |= DSP_ReadyGroup;
+		ds->group->glist.push_back(*ds);
+	    } else {
+		cnt2++;
+		ds->flags |= DSP_Ready;
+		if (UNLIKELY(ds->msg == DispatchAccept))
+		    rlist.push_front(*ds);
+		else
+		    rlist.push_back(*ds);
+	    }
+	//tfr
+	}
+	DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose | DSP_SelectConnect |
+	    DSP_SelectRead | DSP_SelectWrite | DSP_Scheduled);
     }
+    uint rsz = rlist.size();
+    olock.unlock();
+    if (UNLIKELY(!maxthreads)) {
+	if (polling.load(memory_order_relaxed))
+	    wakeup(0);
+	return;
+    }
+    for (;;) {
+	uint_fast32_t s = scanning.load(memory_order_relaxed);
+
+	if (s >= rsz) {
+	    return;
+	} else if (scanning.compare_exchange_weak(s, s + cnt2,
+	    memory_order_acquire, memory_order_relaxed)) {
+	    cnt2 = lifo.set(cnt2);
+	    if (!cnt2) {
+		return;
+	    } else if (UNLIKELY(workers < maxthreads && !shutdown)) {
+		Thread *t;
+
+		//tfr start cnt2
+    cout << "tfr thread " << endl;
+		scanning.fetch_sub(cnt2 - 1, memory_order_relaxed);//tfr
+		workers++;
+		t = new Thread();
+		t->start(worker, this, stacksz, this);
+		while ((t = wait(0)) != NULL)
+		    delete t;
+	    } else {
+		scanning.fetch_sub(cnt2, memory_order_relaxed);
+	    }
+	    return;
+	}
+    }
+    if (rst)
+	reset();
 }
 #endif
 
@@ -776,7 +850,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
     socket_t fd = ds.fd();
 
     cancelTimer(ds, del);
-    if (!ds.mapped || fd == (socket_t)INVALID_SOCKET)
+    if (!ds.mapped || fd == INVALID_SOCKET)
 	return;
 #ifdef DSP_WIN32_ASYNC
     slock.lock();
@@ -910,17 +984,17 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	if ((flags & DSP_Writeable) &&
 	    (m == DispatchWrite || m == DispatchReadWrite || m ==
 	    DispatchConnect)) {
-	    ds.flags &= ~(DSP_Writeable | DSP_Scheduled);
+	    ds.flags &= ~DSP_Writeable;
 	    ds.msg = m == DispatchConnect ? DispatchConnect : DispatchWrite;
 	} else if (LIKELY((flags & DSP_Readable) && (m == DispatchRead || m ==
 	    DispatchReadWrite))) {
-	    ds.flags &= ~(DSP_Readable | DSP_Scheduled);
+	    ds.flags &= ~DSP_Readable;
 	    ds.msg = DispatchRead;
 	} else if (flags & DSP_Acceptable) {
-	    ds.flags &= ~(DSP_Acceptable | DSP_Scheduled);
+	    ds.flags &= ~DSP_Acceptable;
 	    ds.msg = DispatchAccept;
 	} else if (flags & DSP_Closeable) {
-	    ds.flags &= ~(DSP_Closeable | DSP_Scheduled);
+	    ds.flags &= ~DSP_Closeable;
 	    ds.msg = DispatchClose;
 	}
 	ready(ds, m == DispatchAccept);
@@ -953,7 +1027,6 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     if (UNLIKELY(WSAAsyncSelect(ds.fd(), wnd, socketmsg, sockevts[(int)m]))) {
 	removeTimer(ds);
 	olock.lock();
-	ds->flags &= ~DSP_Scheduled;
 	ds.msg = DispatchClose;
 	ready(ds);
     }
@@ -1024,7 +1097,7 @@ void Dispatcher::cancelReady(DispatchObj &obj, bool del) {
     olock.lock();
     if (obj.flags & DSP_ReadyAll)
 	removeReady(obj);
-    if (del && !(obj.flags & DSP_Freed)) {
+    if (del && !(obj.flags |= DSP_Freed)) {
 	obj.flags |= DSP_Freed;
 	if (!(obj.flags & DSP_Active))
 	    rlist.push_front(obj);
@@ -1044,10 +1117,8 @@ void Dispatcher::removeReady(DispatchObj &obj) {
 
 // enter locked, leave unlocked for performance
 void Dispatcher::ready(DispatchObj &obj, bool hipri) {
-    dspflag_t flags = obj.flags;
-
-    if (UNLIKELY(flags & DSP_Active)) {
-	obj.flags = (flags & ~DSP_Scheduled) | DSP_Ready;
+    if (UNLIKELY(obj.flags & DSP_Active)) {
+	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
 	olock.unlock();
     } else if (UNLIKELY(obj.group && obj.group->active)) {
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_ReadyGroup;
@@ -1059,14 +1130,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
     } else {
 	uint rsz;
 
-	if (flags & DSP_Scheduled) {
-	    olock.unlock();
-	    obj.cancel();
-	    obj.flags = (flags & ~DSP_Scheduled) | DSP_Ready;
-	    olock.lock();
-	} else {
-	    obj.flags |= DSP_Ready;
-	}
+	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_Ready;
 	if (UNLIKELY(hipri))
 	    rlist.push_front(obj);
 	else

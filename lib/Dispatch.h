@@ -97,9 +97,7 @@ public:
     }
 
     Dispatcher &dispatcher(void) const { return dspr; }
-    bool error(void) const {
-	return msg == DispatchClose || msg == DispatchTimeout;
-    }
+    bool error(void) const { return msg >= DispatchClose; }
     DispatchMsg reason(void) const { return msg; }
 
     void detach(void) { flags |= DSP_Detached; }
@@ -356,14 +354,12 @@ private:
 	}
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
 	DispatchTimer *reorder(msec_t when) {
-	    sorted_timerset::iterator hint = sorted.end();
-
 	    for (unsorted_timerset::const_iterator it = unsorted.cbegin(); it !=
 		unsorted.cend(); ++it) {
 		DispatchTimer *dt = *it;
 
 		if (dt->due < when && dt->due > split)
-		    hint = sorted.insert(hint, dt);
+		    sorted.insert(dt);
 	    }
 	    split = when;
 	    return peek();
