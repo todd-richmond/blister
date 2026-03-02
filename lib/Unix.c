@@ -54,21 +54,47 @@ int clock_gettime(int id, struct timespec *ts) {
 #endif
 #endif
 
-msec_t mticks(void) {
 #ifdef __APPLE__
+static double mach_msec_scale(void) {
     static atomic_flag lck = ATOMIC_FLAG_INIT;
-    static struct mach_timebase_info mti;
+    static double msec_scale;
 
-    if (UNLIKELY(!mti.denom)) {
+    if (UNLIKELY(msec_scale == 0.0)) {
 	while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
 	    THREAD_YIELD();
-	if (!mti.denom) {
+	if (msec_scale == 0.0) {
+	    struct mach_timebase_info mti;
+
 	    mach_timebase_info(&mti);
-	    mti.denom *= 1000000;
+	    msec_scale = (double)mti.numer / ((double)mti.denom * 1000000.0); // codespell:ignore numer
 	}
 	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
     }
-    return mach_approximate_time() * mti.numer / mti.denom; // codespell:ignore numer
+    return msec_scale;
+}
+
+static double mach_usec_scale(void) {
+    static atomic_flag lck = ATOMIC_FLAG_INIT;
+    static double usec_scale;
+
+    if (UNLIKELY(usec_scale == 0.0)) {
+	while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
+	    THREAD_YIELD();
+	if (usec_scale == 0.0) {
+	    struct mach_timebase_info mti;
+
+	    mach_timebase_info(&mti);
+	    usec_scale = (double)mti.numer / ((double)mti.denom * 1000.0); // codespell:ignore numer
+	}
+	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
+    }
+    return usec_scale;
+}
+#endif
+
+msec_t mticks(void) {
+#ifdef __APPLE__
+    return (msec_t)(mach_approximate_time() * mach_msec_scale());
 #else
     struct timespec ts;
 
@@ -79,19 +105,7 @@ msec_t mticks(void) {
 
 usec_t __no_sanitize("thread") uticks(void) {
 #ifdef __APPLE__
-    static atomic_flag lck = ATOMIC_FLAG_INIT;
-    static struct mach_timebase_info mti;
-
-    if (UNLIKELY(!mti.denom)) {
-	while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
-	    THREAD_YIELD();
-	if (!mti.denom) {
-	    mach_timebase_info(&mti);
-	    mti.denom *= 1000;
-	}
-	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
-    }
-    return mach_absolute_time() * mti.numer / mti.denom; // codespell:ignore numer
+    return (usec_t)(mach_absolute_time() * mach_usec_scale());
 #else
     struct timespec ts;
 
