@@ -380,13 +380,17 @@ public:
 	    } else if (LIKELY(state.compare_exchange_weak(expected, expected +
 		1, memory_order_acquire, memory_order_relaxed))) {
 		return;
+	    } else {
+#ifdef THREAD_PAUSE
+		THREAD_PAUSE();
+#endif
 	    }
 	} while (true);
     }
     __forceinline bool rtrylock(void) {
 	uint_fast32_t expected = state.load(memory_order_relaxed);
 
-	return expected & WRITE_BIT && state.compare_exchange_weak(expected,
+	return !(expected & WRITE_BIT) && state.compare_exchange_weak(expected,
 	    expected + 1, memory_order_acquire, memory_order_relaxed);
     }
     __forceinline void runlock(void) {
@@ -404,7 +408,11 @@ public:
 	while (!state.compare_exchange_weak(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed)) {
 	    expected = 0;
+#ifdef THREAD_PAUSE
+	    THREAD_PAUSE();
+#else
 	    THREAD_YIELD();
+#endif
 	}
     }
     __forceinline bool wtrylock() {

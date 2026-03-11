@@ -82,7 +82,9 @@ public:
 	key(k) {}
 
     __forceinline operator const tchar *(void) const { return key; }
-    size_t __forceinline hash(void) const { return operator size_t(); }
+    __forceinline size_t hash(void) const {
+	return StringHash::operator size_t();
+    }
 
 private:
     const tchar *key;
@@ -97,7 +99,7 @@ public:
 
     vector<tstring>::size_type depth(void) const { return tls->callers.size(); }
 
-    template<class C> void __forceinline add(const C &key, timing_t diff) {
+    template<class C> __forceinline void add(const C &key, timing_t diff) {
 	add(TimingKey(key), diff);
     }
     void add(const TimingKey &key, timing_t diff);
@@ -106,39 +108,49 @@ public:
 	const;
     template<class C> void erase(const C &key) { erase(TimingKey(key)); }
     void record(void);
-    template<class C> void __forceinline record(const C &key) {
+    template<class C> __forceinline void record(const C &key) {
 	record(TimingKey(key));
     }
-    template<class C> timing_t __forceinline record(const C &key, timing_t
+    template<class C> __forceinline timing_t record(const C &key, timing_t
 	begin) {
 	return record(TimingKey(key), begin);
     }
-    timing_t __forceinline record(const TimingKey &key, timing_t begin) {
+    __forceinline timing_t record(const TimingKey &key, timing_t begin) {
 	timing_t n = now();
 
 	add(key, n - begin);
 	return n;
     }
     void restart(void);
-    timing_t __forceinline start(void) const { return now(); }
+    __forceinline timing_t start(void) const { return now(); }
     void start(const TimingKey &key);
-    template<class C> void __forceinline start(const C &key) {
+    template<class C> __forceinline void start(const C &key) {
 	start(TimingKey(key));
     }
     void stop(uint lvl = (uint)-1);
-    static timing_t __forceinline now(void) { return uticks(); }
+    static __forceinline timing_t now(void) { return uticks(); }
 
 private:
     struct BLISTER Stats: nocopy {
-	explicit Stats(const tchar *k): cnt(0), key(tstrdup(k)), tot(0) {
-	    ZERO(cnts);
-	}
-	~Stats() { free((char *)key); }
-
 	alignas(64) atomic_uint_fast32_t cnt;
 	atomic_uint_fast32_t cnts[TIMINGSLOTS];
-	const tchar *key;
 	atomic_uint_fast64_t tot;
+	uint klen;
+	tchar key[];
+
+	static Stats *newstats(const tchar *k) {
+	    uint klen = (uint)tstrlen(k);
+	    Stats *s = (Stats *)new char[offsetof(Stats, key) + (klen + 1) *
+		sizeof (tchar)];
+
+	    s->cnt = 0;
+	    s->tot = 0;
+	    s->klen = klen;
+	    ZERO(s->cnts);
+	    memcpy(s->key, k, (klen + 1) * sizeof (tchar));
+	    return s;
+	}
+	static void delstats(Stats *s) { delete [] (char *)s; }
     };
 
     struct BLISTER Tlsdata {
@@ -152,6 +164,7 @@ private:
     ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
 
+    void callstack(const tchar *key, timing_t diff, const Tlsdata &tlsd);
     void erase(const TimingKey &key);
     void record(const TimingKey &key);
     static const tchar *format(timing_t tot, tchar *buf);
@@ -176,7 +189,7 @@ public:
 	    timing.add(key, Timing::now() - start);
     }
 
-    void __forceinline record(void) { start = timing.record(key, start); }
+    __forceinline void record(void) { start = timing.record(key, start); }
     void restart(void) { start = timing.start(); }
     void stop(void) { start = (timing_t)-1; }
 
@@ -198,7 +211,7 @@ public:
 	    timing.record();
     }
 
-    void __forceinline record(void) { timing.record(); started = false; }
+    __forceinline void record(void) { timing.record(); started = false; }
     void restart(void) {
 	if (started) {
 	    timing.restart();

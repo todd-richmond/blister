@@ -460,13 +460,10 @@ Socket &Socket::operator =(const Socket &r) {
 }
 
 bool Socket::accept(Socket &sock) {
-    Sockaddr sa;
-    socklen_t sz = sa.size();
-
     sock.close();
     do {
-	if (check((sock.sbuf->sock = ::accept(sbuf->sock, sa.data(), &sz)) ==
-	    SOCK_INVALID ? -1 : 0)) {
+	if (LIKELY(check((sock.sbuf->sock = ::accept(sbuf->sock, NULL, NULL)) ==
+	    SOCK_INVALID ? -1 : 0))) {
 	    sock.sbuf->type = sbuf->type;
 	    return true;
 	}
@@ -683,7 +680,7 @@ int Socket::read(void *buf, uint sz) const {
     int in;
 
     do {
-	if (sbuf->rto != SOCK_INFINITE && blocking() && !rpoll())
+	if (UNLIKELY(sbuf->rto != SOCK_INFINITE && blocking()) && !rpoll())
 	    return -1;
 #ifdef __APPLE__
 	if (check(in = (int)::read(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz)))
@@ -693,8 +690,10 @@ int Socket::read(void *buf, uint sz) const {
 	    break;
 #endif
     } while (interrupted());
-    if (in) {
-	return in <= 0 && blocked() ? 0 : in;
+    if (LIKELY(in > 0)) {
+	return in;
+    } else if (in) {
+	return blocked() ? 0 : in;
     } else {
 	sbuf->err = EOF;
 	return -1;
@@ -706,14 +705,16 @@ int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
     int in;
 
     do {
-	if (sbuf->rto != SOCK_INFINITE && blocking() && !rpoll())
+	if (UNLIKELY(sbuf->rto != SOCK_INFINITE && blocking()) && !rpoll())
 	    return -1;
 	if (check(in = (int)recvfrom(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz,
 	    0, sa.data(), &asz)))
 	    break;
     } while (interrupted());
-    if (in) {
-	return in <= 0 && blocked() ? 0 : in;
+    if (LIKELY(in > 0)) {
+	return in;
+    } else if (in) {
+	return blocked() ? 0 : in;
     } else {
 	sbuf->err = EOF;
 	return -1;
@@ -742,7 +743,7 @@ int Socket::write(const void *buf, uint sz) const {
     int out;
 
     do {
-	if (sbuf->wto != SOCK_INFINITE && blocking() && !wpoll())
+	if (UNLIKELY(sbuf->wto != SOCK_INFINITE && blocking()) && !wpoll())
 	    return -1;
 #ifdef __APPLE__
 	if (check(out = (int)::write(sbuf->sock, (const char *)buf,
@@ -754,20 +755,20 @@ int Socket::write(const void *buf, uint sz) const {
 	    break;
 #endif
     } while (interrupted());
-    return out <= 0 && blocked() ? 0 : out;
+    return LIKELY(out > 0) ? out : (out <= 0 && blocked() ? 0 : out);
 }
 
 int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
     int out;
 
     do {
-	if (sbuf->wto != SOCK_INFINITE && blocking() && !wpoll())
+	if (UNLIKELY(sbuf->wto != SOCK_INFINITE && blocking()) && !wpoll())
 	    return -1;
 	if (check(out = (int)sendto(sbuf->sock, (const char *)buf,
 	    (SOCK_SIZE_T)sz, 0, sa, sa.size())))
 	    break;
     } while (interrupted());
-    return out <= 0 && blocked() ? 0 : out;
+    return LIKELY(out > 0) ? out : (out <= 0 && blocked() ? 0 : out);
 }
 
 long Socket::writev(const iovec *iov, int count) const {

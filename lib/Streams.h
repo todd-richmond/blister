@@ -145,7 +145,7 @@ public:
 
 	if (left > 0) {
 	    int sz = fd->write(pb, (uint)left);
-	    if (UNLIKELY(sz != left && sz))
+	    if (UNLIKELY(sz != left))
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
@@ -271,13 +271,13 @@ template <class C>
 class BLISTER bufferstream: public basic_ostream<C> {
 public:
     bufferstream(): basic_ostream<C>(&sb), sb(ios::out) {}
-    virtual ~bufferstream() {}
 
     streamsize pcount(void) const { return sb.pcount(); }
     streamsize size(void) const { return pcount(); }
     const C *str(void) const { return sb.buffer(); }
+    C back(void) const { return sb.back(); }
 
-    void reset(void) { if (sb.pcount()) basic_ostream<C>::seekp(0, ios::beg); }
+    void reset(void) { if (sb.pcount()) sb.reset(); }
 
 private:
     class BLISTER bufferbuf: public basic_stringbuf<C> {
@@ -288,6 +288,11 @@ private:
 	    return basic_stringbuf<C>::pptr() - basic_stringbuf<C>::pbase();
 	}
 	const C *buffer(void) const { return basic_stringbuf<C>::pbase(); }
+	C back(void) const { return *(basic_stringbuf<C>::pptr() - 1); }
+	void reset(void) {
+	    basic_stringbuf<C>::setp(basic_stringbuf<C>::pbase(),
+		basic_stringbuf<C>::epptr());
+	}
     };
 
     bufferbuf sb;
@@ -298,7 +303,6 @@ typedef bufferstream<tchar> tbufferstream;
 class BLISTER memstream: public istream {
 public:
     memstream(void *data, streamsize sz): istream(&mb), mb(data, sz) {}
-    virtual ~memstream() {}
 
 private:
     class BLISTER membuf: public streambuf, public nocopy {
@@ -307,7 +311,6 @@ private:
 	    end((char *)data + sz) {
 	    setg(begin, begin, end);
 	}
-	virtual ~membuf() {}
 
     private:
 	virtual streampos seekoff(off_type off, ios_base::seekdir dir,

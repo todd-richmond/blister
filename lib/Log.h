@@ -18,6 +18,7 @@
 #ifndef Log_h
 #define Log_h
 
+#include <charconv>
 #include <type_traits>
 #include "Socket.h"
 #include "Streams.h"
@@ -166,7 +167,8 @@ public:
     __forceinline Log &log(const T &val) { return log(tls.get(), val); }
     __forceinline Log &log(const tchar *val) { return log(tls.get(), val); }
 #pragma warning(disable: 26461)
-    __forceinline Log &log(tchar *val) {    // NOLINT
+    // NOLINTNEXTLINE(readability-non-const-parameter)
+    __forceinline Log &log(tchar *val) {
 	return log(tls.get(), (const tchar *)val);
     }
     // cppcheck-suppress constParameterReference
@@ -192,7 +194,7 @@ public:
 
     template <typename... T>
     void log(Log::Level l, const T&... args) {
-	if (l <= lvl) {
+	if (UNLIKELY(l <= lvl)) {
 	    Tlsdata &tlsd(*tls);
 
 	    if (LIKELY(!tlsd.suppress)) {
@@ -347,21 +349,38 @@ private:
     void endlog(Tlsdata &tlsd);
     void _flush(void);
     template <typename T>
+    static __forceinline void strm_write(tbufferstream &strm, const T &val) {
+	if constexpr (is_integral_v<T> || is_floating_point_v<T>) {
+	    char buf[24];
+	    auto [end, ec] = to_chars(buf, buf + sizeof(buf), val);
+
+	    if (LIKELY(ec == errc{}))
+		strm.write(buf, end - buf);
+	} else {
+	    strm << val;
+	}
+    }
+    template <typename T>
     Log &log(Tlsdata &tlsd, const T &val) {
 	if (LIKELY(tlsd.clvl != None)) {
 	    if (tlsd.sep == '=') {
 		tlsd.sep = ' ';
-		if (!is_fundamental_v<T>) {
-		    tbufferstream buf;
+		if (UNLIKELY(!is_fundamental_v<T>)) {
+		    if constexpr (is_enum_v<T>) {
+			strm_write(tlsd.strm,
+			    static_cast<underlying_type_t<T>>(val));
+		    } else {
+			tbufferstream buf;
 
-		    buf << val << '\0';
-		    quote(tlsd.strm, buf.str());
+			buf << val << '\0';
+			quote(tlsd.strm, buf.str());
+		    }
 		    return *this;
 		}
 	    } else if (tlsd.sep && tlsd.strm.size()) {
-		tlsd.strm << tlsd.sep;
+		tlsd.strm.write(&tlsd.sep, 1);
 	    }
-	    tlsd.strm << val;
+	    strm_write(tlsd.strm, val);
 	}
 	return *this;
     }
@@ -372,11 +391,13 @@ private:
 		    quote(tlsd.strm, val);
 		tlsd.sep = ' ';
 	    } else if (LIKELY(val)) {
-		if (tlsd.sep && tlsd.strm.size())
-		    tlsd.strm << tlsd.sep;
+		size_t sz = (size_t)tlsd.strm.size();
+
+		if (tlsd.sep && sz)
+		    tlsd.strm.write(&tlsd.sep, 1);
 		if (LIKELY(*val)) {
-		    tlsd.strm << val;
-		    if (tlsd.strm.str()[tlsd.strm.size() - 1] == '=')
+		    tlsd.strm.write(val, (streamsize)tstrlen(val));
+		    if (tlsd.strm.back() == '=')
 			tlsd.sep = '=';
 		} else {
 		    tlsd.sep = '\0';
@@ -398,10 +419,13 @@ private:
     }
     template<typename T>
     Log &log(Tlsdata &tlsd, const KV<T> &val) {
-	if (tlsd.clvl != None) {
+	if (LIKELY(tlsd.clvl != None)) {
+	    static const tchar eq = '=';
+	    static const tchar sp = ' ';
 	    if (tlsd.strm.size())
-		tlsd.strm << ' ';
-	    tlsd.strm << val.key << '=';
+		tlsd.strm.write(&sp, 1);
+	    tlsd.strm.write(val.key, (streamsize)tstrlen(val.key));
+	    tlsd.strm.write(&eq, 1);
 	    tlsd.sep = '=';
 	    log(tlsd, val.val);
 	}

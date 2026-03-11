@@ -56,6 +56,7 @@ protected:
     const char *postarg(const char *name) const { return find(postargs, name); }
     template<class C> ostream &operator <<(const C &c) { return ss << c; }
     void header(const char *attr, const char *val);
+    using DispatchObj::error;
     void error(uint sts, bool close = false);
     void error(uint sts, const char *errstr, bool close = false);
     void keepalive(void);

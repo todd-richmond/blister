@@ -80,10 +80,10 @@ inline bool blocked(int e) {
 #ifdef _WIN32
     return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY;
 #elif EAGAIN == EWOULDBLOCK
-    return e == EAGAIN || e == ENOBUFS || e == ENOSR || e == EINPROGRESS ||
-	e == EALREADY;
+    return LIKELY(e == EAGAIN) || e == ENOBUFS || e == ENOSR ||
+	e == EINPROGRESS || e == EALREADY;
 #else
-    return e == EWOULDBLOCK || e == EAGAIN || e == ENOBUFS ||
+    return LIKELY(e == EWOULDBLOCK || e == EAGAIN) || e == ENOBUFS ||
 	e == ENOSR || e == EINPROGRESS || e == EALREADY;
 #endif
 }
@@ -609,7 +609,6 @@ public:
 	istream(NULL), sb(sz, p) { ios::init(&sb); }
     explicit isockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	istream(NULL), sb(s, sz, p) { ios::init(&sb); }
-    virtual ~isockstream() {}
 
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
@@ -627,7 +626,6 @@ public:
 	ostream(NULL), sb(sz, p) { ios::init(&sb); }
     explicit osockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	ostream(NULL), sb(s, sz, p) { ios::init(&sb); }
-    virtual ~osockstream() {}
 
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
@@ -649,7 +647,6 @@ public:
 	iostream(NULL), sb(sz, p) { ios::init(&sb); }
     explicit sockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
 	iostream(NULL), sb(s, sz, p) { ios::init(&sb); }
-    virtual ~sockstream() {}
 
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }

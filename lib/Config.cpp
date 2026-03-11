@@ -19,6 +19,7 @@
 #include <stdarg.h>
 #include <algorithm>
 #include <fstream>
+#include <memory>
 #include <vector>
 #include <sys/stat.h>
 #include "Config.h"
@@ -29,42 +30,24 @@
 #define ENDL '\n'
 #endif
 
-constexpr uint BUFSZ = 32 * 1024U;
+constexpr uint BUFSZ = 128 * 1024U;
 constexpr uint KEYSZ = 256;
 
-template<typename T>
-static T atou(const tchar *str) {
-    tchar c = *str;
-    T val = 0;
-
-    while (c >= '0' && c <= '9') {
-	val = val * 10 + (T)(c - '0');
-	c = *(++str);
-    }
-    return val;
-}
-
-template<typename T>
-static T atoi(const tchar *str) {
-    return *str == '-' ? -1 * atou<T>(str + 1) : atou<T>(str);
+void Config::clear_locked(void) {
+    for (kvmap::const_iterator it = amap.begin(); it != amap.end(); ++it)
+	delkv(it->second);
+    amap.clear();
 }
 
 void Config::clear(void) {
-    WLocker lkr(lck, !THREAD_ISSELF(locker));
-    kvmap::size_type sz = amap.size(), u = sz;
-    const KV **kvs = new const KV *[(uint)sz];
+    WLocker lkr(lck);
 
-    for (kvmap::const_iterator it = amap.begin(); it != amap.end(); ++it)
-	kvs[--u] = it->second;
-    amap.clear();
-    for (u = 0; u < sz; ++u)
-	delkv(kvs[u]);
-    delete [] kvs;
+    clear_locked();
 }
 
 void Config::erase(const tchar *key, const tchar *sect) {
     kvmap::iterator it;
-    WLocker lkr(lck, !THREAD_ISSELF(locker));
+    WLocker lkr(lck);
 
     if (sect && *sect) {
 	size_t klen = tstrlen(key);
@@ -86,34 +69,48 @@ void Config::erase(const tchar *key, const tchar *sect) {
 }
 
 bool Config::expandkv(const KV *kv, tstring &val) const {
-    tstring::size_type epos, spos;
+    tstring::size_type epos, spos, search = 0;
 
     val = kv->val;
-    while ((spos = val.rfind(T("$("))) != val.npos ||
-	(spos = val.rfind(T("${"))) != val.npos) {
-	if ((epos = val.find(val[spos + 1] == '(' ? ')' : '}', spos + 2)) ==
-	    val.npos)
+    while ((spos = val.find('$', search)) != val.npos) {
+	tchar open;
+
+	if (spos + 1 >= val.size())
+	    break;
+	open = val[spos + 1];
+	if (open != '(' && open != '{') {
+	    search = spos + 1;
+	    continue;
+	}
+	if ((epos = val.find(open == '(' ? ')' : '}', spos + 2)) == val.npos)
 	    break;
 
 	kvmap::const_iterator it;
-	tstring::size_type off = val[spos + 2] == '*' && val[spos + 3] == '.' ?
-	    2 : 0;
+	tstring::size_type off = (spos + 3 < val.size() && val[spos + 2] == '*'
+	    && val[spos + 3] == '.') ? 2 : 0;
+	const tchar *repl;
+	size_t repllen;
 	tstring s(val, spos + 2 + off, epos - spos - 2 - off);
 
 	if (!pre.empty() && s.starts_with(pre) && s.size() > pre.size() + 1 &&
 	    s[pre.size()] == '.')
 	    s.erase(0, pre.size() + 1);
 	it = amap.find(s.c_str());
-	if (it == amap.end())
-	    break;
-	val.replace(spos, epos - spos + 1, it->second->val);
+	if (it == amap.end()) {
+	    search = epos + 1;
+	    continue;
+	}
+	repl = it->second->val;
+	repllen = tstrlen(repl);
+	val.replace(spos, epos - spos + 1, repl, repllen);
+	search = spos + repllen;
     }
     return !val.empty();
 }
 
 const tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
     const {
-    RLocker lkr(lck, !THREAD_ISSELF(locker));
+    RLocker lkr(lck);
     const KV *kv = getkv(key, sect);
 
     if (LIKELY(kv)) {
@@ -127,7 +124,7 @@ const tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
 }
 
 bool Config::get(const tchar *key, bool def, const tchar *sect) const {
-    RLocker lkr(lck, !THREAD_ISSELF(locker));
+    RLocker lkr(lck);
     const KV *kv = getkv(key, sect);
 
     if (LIKELY(kv)) {
@@ -141,76 +138,6 @@ bool Config::get(const tchar *key, bool def, const tchar *sect) const {
 	    c = (tchar)totlower(s[0]);
 	}
 	return c == 't' || c == 'y' || c == '1';
-    }
-    return def;
-}
-
-long Config::get(const tchar *key, long def, const tchar *sect) const {
-    RLocker lkr(lck, !THREAD_ISSELF(locker));
-    const KV *kv = getkv(key, sect);
-
-    if (LIKELY(kv)) {
-	if (LIKELY(!kv->expand))
-	    return atoi<long>(kv->val);
-	tstring s;
-	if (expandkv(kv, s))
-	    return atoi<long>(s.c_str());
-    }
-    return def;
-}
-
-llong Config::get(const tchar *key, llong def, const tchar *sect) const {
-    RLocker lkr(lck, !THREAD_ISSELF(locker));
-    const KV *kv = getkv(key, sect);
-
-    if (LIKELY(kv)) {
-	if (LIKELY(!kv->expand))
-	    return atoi<llong>(kv->val);
-	tstring s;
-	if (expandkv(kv, s))
-	    return atoi<llong>(s.c_str());
-    }
-    return def;
-}
-
-ulong Config::get(const tchar *key, ulong def, const tchar *sect) const {
-    RLocker lkr(lck, !THREAD_ISSELF(locker));
-    const KV *kv = getkv(key, sect);
-
-    if (LIKELY(kv)) {
-	if (LIKELY(!kv->expand))
-	    return atou<ulong>(kv->val);
-	tstring s;
-	if (expandkv(kv, s))
-	    return atou<ulong>(s.c_str());
-    }
-    return def;
-}
-
-ullong Config::get(const tchar *key, ullong def, const tchar *sect) const {
-    RLocker lkr(lck, !THREAD_ISSELF(locker));
-    const KV *kv = getkv(key, sect);
-
-    if (LIKELY(kv)) {
-	if (LIKELY(!kv->expand))
-	    return atou<ullong>(kv->val);
-	tstring s;
-	if (expandkv(kv, s))
-	    return atou<ullong>(s.c_str());
-    }
-    return def;
-}
-
-double Config::get(const tchar *key, double def, const tchar *sect) const {
-    RLocker lkr(lck, !THREAD_ISSELF(locker));
-    const KV *kv = getkv(key, sect);
-
-    if (LIKELY(kv)) {
-	if (LIKELY(!kv->expand))
-	    return tstrtod(kv->val, NULL);
-	tstring s;
-	if (expandkv(kv, s))
-	    return tstrtod(s.c_str(), NULL);
     }
     return def;
 }
@@ -248,7 +175,7 @@ const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
 // 1 allocation for key, val, state
 const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     size_t vlen) {
-    KV *kv = (KV *)new char[offsetof(KV, val) + klen + vlen + 2];
+    KV *kv;
     tchar quote = '\0';
 
     if (UNLIKELY(vlen > 1 && (val[0] == '"' || val[0] == '\''))) {
@@ -258,6 +185,7 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
 	    vlen -= 2;
 	}
     }
+    kv = (KV *)new char[offsetof(KV, val) + klen + vlen + 2];
     kv->quote = quote;
     memcpy(kv->val, val, vlen * sizeof (tchar));
     kv->val[vlen] = '\0';
@@ -291,6 +219,20 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     return kv;
 }
 
+ulong Config::open_file(const tstring &file, tifstream &is, unique_ptr<tchar[]>
+    &fbuf) {
+    struct stat sbuf;
+    uint sz;
+
+    if (stat(tstringtoachar(file), &sbuf))
+	return 0;
+    sz = sbuf.st_size > (off_t)BUFSZ ? (uint)sbuf.st_size : BUFSZ;
+    fbuf.reset(new tchar[sz]);
+    is.rdbuf()->pubsetbuf(fbuf.get(), sz);
+    is.open(file.c_str());
+    return is ? (ulong)sbuf.st_size : 0;
+}
+
 bool Config::parse(tistream &is) {
     bool app;
     tstring_view key, val;
@@ -307,27 +249,29 @@ bool Config::parse(tistream &is) {
 	if (len == 0)
 	    continue;
 	line.resize(len);
-	while (line.back() == '\\') {
+	if (UNLIKELY(line.back() == '\\')) {
 	    tstring s;
 
-	    line.pop_back();
-	    len = line.size();
-	    while (len > 0 && istspace(line[len - 1]))
-		--len;
-	    line.resize(len);
-	    if (getline(is, s)) {
-		tstring_view sv(s);
+	    do {
+		line.pop_back();
+		len = line.size();
+		while (len > 0 && istspace(line[len - 1]))
+		    --len;
+		line.resize(len);
+		if (getline(is, s)) {
+		    tstring_view sv(s);
 
-		trim(sv);
-		if (!sv.empty())
-		    line += sv.front() == ';' || sv.front() == '#' ? "\\" : s;
-	    }
+		    trim(sv);
+		    if (!sv.empty())
+			line += sv.front() == ';' || sv.front() == '#' ? "\\" : s;
+		}
+	    } while (!line.empty() && line.back() == '\\');
+	    len = line.size();
+	    while (UNLIKELY(len > 0 && istspace(line[len - 1])))
+		--len;
+	    if (UNLIKELY(len == 0))
+		continue;
 	}
-	len = line.size();
-	while (UNLIKELY(len > 0 && istspace(line[len - 1])))
-	    --len;
-	if (UNLIKELY(len == 0))
-	    continue;
 	key = tstring_view(line.data(), len);
 	switch (key.front()) {
 	case ';':
@@ -336,23 +280,16 @@ bool Config::parse(tistream &is) {
 	case '#':
 	    if (key.rfind(T("include"), 1) == 1) {
 		string file;
-		struct stat sbuf;
+		unique_ptr<tchar[]> fbuf;
+		tifstream iis;
+		ulong sz;
 
 		key.remove_prefix(9);
 		trim(key);
 		file.assign(key);
-		if (stat(file.c_str(), &sbuf)) {
+		sz = open_file(file, iis, fbuf);
+		if (!sz || !parse(iis))
 		    return false;
-		} else {
-		    tifstream iis;
-
-		    reserve((ulong)sbuf.st_size);
-		    if (sbuf.st_size > BUFSZ)
-			iis.rdbuf()->pubsetbuf(NULL, BUFSZ);
-		    iis.open(file.c_str());
-		    if (!parse(iis))
-			return false;
-		}
 	    }
 	    break;
 	case '[':
@@ -407,21 +344,16 @@ bool Config::parse(tistream &is) {
     return true;
 }
 
-bool Config::read(tistream &is, const tchar *str, bool app) {
-    WLocker lkr(lck, !THREAD_ISSELF(locker));
+bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
+    WLocker lkr(lck);
 
     if (!is)
 	return false;
     prefix(str);
-    if (!app) {
-	if (THREAD_ISSELF(locker)) {
-	    clear();
-	} else {
-	    locker = THREAD_ID();
-	    clear();
-	    locker = 0;
-	}
-    }
+    if (!app)
+	clear_locked();
+    if (sz)
+	reserve(sz);
     return parse(is);
 }
 
@@ -430,16 +362,29 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     const KV *kv, *oldkv;
 
     if (UNLIKELY(slen)) {
-	tstring s;
+	size_t total = slen + 1 + klen;
 
-	s.reserve(slen + 1 + klen);
-	s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
-	kv = newkv(s.c_str(), s.size(), val, vlen);
+	if (LIKELY(total + 1 < KEYSZ)) {
+	    tchar buf[KEYSZ];
+	    tchar *p = buf;
+
+	    memcpy(p, sect, slen * sizeof (tchar));
+	    p += slen;
+	    *p++ = (tchar)'.';
+	    memcpy(p, key, (klen + 1) * sizeof (tchar));
+	    kv = newkv(buf, total, val, vlen);
+	} else {
+	    tstring s;
+
+	    s.reserve(total);
+	    s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
+	    kv = newkv(s.c_str(), s.size(), val, vlen);
+	}
     } else {
 	kv = newkv(key, klen, val, vlen);
     }
 
-    pair<kvmap::const_iterator, bool> old(amap.emplace(kv->key, kv));
+    pair<kvmap::iterator, bool> old(amap.emplace(kv->key, kv));
 
     if (LIKELY(old.second))
 	return *this;
@@ -461,9 +406,8 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	vlen = s.size();
 	kv = newkv(oldkv->key, tstrlen(oldkv->key), s.c_str(), vlen);
     }
-    amap.erase(old.first);
+    old.first->second = kv;
     delkv(oldkv);
-    amap.emplace(kv->key, kv);
     return *this;
 }
 
@@ -509,40 +453,34 @@ void Config::trim(tstring_view &s) {
 
 bool Config::write(tostream &os, bool inistyle) const {
     ulong cnt = 0;
-    RLocker lkr(lck, !THREAD_ISSELF(locker));
-    kvmap::const_iterator it;
-    vector<const tchar *> keys;
+    RLocker lkr(lck);
+    vector<pair<const tchar *, const KV *>> keys;
     tstring sect;
 
     keys.reserve(amap.size());
-    for (it = amap.begin(); it != amap.end(); ++it)
-	keys.emplace_back(it->first);
+    for (const auto &kv : amap)
+	keys.emplace_back(kv.first, kv.second);
     if (inistyle) {
-	struct keyless cmp;
-
-	sort(keys.begin(), keys.end(), cmp);
+	sort(keys.begin(), keys.end(), [](const auto &a, const auto &b) {
+	    return keyless()(a.first, b.first);
+	});
     } else {
-	strless<tchar> cmp;
-
-	sort(keys.begin(), keys.end(), cmp);
+	sort(keys.begin(), keys.end(), [](const auto &a, const auto &b) {
+	    return stringless(a.first, b.first);
+	});
     }
-    for (vector<const tchar *>::size_type u = 0; u < keys.size(); ++u) {
+    for (size_t u = 0; u < keys.size(); ++u) {
 	const tchar *dot;
-	const tchar *key = keys[u];
-	const KV *kv;
-
-	it = amap.find(key);
-	if (it == amap.end())
-	    continue;
-	kv = it->second;
+	const tchar *key = keys[u].first;
+	const KV *kv = keys[u].second;
 	if ((dot = tstrchr(key, '.')) == NULL) {
 	    if (inistyle) {
 		sect = '.';
 	    } else {
 		sect.assign(key);
 		if (cnt > 1 || (cnt == 1 && u + 1 < keys.size() &&
-		    !tstrncmp(keys[u + 1], sect.c_str(), sect.size()) &&
-		    keys[u + 1][sect.size()] == '.'))
+		    !tstrncmp(keys[u + 1].first, sect.c_str(), sect.size()) &&
+		    keys[u + 1].first[sect.size()] == '.'))
 		    os << ENDL;
 		cnt = 0;
 	    }
@@ -577,21 +515,14 @@ ConfigFile::ConfigFile(const tchar *file, const tchar *_pre): Config(_pre) {
 }
 
 bool ConfigFile::read(const tchar *file, const tchar *_pre, bool app) {
-    struct stat sbuf;
+    unique_ptr<tchar[]> fbuf;
+    tifstream is;
+    ulong sz;
 
     if (file)
 	path = file;
-    if (stat(path.c_str(), &sbuf)) {
-	return false;
-    } else {
-	tifstream is;
-
-	reserve((ulong)sbuf.st_size);
-	if (sbuf.st_size > BUFSZ)
-	    is.rdbuf()->pubsetbuf(NULL, BUFSZ);
-	is.open(path.c_str());
-	return read(is, _pre, app);
-    }
+    sz = open_file(tstringtoachar(path), is, fbuf);
+    return sz && read(is, _pre, app, sz);
 }
 
 bool ConfigFile::write(const tchar *file, bool inistyle) const {

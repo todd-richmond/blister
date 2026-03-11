@@ -64,7 +64,7 @@ void HTTPServerSocket::readhdrs() {
     uint in;
     uint room = (uint)(sz - datasz);
 
-    if (msg == DispatchTimeout || msg == DispatchClose) {
+    if (error()) {
 	disconnect();
 	return;
     }
@@ -202,9 +202,40 @@ void HTTPServerSocket::readpost() {
 }
 
 void HTTPServerSocket::scan(char *buf, ulong len, bool append) {
-    while (len-- > 0) {
-	if (buf[0] == '\r') {
-	    if (len < 3) {
+    while (len > 0) {
+	char *p = (char *)memchr(buf, '\r', len);
+	char *q = (char *)memchr(buf, '\n', len);
+
+	if (!p && !q)
+	    break;
+	if (!p || (q && q < p)) {
+	    p = q;
+	    ulong off = (ulong)(p - buf);
+	    len -= off + 1;
+	    buf = p;
+	    if (len < 2) {
+		readable(readhdrs, rto);
+		return;
+	    } else if (buf[1] == '\n') {
+		postdata = buf + 2;
+		buf[0] = '\r';
+		buf[1] = '\0';
+		parse();
+		return;
+	    } else if (buf[1] == '\r' && len > 2 && buf[2] == '\n') {
+		postdata = buf + 3;
+		buf[0] = '\r';
+		buf[1] = '\0';
+		parse();
+		return;
+	    }
+	    buf++;
+	    len--;
+	} else {
+	    ulong off = (ulong)(p - buf);
+	    len -= off;
+	    buf = p;
+	    if (len < 4) {
 		readable(readhdrs, rto);
 		return;
 	    } else if (!memcmp(buf, "\r\n\r\n", 4)) {
@@ -217,27 +248,8 @@ void HTTPServerSocket::scan(char *buf, ulong len, bool append) {
 		return;
 	    } else {
 		buf += 2;
-		len--;
+		len -= 2;
 	    }
-	} else if (buf[0] == '\n') {
-	    if (len < 2) {
-		readable(readhdrs, rto);
-		return;
-	    } else if (buf[1] == '\n') {
-		postdata = buf + 2;
-		buf[0] = '\r';
-		buf[1] = '\0';
-		parse();
-		return;
-	    } else if (buf[1] == '\r' && buf[2] == '\n') {
-		postdata = buf + 3;
-		buf[0] = '\r';
-		buf[1] = '\0';
-		parse();
-		return;
-	    }
-	} else {
-	    buf++;
 	}
     }
     readable(readhdrs, rto);
@@ -366,7 +378,7 @@ void HTTPServerSocket::parse(void) {
 }
 
 void HTTPServerSocket::exec(void) {
-    if (!stricmp(cmd, "GET")) {
+    if (LIKELY(!stricmp(cmd, "GET"))) {
 	get(false);
     } else if (!stricmp(cmd, "HEAD")) {
 	get(true);
@@ -431,14 +443,16 @@ void HTTPServerSocket::keepalive(void) {
 		ka = false;
 	}
     }
-    if (ka)
-	hdrs << p << ": keep-alive\r\n";
+    if (ka) {
+	hdrs.write(p, (streamsize)strlen(p));
+	hdrs.write(": keep-alive\r\n", 15);
+    }
 }
 
 void HTTPServerSocket::send(void) {
     ulong out;
 
-    if (msg == DispatchTimeout || msg == DispatchClose) {
+    if (error()) {
 	disconnect();
 	return;
     }
@@ -495,20 +509,22 @@ void HTTPServerSocket::senddone() {
 
 void HTTPServerSocket::reply(const char *p, ulong len) {
     char buf[64];
-    int i;
 
     if (len == (ulong)-1)
 	len = p ? (ulong)strlen(p) : 0;
-    i = sprintf(buf, "Content-Length: %lu\r\n\r\n", (ulong)ss.size() + len);
-    hdrs.write(buf, i);
+    memcpy(buf, "Content-Length: ", 16);
+    auto [end, ec] = to_chars(buf + 16, buf + sizeof(buf) - 4,
+	(ulong)ss.size() + len);
+    memcpy(end, "\r\n\r\n", 4);
+    hdrs.write(buf, (streamsize)(end - buf + 4));
     iov[0].iov_base = (char *)hdrs.str();
     iov[0].iov_len = (iovlen_t)hdrs.size();
     iov[1].iov_base = (char *)ss.str();
     iov[1].iov_len = (iovlen_t)ss.size();
     iov[2].iov_base = (char *)p;
     iov[2].iov_len = (iovlen_t)len;
-    dlog << (_status < 400 ? Log::Info : Log::Note) << Log::cmd(cmd) <<
-	Log::kv(T("path"), path) << Log::kv(T("sts"), _status) << endlog;
+    dlogl(_status < 400 ? Log::Info : Log::Note, Log::cmd(cmd),
+	Log::kv(T("path"), path), Log::kv(T("sts"), _status));
     send();
 }
 
@@ -563,10 +579,19 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 
     hdrs.reset();
     ss.reset();
-    i = snprintf(buf, sizeof (buf), "%s %u %s\r\n", prot, sts, str ? str :
-	sts < 300 ? "OK" : "ERR");
-    i = min(i, (int)sizeof (buf) - 1);
-    hdrs.write(buf, i);
+    {
+	const char *reason = str ? str : sts < 300 ? "OK" : "ERR";
+	size_t pl = strlen(prot);
+	size_t rl = strlen(reason);
+	memcpy(buf, prot, pl);
+	buf[pl] = ' ';
+	auto [nend, nec] = to_chars(buf + pl + 1, buf + pl + 5, sts);
+	*nend++ = ' ';
+	memcpy(nend, reason, rl);
+	nend[rl] = '\r';
+	nend[rl + 1] = '\n';
+	hdrs.write(buf, (streamsize)((size_t)(nend - buf) + rl + 2));
+    }
     if (date) {
 	time_t now = time(NULL);
 
@@ -575,8 +600,11 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 	    "Date: %a, %d %b %Y %H:%M:%S UTC\r\n", tmptr);
 	hdrs.write(buf, i);
     }
-    if (mime)
-	hdrs << "Content-Type: " << mime << CRLF;
+    if (mime) {
+	hdrs.write("Content-Type: ", 14);
+	hdrs.write(mime, (streamsize)strlen(mime));
+	hdrs.write(CRLF, 2);
+    }
     if (mtime) {
 	tmptr = gmtime_r(&mtime, &tmbuf);
 	i = (int)strftime(buf, sizeof (buf),
@@ -585,7 +613,7 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     }
     _status = sts;
     if (close) {
-	hdrs << "Connection: close\r\n";
+	hdrs.write("Connection: close\r\n", 20);
 	ka = false;
     } else {
 	keepalive();
@@ -593,7 +621,10 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 }
 
 void HTTPServerSocket::header(const char *attr, const char *val) {
-    hdrs << attr << ": " << val << CRLF;
+    hdrs.write(attr, (streamsize)strlen(attr));
+    hdrs.write(": ", 2);
+    hdrs.write(val, (streamsize)strlen(val));
+    hdrs.write(CRLF, 2);
 }
 
 void HTTPServerSocket::error(uint sts, bool close) {
@@ -622,27 +653,41 @@ void HTTPServerSocket::error(uint sts, bool close) {
     };
 #pragma warning(push)
 #pragma warning(disable: 6385)	// -V557
-    if (sts >= 200 && sts < 200 + sizeof (err2xx) / sizeof (char *))
+    if (sts >= 200 && sts - 200 < sizeof (err2xx) / sizeof (char *))
 	// cppcheck-suppress arrayIndexOutOfBounds
-	p = err2xx[sts % 200];
-    else if (sts >= 300 && sts < 300 + sizeof (err3xx) / sizeof (char *))
-	p = err3xx[sts % 300];
-    else if (sts >= 400 && sts < 400 + sizeof (err4xx) / sizeof (char *))
-	p = err4xx[sts % 400];
-    else if (sts >= 500 && sts < 500 + sizeof (err5xx) / sizeof (char *))
-	p = err5xx[sts % 500];
+	p = err2xx[sts - 200];
+    else if (sts >= 300 && sts - 300 < sizeof (err3xx) / sizeof (char *))
+	p = err3xx[sts - 300];
+    else if (sts >= 400 && sts - 400 < sizeof (err4xx) / sizeof (char *))
+	p = err4xx[sts - 400];
+    else if (sts >= 500 && sts - 500 < sizeof (err5xx) / sizeof (char *))
+	p = err5xx[sts - 500];
     else
 	p = "HTTP error";
 #pragma warning(pop)		// +V557
     status(sts, "text/plain", 0, NULL, close);
-    ss << sts << ' ' << p << CRLF;
+    {
+	char nbuf[8];
+	auto [nend, nec] = to_chars(nbuf, nbuf + sizeof(nbuf), sts);
+	ss.write(nbuf, nend - nbuf);
+    }
+    ss.write(" ", 1);
+    ss.write(p, (streamsize)strlen(p));
+    ss.write(CRLF, 2);
     _status = sts;
     reply();
 }
 
 void HTTPServerSocket::error(uint sts, const char *errstr, bool close) {
     status(sts, "text/plain", 0, errstr, close);
-    ss << sts << ' ' << errstr << CRLF;
+    {
+	char nbuf[8];
+	auto [nend, nec] = to_chars(nbuf, nbuf + sizeof(nbuf), sts);
+	ss.write(nbuf, nend - nbuf);
+    }
+    ss.write(" ", 1);
+    ss.write(errstr, (streamsize)strlen(errstr));
+    ss.write(CRLF, 2);
     _status = sts;
     reply();
 }

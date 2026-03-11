@@ -41,7 +41,11 @@
 #elif defined(__GNUC__)
 #define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
     __GNUC_PATCHLEVEL__)
+#ifdef __OPTIMIZE__
 #define __forceinline		__attribute__((always_inline))
+#else
+#define __forceinline		inline
+#endif
 #ifdef __has_feature
 #define __no_sanitize(check)	__attribute__((no_sanitize(check)))
 #else
@@ -802,12 +806,14 @@ static inline usec_t microtime(void) {
 }
 
 static inline void time_adjust_msec(struct timespec *ts, ulong msec) {
+    ulong nsec = (ulong)ts->tv_nsec + (msec % 1000U) * 1000000UL;
+
     ts->tv_sec += (time_t)(msec / 1000U);
-    *(ulong *)&ts->tv_nsec += (msec % 1000U) * 1000000UL;
-    if ((ulong)ts->tv_nsec > 1000000000UL) {
-	*(ulong *)&ts->tv_nsec -= 1000000000UL;
+    if (nsec >= 1000000000UL) {
+	nsec -= 1000000000UL;
 	++ts->tv_sec;
     }
+    ts->tv_nsec = (long)nsec;
 }
 
 EXTERNC
@@ -925,19 +931,41 @@ inline const string wstringtoastring(const wstring &s) {
 #endif
 
 // useful string utils
+template<typename T>
+T atou(const tchar *str) {
+    size_t val = 0;
+    tchar c;
+
+    while ((c = *str++) >= '0' && c <= '9')
+        val = val * 10 + (size_t)(c - '0');
+    return (T)val;
+}
+
+template<typename T>
+T atoi(const tchar *str) {
+    return *str == '-' ? (T)(-(ptrdiff_t)atou<size_t>(str + 1)) : atou<T>(str);
+}
+
 inline int stringcmp(const char *a, const char *b) { return strcmp(a, b); }
 inline int stringcmp(const wchar *a, const wchar *b) { return wcscmp(a, b); }
 inline int stringicmp(const char *a, const char *b) { return stricmp(a, b); }
 inline int stringicmp(const wchar *a, const wchar *b) { return wcsicmp(a, b); }
 
-template<class C>
-inline bool stringeq(const C *a, const C *b) {
-    return tstrcmp(a, b) == 0;
+inline bool stringieq(const char *a, const char *b) {
+    return toupper((uchar)*a) == toupper((uchar)*b) && stricmp(a, b) == 0;
+}
+inline bool stringieq(const wchar *a, const wchar *b) {
+    return towupper((ushort)*a) == towupper((ushort)*b) && wcsicmp(a, b) == 0;
 }
 
 template<class C>
-inline bool stringeq(const C &a, const C &b) {
-    return stringeq(a.c_str(), b.c_str());
+inline bool stringeq(const C *a, const C *b) {
+    return *a == *b && tstrcmp(a, b) == 0;
+}
+
+template<class C>
+inline bool stringeq(const basic_string<C> &a, const basic_string<C> &b) {
+    return a == b;
 }
 
 template<class C>
@@ -946,55 +974,46 @@ inline bool stringless(const C *a, const C *b) {
 }
 
 template<class C>
-inline bool stringless(const C &a, const C &b) {
-    return stringless(a.c_str(), b.c_str());
+inline bool stringless(const basic_string<C> &a, const basic_string<C> &b) {
+    return a < b;
 }
 
-// Bernstein hash with xor improvement
+// Bernstein hash with xor improvement - shared loop, transform applied per char
+template<class C, class F>
+__forceinline size_t bernstein_hash(const C *s, F xfrm) {
+    size_t r0 = 5381, r1 = 5381, ret;
+
+    while (s[0] && s[1] && s[2] && s[3]) {
+	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(s[0]);
+	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(s[1]);
+	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(s[2]);
+	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(s[3]);
+	s += 4;
+    }
+    ret = ((r0 << 5) + r0) ^ r1;
+    while (*s)
+	ret = ((ret << 5) + ret) ^ (size_t)xfrm(*s++);
+    return ret;
+}
+
 template<class C>
-inline size_t __no_sanitize_unsigned stringhash(const C *s) {
-    size_t ret = 5381;
-
-    while (s[0] && s[1] && s[2] && s[3]) {
-	ret = ((ret << 5) + ret) ^ (size_t)s[0];
-	ret = ((ret << 5) + ret) ^ (size_t)s[1];
-	ret = ((ret << 5) + ret) ^ (size_t)s[2];
-	ret = ((ret << 5) + ret) ^ (size_t)s[3];
-	s += 4;
-    }
-    while (*s)
-	ret = ((ret << 5) + ret) ^ (size_t)*s++;
-    return ret;
+inline size_t stringhash(const C *s) {
+    return bernstein_hash(s, [](C c) { return c; });
 }
 
-inline size_t __no_sanitize_unsigned stringihash(const char *s) {
-    size_t ret = 5381;
-
-    while (s[0] && s[1] && s[2] && s[3]) {
-	ret = ((ret << 5) + ret) ^ (size_t)toupper(s[0]);
-	ret = ((ret << 5) + ret) ^ (size_t)toupper(s[1]);
-	ret = ((ret << 5) + ret) ^ (size_t)toupper(s[2]);
-	ret = ((ret << 5) + ret) ^ (size_t)toupper(s[3]);
-	s += 4;
-    }
-    while (*s)
-	ret = ((ret << 5) + ret) ^ (size_t)toupper(*s++);
-    return ret;
+template<class C>
+inline size_t stringiasciihash(const C *s) {
+    return bernstein_hash(s, [](C c) {
+	return (c >= 'A' && c <= 'Z') ? c | 0x20 : c;
+    });
 }
 
-inline size_t __no_sanitize_unsigned stringihash(const wchar *s) {
-    size_t ret = 5381;
+inline size_t stringihash(const char *s) {
+    return bernstein_hash(s, [](char c) { return toupper(c); });
+}
 
-    while (s[0] && s[1] && s[2] && s[3]) {
-	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)s[0]);
-	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)s[1]);
-	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)s[2]);
-	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)s[3]);
-	s += 4;
-    }
-    while (*s)
-	ret = ((ret << 5) + ret) ^ (size_t)towupper((ushort)*s++);
-    return ret;
+inline size_t stringihash(const wchar *s) {
+    return bernstein_hash(s, [](wchar c) { return towupper((ushort)c); });
 }
 
 template<class C>
@@ -1034,6 +1053,14 @@ struct strihash {
     }
 };
 
+template <class C>
+struct striasciihash {
+    size_t operator ()(const C *s) const { return stringiasciihash(s); }
+    size_t operator ()(const basic_string<C> &s) const {
+	return stringiasciihash(s.c_str());
+    }
+};
+
 template<class C>
 struct streq {
     bool operator ()(const C *a, const C *b) const { return stringeq(a, b); }
@@ -1048,15 +1075,13 @@ struct streq {
 
 template<class C>
 struct strieq {
-    bool operator ()(const C *a, const C *b) const {
-	return stringicmp(a, b) == 0;
-    }
+    bool operator ()(const C *a, const C *b) const { return stringieq(a, b); }
     bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return stringicmp(a.c_str(), b.c_str()) == 0;
+	return a.size() == b.size() && stringicmp(a.c_str(), b.c_str()) == 0;
     }
-    static bool equal(const C *a, const C *b) { return stringicmp(a, b) == 0; }
+    static bool equal(const C *a, const C *b) { return stringieq(a, b); }
     static bool equal(const basic_string<C> &a, const basic_string<C> &b) {
-	return stringicmp(a, b) == 0;
+	return a.size() == b.size() && stringicmp(a.c_str(), b.c_str()) == 0;
     }
 };
 
@@ -1088,10 +1113,12 @@ struct striless {
 
 // compile time string hashing using Bernstein XOR algorithm for string keys
 template<class C>
-constexpr size_t strhash_const(const C *s, size_t len, size_t idx = 0, size_t
-    hash = 5381) {
-    return idx == len ? hash : strhash_const(s, len, idx + 1, ((hash << 5) +
-	hash) ^ (size_t)s[idx]);
+constexpr size_t strhash_const(const C *s, size_t len) {
+    size_t hash = 5381;
+
+    for (size_t i = 0; i < len; i++)
+	hash = ((hash << 5) + hash) ^ (size_t)s[i];
+    return hash;
 }
 
 class BLISTER StringHash {
@@ -1102,7 +1129,7 @@ public:
 	const tchar *s;
     };
 
-    __forceinline StringHash(const DynamicString &ds): hash(stringhash(ds.s)) {}
+    __forceinline StringHash(const DynamicString ds): hash(stringhash(ds.s)) {}
     template<size_t N>
     __forceinline constexpr explicit StringHash(const tchar (&s)[N]):
 	hash(strhash_const(s, N - 1)) {}
@@ -1143,14 +1170,12 @@ public:
 	__forceinline const C &operator *() const { return *cur; }
 	__forceinline const C *operator ->() const { return cur; }
 	__forceinline const_iterator &operator ++() {
-	    if (cur)
-		cur = cur->next;
+	    cur = cur->next;
 	    return *this;
 	}
 	// NOLINTNEXTLINE
 	__forceinline const_iterator &operator =(const const_iterator &it) {
-	    if (this != &it)
-		cur = it.cur;
+	    cur = it.cur;
 	    return *this;
 	}
 	__forceinline bool operator ==(const const_iterator &it) const {
@@ -1232,9 +1257,10 @@ public:
 	return obj;
     }
     __forceinline void push_back(C &obj) {
+	obj.next = NULL;
 	if (sz++) {
 	    back->next = &obj;
-	    back = (C *)back->next;
+	    back = &obj;
 	} else {
 	    back = front = &obj;
 	}

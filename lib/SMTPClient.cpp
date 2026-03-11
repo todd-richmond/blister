@@ -96,23 +96,27 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 
     multi.erase();
     if (s1) {
-	sstrm << tchartoachar(s1);
-	if (s2) {
-	    bool addbracket = false;
+	const char *as1 = tchartoachar(s1);
+	size_t s1len = strlen(as1);
 
-	    if (s1[tstrlen(s1) - 1] != ':') {
-		if (s2[0] != '<') {
-		    addbracket = true;
-		    sstrm << '<';
+	if (s2) {
+	    const char *as2 = tchartoachar(s2);
+	    bool addbracket = as1[s1len - 1] != ':' && as2[0] != '<';
+	    char sep = addbracket ? '<' : ' ';
+
+	    sstrm.write(as1, (streamsize)s1len);
+	    sstrm.write(&sep, 1);
+	    sstrm.write(as2, (streamsize)strlen(as2));
+	    if (addbracket) {
+		static const char rb[] = ">\r\n";
+		sstrm.write(rb, 3);
+	    } else {
+		sstrm.write(crlf, 2);
 		}
 	    } else {
-		sstrm << ' ';
+	    sstrm.write(as1, (streamsize)s1len);
+	    sstrm.write(crlf, 2);
 	    }
-	    sstrm << tchartoachar(s2);
-	    if (addbracket)
-		sstrm << '>';
-	}
-	sstrm << crlf;
     }
     do {
 	sts.erase();
@@ -260,7 +264,7 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
 	return stuff(start, sz);
     } else {
 	sstrm.write(start, (streamsize)sz);
-	sstrm << crlf;
+	sstrm.write(crlf, 2);
 	return sstrm.good();
     }
 }
@@ -322,7 +326,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	    sstrm << "Content-Type: " << "text/plain" << crlf << crlf;
 	}
     } else {
-	sstrm << crlf;
+	sstrm.write(crlf, 2);
     }
     if (txt) {
 #ifdef UNICODE
@@ -377,7 +381,7 @@ void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
 	    sstrm << ",\r\n\t";
 	sstrm << tstringtoachar(s);
     }
-    sstrm << crlf;
+    sstrm.write(crlf, 2);
 }
 
 bool SMTPClient::stuff(const void *data, size_t sz) {
@@ -388,17 +392,17 @@ bool SMTPClient::stuff(const void *data, size_t sz) {
     for (p = pp = start; p <= end; p++) {
 	if (*p == '.' && (p == start || p[-1] == '\n')) {
 	    sstrm.write(pp, p - pp);
-	    sstrm << "..";
+	    sstrm.write("..", 2);
 	    pp = p + 1;
 	} else if (*p == '\n' && (p == start || p[-1] != '\r')) {
 	    sstrm.write(pp, p - pp);
-	    sstrm << crlf;
+	    sstrm.write(crlf, 2);
 	    pp = p + 1;
 	}
     }
     sstrm.write(pp, p - pp);
     if (*end != '\n')
-	sstrm << crlf;
+	sstrm.write(crlf, 2);
     return sstrm.good();
 }
 

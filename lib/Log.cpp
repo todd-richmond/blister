@@ -39,7 +39,7 @@ static const tchar *ZSubst = T("\002\002");
 #endif
 
 const tchar * const Log::LevelStr[] = {
-    T("none"), T("emrg"), T("alrt"), T("crit"), T("err"), T("warn"), T("note"),
+    T("none"), T("emrg"), T("alrt"), T("crit"), T("err "), T("warn"), T("note"),
     T("info"), T("debg"), T("trce"), T("sprs")
 };
 const tchar * const Log::LevelStr2[] = {
@@ -174,6 +174,9 @@ bool Log::LogFile::reopen(void) {
 	fd = -3;
 	return false;
     }
+#ifdef POSIX_FADV_SEQUENTIAL
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
     lock();
     if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
 	char buf[PATH_MAX];
@@ -414,7 +417,6 @@ void Log::endlog(Tlsdata &tlsd) {
     usec_t now_usec;
     tstring &strbuf(tlsd.strbuf);
     size_t sz = (size_t)tlsd.strm.size();
-    tchar tmp[16];
 
     lck.lock();
     if (fenabled) {
@@ -470,29 +472,31 @@ void Log::endlog(Tlsdata &tlsd) {
     if (_type == NoTime) {
 	strbuf.erase();
     } else {
-	strbuf = last_format;
-	if (upos != last_format.npos) {
-	    tsprintf(tmp, T("%06u"), (uint)now_usec);
-	    strbuf.replace(upos, 2, tmp);
+	if (upos == last_format.npos) {
+	    strbuf = last_format;
+	} else {
+	    char cbuf[8];
+	    auto [ep, ec] = to_chars(cbuf, cbuf + 6, (uint)now_usec);
+	    size_t dlen = (size_t)(ep - cbuf);
+	    strbuf.assign(last_format, 0, upos);
+	    strbuf.append(6 - dlen, '0');
+	    strbuf.append(cbuf, dlen);
+	    strbuf.append(last_format, upos + 2, last_format.npos);
 	}
 	if (!strbuf.empty())
 	    strbuf += ' ';
     }
     tmlen = strbuf.size();
     if (_type == KeyVal) {
-	strbuf.reserve(strbuf.size() + 64 + sz);
 	strbuf += T("ll=");
 	if (clvl >= None && clvl <= Trace)
 	    strbuf += LevelStr2[clvl];
 	strbuf += ' ';
     } else if (_type != NoLevel && _type != NoTime) {
-	strbuf.reserve(strbuf.size() + 32 + sz);
 	if (clvl >= None && clvl <= Trace)
 	    strbuf += LevelStr[clvl];
 	if (_type == Syslog)
 	    strbuf += ':';
-	if (clvl == Err)
-	    strbuf += ' ';
 	strbuf += ' ';
     }
     lvllen = strbuf.size();
@@ -520,8 +524,11 @@ void Log::endlog(Tlsdata &tlsd) {
 		} else if (*p == '\r') {
 		    strbuf += T("\\r");
 		} else {
-		    tsprintf(tmp, T("\\%03o"), (uint)*p);
-		    strbuf += tmp;
+		    tchar oct[4] = { '\\',
+			(tchar)('0' + (((uchar)*p >> 6) & 7)),
+			(tchar)('0' + (((uchar)*p >> 3) & 7)),
+			(tchar)('0' + ((uchar)*p & 7)) };
+		    strbuf.append(oct, 4);
 		}
 		++p;
 		start = p;
@@ -537,12 +544,14 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (src.empty()) {
 	    afd.print(strbuf);
 	} else {
-	    tstring ss(strbuf.substr(0, lvllen));
+	    tstring ss;
 
+	    ss.reserve(strbuf.size() + src.size() + 5);
+	    ss.append(strbuf, 0, lvllen);
 	    ss += T("src=");
 	    ss += src;
 	    ss += ' ';
-	    ss += strbuf.substr(lvllen);
+	    ss.append(strbuf, lvllen, strbuf.npos);
 	    afd.print(ss);
 	}
 	afd.unlock();
@@ -603,11 +612,8 @@ void Log::endlog(Tlsdata &tlsd) {
 		ss += '@';
 		ss += Sockaddr::hostname();
 	    }
-
-	    RFC822Addr ssaddr(ss), mailtoaddr(mailto);
-
-	    smtp.from(ssaddr);
-	    smtp.to(mailtoaddr);
+	    smtp.from(RFC822Addr(ss));
+            smtp.to(RFC822Addr(mailto));
 	    smtp.subject(strbuf.substr(tmlen, tmlen + 69).c_str());
 	    smtp.data(false, strbuf.c_str());
 	    smtp.enddata();
@@ -673,7 +679,7 @@ void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {
 }
 
 tostream &Log::quote(tostream &os, const tchar *s) {
-    static const uchar needquote[128] = {
+    static const uchar needquote[256] = {
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // DLE - US
 	1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // SPACE - /
@@ -682,6 +688,14 @@ tostream &Log::quote(tostream &os, const tchar *s) {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,  // P - _
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // ` - o
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0x80 - 0x8F
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0x90 - 0x9F
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xA0 - 0xAF
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xB0 - 0xBF
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xC0 - 0xCF
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xD0 - 0xDF
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xE0 - 0xEF
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xF0 - 0xFF
     };
     const tuchar *start = (const tuchar *)s;
     const tuchar *p = start;
@@ -689,49 +703,49 @@ tostream &Log::quote(tostream &os, const tchar *s) {
     while (*p) {
 	tuchar c = *p;
 
-	if (UNLIKELY(c > 127 || (c < 128 && needquote[c]))) {
-	    if (p == start) {
-		os << '"';
-	    } else {
-		os << '"';
-		os.write((const tchar *)start, p - start);
-	    }
+	if (UNLIKELY(needquote[c])) {
+	    streamsize bsz = 0;
+	    tchar buf[64];
+	    static const tchar dquote = '"';
+
+	    os.write(&dquote, 1);
+	    os.write((const tchar *)start, p - start);
+	    auto flush = [&]() { if (bsz) { os.write(buf, bsz); bsz = 0; } };
+	    auto esc2  = [&](tchar e) {
+		flush();
+		buf[0] = '\\';
+		buf[1] = e;
+		os.write(buf, 2);
+	    };
 	    while (*p) {
 		c = *p++;
 		switch (c) {
-		case '"':
-		    os << '\\' << '"';
-		    break;
-		case '\\':
-		    os << '\\' << '\\';
-		    break;
-		case '\f':
-		    os << '\\' << 'f';
-		    break;
-		case '\n':
-		    os << '\\' << 'n';
-		    break;
-		case '\r':
-		    os << '\\' << 'r';
-		    break;
-		case '\t':
-		    os << '\t';
-		    break;
-		case '\v':
-		    os << '\\' << 'v';
-		    break;
+		case '"': esc2('"'); break;
+		case '\\': esc2('\\'); break;
+		case '\f': esc2('f'); break;
+		case '\n': esc2('n'); break;
+		case '\r': esc2('r'); break;
+		case '\t': esc2('t'); break;
+		case '\v': esc2('v'); break;
 		default:
 		    if (LIKELY(c >= ' ')) {
-			os << (tchar)c;
+			buf[bsz++] = (tchar)c;
+			if (bsz == (streamsize)sizeof (buf)) {
+			    os.write(buf, bsz);
+			    bsz = 0;
+			}
 		    } else {
-			tchar tmp[16];
-
-			tsprintf(tmp, T("\\%03o"), (uint)c);
-			os << tmp;
+			flush();
+			tchar tmp[4] = { '\\', (tchar)('0' + ((c >> 6) & 7)),
+			    (tchar)('0' + ((c >> 3) & 7)),
+			    (tchar)('0' + (c & 7)) };
+			os.write(tmp, 4);
 		    }
 		}
 	    }
-	    os << '"';
+	    if (bsz)
+		os.write(buf, bsz);
+	    os.write(&dquote, 1);
 	    return os;
 	}
 	++p;
@@ -818,7 +832,13 @@ void Log::stop(void) {
 
 Log::Level Log::str2enum(const tchar *l) {
     for (uint u = 0; u < sizeof (LevelStr) / sizeof (const tchar *); ++u) {
-	if (!tstricmp(l, LevelStr[u]) || !tstricmp(l, LevelStr2[u]))
+	const tchar *s = LevelStr[u];
+	size_t slen = tstrlen(s);
+
+	if (slen && s[slen - 1] == ' ')
+	    --slen;
+	if ((!tstrnicmp(l, s, slen) && l[slen] == '\0') || !tstricmp(l,
+	    LevelStr2[u]))
 	    return (Level)u;
     }
     return None;
