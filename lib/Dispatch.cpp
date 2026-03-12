@@ -622,7 +622,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	removeTimer(*ds);
 	olock.lock();
 	flags = ds->flags;
-	scheduled = flags & DSP_Scheduled;
+	scheduled = (flags & DSP_Scheduled) != 0;
 	if (UNLIKELY(flags & DSP_Freed)) {
 	    olock.unlock();
 	    continue;
@@ -656,6 +656,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    olock.unlock();
     }
 }
+
 #endif
 
 void Dispatcher::handleTimers(msec_t now) {
@@ -939,7 +940,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	tmt = now + timeout;
 	tlock.lock();
 	timers.set(ds, tmt);
-	if (tmt < due)
+	if (UNLIKELY(tmt < due))
 	    due = tmt;
 	else
 	    tmt = 0;

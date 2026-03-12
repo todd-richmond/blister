@@ -733,6 +733,17 @@ public:
 	uint c;
 	Waiting *h, *w, *ww;
 
+	if (LIKELY(count == 1)) {
+	    do {
+		h = head.load(memory_order_acquire);
+		if (UNLIKELY(!h))
+		    return 1;
+		w = h->next;
+	    } while (!head.compare_exchange_weak(h, w, memory_order_release,
+		memory_order_acquire));
+	    h->sema4.set();
+	    return 0;
+	}
 	do {
 	    c = count;
 	    h = head.load(memory_order_acquire);
