@@ -473,6 +473,7 @@ bool Config::write(tostream &os, bool inistyle) const {
 	const tchar *dot;
 	const tchar *key = keys[u].first;
 	const KV *kv = keys[u].second;
+
 	if ((dot = tstrchr(key, '.')) == NULL) {
 	    if (inistyle) {
 		sect = '.';

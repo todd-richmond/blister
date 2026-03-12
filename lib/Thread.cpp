@@ -252,13 +252,11 @@ void Thread::clear(void) {
 #endif
 	id = NOID;
     }
-    state = Terminated;
-    lck.unlock();
-    group->notify(*this);
-    lck.lock();
+    state.store(Terminated, memory_order_release);
     hdl = 0;
     cv.broadcast();
     lck.unlock();
+    group->notify(*this);
 }
 
 // exit thread cleanly - called by itself
@@ -317,9 +315,8 @@ void Thread::thread_cleanup(void) {
     ThreadLocalMap *fmap = flocal.get();
 
     if (fmap) {
-	for (ThreadLocalMap::const_iterator it = fmap->begin(); it !=
-	    fmap->end(); ++it)
-	    it->second(it->first);
+	for (const auto &[data, func] : *fmap)
+	    func(data);
 	delete fmap;
 	flocal.set(NULL);
     }

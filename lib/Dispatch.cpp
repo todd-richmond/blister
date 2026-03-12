@@ -101,6 +101,7 @@ bool Dispatcher::exec() {
 	if (!rlist)
 	    break;
 	obj = rlist.pop_front();
+	__builtin_prefetch(obj->next, 0, 1);
 	if (UNLIKELY((flags = obj->flags) & DSP_Freed)) {
 	    olock.unlock();
 	    delete obj;
@@ -117,9 +118,9 @@ bool Dispatcher::exec() {
 	}
 	obj->flags = (flags & ~DSP_Ready) | DSP_Active;
 	olock.unlock();
-	scanning.fetch_sub(1, memory_order_release);
+	scanning.fetch_sub(1, memory_order_relaxed);
 	obj->dcb(obj);
-	scanning.fetch_add(1, memory_order_acquire);
+	scanning.fetch_add(1, memory_order_relaxed);
 	olock.lock();
 	flags = obj->flags &= ~DSP_Active;
 	if (UNLIKELY(flags & DSP_Freed))
@@ -1084,7 +1085,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    if (s >= rsz) {
 		return;
 	    } else if (scanning.compare_exchange_weak(s, s + 1,
-		memory_order_acquire, memory_order_relaxed)) {
+		memory_order_relaxed, memory_order_relaxed)) {
 		if (!lifo.set()) {
 		    return;
 		} else if (UNLIKELY(workers < maxthreads && !shutdown)) {

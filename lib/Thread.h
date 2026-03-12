@@ -330,16 +330,18 @@ public:
     __forceinline __no_sanitize_thread void lock(void) {
 	while (UNLIKELY(!trylock())) {
 #ifdef THREAD_PAUSE
-	    uint u = 0;
+	    uint u = 0, limit = spins;
 #endif
 	    do {
 #ifdef THREAD_PAUSE
-		if (LIKELY(u < spins)) {
+		if (LIKELY(u < limit)) {
 		    ++u;
 		    THREAD_PAUSE();
 		} else {
-		    u = 0;
 		    THREAD_YIELD();
+		    u = 0;
+		    if (LIKELY(limit < spins))
+			limit += limit;
 		}
 #else
 		THREAD_YIELD();
@@ -407,12 +409,14 @@ public:
 
 	while (!state.compare_exchange_weak(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed)) {
-	    expected = 0;
+	    do {
 #ifdef THREAD_PAUSE
-	    THREAD_PAUSE();
+		THREAD_PAUSE();
 #else
-	    THREAD_YIELD();
+		THREAD_YIELD();
 #endif
+	    } while (state.load(memory_order_relaxed) != 0);
+	    expected = 0;
 	}
     }
     __forceinline bool wtrylock() {
@@ -424,7 +428,7 @@ public:
     __forceinline void wunlock(void) { state.store(0, memory_order_release); }
 
 private:
-    atomic_uint_fast32_t state;
+    alignas(64) atomic_uint_fast32_t state;
 
     static constexpr uint_fast32_t WRITE_BIT = 1U << 31;
 };
@@ -466,7 +470,7 @@ public:
 
 private:
     alignas(64) atomic_uint_fast16_t current;
-    atomic_uint_fast16_t next;
+    alignas(64) atomic_uint_fast16_t next;
     const uint yield;
 };
 
@@ -803,7 +807,9 @@ public:
     int exitStatus(void) const { return retval; }
     thread_hdl_t getHandle(void) const { return hdl; }
     thread_id_t getId(void) const { FastLocker lkr(lck); return id; }
-    ThreadState getState(void) const { FastLocker lkr(lck); return state; }
+    ThreadState getState(void) const {
+	return state.load(memory_order_acquire);
+    }
     ThreadGroup *getThreadGroup(void) const { return group; }
     bool running(void) const { return getState() == Running; }
     bool terminated(void) const { return getState() == Terminated; }
