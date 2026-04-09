@@ -55,46 +55,19 @@ int clock_gettime(int id, struct timespec *ts) {
 #endif
 
 #ifdef __APPLE__
-static double mach_msec_scale(void) {
-    static atomic_flag lck = ATOMIC_FLAG_INIT;
-    static double msec_scale;
-
-    if (UNLIKELY(msec_scale == 0.0)) {
-	while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
-	    THREAD_YIELD();
-	if (msec_scale == 0.0) {
-	    struct mach_timebase_info mti;
-
-	    mach_timebase_info(&mti);
-	    msec_scale = (double)mti.numer / ((double)mti.denom * 1000000.0); // codespell:ignore numer
-	}
-	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
-    }
-    return msec_scale;
-}
-
-static double mach_usec_scale(void) {
-    static atomic_flag lck = ATOMIC_FLAG_INIT;
-    static double usec_scale;
-
-    if (UNLIKELY(usec_scale == 0.0)) {
-	while (atomic_flag_test_and_set_explicit(&lck, memory_order_acquire))
-	    THREAD_YIELD();
-	if (usec_scale == 0.0) {
-	    struct mach_timebase_info mti;
-
-	    mach_timebase_info(&mti);
-	    usec_scale = (double)mti.numer / ((double)mti.denom * 1000.0); // codespell:ignore numer
-	}
-	(void)atomic_flag_clear_explicit(&lck, memory_order_release);
-    }
-    return usec_scale;
-}
 #endif
 
 msec_t mticks(void) {
 #ifdef __APPLE__
-    return (msec_t)(mach_approximate_time() * mach_msec_scale());
+    static double scale = 0.0;
+
+    if (UNLIKELY(scale == 0.0)) {
+	struct mach_timebase_info mti;
+
+	mach_timebase_info(&mti);
+	scale = (double)mti.numer / ((double)mti.denom * 1000000.0);
+    }
+    return (msec_t)((double)mach_approximate_time() * scale);
 #else
     struct timespec ts;
 
@@ -105,7 +78,15 @@ msec_t mticks(void) {
 
 usec_t __no_sanitize("thread") uticks(void) {
 #ifdef __APPLE__
-    return (usec_t)(mach_absolute_time() * mach_usec_scale());
+    static double scale = 0.0;
+
+    if (UNLIKELY(scale == 0.0)) {
+	struct mach_timebase_info mti;
+
+	mach_timebase_info(&mti);
+	scale = (double)mti.numer / ((double)mti.denom * 1000.0);
+    }
+    return (usec_t)((double)mach_absolute_time() * scale);
 #else
     struct timespec ts;
 
