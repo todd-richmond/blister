@@ -21,6 +21,7 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <new>
 #include "Config.h"
 #include "Log.h"
 #include "Socket.h"
@@ -416,7 +417,7 @@ private:
     void cleanup(void);
     bool exec(void);
     void handleEvents(const void *evts, uint cnt);
-    void handleTimers(msec_t now);
+    DispatchTimer *handleTimers(msec_t now);
     void reset(void);
     int run(void);
     void wakeup(ulong msec);
@@ -485,7 +486,7 @@ public:
 
 protected:
     virtual void onAccept(Socket &sock) {
-	C *c = new(nothrow) C(static_cast<D &>(dspr), sock);
+	C *c = new(std::nothrow) C(static_cast<D &>(dspr), sock);
 
 	if (c == NULL) {
 	    sock.close();

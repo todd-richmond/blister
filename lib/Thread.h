@@ -98,6 +98,7 @@ typedef pthread_key_t tlskey_t;
 #include <semaphore>
 #include <set>
 #include <shared_mutex>
+#include <unordered_map>
 
 /* RAII locking templates */
 template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =

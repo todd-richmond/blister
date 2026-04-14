@@ -128,7 +128,7 @@ public:
     }
 
     virtual int underflow(void) {
-	char *gp = gptr();
+	const char *gp = gptr();
 
 	if (UNLIKELY(gp == NULL)) {
 	    uchar c;

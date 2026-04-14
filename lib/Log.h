@@ -466,7 +466,7 @@ extern BLISTER Log &dlog;
 #define logd(o, ...)	LOGL(o, Log::Debug, __VA_ARGS__)
 #define logt(o, ...)	LOGL(o, Log::Trace, __VA_ARGS__)
 
-#define dlogl(l, ...)	LOGL(dlog, l,  __VA_ARGS__)
+#define dlogl(l, ...)	LOGL(dlog, (l), __VA_ARGS__)
 #define dlogm(...)	logm(dlog, __VA_ARGS__)
 #define dloga(...)	loga(dlog, __VA_ARGS__)
 #define dlogc(...)	logc(dlog, __VA_ARGS__)

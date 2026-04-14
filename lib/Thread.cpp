@@ -544,32 +544,41 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
     Locker lkr(cvlck);
 
     do {
-	set<Thread *>::iterator it(threads.begin());
 	bool running = false;
+	Thread *batch[64];
+	uint count = 0;
 
-	while (it != threads.end()) {
+	for (auto it = threads.begin(); it != threads.end(); ) {
 	    Thread *thread = *it;
 
 	    if (thread->terminated()) {
-		threads.erase(it);
-		lkr.unlock();
-		thread->wait();
-		thread->group = NULL;
-		if (all) {
-		    lkr.lock();
-		    it = threads.begin();
-		    continue;
-		} else {
-		    return thread;
-		}
+		it = threads.erase(it);
+		batch[count++] = thread;
+		if (!all || count == 64)
+		    break;
 	    } else {
 		thread_id_t tid = thread->getId();
 
 		if (tid != NOID && !THREAD_ISSELF(tid))
 		    running = true;
+		++it;
 	    }
-	    ++it;
 	}
+
+	if (count > 0) {
+	    lkr.unlock();
+	    for (uint i = 0; i < count; i++) {
+		batch[i]->wait();
+		batch[i]->group = NULL;
+	    }
+	    if (all) {
+		lkr.lock();
+		continue;
+	    } else {
+		return batch[0];
+	    }
+	}
+
 	if (!running || !msec) {
 	    break;
 	} else if (msec == INFINITE) {

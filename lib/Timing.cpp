@@ -28,22 +28,49 @@ static Timing &_dtiming(void) {
 
 Timing &dtiming(_dtiming());
 
+Timing::Stats *Timing::Stats::newstats(const tchar *k, size_t h) {
+    uint klen = (uint)tstrlen(k);
+    Stats *s = (Stats *)new char[offsetof(Stats, key) + (klen + 1) *
+        sizeof (tchar)];
+
+    s->cnt = 0;
+    s->tot = 0;
+    s->flist = NULL;
+    s->hash = h;
+    s->klen = klen;
+    ZERO(s->cnts);
+    memcpy(s->key, k, (klen + 1) * sizeof (tchar));
+    return s;
+}
+
 // -V::1020
 void Timing::add(const TimingKey &key, timing_t diff) {
     const size_t hash = key.hash();
-    timingmap::const_iterator it;
+    uint idx = hash & (CACHESIZE - 1);
     uint slot;
     Stats *stats;
     static const timing_t limits[TIMINGSLOTS - 1] = {
 	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
     };
 
-    slot = (uint)(upper_bound(limits, limits + TIMINGSLOTS - 1, diff) - limits);
+    for (slot = 0; slot < TIMINGSLOTS - 1; ++slot) {
+	if (diff < limits[slot])
+		break;
+    }
+    stats = cache[idx].load(memory_order_relaxed);
+    if (LIKELY(stats && stats->hash == hash)) {
+	stats->cnt.fetch_add(1, memory_order_relaxed);
+	stats->cnts[slot].fetch_add(1, memory_order_relaxed);
+	stats->tot.fetch_add(diff, memory_order_relaxed);
+	return;
+    }
     lck.rlock();
-    it = tmap.find(hash);
-    if (UNLIKELY(it == tmap.end())) {
+
+    timingmap::const_iterator it = tmap.find(hash);
+
+    if (it == tmap.end()) {
 	lck.runlock();
-	stats = Stats::newstats(key);
+	stats = Stats::newstats(key, hash);
 	lck.wlock();
 	auto result = tmap.try_emplace(hash, stats);
 	lck.downlock();
@@ -51,11 +78,11 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 	    Stats::delstats(stats);
 	    stats = result.first->second;
 	}
-	lck.runlock();
     } else {
 	stats = it->second;
-	lck.runlock();
     }
+    lck.runlock();
+    cache[idx].store(stats, memory_order_relaxed);
     stats->cnt.fetch_add(1, memory_order_relaxed);
     stats->cnts[slot].fetch_add(1, memory_order_relaxed);
     stats->tot.fetch_add(diff, memory_order_relaxed);
@@ -63,9 +90,18 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 
 void Timing::clear() {
     timingmap old;
-    {
-	FastSpinWLocker lkr(lck);
-	old.swap(tmap);
+    Stats *s, *next;
+
+    lck.wlock();
+    for (uint i = 0; i < CACHESIZE; i++)
+	cache[i].store(nullptr, memory_order_relaxed);
+    old.swap(tmap);
+    lck.wunlock();
+    s = flist.exchange(nullptr, memory_order_relaxed);
+    while (s) {
+	next = s->flist;
+	Stats::delstats(s);
+	s = next;
     }
     for (auto &[k, stats] : old)
 	Stats::delstats(stats);
@@ -87,6 +123,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     sorted.reserve(tmap.size());
     for (timingmap::const_iterator it = tmap.begin(); it != tmap.end(); ++it) {
 	const Stats *stats = it->second;
+
 	sorted.emplace_back(stats);
 	for (u = TIMINGSLOTS - 1; u > last; u--) {
 	    if (stats->cnts[u]) {
@@ -105,6 +142,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	if (columns) {
 	    const tchar *h = hdrs[u];
 	    size_t hlen = tstrlen(h);
+
 	    while (hlen++ < 4)
 		s += ' ';
 	    s += h;
@@ -213,16 +251,25 @@ void Timing::erase(const TimingKey &key) {
     timingmap::iterator it;
     Stats *stats = NULL;
 
-    {
-	FastSpinWLocker lkr(lck);
-	it = tmap.find(key.hash());
-	if (it != tmap.end()) {
-	    stats = it->second;
-	    tmap.erase(it);
-	}
+    lck.wlock();
+    it = tmap.find(key.hash());
+    if (it != tmap.end()) {
+	stats = it->second;
+	tmap.erase(it);
     }
-    if (stats)
-	Stats::delstats(stats);
+    lck.wunlock();
+    if (stats) {
+	Stats *expected = stats;
+	Stats *s;
+	uint idx = key.hash() & (CACHESIZE - 1);
+
+	cache[idx].compare_exchange_strong(expected, nullptr,
+	    memory_order_relaxed);
+	s = flist.load(memory_order_relaxed);
+	do {
+	    stats->flist = s;
+	} while (!flist.compare_exchange_weak(s, stats, memory_order_release, memory_order_relaxed));
+    }
 }
 
 const tchar *Timing::format(timing_t t, tchar *buf) {

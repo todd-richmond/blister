@@ -1,0 +1,20 @@
+{
+  "C_Cpp.default.compilerArgs": [
+    "-Wno-deprecated-declarations"
+  ],
+  "c-cpp-flylint.cppcheck.extraArgs": [
+    "--suppress=dangerousTypeCast",
+    "--suppress=cstyleCast",
+    "--suppress=normalCheckLevelMaxBranches"
+  ],
+  "c-cpp-flylint.clang.extraArgs": [
+    "-DBUILD_BLISTER",
+    "-I${workspaceFolder}/lib",
+    "-include",
+    "${workspaceFolder}/lib/stdapi.h",
+    "-std=gnu++23",
+    "-Wno-unknown-pragmas",
+    "-Wno-deprecated-declarations",
+    "-Wno-old-style-cast"
+  ]
+}

@@ -18,8 +18,9 @@
 #ifndef Timing_h
 #define Timing_h
 
-#include <vector>
+#include <atomic>
 #include <unordered_map>
+#include <vector>
 #include "Thread.h"
 
 /*
@@ -92,10 +93,23 @@ private:
 
 class BLISTER Timing: nocopy {
 public:
-    Timing() {}
-    ~Timing() { clear(); }
-
+    static const uint CACHESIZE = 4096;
     static const uint TIMINGSLOTS = 10;
+
+    Timing(): flist(nullptr) {
+        for (uint i = 0; i < CACHESIZE; i++) {
+            cache[i].store(nullptr, memory_order_relaxed);
+        }
+    }
+    ~Timing() {
+        clear();
+        Stats *s = flist.exchange(nullptr, memory_order_relaxed);
+        while (s) {
+            Stats *next = s->flist;
+            Stats::delstats(s);
+            s = next;
+        }
+    }
 
     vector<tstring>::size_type depth(void) const { return tls->callers.size(); }
 
@@ -135,21 +149,12 @@ private:
 	alignas(64) atomic_uint_fast32_t cnt;
 	atomic_uint_fast32_t cnts[TIMINGSLOTS];
 	atomic_uint_fast64_t tot;
+	Stats *flist;
+	size_t hash;
 	uint klen;
 	tchar key[];
 
-	static Stats *newstats(const tchar *k) {
-	    uint klen = (uint)tstrlen(k);
-	    Stats *s = (Stats *)new char[offsetof(Stats, key) + (klen + 1) *
-		sizeof (tchar)];
-
-	    s->cnt = 0;
-	    s->tot = 0;
-	    s->klen = klen;
-	    ZERO(s->cnts);
-	    memcpy(s->key, k, (klen + 1) * sizeof (tchar));
-	    return s;
-	}
+	static Stats *newstats(const tchar *k, size_t h);
 	static void delstats(Stats *s) { delete [] (char *)s; }
     };
 
@@ -160,9 +165,11 @@ private:
 
     typedef unordered_map<size_t, Stats *> timingmap;
 
+    atomic<Stats *> cache[CACHESIZE];
+    atomic<Stats *> flist;
     mutable SpinRWLock lck;
-    ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
+    ThreadLocalClass<Tlsdata> tls;
 
     void callstack(const tchar *key, timing_t diff, const Tlsdata &tlsd);
     void erase(const TimingKey &key);

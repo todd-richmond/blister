@@ -278,7 +278,7 @@ bool Config::parse(tistream &is) {
 	case '=':
 	    break;
 	case '#':
-	    if (key.rfind(T("include"), 1) == 1) {
+	    if (key.size() > 8 && !key.compare(1, 7, T("include"), 7)) {
 		string file;
 		unique_ptr<tchar[]> fbuf;
 		tifstream iis;
