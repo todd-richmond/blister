@@ -319,7 +319,7 @@ public:
     bool open(void) const { return sbuf->sock != SOCK_INVALID; }
 
     // socket actions
-    bool accept(Socket &sock);
+    bool accept(Socket &sock, bool cloexec = true, bool nonblock = false);
     bool bind(const Sockaddr &sa, bool reuse = true);
     bool close(void) { return sbuf->close(); }
     bool connect(const Sockaddr &sa, uint msec = SOCK_INFINITE);

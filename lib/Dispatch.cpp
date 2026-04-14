@@ -30,9 +30,6 @@ uint Dispatcher::socketmsg;
 
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
-#ifndef EPOLLEXCLUSIVE
-#define EPOLLEXCLUSIVE 0
-#endif
 #ifndef EPOLLRDHUP
 #define EPOLLRDHUP 0x2000
 #endif
@@ -1070,10 +1067,12 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     event_t evt;
 
     evt.data.ptr = &ds;
-    // | (uint)EPOLLET requires caller to read to completion
     evt.events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLONESHOT;
+    // EPOLLET requires read to completion, but is ok for accept
+#ifdef EPOLLEXCLUSIVE
     if (UNLIKELY(m == DispatchAccept))
         evt.events = (evt.events & ~EPOLLONESHOT) | EPOLLET | EPOLLEXCLUSIVE;
+#endif
     RETRY(epoll_ctl(evtfd, op, ds.fd(), &evt));
 #elif defined(DSP_KQUEUE)
     event_t chgs[6], evts[MIN_EVENTS];
@@ -1240,13 +1239,12 @@ DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &sa,
 void DispatchListenSocket::connection() {
     Socket s;
 
-    while (accept(s)) {
-#ifdef __linux__
-	s.blocking(false);
-#endif
+    while (accept(s, true, true)) {
 	s.movehigh();
 	onAccept(s);
 	s = Socket();
     }
+#if !defined(DSP_EPOLL) || !defined(EPOLLEXCLUSIVE)
     relisten();
+#endif
 }

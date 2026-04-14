@@ -459,13 +459,26 @@ Socket &Socket::operator =(const Socket &r) {
     return *this;
 }
 
-bool Socket::accept(Socket &sock) {
+bool Socket::accept(Socket &sock, bool _cloexec, bool nonblock) {
     sock.close();
     do {
+#ifdef __linux__
+	if (LIKELY(check((sock.sbuf->sock = ::accept4(sbuf->sock, NULL, NULL,
+	    (_cloexec ? SOCK_CLOEXEC : 0) | (nonblock ? SOCK_NONBLOCK : 0))) ==
+	    SOCK_INVALID ? -1 : 0))) {
+#else
 	if (LIKELY(check((sock.sbuf->sock = ::accept(sbuf->sock, NULL, NULL)) ==
 	    SOCK_INVALID ? -1 : 0))) {
+#endif
 	    sock.sbuf->type = sbuf->type;
 	    return true;
+#ifndef __linux__
+	} else {
+	    if (_cloexec)
+		cloexec();
+	    if (nonblock && !blocking())
+		blocking(false);
+#endif
 	}
     } while (interrupted());
     return false;
