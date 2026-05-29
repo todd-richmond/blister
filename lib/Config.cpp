@@ -101,14 +101,14 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	    continue;
 	}
 	repl = it->second->val;
-	repllen = tstrlen(repl);
+	repllen = it->second->vlen;
 	val.replace(spos, epos - spos + 1, repl, repllen);
 	search = spos + repllen;
     }
     return !val.empty();
 }
 
-const tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
+tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
     const {
     RLocker lkr(lck);
     const KV *kv = getkv(key, sect);
@@ -187,6 +187,8 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     }
     kv = (KV *)new char[offsetof(KV, val) + klen + vlen + 2];
     kv->quote = quote;
+    kv->klen = (uint)klen;
+    kv->vlen = (uint)vlen;
     memcpy(kv->val, val, vlen * sizeof (tchar));
     kv->val[vlen] = '\0';
     kv->key = (tchar *)memcpy(kv->val + vlen + 1, key, klen * sizeof (tchar));
@@ -294,7 +296,8 @@ bool Config::parse(tistream &is) {
 	    break;
 	case '[':
 	    key.remove_prefix(1);
-	    key.remove_suffix(1);
+	    if (!key.empty() && key.back() == ']')
+		key.remove_suffix(1);
 	    trim(key);
 	    if (key == T("common") || key == T("global"))
 		sect.erase();
@@ -395,7 +398,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	delkv(kv);
 	if (oldkv->quote)
 	    s = oldkv->quote;
-	s += oldkv->val;
+	s.append(oldkv->val, oldkv->vlen);
 	if (vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen - 1] ==
 	    val[0])
 	    s.append(val + 1, vlen - 2);
@@ -404,7 +407,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	if (oldkv->quote)
 	    s += oldkv->quote;
 	vlen = s.size();
-	kv = newkv(oldkv->key, tstrlen(oldkv->key), s.c_str(), vlen);
+	kv = newkv(oldkv->key, oldkv->klen, s.c_str(), vlen);
     }
     old.first->second = kv;
     delkv(oldkv);
@@ -412,13 +415,17 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 }
 
 Config &Config::setv(const tchar *key1, const tchar *val1, ...) {
-    const tchar *arg, *key = NULL, *sect = NULL;
+    uint argc = 0;
+    const tchar *arg, *key = NULL, *last = NULL, *sect = NULL;
     size_t slen;
     va_list vl;
 
     va_start(vl, val1);
-    while ((arg = va_arg(vl, const tchar *)) != NULL)
-	sect = sect == NULL ? arg : NULL;
+    while ((arg = va_arg(vl, const tchar *)) != NULL) {
+	last = arg;
+	++argc;
+    }
+    sect = (argc & 1) ? last : NULL;
     va_end(vl);
     slen = sect ? tstrlen(sect) : 0;
     lock();
@@ -535,8 +542,13 @@ bool ConfigFile::write(const tchar *file, bool inistyle) const {
 	tstring tmp(path + T(".tmp"));
 	tofstream os(tstringtoachar(tmp));
 
-	if (!write(os, inistyle) || rename(tstringtoachar(tmp),
-	    tstringtoachar(path))) {
+	if (!write(os, inistyle)) {
+	    os.close();
+	    unlink(tstringtoachar(tmp));
+	    return false;
+	}
+	os.close();
+	if (rename(tstringtoachar(tmp), tstringtoachar(path))) {
 	    unlink(tstringtoachar(tmp));
 	    return false;
 	}

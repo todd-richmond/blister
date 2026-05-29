@@ -39,7 +39,7 @@ int clock_gettime(int id, struct timespec *ts) {
 	    mach_timebase_info(&mti);
 	t = t * mti.numer / mti.denom;		// codespell:ignore numer
 	ts->tv_sec  = t / (1000 * 1000 * 1000);
-	ts->tv_nsec = t % 1000;
+	ts->tv_nsec = t % 1000000000;
 	return 0;
     } else if (id == CLOCK_REALTIME) {
 	struct timeval now;
@@ -55,19 +55,21 @@ int clock_gettime(int id, struct timespec *ts) {
 #endif
 
 #ifdef __APPLE__
+static double mticks_scale;
+static double uticks_scale;
+
+__attribute__((constructor)) static void ticks_init(void) {
+    struct mach_timebase_info mti;
+
+    mach_timebase_info(&mti);
+    mticks_scale = (double)mti.numer / ((double)mti.denom * 1000000.0);
+    uticks_scale = (double)mti.numer / ((double)mti.denom * 1000.0);
+}
 #endif
 
 msec_t mticks(void) {
 #ifdef __APPLE__
-    static double scale = 0.0;
-
-    if (UNLIKELY(scale == 0.0)) {
-	struct mach_timebase_info mti;
-
-	mach_timebase_info(&mti);
-	scale = (double)mti.numer / ((double)mti.denom * 1000000.0);
-    }
-    return (msec_t)((double)mach_approximate_time() * scale);
+    return (msec_t)((double)mach_approximate_time() * mticks_scale);
 #else
     struct timespec ts;
 
@@ -76,17 +78,9 @@ msec_t mticks(void) {
 #endif
 }
 
-usec_t __no_sanitize("thread") uticks(void) {
+usec_t uticks(void) {
 #ifdef __APPLE__
-    static double scale = 0.0;
-
-    if (UNLIKELY(scale == 0.0)) {
-	struct mach_timebase_info mti;
-
-	mach_timebase_info(&mti);
-	scale = (double)mti.numer / ((double)mti.denom * 1000.0);
-    }
-    return (usec_t)((double)mach_absolute_time() * scale);
+    return (usec_t)((double)mach_absolute_time() * uticks_scale);
 #else
     struct timespec ts;
 
@@ -123,9 +117,9 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	psbuf->pss = psbuf->rss = tinfo.resident_size / 1024;
 	psbuf->sz = tinfo.virtual_size / 1024;
 	psbuf->stime = (ulong)tinfo.system_time.seconds * 1000 +
-	    (ulong)tinfo.system_time.microseconds / 1000;;
+	    (ulong)tinfo.system_time.microseconds / 1000;
 	psbuf->utime = (ulong)tinfo.user_time.seconds * 1000 +
-	    (ulong)tinfo.user_time.microseconds / 1000;;
+	    (ulong)tinfo.user_time.microseconds / 1000;
     }
 #elif defined(sun)
     // TODO incomplete
@@ -173,10 +167,12 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	ulong u;
 	ulong stime, utime;
 
-	sscanf(p + 2, "%c %ld %ld %ld %ld %ld %lu %lu %lu %lu %lu %lu %lu",
-	    &c, &d, &d, &d, &d, &d, &u, &u, &u, &u, &u, &utime, &stime);
-	psbuf->stime = stime / HZ * 1000 + (stime % HZ) * (1000L / HZ);
-	psbuf->utime = utime / HZ * 1000 + (utime % HZ) * (1000L / HZ);
+	if (p) {
+	    sscanf(p + 2, "%c %ld %ld %ld %ld %ld %lu %lu %lu %lu %lu %lu %lu",
+		&c, &d, &d, &d, &d, &d, &u, &u, &u, &u, &u, &utime, &stime);
+		psbuf->stime = stime / HZ * 1000 + (stime % HZ) * 1000 / HZ;
+		psbuf->utime = utime / HZ * 1000 + (utime % HZ) * 1000 / HZ;
+	}
     }
     fclose(f);
 #else

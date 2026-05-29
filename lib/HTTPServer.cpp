@@ -354,9 +354,14 @@ void HTTPServerSocket::parse(void) {
     } else {
 	postchunking = false;
 	val = attr("content-length");
-	if (val)
-	    postsz = (uint)atol(val);
-	else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT"))
+	if (val) {
+	    unsigned long long clval = strtoull(val, NULL, 10);
+	    if (clval >= (unsigned long long)(uint)(-1)) {
+		error(413, true);
+		return;
+	    }
+	    postsz = (uint)clval;
+	} else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT"))
 	    postsz = (uint)-1;
 	else
 	    postsz = 0;
@@ -704,6 +709,12 @@ void HTTPServerSocket::get(bool head) {
     uint sts = 200;
     const char *val;
 
+    for (const char *pp = path; (pp = strstr(pp, "/..")) != NULL; pp += 3) {
+	if (pp[3] == '/' || pp[3] == '\0') {
+	    error(403);
+	    return;
+	}
+    }
     if (*path == '/')
 	s = '.';
     else

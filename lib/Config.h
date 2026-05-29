@@ -81,14 +81,14 @@ public:
 
 	return getkv(key, sect) != NULL;
     }
-    const tstring get(const tchar *key, const tchar *def = NULL, const tchar
-	*sect = NULL) const;
-    const tstring get(const tstring &key) const { return get(key.c_str()); }
-    const tstring get(const tstring &key, const tstring &def) const {
+    tstring get(const tchar *key, const tchar *def = NULL, const tchar *sect =
+	NULL) const;
+    tstring get(const tstring &key) const { return get(key.c_str()); }
+    tstring get(const tstring &key, const tstring &def) const {
 	return get(key.c_str(), def.c_str());
     }
-    const tstring get(const tstring &key, const tstring &def, const tstring
-	&sect) const {
+    tstring get(const tstring &key, const tstring &def, const tstring &sect)
+	const {
 	return get(key.c_str(), def.c_str(), sect.c_str());
     }
     bool get(const tchar *key, bool def, const tchar *sect = NULL) const;
@@ -175,6 +175,7 @@ protected:
 private:
     struct BLISTER KV {
 	const tchar *key;
+	uint klen, vlen;
 	bool expand;
 	tchar quote;
 	tchar val[];

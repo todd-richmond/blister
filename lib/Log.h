@@ -369,6 +369,8 @@ private:
 		    if constexpr (is_enum_v<T>) {
 			strm_write(tlsd.strm,
 			    static_cast<underlying_type_t<T>>(val));
+		    } else if constexpr (requires { val.c_str(); }) {
+			quote(tlsd.strm, val.c_str());
 		    } else {
 			tbufferstream buf;
 

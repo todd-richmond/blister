@@ -123,12 +123,12 @@ void URL::unescape(tchar *str, bool plus) {
 	    if (*++p <= '9')
 		hex = (uint)(*p - '0');
 	    else
-		hex = (uint)(*p - 'A' + 10);
+		hex = (uint)((*p | 0x20) - 'a' + 10);
 	    hex <<= 4;
 	    if (*++p <= '9')
 		hex += (uint)(*p - '0');
 	    else
-		hex += (uint)(*p - 'A' + 10);
+		hex += (uint)((*p | 0x20) - 'a' + 10);
 	    *str++ = (tchar)hex;
 	} else if (*p == '+' && plus) {
 	    *str++ = ' ';
@@ -152,13 +152,13 @@ void URL::unescape(tstring &str, bool plus) {
 	    if (p <= '9')
 		hex = (uint)(p - '0');
 	    else
-		hex = (uint)(p - 'A' + 10);
+		hex = (uint)((p | 0x20) - 'a' + 10);
 	    hex <<= 4;
 	    p = str[++j];
 	    if (p <= '9')
 		hex += (uint)(p - '0');
 	    else
-		hex += (uint)(p - 'A' + 10);
+		hex += (uint)((p | 0x20) - 'a' + 10);
 	    str[i] = (tchar)hex;
 	} else if (p == '+' && plus) {
 	    str[i] = ' ';

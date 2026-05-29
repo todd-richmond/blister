@@ -83,10 +83,10 @@ class BLISTER DispatchObj: public ObjectList<DispatchObj>::Node {
 public:
     typedef void (*DispatchObjCB)(DispatchObj *);
 
-    explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = NULL): dcb(cb),
-	dspr(d), flags(0), msg(DispatchNone), group(NULL) {}
-    DispatchObj(DispatchObj &parent, DispatchObjCB cb = NULL): dcb(cb),
-	dspr(parent.dspr), flags(0), msg(DispatchNone), group(NULL) {
+    explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = nullptr): dcb(cb),
+	dspr(d), flags(0), msg(DispatchNone), group(nullptr) {}
+    DispatchObj(DispatchObj &parent, DispatchObjCB cb = nullptr): dcb(cb),
+	dspr(parent.dspr), flags(0), msg(DispatchNone), group(nullptr) {
 	if (!parent.group)
 	    parent.group = new Group();
 	group = &parent.group->add();
@@ -104,7 +104,7 @@ public:
     DispatchMsg reason(void) const { return msg; }
 
     void detach(void) { flags |= DSP_Detached; }
-    void ready(DispatchObjCB cb = NULL, bool hipri = false, DispatchMsg reason =
+    void ready(DispatchObjCB cb = nullptr, bool hipri = false, DispatchMsg reason =
 	DispatchNone);
     virtual void cancel(void);
     virtual void erase(void);
@@ -216,19 +216,19 @@ public:
     DispatchIOSocket(DispatchObj &parent, const Socket &sock, ulong msec =
 	DSP_NEVER): DispatchSocket(parent, sock, msec) {}
 
-    void acceptable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS) {
+    void acceptable(DispatchObjCB cb = nullptr, ulong msec = DSP_PREVIOUS) {
 	poll(cb, msec, DispatchAccept);
     }
-    void closeable(DispatchObjCB cb = NULL, ulong msec = 15000) {
+    void closeable(DispatchObjCB cb = nullptr, ulong msec = 15000) {
 	poll(cb, msec, DispatchClose);
     }
-    void readable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS) {
+    void readable(DispatchObjCB cb = nullptr, ulong msec = DSP_PREVIOUS) {
 	poll(cb, msec, DispatchRead);
     }
-    void writeable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS) {
+    void writeable(DispatchObjCB cb = nullptr, ulong msec = DSP_PREVIOUS) {
 	poll(cb, msec, DispatchWrite);
     }
-    void rwable(DispatchObjCB cb = NULL, ulong msec = DSP_PREVIOUS) {
+    void rwable(DispatchObjCB cb = nullptr, ulong msec = DSP_PREVIOUS) {
 	poll(cb, msec, DispatchReadWrite);
     }
 };
@@ -272,12 +272,12 @@ public:
 
     const Sockaddr &address(void) const { return addr; }
     bool listen(const Sockaddr &addr, bool reuse = true, int backlog =
-	SOCK_BACKLOG, DispatchObjCB cb = NULL, bool start = true);
+	SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true);
     bool listen(const tchar *addrstr, bool reuse = true, int backlog =
-	SOCK_BACKLOG, DispatchObjCB cb = NULL, bool start = true) {
+	SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true) {
 	return listen(Sockaddr(addrstr), reuse, backlog, cb, start);
     }
-    void relisten(void) { poll(NULL, DSP_PREVIOUS, DispatchAccept); }
+    void relisten(void) { poll(nullptr, DSP_PREVIOUS, DispatchAccept); }
 
 protected:
     virtual void onAccept(Socket &sock) = 0;
@@ -310,7 +310,7 @@ private:
     __forceinline DispatchSocket *get_socket(socket_t fd) const {
 	socketmap::const_iterator it = smap.find(fd);
 
-	return it == smap.end() ? NULL : it->second;
+	return it == smap.end() ? nullptr : it->second;
     }
 #endif
 
@@ -421,6 +421,15 @@ private:
     void reset(void);
     int run(void);
     void wakeup(ulong msec);
+    void worker() {
+	Thread *t;
+
+	workers++;
+	t = new Thread();
+	t->start(worker, this, stacksz, this);
+	while ((t = wait(0)) != NULL)
+	    delete t;
+    }
     static int worker(void *param);
 
     SpinLock olock;
@@ -478,7 +487,7 @@ public:
 	    sa.str()));
 	return true;
     }
-    bool listen(const tchar *host = NULL, bool enable = true) {
+    bool listen(const tchar *host = nullptr, bool enable = true) {
 	tstring s(dspr.config().get(T("host"), host, C::section()));
 
 	return listen(Sockaddr(s.c_str()), enable);
@@ -488,7 +497,7 @@ protected:
     virtual void onAccept(Socket &sock) {
 	C *c = new(std::nothrow) C(static_cast<D &>(dspr), sock);
 
-	if (c == NULL) {
+	if (c == nullptr) {
 	    sock.close();
 	} else {
 	    c->detach();

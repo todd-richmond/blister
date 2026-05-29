@@ -799,8 +799,8 @@ bool Log::setids(uid_t uid, gid_t gid) const {
 	(void)uid; (void)gid;
 	return true;
 #else
-    return (!alertfile() || chown(alertpath(), uid, gid) == -1) &&
-	(!file() || chown(filepath(), uid, gid) == -1);
+    return (!alertfile() || chown(alertpath(), uid, gid) == 0) &&
+	(!file() || chown(filepath(), uid, gid) == 0);
 #endif
 }
 

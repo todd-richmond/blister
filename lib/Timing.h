@@ -96,11 +96,7 @@ public:
     static const uint CACHESIZE = 4096;
     static const uint TIMINGSLOTS = 10;
 
-    Timing(): flist(nullptr) {
-        for (uint i = 0; i < CACHESIZE; i++) {
-            cache[i].store(nullptr, memory_order_relaxed);
-        }
-    }
+    Timing(): cache{}, flist(nullptr) {}
     ~Timing() {
         clear();
         Stats *s = flist.exchange(nullptr, memory_order_relaxed);

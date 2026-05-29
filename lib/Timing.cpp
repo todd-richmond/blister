@@ -31,11 +31,11 @@ Timing &dtiming(_dtiming());
 Timing::Stats *Timing::Stats::newstats(const tchar *k, size_t h) {
     uint klen = (uint)tstrlen(k);
     Stats *s = (Stats *)new char[offsetof(Stats, key) + (klen + 1) *
-        sizeof (tchar)];
+	sizeof (tchar)];
 
     s->cnt = 0;
     s->tot = 0;
-    s->flist = NULL;
+    s->flist = nullptr;
     s->hash = h;
     s->klen = klen;
     ZERO(s->cnts);
@@ -55,7 +55,7 @@ void Timing::add(const TimingKey &key, timing_t diff) {
 
     for (slot = 0; slot < TIMINGSLOTS - 1; ++slot) {
 	if (diff < limits[slot])
-		break;
+	    break;
     }
     stats = cache[idx].load(memory_order_relaxed);
     if (LIKELY(stats && stats->hash == hash)) {
@@ -97,14 +97,14 @@ void Timing::clear() {
 	cache[i].store(nullptr, memory_order_relaxed);
     old.swap(tmap);
     lck.wunlock();
+    for (auto &[k, stats] : old)
+	Stats::delstats(stats);
     s = flist.exchange(nullptr, memory_order_relaxed);
     while (s) {
 	next = s->flist;
 	Stats::delstats(s);
 	s = next;
     }
-    for (auto &[k, stats] : old)
-	Stats::delstats(stats);
 }
 
 const tstring Timing::data(bool sort_key, uint columns) const {
@@ -126,7 +126,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 
 	sorted.emplace_back(stats);
 	for (u = TIMINGSLOTS - 1; u > last; u--) {
-	    if (stats->cnts[u]) {
+	    if (stats->cnts[u].load(memory_order_relaxed)) {
 		last = u;
 		break;
 	    }
@@ -156,33 +156,34 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	tchar buf[128];
 	size_t i;
 	ulong sum = 0;
-	timing_t tot;
+	ulong scnt = stats->cnt.load(memory_order_relaxed);
+	timing_t tot = stats->tot.load(memory_order_relaxed);
 
-	tot = stats->tot;
 	if (columns) {
 	    tchar cbuf[24];
 	    size_t klen = stats->klen;
 
 	    for (u = 0; u <= begin; u++)
-		sum += stats->cnts[u];
-	    if (stats->cnt >= 10000000UL)
-		tsprintf(cbuf, T("%4lum"), (ulong)stats->cnt / 1000000UL);
-	    else if (stats->cnt >= 10000UL)
-		tsprintf(cbuf, T("%4luk"), (ulong)stats->cnt / 1000UL);
+		sum += stats->cnts[u].load(memory_order_relaxed);
+	    if (scnt >= 10000000UL)
+		tsprintf(cbuf, T("%4lum"), (ulong)scnt / 1000000UL);
+	    else if (scnt >= 10000UL)
+		tsprintf(cbuf, T("%4luk"), (ulong)scnt / 1000UL);
 	    else
-		tsprintf(cbuf, T("%5lu"), (ulong)stats->cnt / 1U);
+		tsprintf(cbuf, T("%5lu"), (ulong)scnt);
 	    if (tot) {
 		tchar abuf[16], sbuf[16];
 
 		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key + (klen < sizeof
 		    (buf) - 19 ? 0 : klen - sizeof (buf) + 19), format(tot,
-		    sbuf), cbuf, format(tot / stats->cnt, abuf));
+		    sbuf), cbuf, format(tot / scnt, abuf));
 	    } else {
 		tsprintf(buf, T("%-35s%6s"), stats->key + (klen < sizeof (buf) -
 		    7 ? 0 : klen - sizeof (buf) + 7), cbuf);
 	    }
 	} else {
 	    bool quote = false;
+
 	    for (const tchar *p = stats->key; *p; ++p) {
 		if (*p == ',' || *p == ' ' || *p == '\t' || *p == '"') {
 		    quote = true;
@@ -198,12 +199,13 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    }
 	    if (quote)
 		s += (tchar)'"';
-	    tsprintf(buf, T(",%llu,%lu,%lu"), (ullong)tot, (ulong)stats->cnt /
-		1U, (ulong)(tot / stats->cnt));
+	    tsprintf(buf, T(",%llu,%lu,%lu"), (ullong)tot, (ulong)scnt,
+		scnt ? (ulong)(tot / scnt) : 0UL);
 	}
 	s += buf;
 	for (u = begin; u <= last && tot; u++) {
-	    ulong cnt = (columns && u == begin) ? sum : stats->cnts[u] / 1U;
+	    ulong cnt = (columns && u == begin) ? sum :
+		stats->cnts[u].load(memory_order_relaxed);
 
 	    if (!columns) {
 		tsprintf(buf, T(",%lu"), cnt);
@@ -213,17 +215,17 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	    } else if (cnt < 100) {
 		tsprintf(buf, T(" %3lu"), cnt);
 		s += buf;
-	    } else if (cnt == stats->cnt) {
+	    } else if (cnt == scnt) {
 		s += T("   *");
 	    } else {
-		tsprintf(buf, T(" %2u%%"), (uint)(cnt * 100 / stats->cnt));
+		tsprintf(buf, T(" %2u%%"), (uint)(cnt * 100 / scnt));
 		s += buf;
 	    }
 	}
 	i = s.size();
 	while (i > 0 && s[i - 1] == ' ')
 	    --i;
-	s.erase(i);
+	s.resize(i);
 	s += (tchar)'\n';
     }
     return s;
@@ -249,7 +251,7 @@ void Timing::callstack(const tchar *key, timing_t diff, const Tlsdata &tlsd) {
 
 void Timing::erase(const TimingKey &key) {
     timingmap::iterator it;
-    Stats *stats = NULL;
+    Stats *stats = nullptr;
 
     lck.wlock();
     it = tmap.find(key.hash());
@@ -268,7 +270,8 @@ void Timing::erase(const TimingKey &key) {
 	s = flist.load(memory_order_relaxed);
 	do {
 	    stats->flist = s;
-	} while (!flist.compare_exchange_weak(s, stats, memory_order_release, memory_order_relaxed));
+	} while (!flist.compare_exchange_weak(s, stats, memory_order_release,
+	    memory_order_relaxed));
     }
 }
 
@@ -302,7 +305,7 @@ void Timing::record(void) {
 	tcerr << T("timing mismatch for stack") << endl;
 	return;
     }
-    caller = tlsd.callers.back();
+    caller = std::move(tlsd.callers.back());
     tlsd.callers.pop_back();
     diff = n - tlsd.starts.back();
     tlsd.starts.pop_back();
@@ -323,6 +326,11 @@ void Timing::record(const TimingKey &key) {
 	}
 	match = tlsd.callers.back().empty() || tlsd.callers.back() ==
 	    (const tchar *)key;
+	if (UNLIKELY(tlsd.starts.empty())) {
+	    tcerr << T("timing stack mismatch for ") << (const tchar *)key << endl;
+	    tlsd.callers.pop_back();
+	    return;
+	}
 	tlsd.callers.pop_back();
 	timing_t diff = n - tlsd.starts.back();
 	tlsd.starts.pop_back();

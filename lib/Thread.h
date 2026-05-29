@@ -43,7 +43,7 @@ typedef DWORD tlskey_t;
 #define tls_init(k)		k = TlsAlloc()
 #define tls_free(k)		TlsFree(k)
 #define tls_get(k)		TlsGetValue(k)
-#define tls_set(k, v)		TlsSetValue(key, (void *)v)
+#define tls_set(k, v)		TlsSetValue(k, (void *)v)
 
 #else
 
@@ -230,9 +230,9 @@ typedef void (*ThreadLocalFree)(void *data);
  * Thread synchronization classes
  * Condvar: condition variable around a Lock
  * Lock: unique lock
- * RWLock: shared lock with r->w tryuplock
+ * RWLock: shared lock
  * SpinLock: fastest unfair spinning lock
- * SpinRWLock: fast spinning shared lock
+ * SpinRWLock: fast spinning shared lock with r->w tryuplock
  * TicketLock: fastest fair spinning lock
  */
 #ifdef __cpp_lib_atomic_flag_test
@@ -602,8 +602,8 @@ private:
 inline void msleep(ulong msec) {
     struct timespec ts;
 
-    ts.tv_sec = (time_t)(msec / 1000U);
-    *(ulong *)&ts.tv_nsec = (msec % 1000U) * 1000000U;
+    ts.tv_sec = (time_t)(msec / 1000UL);
+    ts.tv_nsec = (long)((msec % 1000UL) * 1000000UL);
     nanosleep(&ts, NULL);
 }
 
@@ -703,25 +703,25 @@ class BLISTER Lifo {
 public:
     class Waiting: nocopy {
     public:
-	Waiting *next;
+	atomic<Waiting *> next;
 	FastSemaphore sema4;
 
-	Waiting(): next(NULL) {}
+	Waiting(): next(nullptr) {}
     };
 
-    Lifo(): head(NULL) {}
+    Lifo(): head(nullptr) {}
     ~Lifo() { close(); }
 
     __forceinline operator bool(void) const {
-	return head.load(memory_order_relaxed) != NULL;
+	return head.load(memory_order_relaxed) != nullptr;
     }
     __forceinline uint broadcast(void) {
 	uint ret = 0;
 	Waiting *h, *ww;
 
-	h = head.exchange(NULL, memory_order_acquire);
+	h = head.exchange(nullptr, memory_order_acquire);
 	while (LIKELY(h)) {
-	    ww = h->next;
+	    ww = h->next.load(memory_order_acquire);
 	    h->sema4.set();
 	    h = ww;
 	    ++ret;
@@ -729,7 +729,7 @@ public:
 	return ret;
     }
     void close(void) { broadcast(); }
-    void open(void) { head.store(NULL, memory_order_relaxed); }
+    void open(void) { head.store(nullptr, memory_order_relaxed); }
     __forceinline uint set(uint count = 1) {
 	uint c;
 	Waiting *h, *w, *ww;
@@ -739,9 +739,9 @@ public:
 		h = head.load(memory_order_acquire);
 		if (UNLIKELY(!h))
 		    return 1;
-		w = h->next;
+		w = h->next.load(memory_order_acquire);
 	    } while (!head.compare_exchange_weak(h, w, memory_order_release,
-		memory_order_acquire));
+		memory_order_relaxed));
 	    h->sema4.set();
 	    return 0;
 	}
@@ -750,12 +750,12 @@ public:
 	    h = head.load(memory_order_acquire);
 	    if (UNLIKELY(!h))
 		return c;
-	    for (w = h; w && c; w = w->next)
+	    for (w = h; w && c; w = w->next.load(memory_order_acquire))
 		--c;
 	} while (!head.compare_exchange_weak(h, w, memory_order_release,
 	    memory_order_acquire));
 	while (LIKELY(h != w)) {
-	    ww = h->next;
+	    ww = h->next.load(memory_order_acquire);
 	    h->sema4.set();
 	    h = ww;
 	}
@@ -766,26 +766,31 @@ public:
 
 	do {
 	    h = head.load(memory_order_relaxed);
-	    w.next = h;
+	    w.next.store(h, memory_order_relaxed);
 	} while (!head.compare_exchange_weak(h, &w, memory_order_release,
 	    memory_order_relaxed));
 	if (UNLIKELY(!w.sema4.wait(msec))) {
 	    do {
-		Waiting *prev = NULL;
+		Waiting *prev = nullptr;
 		Waiting *ww;
 
 		ww = h = head.load(memory_order_acquire);
 		while (ww && ww != &w) {
 		    prev = ww;
-		    ww = ww->next;
+		    ww = ww->next.load(memory_order_acquire);
 		}
 		if (!ww)
 		    return true;
 		if (prev) {
-		    prev->next = w.next;
+		    Waiting *expected = &w;
+		    if (!prev->next.compare_exchange_strong(expected,
+			w.next.load(memory_order_relaxed),
+			memory_order_release, memory_order_acquire))
+			continue;
 		    return false;
-		} else if (head.compare_exchange_strong(h, w.next,
-		    memory_order_release, memory_order_acquire)) {
+		} else if (head.compare_exchange_strong(h, w.next.load(
+		    memory_order_relaxed), memory_order_release,
+		    memory_order_acquire)) {
 		    return false;
 		}
 	    } while (true);

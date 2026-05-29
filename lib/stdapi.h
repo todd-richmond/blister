@@ -21,6 +21,20 @@
 // defines, typedefs and code to make non-UNIX systems support POSIX APIs
 #define CPP_STR(s)		#s
 
+#if defined(__has_cpp_attribute)
+#if __has_cpp_attribute(likely)
+#define LIKELY(x)		(x) [[likely]]
+#define UNLIKELY(x)		(x) [[unlikely]]
+#endif
+#endif
+#if !defined(LIKELY) && defined(__GNUC__) || defined(__clang__)
+#define LIKELY(c)		__builtin_expect(!!(c), 1)
+#define UNLIKELY(c)		__builtin_expect(!!(c), 0)
+#else
+#define LIKELY(x)		(x)
+#define UNLIKELY(x)		(x)
+#endif
+
 #ifdef _MSC_VER
 #define __no_sanitize(check)
 #define __no_sanitize_address
@@ -31,8 +45,6 @@
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
 #define DLL_LOCAL
-#define LIKELY(c)		(c)
-#define UNLIKELY(c)		(c)
 #define PRAGMA_STR(s)		__pragma(s)
 #define WARN_DISABLE(w)		PRAGMA_STR(warning(disable: w))
 #define WARN_ENABLE(w)		PRAGMA_STR(warning(enable: w))
@@ -58,8 +70,6 @@
 #define DLL_EXPORT		__attribute__((visibility("default")))
 #define DLL_IMPORT		__attribute__((visibility("default")))
 #define DLL_LOCAL		__attribute__((visibility("hidden")))
-#define LIKELY(c)		__builtin_expect(!!(c), 1)
-#define UNLIKELY(c)		__builtin_expect(!!(c), 0)
 #define PRAGMA_STR(s)		_Pragma (#s)
 #define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored #w)
 #define WARN_ENABLE(w)		PRAGMA_STR(GCC diagnostic warning #w)
@@ -140,6 +150,7 @@
 typedef __int64 _ino_t;	// -V677
 #endif
 #define __STDC__ 1
+#include <ctype.h>
 #include <direct.h>
 #include <io.h>
 #include <stdbool.h>
@@ -192,15 +203,15 @@ typedef __int64 _ino_t;	// -V677
 #define S_IRUSR		_S_IREAD
 #define S_IWUSR		_S_IWRITE
 #define S_IXUSR		_S_IEXEC
-#define S_IRWXU		S_IRUSR | S_IWUSR | S_IXUSR
+#define S_IRWXU		(S_IRUSR | S_IWUSR | S_IXUSR)
 #define S_IRGRP		00040
 #define S_IWGRP		00020
 #define S_IXGRP		00010
-#define S_IRWXG		S_IRGRP | S_IWGRP | S_IXGRP
+#define S_IRWXG		(S_IRGRP | S_IWGRP | S_IXGRP)
 #define S_IROTH		00004
 #define S_IWOTH		00002
 #define S_IXOTH		00001
-#define S_IRWXO		S_IROTH | S_IWOTH | S_IXOTH
+#define S_IRWXO		(S_IROTH | S_IWOTH | S_IXOTH)
 
 #define F_OK		0
 #define X_OK		(1 << 0)
@@ -411,10 +422,10 @@ extern BLISTER int wstatvfs(const wchar *wpath, struct statvfs *buf);
 extern BLISTER int wunlink(const wchar *path);
 EXTERNC_
 
-#define asctime_r(tm, buf, len)	((void)(buf, len), asctime(tm))
-#define ctime_r(clock, buf)	((void)(buf), ctime(clock))
-#define gmtime_r(clock, buf)	((void)(buf), gmtime(clock))
-#define localtime_r(clock, buf)	((void)(buf), localtime(clock))
+#define asctime_r(tm, buf, sz)	((void)(sz), asctime_s(buf, sizeof (*(buf)), tm))
+#define ctime_r(clock, buf)	(ctime_s(buf, 26, clock), (buf))
+#define gmtime_r(clock, buf)	(gmtime_s((buf), (clock)), (buf))
+#define localtime_r(clock, buf)	(localtime_s((buf), (clock)), (buf))
 #define strerror_r(e, buf, sz)	strlcpy(buf, strerror(e), sz)
 
 #else // _WIN32
@@ -434,6 +445,7 @@ EXTERNC_
 #define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_10_9
 #define __BSD_VISIBLE		1
 
+#include <ctype.h>
 #include <unistd.h>
 #include <limits.h>
 #include <stdbool.h>
@@ -799,16 +811,23 @@ typedef uint64_t usec_t;
 #define millitime()	((msec_t)(microtime() / 1000))
 
 static inline usec_t microtime(void) {
+#ifdef _WIN32
     struct timeval tv;
 
     gettimeofday(&tv, NULL);
     return (usec_t)tv.tv_sec * (usec_t)1000000 + (usec_t)tv.tv_usec;
+#else
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (usec_t)ts.tv_sec * (usec_t)1000000 + (usec_t)(ts.tv_nsec / 1000);
+#endif
 }
 
 static inline void time_adjust_msec(struct timespec *ts, ulong msec) {
-    ulong nsec = (ulong)ts->tv_nsec + (msec % 1000U) * 1000000UL;
+    ulong nsec = (ulong)ts->tv_nsec + (msec % 1000UL) * 1000000UL;
 
-    ts->tv_sec += (time_t)(msec / 1000U);
+    ts->tv_sec += (time_t)(msec / 1000UL);
     if (nsec >= 1000000000UL) {
 	nsec -= 1000000000UL;
 	++ts->tv_sec;
@@ -831,6 +850,9 @@ EXTERNC_
 // common includes, defines and code for C++ software
 #ifdef __cplusplus
 
+#ifdef __AVX2__
+#include <immintrin.h>
+#endif
 #include <functional>
 #include <iostream>
 #include <string>
@@ -932,18 +954,17 @@ inline const string wstringtoastring(const wstring &s) {
 
 // useful string utils
 template<typename T>
-T atou(const tchar *str) {
-    size_t val = 0;
-    tchar c;
+__forceinline T atou(const tchar *str) {
+    size_t d, val = 0;
 
-    while ((c = *str++) >= '0' && c <= '9')
-        val = val * 10 + (size_t)(c - '0');
+    while ((d = (size_t)(tuchar)*str++ - '0') <= 9)
+	val = val * 10 + d;
     return (T)val;
 }
 
 template<typename T>
-T atoi(const tchar *str) {
-    return *str == '-' ? (T)(-(ptrdiff_t)atou<size_t>(str + 1)) : atou<T>(str);
+__forceinline T atoi(const tchar *str) {
+    return *str == '-' ? (T)(~atou<size_t>(str + 1) + 1) : atou<T>(str);
 }
 
 inline int stringcmp(const char *a, const char *b) { return strcmp(a, b); }
@@ -952,10 +973,10 @@ inline int stringicmp(const char *a, const char *b) { return stricmp(a, b); }
 inline int stringicmp(const wchar *a, const wchar *b) { return wcsicmp(a, b); }
 
 inline bool stringieq(const char *a, const char *b) {
-    return toupper((uchar)*a) == toupper((uchar)*b) && stricmp(a, b) == 0;
+    return stricmp(a, b) == 0;
 }
 inline bool stringieq(const wchar *a, const wchar *b) {
-    return towupper((ushort)*a) == towupper((ushort)*b) && wcsicmp(a, b) == 0;
+    return wcsicmp(a, b) == 0;
 }
 
 template<class C>
@@ -978,42 +999,191 @@ inline bool stringless(const basic_string<C> &a, const basic_string<C> &b) {
     return a < b;
 }
 
+// compile time Bernstein hash - same value as bernstein_hash with identity xfrm
+template<class C>
+constexpr size_t bernstein_const(const C *s, size_t len) {
+    size_t i, r0 = 5381, r1 = 5381, ret;
+
+    for (i = 0; i + 4 <= len; i += 4) {
+	r0 = ((r0 << 5) + r0) ^ (size_t)s[i];
+	r1 = ((r1 << 5) + r1) ^ (size_t)s[i + 1];
+	r0 = ((r0 << 5) + r0) ^ (size_t)s[i + 2];
+	r1 = ((r1 << 5) + r1) ^ (size_t)s[i + 3];
+    }
+    ret = r0 ^ r1;
+    for (; i < len; ++i)
+	ret = ((ret << 5) + ret) ^ (size_t)s[i];
+    return ret;
+}
+
 // Bernstein hash with xor improvement - shared loop, transform applied per char
 template<class C, class F>
 __forceinline size_t bernstein_hash(const C *s, F xfrm) {
+    C c0, c1, c2, c3;
     size_t r0 = 5381, r1 = 5381, ret;
 
-    while (s[0] && s[1] && s[2] && s[3]) {
+    while ((c0 = s[0]) && (c1 = s[1]) && (c2 = s[2]) && (c3 = s[3])) {
+	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(c0);
+	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(c1);
+	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(c2);
+	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(c3);
+	s += 4;
+    }
+    ret = r0 ^ r1;
+    while ((c0 = *s++))
+	ret = ((ret << 5) + ret) ^ (size_t)xfrm(c0);
+    return ret;
+}
+
+template<class C, class F>
+__forceinline size_t bernstein_hash(const C *s, size_t len, F xfrm) {
+    size_t r0 = 5381, r1 = 5381, ret;
+
+    while (len >= 4) {
 	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(s[0]);
 	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(s[1]);
 	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(s[2]);
 	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(s[3]);
 	s += 4;
+	len -= 4;
     }
-    ret = ((r0 << 5) + r0) ^ r1;
-    while (*s)
-	ret = ((ret << 5) + ret) ^ (size_t)xfrm(*s++);
+    ret = r0 ^ r1;
+    switch (len) {
+    case 3: ret = ((ret << 5) + ret) ^ (size_t)xfrm(*s++); [[fallthrough]];
+    case 2: ret = ((ret << 5) + ret) ^ (size_t)xfrm(*s++); [[fallthrough]];
+    case 1: ret = ((ret << 5) + ret) ^ (size_t)xfrm(*s++);
+    }
     return ret;
 }
 
+// rapidhash for arbitrary binary data
+static __forceinline uint64_t rapidmix(uint64_t a, uint64_t b) {
+#ifdef _MSC_VER
+    unsigned __int64 hi;
+    return _umul128(a, b, &hi) ^ hi;
+#elif defined(__SIZEOF_INT128__)
+    __uint128_t r = (__uint128_t)a * b;
+    return (uint64_t)r ^ (uint64_t)(r >> 64);
+#else
+    uint64_t lo = (uint32_t)a * (uint64_t)(uint32_t)b;
+    uint64_t hi = (a >> 32) * (b >> 32);
+    return lo ^ hi;
+#endif
+}
+
+inline uint64_t rapidhash(const void *data, size_t len) {
+    static constexpr uint64_t RAPID_SECRET0 = 0x9e3779b97f4a7c15ull;
+    static constexpr uint64_t RAPID_SECRET1 = 0x6c62272e07bb0142ull;
+    static constexpr uint64_t RAPID_SECRET2 = 0x94d049bb133111ebull;
+    const uint8_t *p = (const uint8_t *)data;
+    uint64_t a = RAPID_SECRET0 ^ (uint64_t)len;
+    uint64_t b = RAPID_SECRET1;
+    uint64_t c = RAPID_SECRET2;
+    uint64_t r0, r1;
+
+    if (LIKELY(len <= 16)) {
+	r0 = r1 = 0;
+	if (LIKELY(len >= 8)) {
+	    memcpy(&r0, p, 8);
+	    memcpy(&r1, p + len - 8, 8);
+	} else if (len >= 4) {
+	    uint32_t lo, hi;
+
+	    memcpy(&lo, p, 4);
+	    memcpy(&hi, p + len - 4, 4);
+	    r0 = ((uint64_t)lo << 32) | hi;
+	} else if (len > 0) {
+	    r0 = ((uint64_t)p[0] << 16) | ((uint64_t)p[len >> 1] << 8) |
+		p[len - 1];
+	}
+	a = rapidmix(r0 ^ RAPID_SECRET0, r1 ^ a);
+	b = rapidmix(r1 ^ RAPID_SECRET1, r0 ^ b);
+    } else {
+	if (UNLIKELY(len >= 48)) {
+	    uint64_t d = a, e = b, f = c;
+
+	    do {
+		uint64_t s0, s1, s2, s3, s4, s5;
+		memcpy(&s0, p, 8); memcpy(&s1, p +  8, 8);
+		memcpy(&s2, p + 16, 8); memcpy(&s3, p + 24, 8);
+		memcpy(&s4, p + 32, 8); memcpy(&s5, p + 40, 8);
+		a = rapidmix(s0 ^ RAPID_SECRET0, s1 ^ a);
+		b = rapidmix(s2 ^ RAPID_SECRET1, s3 ^ b);
+		c = rapidmix(s4 ^ RAPID_SECRET2, s5 ^ c);
+		d = rapidmix(s1 ^ RAPID_SECRET0, s0 ^ d);
+		e = rapidmix(s3 ^ RAPID_SECRET1, s2 ^ e);
+		f = rapidmix(s5 ^ RAPID_SECRET2, s4 ^ f);
+		p += 48;
+		len -= 48;
+	    } while (LIKELY(len >= 48));
+	    a ^= d; b ^= e; c ^= f;
+	}
+	while (len >= 16) {
+	    memcpy(&r0, p, 8); memcpy(&r1, p + 8, 8);
+	    a = rapidmix(r0 ^ RAPID_SECRET0, r1 ^ a);
+	    b = rapidmix(r1 ^ RAPID_SECRET1, r0 ^ b);
+	    p += 16;
+	    len -= 16;
+	}
+	if (len >= 8) {
+	    memcpy(&r0, p, 8);
+	    a = rapidmix(r0 ^ RAPID_SECRET0, a ^ RAPID_SECRET2);
+	    p += 8;
+	    len -= 8;
+	}
+	if (len >= 4) {
+	    uint32_t r32;
+	    memcpy(&r32, p, 4);
+	    b = rapidmix((uint64_t)r32 ^ RAPID_SECRET1, b ^ RAPID_SECRET0);
+	    p += 4;
+	    len -= 4;
+	}
+	for (size_t i = 0; i < len; ++i)
+	    a ^= (uint64_t)p[i] << (i * 8);
+    }
+    return rapidmix(a ^ b ^ c ^ RAPID_SECRET0, a ^ b ^ RAPID_SECRET1);
+}
+
 template<class C>
-inline size_t stringhash(const C *s) {
+__forceinline size_t stringhash(const C *s) {
     return bernstein_hash(s, [](C c) { return c; });
 }
 
 template<class C>
-inline size_t stringiasciihash(const C *s) {
+__forceinline size_t stringhash(const basic_string<C> &s) {
+    return bernstein_hash(s.c_str(), s.size(), [](C c) { return c; });
+}
+
+template<class C>
+__forceinline size_t stringiasciihash(const C *s) {
     return bernstein_hash(s, [](C c) {
-	return (c >= 'A' && c <= 'Z') ? c | 0x20 : c;
+	return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0);
+    });
+}
+
+template<class C>
+__forceinline size_t stringiasciihash(const basic_string<C> &s) {
+    return bernstein_hash(s.c_str(), s.size(), [](C c) {
+	return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0);
     });
 }
 
 inline size_t stringihash(const char *s) {
-    return bernstein_hash(s, [](char c) { return toupper(c); });
+    return bernstein_hash(s, [](char c) { return (char)toupper((uchar)c); });
+}
+
+inline size_t stringihash(const string &s) {
+    return bernstein_hash(s.c_str(), s.size(), [](char c) { return (char)toupper((uchar)c); });
 }
 
 inline size_t stringihash(const wchar *s) {
     return bernstein_hash(s, [](wchar c) { return towupper((ushort)c); });
+}
+
+inline size_t stringihash(const wstring &s) {
+    return bernstein_hash(s.c_str(), s.size(), [](wchar c) {
+	return towupper((ushort)c);
+    });
 }
 
 template<class C>
@@ -1041,7 +1211,7 @@ template <class C>
 struct strhash {
     size_t operator ()(const C *s) const { return stringhash(s); }
     size_t operator ()(const basic_string<C> &s) const {
-	return stringhash(s.c_str());
+	return stringhash(s);
     }
 };
 
@@ -1049,7 +1219,7 @@ template <class C>
 struct strihash {
     size_t operator ()(const C *s) const { return stringihash(s); }
     size_t operator ()(const basic_string<C> &s) const {
-	return stringihash(s.c_str());
+	return stringihash(s);
     }
 };
 
@@ -1057,7 +1227,7 @@ template <class C>
 struct striasciihash {
     size_t operator ()(const C *s) const { return stringiasciihash(s); }
     size_t operator ()(const basic_string<C> &s) const {
-	return stringiasciihash(s.c_str());
+	return stringiasciihash(s);
     }
 };
 
@@ -1107,19 +1277,9 @@ struct striless {
     }
     static bool less(const C *a, const C *b) { return stringicmp(a, b) < 0; }
     static bool less(const basic_string<C> &a, const basic_string<C> &b) {
-	return stringicmp(a, b) < 0;
+	return stringicmp(a.c_str(), b.c_str()) < 0;
     }
 };
-
-// compile time string hashing using Bernstein XOR algorithm for string keys
-template<class C>
-constexpr size_t strhash_const(const C *s, size_t len) {
-    size_t hash = 5381;
-
-    for (size_t i = 0; i < len; i++)
-	hash = ((hash << 5) + hash) ^ (size_t)s[i];
-    return hash;
-}
 
 class BLISTER StringHash {
 public:
@@ -1132,7 +1292,7 @@ public:
     __forceinline StringHash(const DynamicString ds): hash(stringhash(ds.s)) {}
     template<size_t N>
     __forceinline constexpr explicit StringHash(const tchar (&s)[N]):
-	hash(strhash_const(s, N - 1)) {}
+	hash(bernstein_const(s, N - 1)) {}
 
     __forceinline operator size_t(void) const { return hash; }
 
@@ -1158,7 +1318,7 @@ template <class C>
 class BLISTER ObjectList: nocopy {
 public:
     struct BLISTER Node: nocopy {
-	__forceinline Node(): next(NULL) {}
+	__forceinline Node(): next(nullptr) {}
 
 	C *next;
     };
@@ -1166,17 +1326,17 @@ public:
     class BLISTER const_iterator {
     public:
 	__forceinline explicit const_iterator(const C *c): cur(c) {}
-	__forceinline const_iterator(const const_iterator &it): cur(it.cur) {}
 	__forceinline const C &operator *() const { return *cur; }
 	__forceinline const C *operator ->() const { return cur; }
 	__forceinline const_iterator &operator ++() {
 	    cur = cur->next;
 	    return *this;
 	}
-	// NOLINTNEXTLINE
-	__forceinline const_iterator &operator =(const const_iterator &it) {
-	    cur = it.cur;
-	    return *this;
+	__forceinline const_iterator operator ++(int) {
+	    const_iterator tmp(*this);
+
+	    cur = cur->next;
+	    return tmp;
 	}
 	__forceinline bool operator ==(const const_iterator &it) const {
 	    return cur == it.cur;
@@ -1189,41 +1349,45 @@ public:
 	const C *cur;
     };
 
-    ObjectList(): back(NULL), front(NULL), sz(0) {}
+    ObjectList(): back(nullptr), front(nullptr), sz(0) {}
 
-    __forceinline bool operator !(void) const { return front == NULL; }
-    __forceinline operator bool(void) const { return front != NULL; }
-    const_iterator begin(void) const { return const_iterator(front); }
-    __forceinline bool empty(void) const { return front == NULL; }
-    const_iterator end(void) const { return const_iterator(NULL); }
+    __forceinline bool operator !(void) const { return front == nullptr; }
+    __forceinline operator bool(void) const { return front != nullptr; }
+    __forceinline const_iterator begin(void) const {
+	return const_iterator(front);
+    }
+    __forceinline bool empty(void) const { return front == nullptr; }
+    __forceinline const_iterator end(void) const {
+	return const_iterator(nullptr);
+    }
     __forceinline C *peek(void) const { return front; }
     __forceinline uint size(void) const { return sz; }
 
-    void erase(void) { back = front = NULL; sz = 0; }
+    void erase(void) { back = front = nullptr; sz = 0; }
     void free(void) {
-	while (front) {
-	    C *c = front->next;
+	C *c = front;
 
-	    delete front;
-	    front = c;
-	}
-	back = NULL;
+	back = front = nullptr;
 	sz = 0;
+	while (c) {
+	    C *next = c->next;
+
+	    delete c;
+	    c = next;
+	}
     }
     void pop(C &obj) {
 	if (front == &obj) {
-	    if ((front = (C *)obj.next) == NULL)
-		back = NULL;
-	    else
-		obj.next = NULL;
+	    if ((front = (C *)obj.next) == nullptr)
+		back = nullptr;
+	    obj.next = nullptr;
 	    --sz;
 	} else {
 	    for (C *p = front; LIKELY(p); p = (C *)p->next) {
 		if (UNLIKELY(p->next == &obj)) {
-		    if ((p->next = obj.next) == NULL)
+		    if ((p->next = obj.next) == nullptr)
 			back = p;
-		    else
-			obj.next = NULL;
+		    obj.next = nullptr;
 		    --sz;
 		    break;
 		}
@@ -1234,14 +1398,14 @@ public:
 	C *obj = back;
 
 	if (front == back) {
-	    front = back = NULL;
+	    front = back = nullptr;
 	} else {
 	    C *p = front;
 
 	    while (LIKELY(p->next != back))
 		p = p->next;
 	    back = p;
-	    back->next = NULL;
+	    back->next = nullptr;
 	}
 	--sz;
 	return obj;
@@ -1249,21 +1413,22 @@ public:
     __forceinline C *pop_front(void) {
 	C *obj = front;
 
-	if ((front = (C *)obj->next) == NULL)
-	    back = NULL;
+	if ((front = (C *)obj->next) == nullptr)
+	    back = nullptr;
 	else
-	    obj->next = NULL;
+	    obj->next = nullptr;
 	--sz;
 	return obj;
     }
     __forceinline void push_back(C &obj) {
-	obj.next = NULL;
-	if (sz++) {
+	obj.next = nullptr;
+	if (front) {
 	    back->next = &obj;
 	    back = &obj;
 	} else {
 	    back = front = &obj;
 	}
+	++sz;
     }
     void push_back(ObjectList &lst) {
 	if (!lst.front)
@@ -1274,11 +1439,11 @@ public:
 	    front = lst.front;
 	back = lst.back;
 	sz += lst.sz;
-	lst.front = lst.back = NULL;
+	lst.front = lst.back = nullptr;
 	lst.sz = 0;
     }
     __forceinline void push_front(C &obj) {
-	if ((obj.next = front) == NULL)
+	if ((obj.next = front) == nullptr)
 	    back = &obj;
 	front = &obj;
 	++sz;
@@ -1290,7 +1455,7 @@ public:
 	    else
 		back = lst.back;
 	    front = lst.front;
-	    lst.front = lst.back = NULL;
+	    lst.front = lst.back = nullptr;
 	    sz += lst.sz;
 	    lst.sz = 0;
 	}

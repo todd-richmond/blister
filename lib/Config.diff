@@ -1,0 +1,88 @@
+diff --git a/lib/Config.h b/lib/Config.h
+index d5b52ea..08e2055 100644
+--- a/lib/Config.h
++++ b/lib/Config.h
+@@ -106,7 +106,9 @@ public:
+     }
+     tchar get(const tchar *key, tchar def, const tchar *sect = NULL) const {
+ 	tchar buf[2];
+-	buf[0] = def; buf[1] = '\0'; return get(key, buf, sect)[0];
++	buf[0] = def;
++	buf[1] = '\0';
++	return get(key, buf, sect)[0];
+     }
+     uint get(const tchar *key, uint def, const tchar *sect = NULL) const {
+ 	return (uint)get(key, (ulong)def, sect);
+@@ -135,44 +137,61 @@ public:
+ 	return set(key, val ? T("t") : T("f"), sect);
+     }
+     Config &set(const tchar *key, double val, const tchar *sect = NULL) {
+-	tchar buf[24]; tsprintf(buf, T("%g"), val); return set(key, buf, sect);
++	tchar buf[24];
++	tsnprintf(buf, 24, T("%g"), val);
++	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, float val, const tchar *sect = NULL) {
+ 	tchar buf[24];
+-	tsprintf(buf, T("%f"), (double)val);
++	tsnprintf(buf, 24, T("%f"), (double)val);
+ 	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, int val, const tchar *sect = NULL) {
+-	tchar buf[24]; tsprintf(buf, T("%d"), val); return set(key, buf, sect);
++	tchar buf[24];
++	tsnprintf(buf, 24, T("%d"), val);
++	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, long val, const tchar *sect = NULL) {
+-	tchar buf[24]; tsprintf(buf, T("%ld"), val); return set(key, buf, sect);
++	tchar buf[24];
++	tsnprintf(buf, 24, T("%ld"), val);
++	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, llong val, const tchar *sect = NULL) {
+ 	tchar buf[48];
+-	tsprintf(buf, T("%lld"), val);
++	tsnprintf(buf, 48, T("%lld"), val);
+ 	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, short val, const tchar *sect = NULL) {
+-	tchar buf[16]; tsprintf(buf, T("%hd"), val); return set(key, buf, sect);
++	tchar buf[16];
++	tsnprintf(buf, 16, T("%hd"), val);
++	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, tchar val, const tchar *sect = NULL) {
+-	tchar buf[2]; buf[0] = val; buf[1] = '\0'; return set(key, buf, sect);
++	tchar buf[2];
++	buf[0] = val;
++	buf[1] = '\0';
++	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, uint val, const tchar *sect = NULL) {
+-	tchar buf[24]; tsprintf(buf, T("%u"), val); return set(key, buf, sect);
++	tchar buf[24];
++	tsnprintf(buf, 24, T("%u"), val);
++	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, ulong val, const tchar *sect = NULL) {
+-	tchar buf[24]; tsprintf(buf, T("%lu"), val); return set(key, buf, sect);
++	tchar buf[24];
++	tsnprintf(buf, 24, T("%lu"), val);
++	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, ullong val, const tchar *sect = NULL) {
+ 	tchar buf[48];
+ 	// cppcheck-suppress invalidPrintfArgType_uint
+-	tsprintf(buf, T("%llu"), val);
++	tsnprintf(buf, 48, T("%llu"), val);
+ 	return set(key, buf, sect);
+     }
+     Config &set(const tchar *key, ushort val, const tchar *sect = NULL) {
+-	tchar buf[24]; tsprintf(buf, T("%hu"), val); return set(key, buf, sect);
++	tchar buf[24];
++	tsnprintf(buf, 24, T("%hu"), val);
++	return set(key, buf, sect);
+     }
+     Config &setv(const tchar *key, const tchar *val, ... /* , const tchar
+ 	*sect = NULL, NULL */);

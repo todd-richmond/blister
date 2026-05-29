@@ -120,7 +120,7 @@ public:
 	streamsize sz = pp - pb;
 
 	if (LIKELY(sz > 0)) {
-	    if (UNLIKELY(fd->write(pb, (uint)sz) != (int)sz))
+	    if (UNLIKELY(!fd || fd->write(pb, (uint)sz) != (int)sz))
 		return -1;
 	    setp(pb, pb + bufsz);
 	}
@@ -150,10 +150,10 @@ public:
 	    setp(pb, pb + bufsz);
 	}
 	int sz = fd->read(buf, (uint)bufsz);
-	if (UNLIKELY(sz == -1))
+	if (UNLIKELY(sz <= 0))
 	    return -1;
 	setg(buf, buf, buf + sz);
-	return *buf;
+	return (uchar)*buf;
     }
 
     virtual int overflow(int i) {
@@ -224,6 +224,7 @@ public:
     }
 
     virtual streamsize xsputn(const char *p, streamsize sz) {
+	long out;
 	char *pb = pbase();
 	char *pp = pptr();
 	streamsize used = pp - pb;
@@ -240,15 +241,17 @@ public:
 	    }
 	    return sz;
 	}
-
+	setp(pb, pb + bufsz);
+	if (!used) {
+	    out = fd->write(p, (uint)sz);
+	    return UNLIKELY(out == -1) ? -1 : (streamsize)out;
+	}
 	iovec iov[2]{};
 	iov[0].iov_base = pb;
 	iov[0].iov_len = (iovlen_t)used;
 	iov[1].iov_base = (char *)p;
 	iov[1].iov_len = (iovlen_t)sz;
-	long out = fd->writev(iov, 2);
-
-	setp(pb, pb + bufsz);
+	out = fd->writev(iov, 2);
 	return UNLIKELY(out == -1 || (ulong)out < (ulong)used) ? -1 :
 	    (streamsize)out - (streamsize)used;
     }
@@ -315,10 +318,13 @@ private:
     private:
 	virtual streampos seekoff(off_type off, ios_base::seekdir dir,
 	    ios_base::openmode) {
-	    if (dir == ios_base::cur)
-		setg(begin, gptr() + off >= end ? end : gptr() + off, end);
-	    else if (dir == ios_base::beg)
-		setg(begin, begin + off >= end ? end : begin + off, end);
+	    if (dir == ios_base::cur) {
+		char *np = gptr() + off;
+		setg(begin, np < begin ? begin : np >= end ? end : np, end);
+	    } else if (dir == ios_base::beg) {
+		char *np = begin + off;
+		setg(begin, np < begin ? begin : np >= end ? end : np, end);
+	    }
 	    else
 		setg(begin, end, end);
 	    return gptr() - eback();

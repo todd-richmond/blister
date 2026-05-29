@@ -28,51 +28,17 @@ typedef uint64_t lruhash_t;
 
 class BLISTER LRUCacheEntry {
 public:
-    LRUCacheEntry(const void *d, ulong s): data(NULL), sz(0), msec(0) {
-	const char *p = (const char *)d;
-	lruhash_t h = 0;
-
-	if (LIKELY(s >= 8 && ((uintptr_t)p & 7) == 0)) {
-	    const uint64_t *p64 = (const uint64_t *)p;
-	    ulong s64 = s >> 3;
-
-	    while (s64 >= 4) {
-		h = h * 101 + p64[0];
-		h = h * 101 + p64[1];
-		h = h * 101 + p64[2];
-		h = h * 101 + p64[3];
-		p64 += 4;
-		s64 -= 4;
-	    }
-	    while (s64 > 0) {
-		h = h * 101 + *p64++;
-		--s64;
-	    }
-	    p = (const char *)p64;
-	    s &= 7;
-	}
-	while (s >= 4) {
-	    h = h * 101 + (lruhash_t)p[0];
-	    h = h * 101 + (lruhash_t)p[1];
-	    h = h * 101 + (lruhash_t)p[2];
-	    h = h * 101 + (lruhash_t)p[3];
-	    p += 4;
-	    s -= 4;
-	}
-	while (s > 0) {
-	    h = h * 101 + (lruhash_t)*p++;
-	    --s;
-	}
-	hash = h;
+    LRUCacheEntry(const void *d, ulong s): data(nullptr), sz(0), msec(0) {
+	hash = rapidhash(d, s);
     }
     LRUCacheEntry(const LRUCacheEntry &ce): data(ce.data), sz(ce.sz),
 	hash(ce.hash), msec(ce.msec) {}
 
-    __forceinline operator bool() const { return data != NULL; }
+    __forceinline operator bool() const { return data != nullptr; }
     __forceinline operator lruhash_t() const { return hash; }
     __forceinline msec_t touch(void) const { return msec; }
 
-    __forceinline void touch(msec_t now) { msec = now;; }
+    __forceinline void touch(msec_t now) { msec = now; }
 
     const void *data;
     ulong sz;
@@ -93,7 +59,7 @@ public:
     static constexpr int LRUCACHE_TIME = 5 * 60 * 1000;
 
     explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME):
-	cursz(0), maxsz(sz), maxtm(tm) {
+	cursz(0), maxsz(sz), maxtm(tm), last_purge(0) {
 	(void)static_cast<LRUCacheEntry *>((C *)0); // enforce base class
 	cache_map.reserve(128);
     }
@@ -102,17 +68,26 @@ public:
     void clear(void) {
 	FastLocker lkr(lock);
 
-	purge(maxsz, 0);
+	while (!cache_list.empty()) {
+	    delete [] (char *)cache_list.back().second.data;
+	    cache_list.pop_back();
+	}
+	cache_map.clear();
+	cursz = 0;
+	last_purge = 0;
     }
     const C get(const void *data, ulong sz) {
 	C entry(data, sz);
 	msec_t now = LIKELY(maxtm) ? mticks() : 0;
 	Locker lkr(lock);
 
-	if (LIKELY(maxtm))
+	if (LIKELY(maxtm) && now - last_purge > maxtm / 2) {
 	    purge(0, now);
+	    last_purge = now;
+	}
 	typename lru_map::const_iterator it = cache_map.find(entry);
-	if (LIKELY(it != cache_map.end())) {
+	if (it != cache_map.end() && it->second->second.sz == sz &&
+	    (!maxtm || now - it->second->second.touch() <= maxtm)) {
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
 	    if (LIKELY(maxtm))
 		it->second->second.touch(now);
@@ -122,7 +97,7 @@ public:
     }
     bool put(C &entry, const void *data, ulong sz) {
 	if (UNLIKELY(sz > maxsz)) {
-	    entry.data = NULL;
+	    entry.data = nullptr;
 	    entry.sz = 0;
 	    return false;
 	}
@@ -133,15 +108,20 @@ public:
 
 	if (it != cache_map.end()) {
 	    cursz -= it->second->second.sz;
-	    cache_list.erase(it->second);
-	    cache_map.erase(it);
+	    entry.data = data;
+	    entry.sz = sz;
+	    entry.touch(now);
+	    it->second->second = entry;
+	    cache_list.splice(cache_list.begin(), cache_list, it->second);
+	    cursz += sz;
+	    return true;
 	}
 	purge(sz, now);
 	entry.data = data;
 	entry.sz = sz;
 	entry.touch(now);
 	cursz += sz;
-	cache_list.push_front(lru_kv(entry, entry));
+	cache_list.emplace_front(lruhash_t(entry), entry);
 	cache_map[entry] = cache_list.begin();
 	return true;
     }
@@ -159,7 +139,7 @@ private:
     lru_list cache_list;
     lru_map cache_map;
     ulong cursz, maxsz;
-    msec_t maxtm;
+    msec_t maxtm, last_purge;
 
     void purge(ulong sz, msec_t now) {
 	if (!maxtm || !now)
