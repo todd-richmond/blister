@@ -33,12 +33,9 @@ Timing::Stats *Timing::Stats::newstats(const tchar *k, size_t h) {
     Stats *s = (Stats *)new char[offsetof(Stats, key) + (klen + 1) *
 	sizeof (tchar)];
 
-    s->cnt = 0;
-    s->tot = 0;
-    s->flist = nullptr;
+    memset((void *)s, 0, sizeof (*s));
     s->hash = h;
     s->klen = klen;
-    ZERO(s->cnts);
     memcpy(s->key, k, (klen + 1) * sizeof (tchar));
     return s;
 }

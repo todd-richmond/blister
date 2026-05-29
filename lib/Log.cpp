@@ -431,8 +431,8 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (afd.len >= afd.sz)
 	    afd.roll();
     }
-    now_usec = microtime();
-    now_sec = (time_t)(now_usec / 1000000);
+    time(&now_sec);
+    now_usec = uticks();
     now_usec %= 1000000;
     if (now_sec != last_sec) {
 	tchar tbuf[128];

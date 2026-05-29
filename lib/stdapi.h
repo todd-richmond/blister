@@ -448,6 +448,9 @@ EXTERNC_
 #include <ctype.h>
 #include <unistd.h>
 #include <limits.h>
+#ifdef __AVX2__
+#include <immintrin.h>
+#endif
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -808,23 +811,7 @@ struct pidstat {
 typedef uint64_t msec_t;
 typedef uint64_t usec_t;
 
-#define millitime()	((msec_t)(microtime() / 1000))
-
-static inline usec_t microtime(void) {
-#ifdef _WIN32
-    struct timeval tv;
-
-    gettimeofday(&tv, NULL);
-    return (usec_t)tv.tv_sec * (usec_t)1000000 + (usec_t)tv.tv_usec;
-#else
-    struct timespec ts;
-
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (usec_t)ts.tv_sec * (usec_t)1000000 + (usec_t)(ts.tv_nsec / 1000);
-#endif
-}
-
-static inline void time_adjust_msec(struct timespec *ts, ulong msec) {
+inline void time_adjust_msec(struct timespec *ts, ulong msec) {
     ulong nsec = (ulong)ts->tv_nsec + (msec % 1000UL) * 1000000UL;
 
     ts->tv_sec += (time_t)(msec / 1000UL);
@@ -850,9 +837,6 @@ EXTERNC_
 // common includes, defines and code for C++ software
 #ifdef __cplusplus
 
-#ifdef __AVX2__
-#include <immintrin.h>
-#endif
 #include <functional>
 #include <iostream>
 #include <string>
