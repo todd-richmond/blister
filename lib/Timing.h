@@ -98,10 +98,12 @@ public:
 
     Timing(): cache{}, flist(nullptr) {}
     ~Timing() {
+	Stats *next, *s;
+
         clear();
-        Stats *s = flist.exchange(nullptr, memory_order_relaxed);
+        s = flist.exchange(nullptr, memory_order_relaxed);
         while (s) {
-            Stats *next = s->flist;
+            next = s->flist;
             Stats::delstats(s);
             s = next;
         }
@@ -145,9 +147,9 @@ private:
 	alignas(64) atomic_uint_fast32_t cnt;
 	atomic_uint_fast32_t cnts[TIMINGSLOTS];
 	atomic_uint_fast64_t tot;
-	Stats *flist;
-	size_t hash;
-	uint klen;
+	Stats *flist = nullptr;
+	size_t hash = 0;
+	uint klen = 0;
 	tchar key[];
 
 	static Stats *newstats(const tchar *k, size_t h);
