@@ -60,7 +60,7 @@ public:
     class EchoServerSocket: public DispatchServerSocket {
     public:
 	EchoServerSocket(Dispatcher &d, Socket &sock):
-	    DispatchServerSocket(d, sock), buf(NULL), in(0), out(0),
+	    DispatchServerSocket(d, sock), buf(NULL), bufsz(0), in(0), out(0),
 	    tmt(TIMEOUT) {}
 	virtual ~EchoServerSocket() { delete [] buf; }
 
@@ -76,7 +76,7 @@ public:
 
     private:
 	char *buf;
-	uint in, out;
+	uint bufsz, in, out;
 	ulong tmt;
 
 	DSP_DECLARE(EchoServerSocket, input);
@@ -154,9 +154,15 @@ void EchoTest::EchoClientSocket::input() {
 	    usecs += usec;
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read="), len);
-	    // coverity[dont_call : FALSE ]
-	    // NOLINTNEXTLINE
-	    timeout(repeat, wait + (wait < 2000 ? 0 : (uint)rand() % 50));
+	    if (wait) {
+		// coverity[dont_call : FALSE ]
+		// NOLINTNEXTLINE
+		timeout(repeat, wait + (wait < 2000 ? 0 : (uint)rand() % 50));
+	    } else {
+		in = out = 0;
+		begin = Timing::now();
+		ready(output);
+	    }
 	}
     } else if (loops.load() <= 0 || qflag) {
 	erase();
@@ -210,7 +216,6 @@ void EchoTest::EchoClientSocket::start() {
 #pragma GCC diagnostic ignored "-Wstack-usage="
 #endif
 void EchoTest::EchoServerSocket::input() {
-    uint oldin = in;
     char tmp[MAXREAD];
 
     if (error() || ((in = (uint)read(tmp, sizeof (tmp))) == (uint)-1)) {
@@ -231,9 +236,10 @@ void EchoTest::EchoServerSocket::input() {
     } else {
 	dlogd(T("server partial write="), out);
 	in -= out;
-	if (oldin < in) {
+	if (bufsz < in) {
 	    delete [] buf;
 	    buf = new char[(size_t)in];
+	    bufsz = in;
 	}
 	memcpy(buf, tmp + out, (size_t)in);
 	out = 0;

@@ -112,7 +112,7 @@ public:
 protected:
     void callback(DispatchObjCB cb) { if (cb) dcb = cb; }
 
-    alignas(64) DispatchObjCB dcb;
+    DispatchObjCB dcb;
     Dispatcher &dspr;
     dspflag_t flags;
     DispatchMsg msg;

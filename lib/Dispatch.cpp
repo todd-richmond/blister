@@ -1199,7 +1199,6 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
     blocking(false);
     cloexec();
     if (start) {
-	msleep(1);
 	poll(cb, DispatchTimer::DSP_NEVER, DispatchAccept);
     } else {
 	callback(cb);

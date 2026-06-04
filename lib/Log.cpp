@@ -428,7 +428,7 @@ void Log::strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz) 
 		_mm256_cmpeq_epi8(chunk, tab_vec), lt_space));
 
 	    if (UNLIKELY(mask)) {
-		q += __builtin_ctz(mask);
+		q += (uint)__builtin_ctz(mask);
 		goto scan_done;
 	    }
 	}
