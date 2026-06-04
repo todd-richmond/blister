@@ -66,23 +66,26 @@ public:
     ~LRUCache() { clear(); }
 
     void clear(void) {
-	FastLocker lkr(lock);
+	lru_list freed;
 
-	while (!cache_list.empty()) {
-	    delete [] (char *)cache_list.back().second.data;
-	    cache_list.pop_back();
-	}
+	lock.lock();
+	swap(freed, cache_list);
 	cache_map.clear();
 	cursz = 0;
 	last_purge = 0;
+	lock.unlock();
+	for (auto &kv : freed)
+	    delete [] (char *)kv.second.data;
     }
     const C get(const void *data, ulong sz) {
 	C entry(data, sz);
 	msec_t now = LIKELY(maxtm) ? mticks() : 0;
-	Locker lkr(lock);
+	lru_list freed;
+	C result(entry);
 
+	lock.lock();
 	if (LIKELY(maxtm) && now - last_purge > maxtm / 2) {
-	    purge(0, now);
+	    purge(0, now, freed);
 	    last_purge = now;
 	}
 	typename lru_map::const_iterator it = cache_map.find(entry);
@@ -91,9 +94,12 @@ public:
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
 	    if (LIKELY(maxtm))
 		it->second->second.touch(now);
-	    return it->second->second;
+	    result = it->second->second;
 	}
-	return entry;
+	lock.unlock();
+	for (auto &kv : freed)
+	    delete [] (char *)kv.second.data;
+	return result;
     }
     bool put(C &entry, const void *data, ulong sz) {
 	if (UNLIKELY(sz > maxsz)) {
@@ -103,10 +109,13 @@ public:
 	}
 
 	msec_t now = maxtm ? mticks() : 0;
-	Locker lkr(lock);
-	typename lru_map::iterator it = cache_map.find(entry);
+	lru_list freed;
+	const void *old_data = nullptr;
 
+	lock.lock();
+	typename lru_map::iterator it = cache_map.find(entry);
 	if (it != cache_map.end()) {
+	    old_data = it->second->second.data;
 	    cursz -= it->second->second.sz;
 	    entry.data = data;
 	    entry.sz = sz;
@@ -114,24 +123,32 @@ public:
 	    it->second->second = entry;
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
 	    cursz += sz;
-	    return true;
+	} else {
+	    purge(sz, now, freed);
+	    entry.data = data;
+	    entry.sz = sz;
+	    entry.touch(now);
+	    cursz += sz;
+	    cache_list.emplace_front(lruhash_t(entry), entry);
+	    cache_map[entry] = cache_list.begin();
 	}
-	purge(sz, now);
-	entry.data = data;
-	entry.sz = sz;
-	entry.touch(now);
-	cursz += sz;
-	cache_list.emplace_front(lruhash_t(entry), entry);
-	cache_map[entry] = cache_list.begin();
+	lock.unlock();
+	delete [] (char *)old_data;
+	for (auto &kv : freed)
+	    delete [] (char *)kv.second.data;
 	return true;
     }
     void resize(ulong sz, msec_t tm = 0) {
-	FastLocker lkr(lock);
+	lru_list freed;
 
+	lock.lock();
 	maxtm = tm;
 	if (sz < maxsz)
-	    purge(maxsz - sz, maxtm ? mticks() : 0);
+	    purge(maxsz - sz, maxtm ? mticks() : 0, freed);
 	maxsz = sz;
+	lock.unlock();
+	for (auto &kv : freed)
+	    delete [] (char *)kv.second.data;
     }
 
 private:
@@ -141,28 +158,23 @@ private:
     ulong cursz, maxsz;
     msec_t maxtm, last_purge;
 
-    void purge(ulong sz, msec_t now) {
-	if (!maxtm || !now)
-	    return;
-	while (!cache_list.empty()) {
-	    const lru_kv &last = cache_list.back();
-
-	    if (LIKELY(now - last.second.touch() > maxtm)) {
-		cursz -= last.second.sz;
-		delete [] (char *)last.second.data;
-		cache_map.erase(last.first);
-		cache_list.pop_back();
-	    } else {
-		break;
+    void purge(ulong sz, msec_t now, lru_list &freed) {
+	if (maxtm && now) {
+	    while (!cache_list.empty()) {
+		if (LIKELY(now - cache_list.back().second.touch() > maxtm)) {
+		    cursz -= cache_list.back().second.sz;
+		    cache_map.erase(cache_list.back().first);
+		    freed.splice(freed.end(), cache_list,
+			prev(cache_list.end()));
+		} else {
+		    break;
+		}
 	    }
 	}
 	while (UNLIKELY(cursz + sz > maxsz) && !cache_list.empty()) {
-	    const lru_kv &last = cache_list.back();
-
-	    cursz -= last.second.sz;
-	    delete [] (char *)last.second.data;
-	    cache_map.erase(last.first);
-	    cache_list.pop_back();
+	    cursz -= cache_list.back().second.sz;
+	    cache_map.erase(cache_list.back().first);
+	    freed.splice(freed.end(), cache_list, prev(cache_list.end()));
 	}
     }
 };

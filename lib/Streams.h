@@ -18,6 +18,10 @@
 #ifndef Streams_h
 #define Streams_h
 
+#include <charconv>
+#include <sstream>
+#include <type_traits>
+
 /*
  * faststreambuf is an optimized stream buffer that reads directly into user
  * buffers and coalesces writes from user buffers with writev to reduce
@@ -65,38 +69,7 @@ public:
 	    setp(buf, buf + bufsz);
 	}
     }
-    /*
-    virtual streampos seekoff(streamoff off, ios::seek_dir dir,
-	int mode = ios::in | ios::out) {
-
-	if (mode & ios::in) {
-	    streamoff tmp = off;
-
-	    if (dir == ios::cur)
-		off += gptr() - buf;
-	    else if (dir == ios::end)
-		off += egptr() - buf;
-	    if (off < 0 || off > egptr() - buf)
-		return -1;
-	    setg(buf, buf + off, egptr());
-	    if (mode & ios::out)
-		off = tmp;
-	    else
-		return off;
-	}
-	if (mode & ios::out) {
-	    if (dir == ios::cur)
-		off += pptr() - pbase();
-	    else if (dir == ios::end)
-		off += epptr() - pbase();
-	    if (off < 0 || off > epptr() - pbase())
-		return -1;
-	    setp(pbase(), pbase() + off, epptr());
-	}
-	return off;
-    }
-    */
-    virtual streambuf *setbuf(char *p, streamsize sz) {
+    streambuf *setbuf(char *p, streamsize sz) override {
 	if (p || !sz || bufsz < sz) {
 	    if (alloced) {
 		delete [] buf;
@@ -114,7 +87,7 @@ public:
 	return this;
     }
 
-    virtual int sync(void) {
+    int sync(void) override {
 	char *pb = pbase();
 	const char *pp = pptr();
 	streamsize sz = pp - pb;
@@ -127,7 +100,7 @@ public:
 	return 0;
     }
 
-    virtual int underflow(void) {
+    int underflow(void) override {
 	const char *gp = gptr();
 
 	if (UNLIKELY(gp == NULL)) {
@@ -156,7 +129,7 @@ public:
 	return (uchar)*buf;
     }
 
-    virtual int overflow(int i) {
+    int overflow(int i) override {
 	uchar c = (uchar)i;
 
 	if (pptr() == NULL) {
@@ -169,7 +142,7 @@ public:
 	}
     }
 
-    virtual streamsize xsgetn(char *p, streamsize size) {
+    streamsize xsgetn(char *p, streamsize size) override {
 	const char *gp = gptr();
 	const char *eg = egptr();
 	streamsize left = eg - gp;
@@ -223,7 +196,7 @@ public:
 	return size;
     }
 
-    virtual streamsize xsputn(const char *p, streamsize sz) {
+    streamsize xsputn(const char *p, streamsize sz) override {
 	long out;
 	char *pb = pbase();
 	char *pp = pptr();
@@ -268,8 +241,6 @@ private:
  * works around broken MSVC sstream::seekp() that leaks memory. Use this as a
  * replacement for strstream / sstream
  */
-#include <sstream>
-
 template <class C>
 class BLISTER bufferstream: public basic_ostream<C> {
 public:
@@ -281,8 +252,78 @@ public:
     C back(void) const { return sb.back(); }
 
     void reset(void) { if (sb.pcount()) sb.reset(); }
+    void write(C c) { sb.write(c); }
+    void write(bool b) { sb.write(b ? C('t') : C('f')); }
+    void write(const C *s, streamsize n) { sb.write(s, n); }
+    template <typename T>
+    __forceinline void write(const T &val) {
+	if constexpr (is_integral_v<T> || is_floating_point_v<T>) {
+#ifdef UNICODE
+	    char buf[24];
+	    auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
+
+	    if (LIKELY(ec == errc{})) {
+		wchar wbuf[24];
+
+		for (auto *s = buf, *d = wbuf; s < end;)
+		    *d++ = (wchar)*s++;
+		write(wbuf, end - buf);
+	    }
+#else
+	    if constexpr (is_integral_v<T>) {
+		char buf[24];
+		char *p = buf + sizeof (buf);
+		auto uval = static_cast<make_unsigned_t<T>>(val);
+
+		if constexpr (is_signed_v<T>)
+		    if (val < 0)
+			uval = 0 - uval;
+		while (uval >= 100) {
+		    auto const idx = (uval % 100) * 2;
+
+		    uval /= 100;
+		    *--p = digit_pairs[idx + 1];
+		    *--p = digit_pairs[idx];
+		}
+		if (uval >= 10) {
+		    auto const idx = uval * 2;
+
+		    *--p = digit_pairs[idx + 1];
+		    *--p = digit_pairs[idx];
+		} else {
+		    *--p = (char)('0' + uval);
+		}
+		if constexpr (is_signed_v<T>)
+		    if (val < 0)
+			*--p = '-';
+		write(p, buf + sizeof (buf) - p);
+	    } else {
+		char buf[24];
+		auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
+
+		if (LIKELY(ec == errc{}))
+		    write(buf, end - buf);
+	    }
+#endif
+	} else if constexpr (is_enum_v<T>) {
+	    write(static_cast<underlying_type_t<T>>(val));
+	} else {
+	    *this << val;
+	}
+    }
 
 private:
+    static constexpr char digit_pairs[] =
+	"00010203040506070809"
+	"10111213141516171819"
+	"20212223242526272829"
+	"30313233343536373839"
+	"40414243444546474849"
+	"50515253545556575859"
+	"60616263646566676869"
+	"70717273747576777879"
+	"80818283848586878889"
+	"90919293949596979899";
     class BLISTER bufferbuf: public basic_stringbuf<C> {
     public:
 	explicit bufferbuf(ios::openmode m): basic_stringbuf<C>(m) {}
@@ -296,6 +337,26 @@ private:
 	    basic_stringbuf<C>::setp(basic_stringbuf<C>::pbase(),
 		basic_stringbuf<C>::epptr());
 	}
+	void write(C c) {
+	    C *pp = basic_stringbuf<C>::pptr();
+
+	    if (LIKELY(pp < basic_stringbuf<C>::epptr())) {
+		*pp = c;
+		basic_stringbuf<C>::pbump(1);
+	    } else {
+		basic_stringbuf<C>::sputc(c);
+	    }
+	}
+	void write(const C *s, streamsize n) {
+	    C *pp = basic_stringbuf<C>::pptr();
+
+	    if (LIKELY(pp + n <= basic_stringbuf<C>::epptr())) {
+		memcpy(pp, s, (size_t)n * sizeof(C));
+		basic_stringbuf<C>::pbump((int)n);
+	    } else {
+		basic_stringbuf<C>::sputn(s, n);
+	    }
+	}
     };
 
     bufferbuf sb;
@@ -305,19 +366,20 @@ typedef bufferstream<tchar> tbufferstream;
 
 class BLISTER memstream: public istream {
 public:
-    memstream(void *data, streamsize sz): istream(&mb), mb(data, sz) {}
+    memstream(const void *data, streamsize sz): istream(&mb), mb(data, sz) {}
 
 private:
     class BLISTER membuf: public streambuf, public nocopy {
     public:
-	explicit membuf(void *data, streamsize sz): begin((char *)data),
-	    end((char *)data + sz) {
+	explicit membuf(const void *data, streamsize sz):
+	    begin(const_cast<char *>((const char *)data)),
+	    end(begin + sz) {
 	    setg(begin, begin, end);
 	}
 
     private:
-	virtual streampos seekoff(off_type off, ios_base::seekdir dir,
-	    ios_base::openmode) {
+	streampos seekoff(off_type off, ios_base::seekdir dir,
+	    ios_base::openmode) override {
 	    if (dir == ios_base::cur) {
 		char *np = gptr() + off;
 		setg(begin, np < begin ? begin : np >= end ? end : np, end);
@@ -329,7 +391,7 @@ private:
 		setg(begin, end, end);
 	    return gptr() - eback();
 	}
-	virtual streampos seekpos(streampos pos, ios_base::openmode mode) {
+	streampos seekpos(streampos pos, ios_base::openmode mode) override {
 	    return seekoff(pos, ios_base::beg, mode);
 	}
 

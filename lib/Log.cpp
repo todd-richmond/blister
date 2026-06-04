@@ -38,11 +38,11 @@ static const tchar *USubst = T("\001\001");
 static const tchar *ZSubst = T("\002\002");
 #endif
 
-const tchar * const Log::LevelStr[] = {
+const tstring_view Log::LevelStr[] = {
     T("none"), T("emrg"), T("alrt"), T("crit"), T("err "), T("warn"), T("note"),
     T("info"), T("debg"), T("trce"), T("sprs")
 };
-const tchar * const Log::LevelStr2[] = {
+const tstring_view Log::LevelStr2[] = {
     T("nothing"), T("emergency"), T("alert"), T("critical"), T("error"),
     T("warning"), T("notice"), T("information"), T("debug"), T("trace"),
     T("suppress")
@@ -408,6 +408,92 @@ bool Log::close(void) {
     return ffd.close();
 }
 
+void Log::strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz) {
+    const tchar *q = data;
+    const tchar *end = data + sz;
+
+#if !defined(UNICODE)
+#if defined(__AVX2__)
+    {
+	// bias trick: (uchar)c < 0x20 via signed cmpgt after XOR with 0x80
+	const __m256i bias = _mm256_set1_epi8((char)0x80);
+	const __m256i tab_vec = _mm256_set1_epi8('\t');
+	const __m256i thresh = _mm256_set1_epi8((char)(0x20 ^ 0x80));
+
+	for (; q + 32 <= end; q += 32) {
+	    __m256i chunk = _mm256_loadu_si256((const __m256i *)q);
+	    __m256i lt_space = _mm256_cmpgt_epi8(thresh,
+		_mm256_xor_si256(chunk, bias));
+	    int mask = _mm256_movemask_epi8(_mm256_andnot_si256(
+		_mm256_cmpeq_epi8(chunk, tab_vec), lt_space));
+
+	    if (UNLIKELY(mask)) {
+		q += __builtin_ctz(mask);
+		goto scan_done;
+	    }
+	}
+    }
+#elif defined(__ARM_NEON)
+    {
+	const uint8x16_t space_vec = vdupq_n_u8(0x20);
+	const uint8x16_t tab_vec   = vdupq_n_u8('\t');
+
+	for (; q + 16 <= end; q += 16) {
+	    uint8x16_t chunk = vld1q_u8((const uint8_t *)q);
+	    uint8x16_t needs_esc = vbicq_u8(vcltq_u8(chunk, space_vec),
+		vceqq_u8(chunk, tab_vec));
+	    uint64_t lo = vgetq_lane_u64(vreinterpretq_u64_u8(needs_esc), 0);
+	    uint64_t hi = vgetq_lane_u64(vreinterpretq_u64_u8(needs_esc), 1);
+
+	    if (UNLIKELY(lo | hi)) {
+		q += lo ? __builtin_ctzll(lo) >> 3 :
+		    8 + (__builtin_ctzll(hi) >> 3);
+		goto scan_done;
+	    }
+	}
+    }
+#endif
+#endif
+    while (q < end && LIKELY(!((uchar)*q < ' ' && *q != '\t')))
+	++q;
+#if !defined(UNICODE) && (defined(__AVX2__) || defined(__ARM_NEON))
+scan_done:
+#endif
+    if (LIKELY(q == end)) {
+	strm.write(data, sz);
+	return;
+    }
+    // slow path: escape control chars into strm
+    const tchar *p = q;
+    const tchar *start = q;
+
+    strm.write(data, (streamsize)(q - data));
+    while (p < end) {
+	if (UNLIKELY((uchar)*p < ' ' && *p != '\t')) {
+	    if (p > start)
+		strm.write(start, (streamsize)(p - start));
+	    if (*p == '\n') {
+		strm.write(T("\\n"), 2);
+	    } else if (*p == '\r') {
+		strm.write(T("\\r"), 2);
+	    } else {
+		tchar oct[4] = { '\\',
+		    (tchar)('0' + (((uchar)*p >> 6) & 7)),
+		    (tchar)('0' + (((uchar)*p >> 3) & 7)),
+		    (tchar)('0' + ((uchar)*p & 7)) };
+
+		strm.write(oct, 4);
+	    }
+	    ++p;
+	    start = p;
+	} else {
+	    ++p;
+	}
+    }
+    if (p > start)
+	strm.write(start, (streamsize)(p - start));
+}
+
 void Log::endlog(Tlsdata &tlsd) {
     Level clvl = tlsd.clvl;
     bool aenabled = afd.enable && clvl <= afd.lvl;
@@ -478,6 +564,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	    char cbuf[8];
 	    auto [ep, ec] = to_chars(cbuf, cbuf + 6, (uint)now_usec);
 	    size_t dlen = (size_t)(ep - cbuf);
+
 	    strbuf.assign(last_format, 0, upos);
 	    strbuf.append(6 - dlen, '0');
 	    strbuf.append(cbuf, dlen);
@@ -507,37 +594,11 @@ void Log::endlog(Tlsdata &tlsd) {
 	strbuf += ' ';
     }
     if (_type == KeyVal) {
-	strbuf += T("txt=\"");
-	strbuf += tlsd.strm.str();
+	strbuf.append(T("txt=\""), 5);
+	strbuf.append(tlsd.strm.str(), sz);
 	strbuf += '"';
     } else {
-	const tchar *p = tlsd.strm.str();
-	const tchar *end = p + sz;
-	const tchar *start = p;
-
-	while (p < end) {
-	    if (UNLIKELY((uchar)*p < ' ' && *p != '\t')) {
-		if (p > start)
-		    strbuf.append(start, (size_t)(p - start));
-		if (*p == '\n') {
-		    strbuf += T("\\n");
-		} else if (*p == '\r') {
-		    strbuf += T("\\r");
-		} else {
-		    tchar oct[4] = { '\\',
-			(tchar)('0' + (((uchar)*p >> 6) & 7)),
-			(tchar)('0' + (((uchar)*p >> 3) & 7)),
-			(tchar)('0' + ((uchar)*p & 7)) };
-		    strbuf.append(oct, 4);
-		}
-		++p;
-		start = p;
-	    } else {
-		++p;
-	    }
-	}
-	if (p > start)
-	    strbuf.append(start, (size_t)(p - start));
+	strbuf.append(tlsd.strm.str(), sz);
     }
     strbuf += '\n';
     if (aenabled) {
@@ -678,7 +739,7 @@ void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {
     }
 }
 
-tostream &Log::quote(tostream &os, const tchar *s) {
+tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
     static const uchar needquote[256] = {
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // DLE - US
@@ -705,17 +766,17 @@ tostream &Log::quote(tostream &os, const tchar *s) {
 
 	if (UNLIKELY(needquote[c])) {
 	    streamsize bsz = 0;
-	    tchar buf[64];
+	    tchar buf[128];
 	    static const tchar dquote = '"';
 
-	    os.write(&dquote, 1);
+	    os.write(dquote);
 	    os.write((const tchar *)start, p - start);
 	    auto flush = [&]() { if (bsz) { os.write(buf, bsz); bsz = 0; } };
-	    auto esc2  = [&](tchar e) {
-		flush();
-		buf[0] = '\\';
-		buf[1] = e;
-		os.write(buf, 2);
+	    auto esc2 = [&](tchar e) {
+		if (UNLIKELY(bsz + 2 > (streamsize)sizeof (buf)))
+		    flush();
+		buf[bsz++] = '\\';
+		buf[bsz++] = e;
 	    };
 	    while (*p) {
 		c = *p++;
@@ -730,22 +791,20 @@ tostream &Log::quote(tostream &os, const tchar *s) {
 		default:
 		    if (LIKELY(c >= ' ')) {
 			buf[bsz++] = (tchar)c;
-			if (bsz == (streamsize)sizeof (buf)) {
-			    os.write(buf, bsz);
-			    bsz = 0;
-			}
+			if (bsz == (streamsize)sizeof (buf))
+			    flush();
 		    } else {
-			flush();
-			tchar tmp[4] = { '\\', (tchar)('0' + ((c >> 6) & 7)),
-			    (tchar)('0' + ((c >> 3) & 7)),
-			    (tchar)('0' + (c & 7)) };
-			os.write(tmp, 4);
+			if (UNLIKELY(bsz + 4 > (streamsize)sizeof (buf)))
+			    flush();
+			buf[bsz++] = '\\';
+			buf[bsz++] = (tchar)('0' + ((c >> 6) & 7));
+			buf[bsz++] = (tchar)('0' + ((c >> 3) & 7));
+			buf[bsz++] = (tchar)('0' + (c & 7));
 		    }
 		}
 	    }
-	    if (bsz)
-		os.write(buf, bsz);
-	    os.write(&dquote, 1);
+	    flush();
+	    os.write(dquote);
 	    return os;
 	}
 	++p;
@@ -831,14 +890,13 @@ void Log::stop(void) {
 }
 
 Log::Level Log::str2enum(const tchar *l) {
-    for (uint u = 0; u < sizeof (LevelStr) / sizeof (const tchar *); ++u) {
-	const tchar *s = LevelStr[u];
-	size_t slen = tstrlen(s);
+    for (uint u = 0; u < sizeof (LevelStr) / sizeof (LevelStr[0]); ++u) {
+	tstring_view sv = LevelStr[u];
 
-	if (slen && s[slen - 1] == ' ')
-	    --slen;
-	if ((!tstrnicmp(l, s, slen) && l[slen] == '\0') || !tstricmp(l,
-	    LevelStr2[u]))
+	if (!sv.empty() && sv.back() == ' ')
+	    sv.remove_suffix(1);
+	if ((!tstrnicmp(l, sv.data(), sv.size()) && l[sv.size()] == '\0') ||
+	    !tstricmp(l, LevelStr2[u].data()))
 	    return (Level)u;
     }
     return None;

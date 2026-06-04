@@ -56,10 +56,10 @@
 
 class BLISTER Config: nocopy {
 public:
-    explicit Config(const tchar *prestr = NULL): ini(false) {
+    explicit Config(const tchar *prestr = nullptr): ini(false) {
 	prefix(prestr);
     }
-    explicit Config(tistream &is, const tchar *prestr = NULL): ini(false) {
+    explicit Config(tistream &is, const tchar *prestr = nullptr): ini(false) {
 	read(is, prestr);
     }
     ~Config() { clear(); }
@@ -68,21 +68,26 @@ public:
     const tstring &prefix(void) const { return pre; }
 
     Config &append(const tchar *key, const tchar *val, const tchar *sect =
-	NULL) {
+	nullptr) {
 	WLocker lkr(lck);
 
 	return set(key, tstrlen(key), val, tstrlen(val), sect, sect ?
 	    tstrlen(sect) : 0, true);
     }
     void clear(void);
-    void erase(const tchar *key, const tchar *sect = NULL);
-    bool exists(const tchar *key, const tchar *sect = NULL) const {
+    void erase(const tchar *key, const tchar *sect = nullptr);
+    bool exists(const tchar *key, const tchar *sect = nullptr) const {
 	RLocker lkr(lck);
 
-	return getkv(key, sect) != NULL;
+	return getkv(key, sect) != nullptr;
     }
-    tstring get(const tchar *key, const tchar *def = NULL, const tchar *sect =
-	NULL) const;
+    tstring get(const tchar *key, const tchar *def = nullptr, const tchar
+	*sect = nullptr) const;
+    template<size_t N>
+    tstring get(const tchar (&key)[N], const tchar *def = nullptr, const tchar
+	*sect = nullptr) const {
+	return get(tstring_view(key, N - 1), def, sect);
+    }
     tstring get(const tstring &key) const { return get(key.c_str()); }
     tstring get(const tstring &key, const tstring &def) const {
 	return get(key.c_str(), def.c_str());
@@ -91,48 +96,119 @@ public:
 	const {
 	return get(key.c_str(), def.c_str(), sect.c_str());
     }
-    bool get(const tchar *key, bool def, const tchar *sect = NULL) const;
-    double get(const tchar *key, double def, const tchar *sect = NULL) const {
-	return get_num(key, def, sect, [](const tchar *s) -> double { return
-	    tstrtod(s, NULL); });
+    bool get(const tchar *key, bool def, const tchar *sect = nullptr) const;
+    template<size_t N>
+    bool get(const tchar (&key)[N], bool def, const tchar *sect = nullptr) const
+    {
+	return get(tstring_view(key, N - 1), def, sect);
     }
-    float get(const tchar *key, float def, const tchar *sect = NULL) const {
+    double get(const tchar *key, double def, const tchar *sect = nullptr) const
+    {
+	return get_num(key, def, sect, [](const tchar *s) -> double { return
+	    tstrtod(s, nullptr); });
+    }
+    template<size_t N>
+    double get(const tchar (&key)[N], double def, const tchar *sect = nullptr)
+	const {
+	return get_num(tstring_view(key, N - 1), def, sect,
+	    [](const tchar *s) -> double { return tstrtod(s, nullptr); });
+    }
+    float get(const tchar *key, float def, const tchar *sect = nullptr) const {
 	return (float)get(key, (double)def, sect);
     }
-    int get(const tchar *key, int def, const tchar *sect = NULL) const {
+    template<size_t N>
+    float get(const tchar (&key)[N], float def, const tchar *sect = nullptr)
+	const {
+	return (float)get_num(tstring_view(key, N - 1), (double)def, sect,
+	    [](const tchar *s) -> double { return tstrtod(s, nullptr); });
+    }
+    int get(const tchar *key, int def, const tchar *sect = nullptr) const {
 	return (int)get(key, (long)def, sect);
     }
-    long get(const tchar *key, long def, const tchar *sect = NULL) const {
+    template<size_t N>
+    int get(const tchar (&key)[N], int def, const tchar *sect = nullptr) const {
+	return (int)get_num(tstring_view(key, N - 1), (long)def, sect,
+	    atoi<long>);
+    }
+    long get(const tchar *key, long def, const tchar *sect = nullptr) const {
 	return get_num(key, def, sect, atoi<long>);
     }
-    llong get(const tchar *key, llong def, const tchar *sect = NULL) const {
+    template<size_t N>
+    long get(const tchar (&key)[N], long def, const tchar *sect = nullptr) const {
+	return get_num(tstring_view(key, N - 1), def, sect, atoi<long>);
+    }
+    llong get(const tchar *key, llong def, const tchar *sect = nullptr) const {
 	return get_num(key, def, sect, atoi<llong>);
     }
-    short get(const tchar *key, short def, const tchar *sect = NULL) const {
+    template<size_t N>
+    llong get(const tchar (&key)[N], llong def, const tchar *sect = nullptr)
+	const {
+	return get_num(tstring_view(key, N - 1), def, sect, atoi<llong>);
+    }
+    short get(const tchar *key, short def, const tchar *sect = nullptr) const {
 	return (short)get(key, (long)def, sect);
     }
-    tchar get(const tchar *key, tchar def, const tchar *sect = NULL) const {
+    template<size_t N>
+    short get(const tchar (&key)[N], short def, const tchar *sect = nullptr)
+	const {
+	return (short)get_num(tstring_view(key, N - 1), (long)def, sect,
+	    atoi<long>);
+    }
+    tchar get(const tchar *key, tchar def, const tchar *sect = nullptr) const {
 	tchar buf[2];
+
 	buf[0] = def; buf[1] = '\0'; return get(key, buf, sect)[0];
     }
-    uint get(const tchar *key, uint def, const tchar *sect = NULL) const {
+    template<size_t N>
+    tchar get(const tchar (&key)[N], tchar def, const tchar *sect = nullptr)
+	const {
+	tchar buf[2];
+
+	buf[0] = def; buf[1] = '\0';
+	return get(tstring_view(key, N - 1), buf, sect)[0];
+    }
+    uint get(const tchar *key, uint def, const tchar *sect = nullptr) const {
 	return (uint)get(key, (ulong)def, sect);
     }
-    ulong get(const tchar *key, ulong def, const tchar *sect = NULL) const {
+    template<size_t N>
+    uint get(const tchar (&key)[N], uint def, const tchar *sect = nullptr) const
+	{
+	return (uint)get_num(tstring_view(key, N - 1), (ulong)def, sect,
+	    atou<ulong>);
+    }
+    ulong get(const tchar *key, ulong def, const tchar *sect = nullptr) const {
 	return get_num(key, def, sect, atou<ulong>);
     }
-    ullong get(const tchar *key, ullong def, const tchar *sect = NULL) const {
+    template<size_t N>
+    ulong get(const tchar (&key)[N], ulong def, const tchar *sect = nullptr)
+	const {
+	return get_num(tstring_view(key, N - 1), def, sect, atou<ulong>);
+    }
+    ullong get(const tchar *key, ullong def, const tchar *sect = nullptr) const
+	{
 	return get_num(key, def, sect, atou<ullong>);
     }
-    ushort get(const tchar *key, ushort def, const tchar *sect = NULL) const {
+    template<size_t N>
+    ullong get(const tchar (&key)[N], ullong def, const tchar *sect = nullptr)
+	const {
+	return get_num(tstring_view(key, N - 1), def, sect, atou<ullong>);
+    }
+    ushort get(const tchar *key, ushort def, const tchar *sect = nullptr) const
+	{
 	return (ushort)get(key, (ulong)def, sect);
     }
+    template<size_t N>
+    ushort get(const tchar (&key)[N], ushort def, const tchar *sect = nullptr)
+	const {
+	return (ushort)get_num(tstring_view(key, N - 1), (ulong)def, sect,
+	    atou<ulong>);
+    }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
-    bool read(tistream &is, const tchar *pre = NULL, bool append = false, ulong
-	sz = 0);
+    bool read(tistream &is, const tchar *pre = nullptr, bool append = false,
+	ulong sz = 0);
     void reserve(ulong sz) { amap.reserve(amap.size() + sz / 64); }
     template<typename T>
-    Config &set(const tchar *key, T val, const tchar *sect = NULL) {
+    Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
 	tchar buf[64];
 	auto [ptr, ec] = to_chars(buf, buf + sizeof (buf), val);
 	WLocker lkr(lck);
@@ -141,16 +217,17 @@ public:
 	return set(key, tstrlen(key), buf, (size_t)(ptr - buf), sect, sect ?
 	    tstrlen(sect) : 0);
     }
-    Config &set(const tchar *key, const tchar *val, const tchar *sect = NULL) {
+    Config &set(const tchar *key, const tchar *val, const tchar *sect =
+	nullptr) {
 	WLocker lkr(lck);
 
 	return set(key, tstrlen(key), val, tstrlen(val), sect, sect ?
 	    tstrlen(sect) : 0);
     }
-    Config &set(const tchar *key, const bool val, const tchar *sect = NULL) {
+    Config &set(const tchar *key, const bool val, const tchar *sect = nullptr) {
 	return set(key, val ? T("t") : T("f"), sect);
     }
-    Config &set(const tchar *key, tchar *val, const tchar *sect = NULL) {
+    Config &set(const tchar *key, tchar *val, const tchar *sect = nullptr) {
 	return set(key, (const tchar *)val, sect);
     }
     Config &set(const tstring &key, const tstring &val, const tstring &sect) {
@@ -160,7 +237,7 @@ public:
 	    sect.c_str(), sect.size());
     }
     Config &setv(const tchar *key, const tchar *val, ... /* , const tchar
-	*sect = NULL, NULL */);
+	*sect = nullptr, nullptr */);
     bool write(tostream &os) const { return write(os, ini); }
     bool write(tostream &os, bool ini) const;
     void lock(void) { lck.wlock(); }
@@ -205,8 +282,11 @@ private:
     void clear_locked(void);
     bool expandkv(const KV *kv, tstring &val) const;
     const KV *getkv(const tchar *key, const tchar *sect) const;
-    template<typename T, typename F>
-    T get_num(const tchar *key, T def, const tchar *sect, F conv) const {
+    const KV *getkv(tstring_view key, const tchar *sect) const;
+    tstring get(tstring_view key, const tchar *def, const tchar *sect) const;
+    bool get(tstring_view key, bool def, const tchar *sect) const;
+    template<typename K, typename T, typename F>
+    T get_num(K key, T def, const tchar *sect, F conv) const {
 	RLocker lkr(lck);
 	const KV *kv = getkv(key, sect);
 
@@ -229,7 +309,7 @@ private:
 };
 
 inline tistream &operator >>(tistream &is, Config &cfg) {
-    if (!cfg.read(is, NULL, true))
+    if (!cfg.read(is, nullptr, true))
 	is.setstate(ios::badbit);
     return is;
 }
@@ -241,19 +321,13 @@ inline tostream &operator <<(tostream &os, const Config &cfg) {
 
 class BLISTER ConfigFile: public Config {
 public:
-    explicit ConfigFile(const tchar *file = NULL, const tchar *_pre = NULL);
+    explicit ConfigFile(const tchar *file = nullptr, const tchar *_pre = nullptr);
 
-    bool read(tistream &is, const tchar *_pre = NULL, bool append = false, ulong
-	sz = 0) {
-	return Config::read(is, _pre, append, sz);
-    }
-    bool read(const tchar *file = NULL, const tchar *_pre = NULL, bool append =
+    using Config::read;
+    bool read(const tchar *file = nullptr, const tchar *_pre = nullptr, bool append =
 	false);
-    // cppcheck-suppress duplInheritedMember
-    bool write(tostream &os, bool inifmt) const {
-	return Config::write(os, inifmt);
-    }
-    bool write(void) const { return write(NULL, iniformat()); }
+    using Config::write;
+    bool write(void) const { return write(nullptr, iniformat()); }
     bool write(const tchar *file, bool ini = false) const;
 
 private:

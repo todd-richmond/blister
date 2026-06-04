@@ -499,6 +499,7 @@ void HTTPServerSocket::send(void) {
 }
 
 void HTTPServerSocket::senddone() {
+    _status = 0;
     if (datasz) {
 	postdata[postsz] = savechar;
 	memmove(data, postdata + postsz, datasz);

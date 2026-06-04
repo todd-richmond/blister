@@ -56,7 +56,7 @@ void Config::erase(const tchar *key, const tchar *sect) {
 
 	s.reserve(slen + 1 + klen);
 	s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
-	it = amap.find(s.c_str());
+	it = amap.find(s);
     } else {
 	it = amap.find(key);
     }
@@ -86,16 +86,16 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	    break;
 
 	kvmap::const_iterator it;
-	tstring::size_type off = (spos + 3 < val.size() && val[spos + 2] == '*'
-	    && val[spos + 3] == '.') ? 2 : 0;
+	tstring::size_type off = (spos + 3 < val.size() && val[spos + 2] ==
+	    '*' && val[spos + 3] == '.') ? 2 : 0;
 	const tchar *repl;
 	size_t repllen;
-	tstring s(val, spos + 2 + off, epos - spos - 2 - off);
+	tstring_view sv(val.data() + spos + 2 + off, epos - spos - 2 - off);
 
-	if (!pre.empty() && s.starts_with(pre) && s.size() > pre.size() + 1 &&
-	    s[pre.size()] == '.')
-	    s.erase(0, pre.size() + 1);
-	it = amap.find(s.c_str());
+	if (!pre.empty() && sv.starts_with(pre) && sv.size() > pre.size() + 1 &&
+	    sv[pre.size()] == '.')
+	    sv.remove_prefix(pre.size() + 1);
+	it = amap.find(sv);
 	if (it == amap.end()) {
 	    search = epos + 1;
 	    continue;
@@ -142,11 +142,53 @@ bool Config::get(const tchar *key, bool def, const tchar *sect) const {
     return def;
 }
 
+tstring Config::get(tstring_view key, const tchar *def, const tchar *sect)
+    const {
+    RLocker lkr(lck);
+    const KV *kv = getkv(key, sect);
+
+    if (LIKELY(kv)) {
+	if (LIKELY(!kv->expand))
+	    return kv->val;
+	tstring s;
+	if (expandkv(kv, s))
+	    return s;
+    }
+    return def ? tstring(def) : tstring();
+}
+
+bool Config::get(tstring_view key, bool def, const tchar *sect) const {
+    RLocker lkr(lck);
+    const KV *kv = getkv(key, sect);
+
+    if (LIKELY(kv)) {
+	tchar c;
+	if (LIKELY(!kv->expand)) {
+	    c = (tchar)totlower(kv->val[0]);
+	} else {
+	    tstring s;
+	    if (!expandkv(kv, s))
+		return def;
+	    c = (tchar)totlower(s[0]);
+	}
+	return c == 't' || c == 'y' || c == '1';
+    }
+    return def;
+}
+
 const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
+    if (sect && *sect)
+	return getkv(tstring_view(key, tstrlen(key)), sect);
+    kvmap::const_iterator it = amap.find(key);
+
+    return it == amap.end() ? nullptr : it->second;
+}
+
+const Config::KV *Config::getkv(tstring_view key, const tchar *sect) const {
     kvmap::const_iterator it;
 
     if (sect && *sect) {
-	size_t klen = tstrlen(key);
+	size_t klen = key.size();
 	size_t slen = tstrlen(sect);
 	size_t total = slen + 1 + klen;
 
@@ -156,20 +198,21 @@ const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
 
 	    memcpy(p, sect, slen * sizeof (tchar));
 	    p += slen;
-	    *p++ = (tchar)'.';
-	    memcpy(p, key, (klen + 1) * sizeof (tchar));
-	    it = amap.find(buf);
+	    *p++ = (tchar)('.');
+	    memcpy(p, key.data(), klen * sizeof (tchar));
+	    it = amap.find(tstring_view(buf, total));
 	} else {
 	    tstring s;
 
 	    s.reserve(total);
-	    s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
-	    it = amap.find(s.c_str());
+	    s.append(sect, slen).append(1, (tchar)('.')).
+		append(key.data(), klen);
+	    it = amap.find(tstring_view(s.data(), s.size()));
 	}
     } else {
 	it = amap.find(key);
     }
-    return it == amap.end() ? NULL : it->second;
+    return it == amap.end() ? nullptr : it->second;
 }
 
 // 1 allocation for key, val, state
@@ -200,11 +243,12 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
 #else
 	const tchar *p = (const tchar *)memchr(kv->val, '$', vlen);
 #endif
-	while (p != NULL) {
+	while (p != nullptr) {
 	    ++p;
 	    if (*p == '{' || *p == '(') {
 		tchar close = *p == '(' ? ')' : '}';
-		if (tstrchr(p, close) != NULL) {
+
+		if (tstrchr(p, close) != nullptr) {
 		    kv->expand = true;
 		    break;
 		}
@@ -239,7 +283,6 @@ bool Config::parse(tistream &is) {
     bool app;
     tstring_view key, val;
     tstring line, sect;
-    tstring::size_type pos;
 
     if (!is)
 	return false;
@@ -250,8 +293,8 @@ bool Config::parse(tistream &is) {
 	    --len;
 	if (len == 0)
 	    continue;
-	line.resize(len);
-	if (UNLIKELY(line.back() == '\\')) {
+	if (UNLIKELY(line[len - 1] == '\\')) {
+	    line.resize(len);
 	    tstring s;
 
 	    do {
@@ -300,14 +343,15 @@ bool Config::parse(tistream &is) {
 		key.remove_suffix(1);
 	    trim(key);
 	    if (key == T("common") || key == T("global"))
-		sect.erase();
+		sect.clear();
 	    else
 		sect.assign(key);
 	    ini = true;
 	    break;
 	default:
+	    auto pos = key.find('=');
+
 	    app = false;
-	    pos = key.find('=');
 	    if (UNLIKELY(pos == key.npos)) {
 		val = tstring_view();
 	    } else {
@@ -416,25 +460,25 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 
 Config &Config::setv(const tchar *key1, const tchar *val1, ...) {
     uint argc = 0;
-    const tchar *arg, *key = NULL, *last = NULL, *sect = NULL;
+    const tchar *arg, *key = nullptr, *last = nullptr, *sect = nullptr;
     size_t slen;
     va_list vl;
 
     va_start(vl, val1);
-    while ((arg = va_arg(vl, const tchar *)) != NULL) {
+    while ((arg = va_arg(vl, const tchar *)) != nullptr) {
 	last = arg;
 	++argc;
     }
-    sect = (argc & 1) ? last : NULL;
+    sect = (argc & 1) ? last : nullptr;
     va_end(vl);
     slen = sect ? tstrlen(sect) : 0;
     lock();
     set(key1, tstrlen(key1), val1, tstrlen(val1), sect, slen);
     va_start(vl, val1);
-    while ((arg = va_arg(vl, const tchar *)) != NULL) {
+    while ((arg = va_arg(vl, const tchar *)) != nullptr) {
 	if (key) {
 	    set(key, tstrlen(key), arg, tstrlen(arg), sect, slen);
-	    key = NULL;
+	    key = nullptr;
 	} else {
 	    key = arg;
 	}
@@ -481,7 +525,7 @@ bool Config::write(tostream &os, bool inistyle) const {
 	const tchar *key = keys[u].first;
 	const KV *kv = keys[u].second;
 
-	if ((dot = tstrchr(key, '.')) == NULL) {
+	if ((dot = tstrchr(key, '.')) == nullptr) {
 	    if (inistyle) {
 		sect = '.';
 	    } else {

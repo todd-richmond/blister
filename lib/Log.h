@@ -18,8 +18,6 @@
 #ifndef Log_h
 #define Log_h
 
-#include <charconv>
-#include <type_traits>
 #include "Socket.h"
 #include "Streams.h"
 #include "Thread.h"
@@ -93,10 +91,12 @@ public:
 
     template<typename T>
     struct KV {
-	__forceinline KV(const tchar *k, const T &v): key(k), val(v) {}
-	KV(const tstring &k, const T &v): key(k.c_str()), val(v) {}
+	__forceinline KV(tstring_view k, const T &v): key(k), val(v) {}
+	template<size_t N>
+	__forceinline constexpr KV(const tchar (&k)[N], const T &v): key(k, N - 1),
+	    val(v) {}
 
-	const tchar *key;
+	tstring_view key;
 	const T &val;
     };
 
@@ -104,11 +104,10 @@ public:
     ~Log();
 
     template<typename T>
-    // cppcheck-suppress returnTempReference
-    __forceinline Log &operator <<(const T &val) { return log(val); }
+    __forceinline Log &operator <<(const T &val) { log(val); return *this; }
     __forceinline Log &operator <<(void(Log &)) { endlog(); return *this; }
-    // cppcheck-suppress [constParameterReference, returnTempReference]
-    __forceinline Log &operator <<(Escalator &e) { return log(e); }
+    // cppcheck-suppress constParameterReference
+    __forceinline Log &operator <<(Escalator &e) { log(e); return *this; }
 
     bool alertfile(void) const { return afd.enable; }
     void alertfile(bool b) { afd.enable = b; }
@@ -162,27 +161,25 @@ public:
 	    endlog(tlsd);
     }
     void flush(void) { Locker lkr(lck); _flush(); }
-    // cppcheck-suppress-begin returnTempReference
     template <typename T>
-    __forceinline Log &log(const T &val) { return log(tls.get(), val); }
-    __forceinline Log &log(const tchar *val) { return log(tls.get(), val); }
+    __forceinline Log &log(const T &val) { log(tls.get(), val); return *this; }
+    __forceinline Log &log(const tchar *val) { log(tls.get(), val); return *this; }
 #pragma warning(disable: 26461)
     // NOLINTNEXTLINE(readability-non-const-parameter)
     __forceinline Log &log(tchar *val) {
-	return log(tls.get(), (const tchar *)val);
+	log(tls.get(), (const tchar *)val); return *this;
     }
     // cppcheck-suppress constParameterReference
-    __forceinline Log &log(Escalator &e) { return log(tls.get(), e); }
-    __forceinline Log &log(Log::Level l) { return log(tls.get(), l); }
+    __forceinline Log &log(Escalator &e) { log(tls.get(), e); return *this; }
+    __forceinline Log &log(Log::Level l) { log(tls.get(), l); return *this; }
     template<typename T>
-    __forceinline Log &log(const KV<T> &val) { return log(tls.get(), val); }
+    __forceinline Log &log(const KV<T> &val) { log(tls.get(), val); return *this; }
     template <typename T, typename... U>
     __forceinline Log &log(const T &first, const U&...  rest) {
 	log(tls.get(), first, rest...);
 
 	return *this;
     }
-    // cppcheck-suppress-end returnTempReference
     void logv(int l, ...);
     bool reopen(void) { Locker lkr(lck); return ffd.reopen(); }
     void roll(void) { Locker lkr(lck); ffd.roll(); }
@@ -233,26 +230,26 @@ public:
     __forceinline Log &trace(void) { return log(Trace); }
 
     template<typename T>
-    static __forceinline const KV<T> kv(const tchar *key, const T &val) {
+    static __forceinline const KV<T> kv(tstring_view key, const T &val) {
 	return KV<T>(key, val);
     }
-    template<typename T>
-    static __forceinline const KV<T> kv(const tstring &key, const T &val) {
+    template<typename T, size_t N>
+    static __forceinline constexpr const KV<T> kv(const tchar (&key)[N],
+	const T &val) {
 	return KV<T>(key, val);
     }
-    template<typename T>
-    static __forceinline const KV<T> cmd(const T &val) {
-	return KV<T>(T("cmd"), val);
+#define LOG_KV_FN(name, key) \
+    template<typename U> \
+    static __forceinline constexpr const KV<U> name(const U &val) { \
+	return kv(T(key), val); \
     }
-    template<typename T>
-    static __forceinline const KV<T> error(const T &val) {
-	return KV<T>(T("err"), val);
-    }
-    template<typename T>
-    static __forceinline const KV<T> mod(const T &val) {
-	return KV<T>(T("mod"), val);
-    }
-    static tostream &quote(tostream &os, const tchar *s);
+    LOG_KV_FN(cmd,      "cmd")
+    LOG_KV_FN(duration, "msec")
+    LOG_KV_FN(error,    "err")
+    LOG_KV_FN(mod,      "mod")
+    LOG_KV_FN(status,   "sts")
+#undef LOG_KV_FN
+    static tbufferstream &quote(tbufferstream &os, const tchar *s);
     static const tchar *section(void) { return T("log"); }
     static Level str2enum(const tchar *lvl);
 
@@ -315,7 +312,7 @@ private:
 	tstring strbuf;
 	tbufferstream strm;
 	Level clvl;
-	char sep;
+	tchar sep;
 	bool suppress;
 
 	Tlsdata(): clvl(None), sep('\0'), suppress(false) {}
@@ -343,23 +340,11 @@ private:
     Socket syslogsock;
     Type _type;
     tstring::size_type upos;
-    static const tchar * const LevelStr[];
-    static const tchar * const LevelStr2[];
+    static const tstring_view LevelStr[];
+    static const tstring_view LevelStr2[];
 
     void endlog(Tlsdata &tlsd);
     void _flush(void);
-    template <typename T>
-    static __forceinline void strm_write(tbufferstream &strm, const T &val) {
-	if constexpr (is_integral_v<T> || is_floating_point_v<T>) {
-	    char buf[24];
-	    auto [end, ec] = to_chars(buf, buf + sizeof(buf), val);
-
-	    if (LIKELY(ec == errc{}))
-		strm.write(buf, end - buf);
-	} else {
-	    strm << val;
-	}
-    }
     template <typename T>
     Log &log(Tlsdata &tlsd, const T &val) {
 	if (LIKELY(tlsd.clvl != None)) {
@@ -367,7 +352,7 @@ private:
 		tlsd.sep = ' ';
 		if (UNLIKELY(!is_fundamental_v<T>)) {
 		    if constexpr (is_enum_v<T>) {
-			strm_write(tlsd.strm,
+			tlsd.strm.write(
 			    static_cast<underlying_type_t<T>>(val));
 		    } else if constexpr (requires { val.c_str(); }) {
 			quote(tlsd.strm, val.c_str());
@@ -379,31 +364,32 @@ private:
 		    }
 		    return *this;
 		}
-	    } else if (tlsd.sep && tlsd.strm.size()) {
-		tlsd.strm.write(&tlsd.sep, 1);
-	    }
-	    strm_write(tlsd.strm, val);
+	    } else if (tlsd.sep && tlsd.strm.size())
+		tlsd.strm.write(tlsd.sep);
+	    tlsd.strm.write(val);
 	}
 	return *this;
     }
     Log &log(Tlsdata &tlsd, const tchar *val) {
 	if (LIKELY(tlsd.clvl != None)) {
 	    if (tlsd.sep == '=') {
-		if (val)
+		if (LIKELY(val))
 		    quote(tlsd.strm, val);
 		tlsd.sep = ' ';
 	    } else if (LIKELY(val)) {
-		size_t sz = (size_t)tlsd.strm.size();
-
-		if (tlsd.sep && sz)
-		    tlsd.strm.write(&tlsd.sep, 1);
-		if (LIKELY(*val)) {
-		    tlsd.strm.write(val, (streamsize)tstrlen(val));
-		    if (tlsd.strm.back() == '=')
-			tlsd.sep = '=';
-		} else {
-		    tlsd.sep = '\0';
-		}
+		write_str(tlsd, val, (streamsize)tstrlen(val));
+	    }
+	}
+	return *this;
+    }
+    template <size_t N>
+    Log &log(Tlsdata &tlsd, const tchar (&val)[N]) {
+	if (LIKELY(tlsd.clvl != None)) {
+	    if (tlsd.sep == '=') {
+		quote(tlsd.strm, val);
+		tlsd.sep = ' ';
+	    } else {
+		write_str(tlsd, val, (streamsize)(N - 1));
 	    }
 	}
 	return *this;
@@ -422,16 +408,26 @@ private:
     template<typename T>
     Log &log(Tlsdata &tlsd, const KV<T> &val) {
 	if (LIKELY(tlsd.clvl != None)) {
-	    static const tchar eq = '=';
-	    static const tchar sp = ' ';
 	    if (tlsd.strm.size())
-		tlsd.strm.write(&sp, 1);
-	    tlsd.strm.write(val.key, (streamsize)tstrlen(val.key));
-	    tlsd.strm.write(&eq, 1);
+		tlsd.strm.write((tchar)' ');
+	    tlsd.strm.write(val.key.data(), (streamsize)val.key.size());
+	    tlsd.strm.write((tchar)'=');
 	    tlsd.sep = '=';
 	    log(tlsd, val.val);
 	}
 	return *this;
+    }
+    __forceinline void write_str(Tlsdata &tlsd, const tchar *data,
+	streamsize sz) {
+	if (LIKELY(sz > 0)) {
+	    if (tlsd.sep && tlsd.strm.size())
+		tlsd.strm.write(tlsd.sep);
+	    strm_write_esc(tlsd.strm, data, sz);
+	    if (data[sz - 1] == '=')
+		tlsd.sep = '=';
+	} else {
+	    tlsd.sep = '\0';
+	}
     }
     __forceinline void log(Tlsdata &) {}
     template <typename T, typename... U>
@@ -440,6 +436,7 @@ private:
 	log(tlsd, first);
 	log(tlsd, rest...);	// recursive call using pack expansion
     }
+    static void strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz);
 };
 
 // optimized template specializations
@@ -449,6 +446,17 @@ template<> inline Log &Log::log(Tlsdata &tlsd, const bool &val) {
 template<> inline Log &Log::log(Tlsdata &tlsd, const tstring &val) {
     return log(tlsd, val.c_str());
 }
+template<> inline Log &Log::log(Tlsdata &tlsd, const tstring_view &val) {
+    if (LIKELY(tlsd.clvl != None)) {
+	if (tlsd.sep == '=') {
+	    quote(tlsd.strm, tstring(val).c_str());
+	    tlsd.sep = ' ';
+	} else {
+	    write_str(tlsd, val.data(), (streamsize)val.size());
+	}
+    }
+    return *this;
+}
 
 inline Log &operator <<(Log &l, Log &(* const func)(Log &)) { return func(l); }
 inline void endlog(Log &l) { l.endlog(); }
@@ -456,7 +464,7 @@ inline void endlog(Log &l) { l.endlog(); }
 extern BLISTER Log &dlog;
 
 // performance macros to bypass computing ignored data
-#define LOGL(o, l, ...)	{ if (l <= o.level()) o.log(l, __VA_ARGS__); }
+#define LOGL(o, l, ...)	{ if (UNLIKELY(l <= o.level())) o.log(l, __VA_ARGS__); }
 
 #define logm(o, ...)	LOGL(o, Log::Emerg, __VA_ARGS__)
 #define loga(o, ...)	LOGL(o, Log::Alert, __VA_ARGS__)
