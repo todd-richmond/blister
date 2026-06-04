@@ -436,9 +436,10 @@ private:
     uint maxthreads;
     ObjectList<DispatchObj> rlist;
     atomic_bool polling, shutdown;
-    atomic_uint_fast32_t scanning, workers;
+    alignas(64) atomic_uint_fast32_t scanning, workers;
     SpinLock tlock;
-    msec_t cache, due;
+    atomic<msec_t> cache;
+    msec_t due;
     TimerSet timers;
 #ifdef DSP_WIN32_ASYNC
     atomic_ulong interval;

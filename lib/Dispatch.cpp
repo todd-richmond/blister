@@ -120,9 +120,9 @@ bool Dispatcher::exec() {
 	}
 	obj->flags = (flags & ~DSP_Ready) | DSP_Active;
 	olock.unlock();
-	scanning.fetch_sub(1, memory_order_relaxed);
+	scanning.fetch_sub(1, memory_order_release);
 	obj->dcb(obj);
-	scanning.fetch_add(1, memory_order_relaxed);
+	scanning.fetch_add(1, memory_order_release);
 	olock.lock();
 	flags = obj->flags &= ~DSP_Active;
 	if (UNLIKELY(flags & DSP_Freed))
@@ -245,7 +245,7 @@ int Dispatcher::onStart() {
 	    DispatchTimer *dt;
 	    msec_t now = mticks();
 
-	    cache = now;
+	    cache.store(now, memory_order_relaxed);
 	    tlock.lock();
 	    dt = handleTimers(now);
 	    if (dt == nullptr && timers.half() < now + MIN_IDLE_TIMER)
@@ -271,7 +271,7 @@ int Dispatcher::onStart() {
 		due = now + interval;
 		tlock.unlock();
 	    }
-	    cache = 0;
+	    cache.store(0, memory_order_relaxed);
 	} else {
 	    DefWindowProc(wnd, msg.message, msg.wParam, msg.lParam);
 	    continue;
@@ -349,7 +349,7 @@ int Dispatcher::onStart() {
     RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, wfd, evts));
 #endif
     lifo.open();
-    cache = now = mticks();
+    cache.store(now = mticks(), memory_order_relaxed);
     due = DispatchTimer::DSP_NEVER_DUE;
     scanning = 0;
     shutdown = false;
@@ -378,7 +378,7 @@ int Dispatcher::onStart() {
 	tlock.unlock();
 	if (!maxthreads)
 	    exec();
-	cache = 0;
+	cache.store(0, memory_order_relaxed);
 #ifdef DSP_POLL
 	DispatchSocket *ds = nullptr;
 	socket_t fd;
@@ -393,7 +393,7 @@ int Dispatcher::onStart() {
 	    owset.clear();
 	}
 	polling.store(false, memory_order_release);
-	cache = now = mticks();
+	cache.store(now = mticks(), memory_order_relaxed);
 	for (u = 0; u < orset.size(); u++) {
 	    fd = orset[u];
 	    if (fd == rsock) {
@@ -509,7 +509,7 @@ int Dispatcher::onStart() {
 #endif
 #ifndef DSP_POLL
 	polling.store(false, memory_order_release);
-	cache = now = mticks();
+	cache.store(now = mticks(), memory_order_relaxed);
 	if (LIKELY(nevts > 0))
 	    handleEvents(evts, (uint)nevts);
 #endif
@@ -731,6 +731,7 @@ DispatchTimer *Dispatcher::handleTimers(msec_t now) {
 	tlock.unlock();
 	olock.lock();
 	for (uint u = 0; u < cnt; u++) {
+	    dts[u]->flags &= ~DSP_Scheduled;
 	    dts[u]->msg = DispatchTimeout;
 	    ready(*dts[u]);
 	}
@@ -820,7 +821,7 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong msec) {
 	    now = 0;
 	    tmt = DispatchTimer::DSP_NEVER_DUE;
 	} else {
-	    now = cache;
+	    now = cache.load(memory_order_relaxed);
 	    if (UNLIKELY(!now))
 		now = mticks();
 	    tmt = now + msec;
@@ -1002,7 +1003,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     ds.msg = DispatchNone;
     olock.unlock();
     if (timeout != DispatchTimer::DSP_NEVER) {
-	now = cache;
+	now = cache.load(memory_order_relaxed);
 	if (UNLIKELY(!now))
 	    now = mticks();
 	tmt = now + timeout;
@@ -1150,7 +1151,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    uint_fast32_t s = scanning.load(memory_order_acquire);
 
 	    while (rsz > s) {
-		if (scanning.compare_exchange_strong(s, s + 1,
+		if (scanning.compare_exchange_weak(s, s + 1,
 		    memory_order_acquire, memory_order_relaxed)) {
 		    if (lifo.set()) {
 			if (workers < maxthreads && !shutdown) {
