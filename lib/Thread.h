@@ -100,6 +100,22 @@ typedef pthread_key_t tlskey_t;
 #include <shared_mutex>
 #include <unordered_map>
 
+
+#ifdef __APPLE__
+extern "C" {
+int os_sync_wait_on_address(void *addr, uint64_t val, size_t size,
+    uint32_t flags);
+int os_sync_wait_on_address_with_timeout(void *addr, uint64_t val, size_t size,
+    uint32_t flags, uint32_t clockid, uint64_t timeout_ns);
+int os_sync_wait_on_address_with_deadline(void *addr, uint64_t val, size_t size,
+    uint32_t flags, uint32_t clockid, uint64_t deadline_ns);
+int os_sync_wake_by_address_any(void *addr, size_t size, uint32_t flags);
+int os_sync_wake_by_address_all(void *addr, size_t size, uint32_t flags);
+}
+static constexpr uint32_t OS_SYNC_WAIT_ON_ADDRESS_NONE = 0;
+static constexpr uint32_t OS_SYNC_WAKE_BY_ADDRESS_NONE = 0;
+#endif
+
 /* RAII locking templates */
 template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
     &C::unlock>
@@ -321,7 +337,49 @@ protected:
     C sem;
 };
 
+#ifdef __APPLE__
+class BLISTER FastSemaphore: nocopy {
+public:
+    explicit FastSemaphore(uint init = 0): cnt(init) {}
+    ~FastSemaphore() = default;
+
+    bool close(void) { return true; }
+    __forceinline void set(uint n = 1) {
+	cnt.fetch_add(n, memory_order_release);
+	os_sync_wake_by_address_any(&cnt, sizeof (cnt),
+	    OS_SYNC_WAKE_BY_ADDRESS_NONE);
+    }
+    __forceinline bool trywait(void) {
+	uint32_t c = cnt.load(memory_order_relaxed);
+
+	return c > 0 && cnt.compare_exchange_weak(c, c - 1,
+	    memory_order_acquire, memory_order_relaxed);
+    }
+    __forceinline bool wait(ulong msec = INFINITE) {
+	uint32_t c;
+
+	while (!(c = cnt.load(memory_order_relaxed)) ||
+	    !cnt.compare_exchange_weak(c, c - 1,
+		memory_order_acquire, memory_order_relaxed)) {
+	    if (msec == INFINITE) {
+		os_sync_wait_on_address(&cnt, 0, sizeof (cnt),
+		    OS_SYNC_WAIT_ON_ADDRESS_NONE);
+	    } else {
+		if (!os_sync_wait_on_address_with_timeout(&cnt, 0, sizeof (cnt),
+		    OS_SYNC_WAIT_ON_ADDRESS_NONE, CLOCK_MONOTONIC_RAW,
+		    (uint64_t)msec * 1000000))
+		    return false;
+	    }
+	}
+	return true;
+    }
+
+private:
+    atomic<uint32_t> cnt;
+};
+#else
 typedef _Semaphore<binary_semaphore> FastSemaphore;
+#endif
 typedef _Semaphore<counting_semaphore<>> Semaphore;
 
 class BLISTER SpinLock: nocopy {
@@ -331,19 +389,16 @@ public:
     __forceinline __no_sanitize_thread void lock(void) {
 	while (UNLIKELY(!trylock())) {
 #ifdef THREAD_PAUSE
-	    uint u = 0, limit = spins;
+	    uint limit = 1;
 #endif
 	    do {
 #ifdef THREAD_PAUSE
-		if (LIKELY(u < limit)) {
-		    ++u;
+		for (uint u = 0; u < limit; ++u)
 		    THREAD_PAUSE();
-		} else {
+		if (limit < spins)
+		    limit += limit;
+		else
 		    THREAD_YIELD();
-		    u = 0;
-		    if (LIKELY(limit < spins))
-			limit += limit;
-		}
 #else
 		THREAD_YIELD();
 #endif
@@ -371,7 +426,8 @@ typedef LockerTemplate<SpinLock> SpinLocker;
 
 class BLISTER SpinRWLock: nocopy {
 public:
-    SpinRWLock(): state(0) {}
+    explicit SpinRWLock(uint lmt = 64): state(0),
+	spins(Processor::count() == 1 ? 0 : lmt) {}
 
     __forceinline void downlock(void) { state.store(1, memory_order_release); }
     __forceinline void rlock(void) {
@@ -379,7 +435,21 @@ public:
 	    uint_fast32_t expected = state.load(memory_order_relaxed);
 
 	    if (UNLIKELY(expected & WRITE_BIT)) {
-		THREAD_YIELD();
+#ifdef THREAD_PAUSE
+		uint limit = 1;
+#endif
+		do {
+#ifdef THREAD_PAUSE
+		    for (uint u = 0; u < limit; ++u)
+			THREAD_PAUSE();
+		    if (limit < spins)
+			limit += limit;
+		    else
+			THREAD_YIELD();
+#else
+		    THREAD_YIELD();
+#endif
+		} while (state.load(memory_order_relaxed) & WRITE_BIT);
 	    } else if (LIKELY(state.compare_exchange_weak(expected, expected +
 		1, memory_order_acquire, memory_order_relaxed))) {
 		return;
@@ -410,9 +480,17 @@ public:
 
 	while (!state.compare_exchange_weak(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed)) {
+#ifdef THREAD_PAUSE
+	    uint limit = 1;
+#endif
 	    do {
 #ifdef THREAD_PAUSE
-		THREAD_PAUSE();
+		for (uint u = 0; u < limit; ++u)
+		    THREAD_PAUSE();
+		if (limit < spins)
+		    limit += limit;
+		else
+		    THREAD_YIELD();
 #else
 		THREAD_YIELD();
 #endif
@@ -430,6 +508,7 @@ public:
 
 private:
     alignas(64) atomic_uint_fast32_t state;
+    const uint spins;
 
     static constexpr uint_fast32_t WRITE_BIT = 1U << 31;
 };
@@ -769,6 +848,13 @@ public:
 	    w.next.store(h, memory_order_relaxed);
 	} while (!head.compare_exchange_weak(h, &w, memory_order_release,
 	    memory_order_relaxed));
+#ifdef THREAD_PAUSE			// park threads for usec
+	for (uint i = 0; i < 256; ++i) {
+	    if (w.sema4.trywait())
+		return true;
+	    THREAD_PAUSE();
+	}
+#endif
 	if (UNLIKELY(!w.sema4.wait(msec))) {
 	    do {
 		Waiting *prev = nullptr;

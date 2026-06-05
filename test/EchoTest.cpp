@@ -109,14 +109,16 @@ static atomic<long long> loops(MAXLLONG);
 static volatile bool qflag;
 static atomic<usec_t> usecs;
 
-static inline bool loop_exit(void) { return --loops < 0 || qflag; }
+static inline bool loop_exit(void) {
+    return loops.fetch_sub(1, memory_order_relaxed) <= 0 || qflag;
+}
 
 void EchoTest::EchoClientSocket::onConnect(void) {
     if (error()) {
 	if (loop_exit()) {
 	    erase();
 	} else {
-	    ++errs;
+	    errs.fetch_add(1, memory_order_relaxed);
 	    dtiming.add(T("error"), 0);
 	    dloge(T("client connect="), msg == DispatchTimeout ? T("timeout") :
 		T("close"));
@@ -138,7 +140,7 @@ void EchoTest::EchoClientSocket::input() {
 	if (loop_exit()) {
 	    erase();
 	} else {
-	    ++errs;
+	    errs.fetch_add(1, memory_order_relaxed);
 	    dtiming.add(T("error"), 0);
 	    dloge(T("client read="), msg == DispatchTimeout ? T("timeout") :
 		T("close"));
@@ -150,8 +152,8 @@ void EchoTest::EchoClientSocket::input() {
 	if (loop_exit()) {
 	    erase();
 	} else {
-	    ++ops;
-	    usecs += usec;
+	    ops.fetch_add(1, memory_order_relaxed);
+	    usecs.fetch_add(usec, memory_order_relaxed);
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read="), len);
 	    if (wait) {
@@ -164,7 +166,7 @@ void EchoTest::EchoClientSocket::input() {
 		ready(output);
 	    }
 	}
-    } else if (loops.load() <= 0 || qflag) {
+    } else if (loops.load(memory_order_relaxed) <= 0 || qflag) {
 	erase();
     } else {
 	dlogd(T("client partial read="), len);
@@ -175,7 +177,7 @@ void EchoTest::EchoClientSocket::input() {
 void EchoTest::EchoClientSocket::output() {
     uint len;
 
-    if (loops.load() <= 0 || qflag) {
+    if (loops.load(memory_order_relaxed) <= 0 || qflag) {
 	write("", 1);
 	erase();
     } else if (error() || ((len = (uint)write(dbuf + out, dsz - out)) ==
@@ -183,7 +185,7 @@ void EchoTest::EchoClientSocket::output() {
 	if (loop_exit()) {
 	    erase();
 	} else {
-	    ++errs;
+	    errs.fetch_add(1, memory_order_relaxed);
 	    dtiming.add(T("error"), 0);
 	    dloge(T("client write="), msg == DispatchTimeout ? T("timeout") :
 		T("close"));

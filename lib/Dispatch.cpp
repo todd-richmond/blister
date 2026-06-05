@@ -93,7 +93,7 @@ Dispatcher::Dispatcher(const Config &config): cfg(config),
 WARN_DISABLE(26430)
 bool Dispatcher::exec() {
     olock.lock();
-    while (!shutdown) {
+    while (!shutdown.load(memory_order_relaxed)) {
 	uint_fast32_t flags;
 	DispatchObj::Group *group;
 	DispatchObj *obj;
@@ -191,7 +191,7 @@ int Dispatcher::onStart() {
     scanning = 0;
     shutdown = false;
     workers = 0;
-    while (!shutdown) {
+    while (!shutdown.load(memory_order_relaxed)) {
 	if (!maxthreads)
 	    exec();
 	polling.store(true, memory_order_relaxed);
@@ -354,7 +354,7 @@ int Dispatcher::onStart() {
     scanning = 0;
     shutdown = false;
     workers = 0;
-    while (LIKELY(!shutdown)) {
+    while (LIKELY(!shutdown.load(memory_order_relaxed))) {
 	const DispatchTimer *dt;
 	uint msec;
 
@@ -1002,18 +1002,28 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     ds.flags |= sarray[m] | DSP_Scheduled;
     ds.msg = DispatchNone;
     olock.unlock();
+    if (timeout == DispatchTimer::DSP_PREVIOUS)
+	timeout = ds.to;
     if (timeout != DispatchTimer::DSP_NEVER) {
+	msec_t slack;
+
 	now = cache.load(memory_order_relaxed);
 	if (UNLIKELY(!now))
 	    now = mticks();
 	tmt = now + timeout;
-	tlock.lock();
-	timers.set(ds, tmt);
-	if (UNLIKELY(tmt < due))
-	    due = tmt;
-	else
+	slack = timeout >> 6;
+	if (LIKELY(ds.due != DispatchTimer::DSP_NEVER_DUE &&
+	    ds.due + slack >= tmt && ds.due <= tmt + slack)) {
 	    tmt = 0;
-	tlock.unlock();
+	} else {
+	    tlock.lock();
+	    timers.set(ds, tmt);
+	    if (UNLIKELY(tmt < due))
+		due = tmt;
+	    else
+		tmt = 0;
+	    tlock.unlock();
+	}
     }
     if (b) {
 	if (tmt)
