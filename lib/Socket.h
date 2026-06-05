@@ -71,10 +71,10 @@ inline int sockerrno(void) { return errno; }
 #include <vector>
 #include "Streams.h"
 
-const int SOCK_BACKLOG = 128;
-const int SOCK_BUFSZ = 3 * 1024;
-const uint SOCK_INFINITE = (uint)-1;
-const socket_t SOCK_INVALID = INVALID_SOCKET;
+constexpr int SOCK_BACKLOG = 128;
+constexpr int SOCK_BUFSZ = 3 * 1024;
+constexpr uint SOCK_INFINITE = (uint)-1;
+constexpr socket_t SOCK_INVALID = INVALID_SOCKET;
 
 inline bool blocked(int e) {
 #ifdef _WIN32
@@ -601,6 +601,9 @@ inline bool SocketSet::unset(socket_t fd) {
 }
 
 // socket streams
+
+// NOLINTBEGIN(misc-multiple-inheritance)
+
 using socketbuf = faststreambuf<Socket>;
 
 class BLISTER isockstream: public istream {
@@ -663,5 +666,7 @@ public:
 private:
     socketbuf sb;
 };
+
+// NOLINTEND(misc-multiple-inheritance)
 
 #endif	// Socket_h

@@ -22,6 +22,8 @@
 #include <sstream>
 #include <type_traits>
 
+// NOLINTBEGIN(misc-multiple-inheritance)
+
 /*
  * faststreambuf is an optimized stream buffer that reads directly into user
  * buffers and coalesces writes from user buffers with writev to reduce
@@ -369,10 +371,9 @@ public:
     memstream(const void *data, streamsize sz): istream(&mb), mb(data, sz) {}
 
 private:
-    class BLISTER membuf: public streambuf, public nocopy {
+    class BLISTER membuf: public streambuf, private nocopy {
     public:
-	explicit membuf(const void *data, streamsize sz):
-	    begin(const_cast<char *>((const char *)data)),
+	explicit membuf(const void *data, streamsize sz): begin((char *)data),
 	    end(begin + sz) {
 	    setg(begin, begin, end);
 	}
@@ -382,13 +383,15 @@ private:
 	    ios_base::openmode) override {
 	    if (dir == ios_base::cur) {
 		char *np = gptr() + off;
+
 		setg(begin, np < begin ? begin : np >= end ? end : np, end);
 	    } else if (dir == ios_base::beg) {
 		char *np = begin + off;
+
 		setg(begin, np < begin ? begin : np >= end ? end : np, end);
-	    }
-	    else
+	    } else {
 		setg(begin, end, end);
+	    }
 	    return gptr() - eback();
 	}
 	streampos seekpos(streampos pos, ios_base::openmode mode) override {
@@ -412,11 +415,14 @@ public:
     nullstream &put(char_type) { return *this; }
     nullstream &seekp(pos_type) { return *this; }
     pos_type tellp(void) { return 0; }
+    // NOLINTNEXTLINE bugprone-derived-method-shadowing-base-method
     nullstream &write(const char_type *, streamsize) { return *this; }
 };
 
 template<class C> nullstream &operator <<(nullstream &os, const C &) {
     return os;
 }
+
+// NOLINTEND(misc-multiple-inheritance)
 
 #endif // Streams_h

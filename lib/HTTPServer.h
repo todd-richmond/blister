@@ -22,9 +22,6 @@
 #include "Dispatch.h"
 #include "Service.h"
 
-const uint RTimeout = 30 * 1000;
-const uint WTimeout = 150 * 1000;
-
 class BLISTER HTTPServerSocket: public DispatchServerSocket {
 public:
     using attrmap = unordered_map<const char *, const char *, strihash<char>,
@@ -49,7 +46,6 @@ protected:
     const char *path, *prot;
     char *postdata;
     ulong postsz;
-    static const char CRLF[];
 
     const char *arg(const char *name) const { return find(args, name); }
     const char *attr(const char *name) const { return find(attrs, name); }

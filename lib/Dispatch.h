@@ -83,10 +83,13 @@ class BLISTER DispatchObj: public ObjectList<DispatchObj>::Node {
 public:
     using DispatchObjCB = void (*)(DispatchObj *);
 
+    struct child_t {};
+    static constexpr child_t child{};
+
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = nullptr): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(nullptr) {}
-    DispatchObj(DispatchObj &parent, DispatchObjCB cb = nullptr): dcb(cb),
-	dspr(parent.dspr), flags(0), msg(DispatchNone), group(nullptr) {
+    DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb = nullptr):
+	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone), group(nullptr) {
 	if (!parent.group)
 	    parent.group = new Group();
 	group = &parent.group->add();
@@ -148,9 +151,9 @@ public:
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
 	DispatchObj(d), to(0), due(DSP_NEVER_DUE) { init(); timeout(cb, msec); }
     explicit DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
-	DispatchObj(parent), to(msec), due(DSP_NEVER_DUE) { init(); }
+	DispatchObj(child, parent), to(msec), due(DSP_NEVER_DUE) { init(); }
     DispatchTimer(DispatchObj &parent, ulong msec, DispatchObjCB cb):
-	DispatchObj(parent), to(0), due(DSP_NEVER_DUE) {
+	DispatchObj(child, parent), to(0), due(DSP_NEVER_DUE) {
 	init();
 	timeout(cb, msec);
     }
@@ -181,6 +184,7 @@ private:
 };
 
 // handle socket events
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class BLISTER DispatchSocket: public DispatchTimer, public Socket {
 public:
     explicit DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =

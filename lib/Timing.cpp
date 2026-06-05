@@ -308,7 +308,6 @@ void Timing::record(void) {
 
 void Timing::record(const TimingKey &key) {
     timing_t n = now();
-    tstring caller;
     Tlsdata &tlsd(*tls);
 
     do {

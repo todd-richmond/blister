@@ -25,15 +25,18 @@
 #include "Log.h"
 #include "SMTPClient.h"
 
-const char HTTPServerSocket::CRLF[] = "\r\n";
+static constexpr uint RTimeout = 30 * 1000;
+static constexpr uint WTimeout = 150 * 1000;
+static constexpr char CRLF[] = "\r\n";
+
 bool HTTPServerSocket::date;
 
 HTTPServerSocket::HTTPServerSocket(Dispatcher &d, Socket &sock):
-    DispatchServerSocket(d, sock), path(nullptr), prot(nullptr), postdata(nullptr),
-    postsz(0), chunkin(0), chunktrailer(false), postchunking(false), cmd(nullptr),
-    data(nullptr), datasz(0), sz(0), fmap(nullptr), ka(false), nagleon(true),
-    postdatasz(0), postin(0), rto(RTimeout), wto(WTimeout), savechar(0),
-    _status(0) {
+    DispatchServerSocket(d, sock), path(nullptr), prot(nullptr),
+    postdata(nullptr), postsz(0), chunkin(0), chunktrailer(false),
+    postchunking(false), cmd(nullptr), data(nullptr), datasz(0), sz(0),
+    fmap(nullptr), ka(false), nagleon(true), postdatasz(0), postin(0),
+    rto(RTimeout), wto(WTimeout), savechar(0), _status(0) {
     ZERO(iov);
 }
 
@@ -356,15 +359,17 @@ void HTTPServerSocket::parse(void) {
 	val = attr("content-length");
 	if (val) {
 	    unsigned long long clval = strtoull(val, NULL, 10);
+
 	    if (clval >= (unsigned long long)(uint)(-1)) {
 		error(413, true);
 		return;
 	    }
 	    postsz = (uint)clval;
-	} else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT"))
+	} else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT")) {
 	    postsz = (uint)-1;
-	else
+	} else {
 	    postsz = 0;
+	}
     }
     if (postsz) {
 	postin = datasz - (ulong)(postdata - data);
@@ -749,7 +754,7 @@ void HTTPServerSocket::get(bool head) {
     }
     if (val != nullptr && (val = strchr(val, ';')) != nullptr &&
 	!strnicmp(val + 1, "length=", 7) &&
-	(ulong)atol(val + 8) != (ulong)statbuf.st_size)
+	atou<ulong>(val + 8) != (ulong)statbuf.st_size)
 	sts = 200;
     status(sts, mimetype(ext), statbuf.st_mtime);
     if (sts == 200 && !head)

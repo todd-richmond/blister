@@ -492,6 +492,9 @@ EXTERNC_
 #define wcsicmp		wcscasecmp
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+#ifdef __APPLE__
+typedef long timer_t;
+#endif
 #define BSD_BASE
 typedef unsigned short ushort;
 typedef unsigned int uint;
@@ -502,24 +505,6 @@ typedef long long llong;
 typedef unsigned long ulong;
 typedef unsigned long long ullong;
 typedef wchar_t wchar;
-
-#ifdef __APPLE__
-typedef long timer_t;
-
-#ifndef CLOCK_REALTIME
-#define APPLE_NO_CLOCK_GETTIME
-#define CLOCK_REALTIME	0
-#define CLOCK_MONOTONIC	1
-
-EXTERNC
-extern BLISTER int clock_gettime(int, struct timespec *ts);
-EXTERNC_
-#endif
-
-#ifndef PATH_MAX
-#define PATH_MAX	1024
-#endif
-#endif
 
 #ifdef CLOCK_MONOTONIC_FAST
 #define CLOCK_BOOTTIME		CLOCK_UPTIME
@@ -1123,9 +1108,9 @@ static __forceinline uint64_t rapidmix(uint64_t a, uint64_t b) {
 }
 
 inline uint64_t rapidhash(const void *data, size_t len) {
-    static constexpr uint64_t RAPID_SECRET0 = 0x9e3779b97f4a7c15ull;
-    static constexpr uint64_t RAPID_SECRET1 = 0x6c62272e07bb0142ull;
-    static constexpr uint64_t RAPID_SECRET2 = 0x94d049bb133111ebull;
+    static constexpr uint64_t RAPID_SECRET0 = 0x9e3779b97f4a7c15ULL;
+    static constexpr uint64_t RAPID_SECRET1 = 0x6c62272e07bb0142ULL;
+    static constexpr uint64_t RAPID_SECRET2 = 0x94d049bb133111ebULL;
     const uint8_t *p = (const uint8_t *)data;
     uint64_t a = RAPID_SECRET0 ^ (uint64_t)len;
     uint64_t b = RAPID_SECRET1;

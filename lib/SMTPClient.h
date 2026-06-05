@@ -95,7 +95,7 @@ public:
     SMTPClient();
     virtual ~SMTPClient() {}
 
-    int code(void) const { return ttoi(sts.c_str()); }
+    int code(void) const { return atoi<int>(sts.c_str()); }
     bool exts_find(const tchar *s) const { return exts.find(s) != exts.npos; }
     const tstring &extensions(void) const { return exts; }
     const tchar *message(void) const {

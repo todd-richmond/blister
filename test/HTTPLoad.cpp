@@ -29,6 +29,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <fstream>
+#include <random>
 #include <unordered_map>
 #include "HTTPClient.h"
 #include "Log.h"
@@ -391,19 +392,20 @@ int HTTPLoad::onStart(void) {
     vector<tstring>::const_iterator cit;
     vector<LoadCmd *>::const_iterator it;
     attrmap::const_iterator ait;
+    thread_local mt19937 rng(random_device {}());
+    thread_local uniform_int_distribution<ulong> dist;
 
     if (dbg)
 	fs.open("debug.out", ios::trunc | ios::out);
-    srand((uint)(id ^ ((uticks() >> 32 ^ (msec_t)time(NULL)))));
     if (id > Processor::count())
-	msleep((ulong)rand() % 1000U * ((mthread / 20) + 1));
+	msleep(dist(rng) % 1000U * ((mthread / 20) + 1));
     while (!qflag) {
 	const tchar *p;
 	ulong smsec = 0;
 	bool ret;
 	HTTPClient::attrmap rmap;
 	HTTPClient::attrmap::const_iterator rit;
-	ulong tmpid = ruser ? (ulong)rand() << 14 ^ (ulong)rand() : id;
+	ulong tmpid = ruser ? dist(rng) << 14 ^ dist(rng) : id;
 	long tmp;
 
 	lock.lock();
@@ -439,7 +441,7 @@ int HTTPLoad::onStart(void) {
 		if (*p == '%') {
 		    len = tstrtoul(p + 1, NULL, 10);
 		    if (len)
-			len = (ulong)rand() % len;
+			len = dist(rng) % len;
 		} else {
 		    len = tstrtoul(p, NULL, 10);
 		}
@@ -478,7 +480,7 @@ int HTTPLoad::onStart(void) {
 		tstrcpy(buf, cmd->url.relpath().c_str());
 		expand(buf, lvars);
 		if (cmd->data.empty()) {
-		    uint u = allfiles ? next() : ((uint)rand() % bodycnt);
+		    uint u = allfiles ? next() : ((uint)dist(rng) % bodycnt);
 		    char *d = load(u, io);
 
 		    hc.header(T("content-type"), T("application/octet-stream"));

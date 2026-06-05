@@ -424,11 +424,10 @@ bool CIDR::find(const tchar *addr) const {
 }
 
 bool CIDR::find(uint addr) const {
-    vector<Range>::const_iterator it;
     Range range;
 
     range.rmin = range.rmax = addr;
-    for (it = lower_bound(ranges.begin(), ranges.end(), range, range);
+    for (auto it = ranges::lower_bound(ranges, range, range);
 	it != ranges.end(); ++it) {
 	const Range &r = *it;
 
@@ -695,13 +694,8 @@ int Socket::read(void *buf, uint sz) const {
     do {
 	if (UNLIKELY(sbuf->rto != SOCK_INFINITE && blocking()) && !rpoll())
 	    return -1;
-#ifdef __APPLE__
-	if (check(in = (int)::read(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz)))
-	    break;
-#else
 	if (check(in = (int)recv(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz, 0)))
 	    break;
-#endif
     } while (interrupted());
     if (LIKELY(in > 0)) {
 	return in;
@@ -758,15 +752,9 @@ int Socket::write(const void *buf, uint sz) const {
     do {
 	if (UNLIKELY(sbuf->wto != SOCK_INFINITE && blocking()) && !wpoll())
 	    return -1;
-#ifdef __APPLE__
-	if (check(out = (int)::write(sbuf->sock, (const char *)buf,
-	    (SOCK_SIZE_T)sz)))
-	    break;
-#else
 	if (check(out = (int)send(sbuf->sock, (const char *)buf,
 	    (SOCK_SIZE_T)sz, 0)))
 	    break;
-#endif
     } while (interrupted());
     return LIKELY(out > 0) ? out : (out <= 0 && blocked() ? 0 : out);
 }

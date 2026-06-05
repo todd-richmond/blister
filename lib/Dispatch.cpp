@@ -23,7 +23,7 @@
 #ifdef DSP_WIN32_ASYNC
 #pragma comment(lib, "user32.lib")
 
-static const tchar *DispatchClass = T("DSP_CLASS");
+static constexpr const tchar *DispatchClass = T("DSP_CLASS");
 uint Dispatcher::socketmsg;
 
 #elif defined(DSP_EPOLL)
@@ -939,28 +939,28 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     uint_fast32_t flags;
     msec_t now = 0;
     msec_t tmt = 0;
-    static const uint_fast32_t ioarray[] = {
+    static constexpr uint_fast32_t ioarray[] = {
 	DSP_Readable | DSP_Closeable, DSP_Writeable | DSP_Closeable,
 	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable,
 	DSP_Writeable | DSP_Closeable, DSP_Closeable, 0, 0
     };
-    static const uint_fast32_t sarray[] = {
+    static constexpr uint_fast32_t sarray[] = {
 	DSP_SelectRead, DSP_SelectWrite, DSP_SelectRead | DSP_SelectWrite,
 	DSP_SelectAccept, DSP_Connecting | DSP_SelectWrite, DSP_SelectClose, 0,
 	0
     };
 #ifdef DSP_WIN32_ASYNC
-    static const long sockevts[] = {
+    static constexpr long sockevts[] = {
 	FD_READ | FD_CLOSE, FD_WRITE | FD_CLOSE, FD_READ | FD_WRITE | FD_CLOSE,
 	FD_ACCEPT, FD_CONNECT | FD_WRITE | FD_CLOSE, FD_CLOSE, 0, 0
     };
 #elif defined(DSP_DEVPOLL)
-    static const long sockevts[] = {
+    static constexpr long sockevts[] = {
 	POLLIN, POLLOUT, POLLIN | POLLOUT, POLLIN, POLLOUT, 0, 0, 0
     };
 #elif defined(DSP_EPOLL)
     int op = EPOLL_CTL_MOD;
-    static const uint sockevts[] = {
+    static constexpr uint sockevts[] = {
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP, EPOLLOUT,
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT, EPOLLIN, EPOLLOUT, 0, 0, 0
     };
@@ -1179,9 +1179,10 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 		olock.unlock();
 		s = scanning.load(memory_order_acquire);
 	    }
-	} else if (polling.load(memory_order_relaxed))
+	} else if (polling.load(memory_order_relaxed)) {
 	    wakeup(0);
 	}
+    }
 }
 
 void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB

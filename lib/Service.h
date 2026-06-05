@@ -26,10 +26,10 @@
 #else
 #include <signal.h>
 
-const int SERVICE_CONTROL_START = 0;
-const int SERVICE_CONTROL_PAUSE = 1;
-const int SERVICE_CONTROL_CONTINUE = 2;
-const int SERVICE_CONTROL_STOP = 3;
+constexpr int SERVICE_CONTROL_START = 0;
+constexpr int SERVICE_CONTROL_PAUSE = 1;
+constexpr int SERVICE_CONTROL_CONTINUE = 2;
+constexpr int SERVICE_CONTROL_STOP = 3;
 
 enum ServiceStatus {
     SERVICE_PAUSE_PENDING, SERVICE_PAUSED, SERVICE_CONTINUE_PENDING,

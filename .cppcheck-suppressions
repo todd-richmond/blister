@@ -13,8 +13,9 @@ preprocessorErrorDirective
 redundantContinue
 shadowFunction
 uninitMemberVar
-unmatchedSuppression
+uninitMemberVarNoCtor
 unknownMacro
+unmatchedSuppression
 unreadVariable
 useStlAlgorithm
 variableScope

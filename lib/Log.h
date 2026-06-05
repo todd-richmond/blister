@@ -104,10 +104,12 @@ public:
     ~Log();
 
     template<typename T>
-    __forceinline Log &operator <<(const T &val) { log(val); return *this; }
+    __forceinline Log &operator <<(const T &val) {
+	(void)log(val); return *this;
+    }
     __forceinline Log &operator <<(void(Log &)) { endlog(); return *this; }
     // cppcheck-suppress constParameterReference
-    __forceinline Log &operator <<(Escalator &e) { log(e); return *this; }
+    __forceinline Log &operator <<(Escalator &e) { (void)log(e); return *this; }
 
     [[nodiscard]] bool alertfile(void) const { return afd.enable; }
     void alertfile(bool b) { afd.enable = b; }
@@ -364,8 +366,9 @@ private:
 		    }
 		    return *this;
 		}
-	    } else if (tlsd.sep && tlsd.strm.size())
+	    } else if (tlsd.sep && tlsd.strm.size()) {
 		tlsd.strm.write(tlsd.sep);
+	    }
 	    tlsd.strm.write(val);
 	}
 	return *this;

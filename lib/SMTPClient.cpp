@@ -16,6 +16,7 @@
  */
 
 #include "stdapi.h"
+#include <random>
 #include "Log.h"
 #include "SMTPClient.h"
 #include "Thread.h"
@@ -313,9 +314,10 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     for (it = hdrv.begin(); it != hdrv.end(); ++it)
 	sstrm << tstringtoastring(*it) << crlf;
     if (mime) {
-	// coverity[dont_call : FALSE ]
-	sprintf(buf, "--%x%x%x%x", (uint)rand(), (uint)rand(), (uint)rand(),
-	    (uint)rand());
+	thread_local mt19937 rng(random_device {}());
+	thread_local uniform_int_distribution<uint> dist;
+
+	sprintf(buf, "--%x%x%x%x", dist(rng), dist(rng), dist(rng), dist(rng));
 	boundary = buf;
 	sstrm << "MIME-Version: 1.0" << crlf;
 	sstrm << "Content-Type: multipart/mixed; boundary=\"" << boundary <<

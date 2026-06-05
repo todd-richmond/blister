@@ -29,47 +29,23 @@
 #include <sys/sysctl.h>
 #include "Thread.h"
 
-#ifdef APPLE_NO_CLOCK_GETTIME
-int clock_gettime(int id, struct timespec *ts) {
-    if (id == CLOCK_MONOTONIC) {
-	uint64_t t = mach_absolute_time();
-	static struct mach_timebase_info mti;
-
-	if (!mti.denom)
-	    mach_timebase_info(&mti);
-	t = t * mti.numer / mti.denom;		// codespell:ignore numer
-	ts->tv_sec  = t / (1000 * 1000 * 1000);
-	ts->tv_nsec = t % 1000000000;
-	return 0;
-    } else if (id == CLOCK_REALTIME) {
-	struct timeval now;
-
-	gettimeofday(&now, NULL);
-	ts->tv_sec  = now.tv_sec;
-	ts->tv_nsec = now.tv_usec * 1000;
-	return 0;
-    }
-    return -1;
-}
-#endif
-#endif
-
-#ifdef __APPLE__
-static double mticks_scale;
-static double uticks_scale;
+static uint32_t ticks_denom_ms;
+static uint32_t ticks_denom_us;
+static uint32_t ticks_numer;
 
 __attribute__((constructor)) static void ticks_init(void) {
     struct mach_timebase_info mti;
 
     mach_timebase_info(&mti);
-    mticks_scale = (double)mti.numer / ((double)mti.denom * 1000000.0);
-    uticks_scale = (double)mti.numer / ((double)mti.denom * 1000.0);
+    ticks_numer = mti.numer;
+    ticks_denom_ms = mti.denom * 1000000U;
+    ticks_denom_us = mti.denom * 1000U;
 }
 #endif
 
 msec_t mticks(void) {
 #ifdef __APPLE__
-    return (msec_t)((double)mach_approximate_time() * mticks_scale);
+    return (msec_t)(mach_approximate_time() * ticks_numer / ticks_denom_ms);
 #else
     struct timespec ts;
 
@@ -80,7 +56,7 @@ msec_t mticks(void) {
 
 usec_t uticks(void) {
 #ifdef __APPLE__
-    return (usec_t)((double)mach_absolute_time() * uticks_scale);
+    return (usec_t)(mach_absolute_time() * ticks_numer / ticks_denom_us);
 #else
     struct timespec ts;
 

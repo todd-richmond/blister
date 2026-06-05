@@ -90,7 +90,6 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	if ((epos = val.find(open == '(' ? ')' : '}', spos + 2)) == val.npos)
 	    break;
 
-	auto it = amap.cend();
 	tstring::size_type off = (spos + 3 < val.size() && val[spos + 2] ==
 	    '*' && val[spos + 3] == '.') ? 2 : 0;
 	const tchar *repl;
@@ -100,7 +99,7 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	if (!pre.empty() && sv.starts_with(pre) && sv.size() > pre.size() + 1 &&
 	    sv[pre.size()] == '.')
 	    sv.remove_prefix(pre.size() + 1);
-	it = amap.find(sv);
+	auto it = amap.find(sv);
 	if (it == amap.end()) {
 	    search = epos + 1;
 	    continue;
@@ -190,7 +189,7 @@ const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
 }
 
 const Config::KV *Config::getkv(tstring_view key, const tchar *sect) const {
-    auto it = amap.cend();
+    kvmap::const_iterator it;
 
     if (sect && *sect) {
 	size_t klen = key.size();
@@ -203,14 +202,14 @@ const Config::KV *Config::getkv(tstring_view key, const tchar *sect) const {
 
 	    memcpy(p, sect, slen * sizeof (tchar));
 	    p += slen;
-	    *p++ = (tchar)('.');
+	    *p++ = (tchar)'.';
 	    memcpy(p, key.data(), klen * sizeof (tchar));
 	    it = amap.find(tstring_view(buf, total));
 	} else {
 	    tstring s;
 
 	    s.reserve(total);
-	    s.append(sect, slen).append(1, (tchar)('.')).
+	    s.append(sect, slen).append(1, (tchar)'.').
 		append(key.data(), klen);
 	    it = amap.find(tstring_view(s.data(), s.size()));
 	}
@@ -578,7 +577,7 @@ bool ConfigFile::read(const tchar *file, const tchar *_pre, bool app) {
 
     if (file)
 	path = file;
-    sz = open_file(tstringtoachar(path), is, fbuf);
+    sz = open_file(path, is, fbuf);
     return sz && read(is, _pre, app, sz);
 }
 

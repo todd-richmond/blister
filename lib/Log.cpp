@@ -357,7 +357,7 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
     } else if (file == T("debug")) {
 	fd = -5;
     } else if (file[0] == '>') {
-	fd = ttoi(file.c_str() + 1);
+	fd = atoi<int>(file.c_str() + 1);
     } else {
 	tstring::size_type p = path.find('%');
 

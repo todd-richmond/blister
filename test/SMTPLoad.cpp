@@ -29,6 +29,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <fstream>
+#include <random>
 #include <unordered_map>
 #include "Log.h"
 #include "SMTPClient.h"
@@ -383,14 +384,15 @@ int SMTPLoad::onStart(void) {
     SMTPClient sc;
     usec_t start, end, last, now, io;
 
-    srand((uint)(id ^ ((uticks() >> 32 ^ (msec_t)time(NULL)))));
+    thread_local mt19937 rng(random_device {}());
+    thread_local uniform_int_distribution<ulong> dist;
     if (id > Processor::count())
-	msleep((ulong)rand() % 1000U * ((mthread / 20) + 1));
+	msleep(dist(rng) % 1000U * ((mthread / 20) + 1));
     while (!qflag) {
 	const tchar *p;
 	ulong smsec = 0;
 	bool ret = false;
-	ulong tmpid = ruser ? (ulong)rand() << 14 ^ (ulong)rand() : id;
+	ulong tmpid = ruser ? dist(rng) << 14 ^ dist(rng) : id;
 	long tmp;
 
 	lock.lock();
@@ -425,7 +427,7 @@ int SMTPLoad::onStart(void) {
 		if (*p == '%') {
 		    len = tstrtoul(p + 1, NULL, 10);
 		    if (len)
-			len = (uint)rand() % len;
+			len = (uint)(dist(rng) % len);
 		} else {
 		    len = tstrtoul(p, NULL, 10);
 		}
@@ -483,7 +485,7 @@ int SMTPLoad::onStart(void) {
 		if (*buf || !body) {
 		    ret = sc.data(false, buf) && sc.enddata();
 		} else {
-		    uint u = allfiles ? next() : ((uint)rand() % bodycnt);
+		    uint u = allfiles ? next() : ((uint)dist(rng) % bodycnt);
 		    char *d = load(u, io);
 
 		    if (d) {
@@ -494,7 +496,7 @@ int SMTPLoad::onStart(void) {
 		    }
 		}
 	    } else if (cmd->cmd == T("data")) {
-		uint u = allfiles ? next() : ((uint)rand() % bodycnt);
+		uint u = allfiles ? next() : ((uint)dist(rng) % bodycnt);
 		char *d = load(u, io);
 
 		if (d) {
