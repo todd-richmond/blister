@@ -21,13 +21,7 @@
 // defines, typedefs and code to make non-UNIX systems support POSIX APIs
 #define CPP_STR(s)		#s
 
-#if defined(__has_cpp_attribute)
-#if __has_cpp_attribute(likely)
-#define LIKELY(x)		(x) [[likely]]
-#define UNLIKELY(x)		(x) [[unlikely]]
-#endif
-#endif
-#if !defined(LIKELY) && defined(__GNUC__) || defined(__clang__)
+#if defined(__GNUC__) || defined(__clang__)
 #define LIKELY(c)		__builtin_expect(!!(c), 1)
 #define UNLIKELY(c)		__builtin_expect(!!(c), 0)
 #else
@@ -1001,10 +995,11 @@ __forceinline T atoun(const tchar *str, size_t len) {
 	len -= 4;
     }
     switch (len) {
-    case 3: val = val * 1000 + (str[0] - '0') * 100 + (str[1] - '0') * 10 +
-	(str[2] - '0'); break;
-    case 2: val = val * 100 + (str[0] - '0') * 10 + (str[1] - '0'); break;
-    case 1: val = val * 10 + (str[0] - '0'); break;
+    case 3: val = val * 1000 + (size_t)(str[0] - '0') * 100 +
+	(size_t)(str[1] - '0') * 10 + (size_t)(str[2] - '0'); break;
+    case 2: val = val * 100 + (size_t)(str[0] - '0') * 10 +
+	(size_t)(str[1] - '0'); break;
+    case 1: val = val * 10 + (size_t)(str[0] - '0'); break;
     }
     return (T)val;
 #else

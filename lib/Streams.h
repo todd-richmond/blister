@@ -30,12 +30,12 @@
 template<class C>
 class BLISTER faststreambuf: public streambuf, private nocopy {
 public:
-    explicit faststreambuf(streamsize sz = 4096, char *p = NULL):
-	alloced(false), buf(NULL), bufsz(0), fd(NULL) {
+    explicit faststreambuf(streamsize sz = 4096, char *p = nullptr):
+	alloced(false), buf(nullptr), bufsz(0), fd(nullptr) {
 	faststreambuf::setbuf(p, sz);
     }
-    explicit faststreambuf(const C &c, streamsize sz = 4096, char *p = NULL):
-	alloced(false), buf(NULL), bufsz(0), fd(&c) {
+    explicit faststreambuf(const C &c, streamsize sz = 4096, char *p = nullptr):
+	alloced(false), buf(nullptr), bufsz(0), fd(&c) {
 	faststreambuf::setbuf(p, sz);
     }
     virtual ~faststreambuf() { if (alloced) delete [] buf; }
@@ -362,7 +362,7 @@ private:
     bufferbuf sb;
 };
 
-typedef bufferstream<tchar> tbufferstream;
+using tbufferstream = bufferstream<tchar>;
 
 class BLISTER memstream: public istream {
 public:

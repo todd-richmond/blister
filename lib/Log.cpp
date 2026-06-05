@@ -32,10 +32,10 @@
 #pragma comment(lib, "user32.lib")
 #endif
 
-static const tchar *USubst = T("\001\001");
+static constexpr const tchar *USubst = T("\001\001");
 #if !defined(__APPLE__) && !defined(__linux__)
 #define NO_PERCENT_Z
-static const tchar *ZSubst = T("\002\002");
+static constexpr const tchar *ZSubst = T("\002\002");
 #endif
 
 const tstring_view Log::LevelStr[] = {
@@ -385,7 +385,7 @@ Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true), ffd(true,
 
 Log::~Log() {
     stop();
-    close();
+    (void)close();
 }
 
 void Log::alertfile(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {

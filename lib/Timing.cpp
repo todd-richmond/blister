@@ -46,7 +46,7 @@ void Timing::add(const TimingKey &key, timing_t diff) {
     uint idx = hash & (CACHESIZE - 1);
     uint slot;
     Stats *stats;
-    static const timing_t limits[TIMINGSLOTS - 1] = {
+    static constexpr timing_t limits[TIMINGSLOTS - 1] = {
 	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
     };
 
@@ -63,7 +63,7 @@ void Timing::add(const TimingKey &key, timing_t diff) {
     }
     lck.rlock();
 
-    timingmap::const_iterator it = tmap.find(hash);
+    auto it = tmap.find(hash);
 
     if (it == tmap.end()) {
 	lck.runlock();
@@ -109,7 +109,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     tstring s;
     vector<const Stats *> sorted;
     uint u;
-    static const tchar *hdrs[TIMINGSLOTS] = {
+    static constexpr const tchar *hdrs[TIMINGSLOTS] = {
 	T("10u"), T(".1m"), T("1m"), T("10m"), T(".1s"), T("1s"),
 	T("5s"), T("10s"), T("30s"), T("...")
     };
@@ -118,9 +118,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
 	columns = TIMINGSLOTS;
     lck.rlock();
     sorted.reserve(tmap.size());
-    for (timingmap::const_iterator it = tmap.begin(); it != tmap.end(); ++it) {
-	const Stats *stats = it->second;
-
+    for (const auto &[key, stats] : tmap) {
 	sorted.emplace_back(stats);
 	for (u = TIMINGSLOTS - 1; u > last; u--) {
 	    if (stats->cnts[u].load(memory_order_relaxed)) {
@@ -247,11 +245,10 @@ void Timing::callstack(const tchar *key, timing_t diff, const Tlsdata &tlsd) {
 }
 
 void Timing::erase(const TimingKey &key) {
-    timingmap::iterator it;
     Stats *stats = nullptr;
 
     lck.wlock();
-    it = tmap.find(key.hash());
+    auto it = tmap.find(key.hash());
     if (it != tmap.end()) {
 	stats = it->second;
 	tmap.erase(it);

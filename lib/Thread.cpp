@@ -218,13 +218,13 @@ void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
 }
 
 Thread::Thread(thread_hdl_t handle, ThreadGroup *tg, bool aterm): cv(lck),
-    argument(NULL), autoterm(aterm), hdl(handle), id(NOID), main(NULL),
+    argument(nullptr), autoterm(aterm), hdl(handle), id(NOID), main(nullptr),
     retval(0), state(Running) {
     group = ThreadGroup::add(*this, tg);
 }
 
-Thread::Thread(void): cv(lck), argument(NULL), autoterm(false), group(NULL),
-    hdl(0), id(NOID), main(NULL), retval(0), state(Init) {
+Thread::Thread(void): cv(lck), argument(nullptr), autoterm(false), group(nullptr),
+    hdl(0), id(NOID), main(nullptr), retval(0), state(Init) {
 }
 
 Thread::~Thread() {
@@ -318,7 +318,7 @@ void Thread::thread_cleanup(void) {
 	for (const auto &[data, func] : *fmap)
 	    func(data);
 	delete fmap;
-	flocal.set(NULL);
+	flocal.set(nullptr);
     }
 }
 
@@ -462,29 +462,27 @@ ThreadGroup::~ThreadGroup() {
 
 ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
     if (!tg) {
-	set<ThreadGroup *>::iterator i;
-	set<Thread *>::iterator ii;
-
 	grouplck.lock();
-	for (i = groups.begin(); i != groups.end(); ++i) {
+	for (auto i = groups.begin(); i != groups.end(); ++i) {
 	    tg = *i;
 	    if (THREAD_ISSELF(tg->master.id)) {
 		break;
 	    } else {
 		tg->cvlck.lock();
-		for (ii = tg->threads.begin(); ii != tg->threads.end(); ++ii) {
+		auto ii = tg->threads.begin();
+		for (; ii != tg->threads.end(); ++ii) {
 		    if (THREAD_ISSELF((*ii)->id))
 			break;
 		}
 		tg->cvlck.unlock();
 		if (ii == tg->threads.end())
-		    tg = NULL;
+		    tg = nullptr;
 		else
 		    break;
 	    }
 	}
 	grouplck.unlock();
-	if (tg == NULL)
+	if (tg == nullptr)
 	    tg = &MainThreadGroup;
     }
     if (&thread != &tg->master) {
@@ -497,11 +495,10 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 
 // control all threads in group - does not work yet if caller is in same group
 void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
-    set<Thread *>::iterator it;
     Locker lck(cvlck);
 
     state = ts;
-    for (it = threads.begin(); it != threads.end(); ++it) {
+    for (auto it = threads.begin(); it != threads.end(); ++it) {
 	if (!THREAD_ISSELF((*it)->id))
 	    ((*it)->*func)();
     }
@@ -520,10 +517,9 @@ void ThreadGroup::notify(const Thread &thread) {
 }
 
 void ThreadGroup::priority(int pri) {
-    set<Thread *>::iterator it;
     Locker lkr(cvlck);
 
-    for (it = threads.begin(); it != threads.end(); ++it)
+    for (auto it = threads.begin(); it != threads.end(); ++it)
 	(*it)->priority(pri);
 }
 
@@ -569,7 +565,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	    lkr.unlock();
 	    for (uint i = 0; i < count; i++) {
 		batch[i]->wait();
-		batch[i]->group = NULL;
+		batch[i]->group = nullptr;
 	    }
 	    if (all) {
 		lkr.lock();
@@ -593,5 +589,5 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	    msec -= diff < msec ? diff : msec;
 	}
     } while (true);
-    return NULL;
+    return nullptr;
 }

@@ -23,7 +23,7 @@
 
 class BLISTER RFC821Addr: nocopy {
 public:
-    explicit RFC821Addr(const tchar *address = NULL) {
+    explicit RFC821Addr(const tchar *address = nullptr) {
 	if (address)
 	    parse(address);
     }
@@ -52,11 +52,11 @@ private:
 
 class BLISTER RFC822Addr: nocopy {
 public:
-    explicit RFC822Addr(const tchar *addrs = NULL): buf(NULL) {
+    explicit RFC822Addr(const tchar *addrs = nullptr): buf(nullptr) {
 	if (addrs)
 	    parse(addrs);
     }
-    explicit RFC822Addr(const tstring &addrs): buf(NULL) {
+    explicit RFC822Addr(const tstring &addrs): buf(nullptr) {
 	parse(addrs.c_str());
     }
     ~RFC822Addr() { delete [] buf; }
@@ -110,10 +110,10 @@ public:
 	return connect(Sockaddr(hostport), timeout);
     }
     bool close(void) { return sock.close(); }
-    bool cmd(const tchar *s1, const tchar *s2 = NULL, int retcode = 250);
-    bool ehlo(const tchar *domain = NULL);
-    bool helo(const tchar *domain = NULL);
-    bool lhlo(const tchar *domain = NULL);
+    bool cmd(const tchar *s1, const tchar *s2 = nullptr, int retcode = 250);
+    bool ehlo(const tchar *domain = nullptr);
+    bool helo(const tchar *domain = nullptr);
+    bool lhlo(const tchar *domain = nullptr);
     bool auth(const tchar *id, const tchar *passwd);
     bool xclient(const tchar *xclient_cmd);
     bool from(const tchar *id);
@@ -128,7 +128,7 @@ public:
     void attribute(const tchar *attr, const tchar *val);
     void header(const tchar *hdr) { hdrv.emplace_back(hdr); }
     void subject(const tchar *s) { sub = s; }
-    bool data(bool mime = false, const tchar *txt = NULL);
+    bool data(bool mime = false, const tchar *txt = nullptr);
     bool data(const void *p, size_t sz, bool dotstuff = true);
     bool data(const tstring &s) {
 #ifdef UNICODE
@@ -140,8 +140,8 @@ public:
 #endif
     }
     bool data(const void *p, uint sz, const tchar *type,
-	const tchar *desc = NULL, const tchar *encoding = NULL,
-	const tchar *disp = NULL, const tchar *name = NULL);
+	const tchar *desc = nullptr, const tchar *encoding = nullptr,
+	const tchar *disp = nullptr, const tchar *name = nullptr);
     bool enddata(void);
     bool quit(void);
     bool rset(void) { return cmd(T("RSET")); }

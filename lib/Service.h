@@ -74,8 +74,8 @@ public:
     const tstring &version(void) const { return ver; }
     void version(const tstring &s) { ver = s; }
     Status status(void);
-    bool install(const tchar *path = NULL, const tchar *desc = NULL,
-	const tchar * const *depend = NULL, bool manual = false);
+    bool install(const tchar *path = nullptr, const tchar *desc = nullptr,
+	const tchar * const *depend = nullptr, bool manual = false);
     bool uninstall(void);
     int execute(int argc, const tchar * const *argv);
     int start(int argc, const tchar * const *argv);
@@ -134,17 +134,17 @@ protected:
     virtual void onTimer(ulong timer);
     virtual bool update(Status status);
     static void null_handler(int sig);
-    static int run(int argc = 0, const tchar * const *argv = NULL);
+    static int run(int argc = 0, const tchar * const *argv = nullptr);
 
  private:
     bool close(void);
-    bool open(const tchar *file = NULL);
+    bool open(const tchar *file = nullptr);
     void set_files(void);
     static void splitpath(const tchar *path, const tchar *name, tstring &root,
 	tstring &prog);
 
 #ifdef _WIN32
-    typedef void (__stdcall *service_ctrl_t)(ulong cmd);
+    using service_ctrl_t = void (__stdcall *)(ulong cmd);
 
     service_ctrl_t ctrlfunc;
     ulong checkpoint;

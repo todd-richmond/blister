@@ -19,8 +19,8 @@
 #include "Config.h"
 
 int tmain(int argc, const tchar * const argv[]) {
-    const tchar *attr = NULL, *file = T("-"), *prefix = NULL, *section = NULL,
-	*val = NULL;
+    const tchar *attr = nullptr, *file = T("-"), *prefix = nullptr, *section = nullptr,
+	*val = nullptr;
     ConfigFile cfg;
     bool boolean = false, check = false, integer = false, nonewline = false,
 	quiet = false, update = false;

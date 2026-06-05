@@ -60,7 +60,7 @@ public:
 	prefix(prestr);
     }
     explicit Config(tistream &is, const tchar *prestr = nullptr): ini(false) {
-	read(is, prestr);
+	(void)read(is, prestr);
     }
     ~Config() { clear(); }
 
@@ -76,27 +76,27 @@ public:
     }
     void clear(void);
     void erase(const tchar *key, const tchar *sect = nullptr);
-    bool exists(const tchar *key, const tchar *sect = nullptr) const {
+    [[nodiscard]] bool exists(const tchar *key, const tchar *sect = nullptr) const {
 	RLocker lkr(lck);
 
 	return getkv(key, sect) != nullptr;
     }
-    tstring get(const tchar *key, const tchar *def = nullptr, const tchar
-	*sect = nullptr) const;
+    [[nodiscard]] tstring get(const tchar *key, const tchar *def = nullptr,
+	const tchar *sect = nullptr) const;
     template<size_t N>
-    tstring get(const tchar (&key)[N], const tchar *def = nullptr, const tchar
-	*sect = nullptr) const {
+    [[nodiscard]] tstring get(const tchar (&key)[N], const tchar *def = nullptr,
+	const tchar *sect = nullptr) const {
 	return get(tstring_view(key, N - 1), def, sect);
     }
-    tstring get(const tstring &key) const { return get(key.c_str()); }
-    tstring get(const tstring &key, const tstring &def) const {
+    [[nodiscard]] tstring get(const tstring &key) const { return get(key.c_str()); }
+    [[nodiscard]] tstring get(const tstring &key, const tstring &def) const {
 	return get(key.c_str(), def.c_str());
     }
-    tstring get(const tstring &key, const tstring &def, const tstring &sect)
-	const {
+    [[nodiscard]] tstring get(const tstring &key, const tstring &def,
+	const tstring &sect) const {
 	return get(key.c_str(), def.c_str(), sect.c_str());
     }
-    bool get(const tchar *key, bool def, const tchar *sect = nullptr) const;
+    [[nodiscard]] bool get(const tchar *key, bool def, const tchar *sect = nullptr) const;
     template<size_t N>
     bool get(const tchar (&key)[N], bool def, const tchar *sect = nullptr) const
     {
@@ -104,14 +104,14 @@ public:
     }
     double get(const tchar *key, double def, const tchar *sect = nullptr) const
     {
-	return get_num(key, def, sect, [](const tchar *s) -> double { return
+	return get_num(key, def, sect, [](const tchar *s) { return
 	    tstrtod(s, nullptr); });
     }
     template<size_t N>
     double get(const tchar (&key)[N], double def, const tchar *sect = nullptr)
 	const {
 	return get_num(tstring_view(key, N - 1), def, sect,
-	    [](const tchar *s) -> double { return tstrtod(s, nullptr); });
+	    [](const tchar *s) { return tstrtod(s, nullptr); });
     }
     float get(const tchar *key, float def, const tchar *sect = nullptr) const {
 	return (float)get(key, (double)def, sect);
@@ -120,7 +120,7 @@ public:
     float get(const tchar (&key)[N], float def, const tchar *sect = nullptr)
 	const {
 	return (float)get_num(tstring_view(key, N - 1), (double)def, sect,
-	    [](const tchar *s) -> double { return tstrtod(s, nullptr); });
+	    [](const tchar *s) { return tstrtod(s, nullptr); });
     }
     int get(const tchar *key, int def, const tchar *sect = nullptr) const {
 	return (int)get(key, (long)def, sect);
@@ -204,8 +204,8 @@ public:
 	    atou<ulong>);
     }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
-    bool read(tistream &is, const tchar *pre = nullptr, bool append = false,
-	ulong sz = 0);
+    [[nodiscard]] bool read(tistream &is, const tchar *pre = nullptr,
+	bool append = false, ulong sz = 0);
     void reserve(ulong sz) { amap.reserve(amap.size() + sz / 64); }
     template<typename T>
     Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
@@ -238,8 +238,8 @@ public:
     }
     Config &setv(const tchar *key, const tchar *val, ... /* , const tchar
 	*sect = nullptr, nullptr */);
-    bool write(tostream &os) const { return write(os, ini); }
-    bool write(tostream &os, bool ini) const;
+    [[nodiscard]] bool write(tostream &os) const { return write(os, ini); }
+    [[nodiscard]] bool write(tostream &os, bool ini) const;
     void lock(void) { lck.wlock(); }
     void unlock(void) { lck.wunlock(); }
     friend tistream &operator >>(tistream &is, Config &cfg);
@@ -271,8 +271,8 @@ private:
 	}
     };
 
-    typedef unordered_map<const tchar *, const KV *, strhash<tchar>,
-	streq<tchar> > kvmap;
+    using kvmap = unordered_map<const tchar *, const KV *, strhash<tchar>,
+	streq<tchar>>;
 
     kvmap amap;
     mutable RWLock lck;
@@ -315,7 +315,7 @@ inline tistream &operator >>(tistream &is, Config &cfg) {
 }
 
 inline tostream &operator <<(tostream &os, const Config &cfg) {
-    cfg.write(os);
+    (void)cfg.write(os);
     return os;
 }
 

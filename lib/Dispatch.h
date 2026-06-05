@@ -55,7 +55,7 @@ enum DispatchMsg {
     DispatchConnect, DispatchClose, DispatchTimeout, DispatchNone
 };
 
-typedef uint_fast32_t dspflag_t;
+using dspflag_t = uint_fast32_t;
 
 // Dispatch flags
 enum DispatchFlag: dspflag_t {
@@ -81,7 +81,7 @@ class Dispatcher;
 // base classes for event objects
 class BLISTER DispatchObj: public ObjectList<DispatchObj>::Node {
 public:
-    typedef void (*DispatchObjCB)(DispatchObj *);
+    using DispatchObjCB = void (*)(DispatchObj *);
 
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = nullptr): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(nullptr) {}
@@ -138,9 +138,9 @@ private:
 // handle objects with timeouts
 class BLISTER DispatchTimer: public DispatchObj {
 public:
-    static const ulong DSP_NEVER = (ulong)-1;
-    static const ulong DSP_PREVIOUS = (ulong)-2;
-    static const msec_t DSP_NEVER_DUE = (msec_t)-1;
+    static constexpr ulong DSP_NEVER = (ulong)-1;
+    static constexpr ulong DSP_PREVIOUS = (ulong)-2;
+    static constexpr msec_t DSP_NEVER_DUE = (msec_t)-1;
 
     DispatchTimer(const DispatchTimer &dt): DispatchTimer((DispatchObj &)dt) {}
     explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
@@ -271,10 +271,10 @@ public:
 	DispatchObjCB cb = connection);
 
     const Sockaddr &address(void) const { return addr; }
-    bool listen(const Sockaddr &addr, bool reuse = true, int backlog =
-	SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true);
-    bool listen(const tchar *addrstr, bool reuse = true, int backlog =
-	SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true) {
+    [[nodiscard]] bool listen(const Sockaddr &addr, bool reuse = true,
+	int backlog = SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true);
+    [[nodiscard]] bool listen(const tchar *addrstr, bool reuse = true,
+	int backlog = SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true) {
 	return listen(Sockaddr(addrstr), reuse, backlog, cb, start);
     }
     void relisten(void) { poll(nullptr, DSP_PREVIOUS, DispatchAccept); }
@@ -295,7 +295,7 @@ public:
 
     const Config &config(void) const { return cfg; }
 
-    bool start(uint maxthreads = 100, uint stacksz = 0);
+    [[nodiscard]] bool start(uint maxthreads = 100, uint stacksz = 0);
 
 protected:
     virtual int onStart(void);
@@ -305,10 +305,10 @@ protected:
 
 private:
 #if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
-    typedef unordered_map<socket_t, DispatchSocket *> socketmap;
+    using socketmap = unordered_map<socket_t, DispatchSocket *>;
 
     __forceinline DispatchSocket *get_socket(socket_t fd) const {
-	socketmap::const_iterator it = smap.find(fd);
+	auto it = smap.find(fd);
 
 	return it == smap.end() ? nullptr : it->second;
     }
@@ -316,25 +316,23 @@ private:
 
     class BLISTER TimerSet: ::nocopy {
     public:
-	typedef ::set<DispatchTimer *, DispatchTimer::compare> sorted_timerset;
-	typedef unordered_set<DispatchTimer *, ptrhash<DispatchTimer>>
-	    unsorted_timerset;
+	using sorted_timerset = ::set<DispatchTimer *, DispatchTimer::compare>;
+	using unsorted_timerset = unordered_set<DispatchTimer *,
+	    ptrhash<DispatchTimer>>;
 
 	TimerSet(): split(0) {}
 
 	bool empty(void) const { return unsorted.empty(); }
 	msec_t half(void) const { return split; }
 	DispatchTimer *peek(void) const {
-	    sorted_timerset::const_iterator it = sorted.cbegin();
+	    auto it = sorted.cbegin();
 
-	    return it == sorted.cend() ? NULL : *it;
+	    return it == sorted.cend() ? nullptr : *it;
 	}
 
 	void erase(void) {
-	    unsorted_timerset::const_iterator it;
-
-	    while ((it = unsorted.begin()) != unsorted.end())
-		(*it)->erase();
+	    while (!unsorted.empty())
+		(*unsorted.begin())->erase();
 	}
 	void erase(DispatchTimer &dt) {
 	    if (dt.due <= split)
@@ -342,7 +340,7 @@ private:
 	    unsorted.erase(&dt);
 	}
 	DispatchTimer *get(msec_t when) {
-	    sorted_timerset::const_iterator it = sorted.begin();
+	    auto it = sorted.begin();
 
 	    if (it != sorted.end()) {
 		DispatchTimer *dt = *it;
@@ -353,14 +351,11 @@ private:
 		    return dt;
 		}
 	    }
-	    return NULL;
+	    return nullptr;
 	}
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
 	DispatchTimer *reorder(msec_t when) {
-	    for (unsorted_timerset::const_iterator it = unsorted.cbegin(); it !=
-		unsorted.cend(); ++it) {
-		DispatchTimer *dt = *it;
-
+	    for (DispatchTimer *dt : unsorted) {
 		if (dt->due < when && dt->due > split)
 		    sorted.insert(dt);
 	    }
@@ -427,7 +422,7 @@ private:
 	workers++;
 	t = new Thread();
 	t->start(worker, this, stacksz, this);
-	while ((t = wait(0)) != NULL)
+	while ((t = wait(0)) != nullptr)
 	    delete t;
     }
     static int worker(void *param);
@@ -445,7 +440,7 @@ private:
     atomic_ulong interval;
     HWND wnd;
     static uint socketmsg;
-    static const int DSP_TimerID = 1;
+    static constexpr int DSP_TimerID = 1;
 #elif defined(DSP_POLL)
     SocketSet rset, wset;
     Socket rsock, wsock;

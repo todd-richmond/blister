@@ -34,7 +34,7 @@ constexpr uint BUFSZ = 128 * 1024U;
 constexpr uint KEYSZ = 256;
 
 void Config::clear_locked(void) {
-    for (kvmap::const_iterator it = amap.begin(); it != amap.end(); ++it)
+    for (auto it = amap.begin(); it != amap.end(); ++it)
 	delkv(it->second);
     amap.clear();
 }
@@ -46,7 +46,6 @@ void Config::clear(void) {
 }
 
 void Config::erase(const tchar *key, const tchar *sect) {
-    kvmap::iterator it;
     WLocker lkr(lck);
 
     if (sect && *sect) {
@@ -56,11 +55,17 @@ void Config::erase(const tchar *key, const tchar *sect) {
 
 	s.reserve(slen + 1 + klen);
 	s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
-	it = amap.find(s);
-    } else {
-	it = amap.find(key);
+	auto it = amap.find(s);
+
+	if (it != amap.end()) {
+	    const KV *kv = it->second;
+
+	    amap.erase(it);
+	    delkv(kv);
+	}
+	return;
     }
-    if (it != amap.end()) {
+    if (auto it = amap.find(key); it != amap.end()) {
 	const KV *kv = it->second;
 
 	amap.erase(it);
@@ -85,7 +90,7 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	if ((epos = val.find(open == '(' ? ')' : '}', spos + 2)) == val.npos)
 	    break;
 
-	kvmap::const_iterator it;
+	auto it = amap.cend();
 	tstring::size_type off = (spos + 3 < val.size() && val[spos + 2] ==
 	    '*' && val[spos + 3] == '.') ? 2 : 0;
 	const tchar *repl;
@@ -179,13 +184,13 @@ bool Config::get(tstring_view key, bool def, const tchar *sect) const {
 const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
     if (sect && *sect)
 	return getkv(tstring_view(key, tstrlen(key)), sect);
-    kvmap::const_iterator it = amap.find(key);
+    auto it = amap.find(key);
 
     return it == amap.end() ? nullptr : it->second;
 }
 
 const Config::KV *Config::getkv(tstring_view key, const tchar *sect) const {
-    kvmap::const_iterator it;
+    auto it = amap.cend();
 
     if (sect && *sect) {
 	size_t klen = key.size();
@@ -431,7 +436,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	kv = newkv(key, klen, val, vlen);
     }
 
-    pair<kvmap::iterator, bool> old(amap.emplace(kv->key, kv));
+    auto old = amap.emplace(kv->key, kv);
 
     if (LIKELY(old.second))
 	return *this;

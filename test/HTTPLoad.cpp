@@ -33,7 +33,7 @@
 #include "HTTPClient.h"
 #include "Log.h"
 
-typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
+using attrmap = unordered_map<tstring, tstring, strhash<tchar>, streq<tchar>>;
 
 static atomic_bool qflag = false, rflag = false;
 
@@ -54,7 +54,7 @@ private:
     class LoadCmd {
     public:
 	LoadCmd(const tchar *c, const tchar *a, const URL &u, const tchar *d =
-	    NULL, const tchar *s = NULL, const tchar *v = NULL): cmd(c), arg(a ?
+	    nullptr, const tchar *s = nullptr, const tchar *v = nullptr): cmd(c), arg(a ?
 	    a : T("")), data(d ? d : T("")), value(v ? v : T("")),
 	    status((ushort)(s ? ttoi(s) : 0)), url(u), usec(0), tusec(0),
 	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0), count(0),
@@ -175,7 +175,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     int fcnt) {
     Sockaddr addr;
     tchar buf[1024];
-    const tchar *cmd, *req, *arg, *data = NULL, *value = NULL, *status = NULL;
+    const tchar *cmd, *req, *arg, *data = nullptr, *value = nullptr, *status = nullptr;
     tchar *p;
     tifstream is(file);
     int len;
@@ -299,7 +299,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	    return false;
 	}
 	if (arg && arg - buf == len)
-	    arg = NULL;
+	    arg = nullptr;
 	if (!arg && !bodycnt &&
 	    (!tstricmp(cmd, T("body")) || !tstricmp(cmd, T("data")))) {
 	    tcerr << T("missing text for ") << cmd << endl;
@@ -318,7 +318,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 
 char *HTTPLoad::load(uint idx, usec_t &iousec) {
     int fd;
-    char *ret = NULL;
+    char *ret = nullptr;
     const tchar *file = body[idx];
     ulong filelen = bodysz[idx];
 
@@ -337,7 +337,7 @@ char *HTTPLoad::load(uint idx, usec_t &iousec) {
 	    }
 	} else {
 	    delete [] ret;
-	    ret = NULL;
+	    ret = nullptr;
 	}
 	close(fd);
     }
@@ -362,7 +362,7 @@ void HTTPLoad::add(const tchar *file) {
     } else {
 	body[bodycnt] = new tchar[tstrlen(file) + 1];
 	tstrcpy(body[bodycnt], file);
-	bodycache[bodycnt] = NULL;
+	bodycache[bodycnt] = nullptr;
 	bodysz[bodycnt] = (ulong)sbuf.st_size;
 	bodycnt++;
     }
@@ -540,7 +540,7 @@ int HTTPLoad::onStart(void) {
 		    fs.flush();
 		}
 		if (!cmd->value.empty() &&
-		    tstrstr(hc.data(), cmd->value.c_str()) == NULL) {
+		    tstrstr(hc.data(), cmd->value.c_str()) == nullptr) {
 		    dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") <<
 			buf << T(" invalid return data") << endlog;
 		    lock.lock();
@@ -695,7 +695,7 @@ static void signal_handler(int sig) {
 
 int tmain(int argc, tchar *argv[]) {
     bool allfiles = false;
-    const tchar *bodyfile = NULL;
+    const tchar *bodyfile = nullptr;
     ulong cachesz = 64;
     bool debug = false;
     int filecnt = 0;
@@ -712,7 +712,7 @@ int tmain(int argc, tchar *argv[]) {
     HTTPLoad *thread;
     uint threads = 1;
     bool wflag = false;
-    const tchar *wld = NULL;
+    const tchar *wld = nullptr;
     uint timeout = 30000;
 
     dlog.level(Log::Note);
@@ -825,7 +825,7 @@ int tmain(int argc, tchar *argv[]) {
     if (fs.is_open())
 	fs.close();
     while ((thread = (HTTPLoad *)(ThreadGroup::MainThreadGroup.wait(
-	3000))) != NULL)
+	3000))) != nullptr)
 	delete thread;
     HTTPLoad::uninit();
     return 0;

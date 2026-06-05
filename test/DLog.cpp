@@ -88,7 +88,7 @@ int tmain(int argc, tchar *argv[]) {
 	    dlog.buffer((uint)sz, msec);
 	} else if (!tstricmp(argv[i], T("-c")) || !tstricmp(argv[i],
 	    T("--config"))) {
-	    const tchar *file, *pre = NULL;
+	    const tchar *file, *pre = nullptr;
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;

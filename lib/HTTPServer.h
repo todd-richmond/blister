@@ -27,8 +27,8 @@ const uint WTimeout = 150 * 1000;
 
 class BLISTER HTTPServerSocket: public DispatchServerSocket {
 public:
-    typedef unordered_map<const char *, const char *, strihash<char>,
-	strieq<char> > attrmap;
+    using attrmap = unordered_map<const char *, const char *, strihash<char>,
+	strieq<char>>;
 
     HTTPServerSocket(Dispatcher &dspr, Socket &sock);
     virtual ~HTTPServerSocket();
@@ -60,11 +60,11 @@ protected:
     void error(uint sts, bool close = false);
     void error(uint sts, const char *errstr, bool close = false);
     void keepalive(void);
-    void reply(const char *data = NULL, ulong len = (ulong)-1);
+    void reply(const char *data = nullptr, ulong len = (ulong)-1);
     void reply(int fd, ulong sz);
-    void reply(uint sts) { status(sts, NULL); reply(); }
+    void reply(uint sts) { status(sts, nullptr); reply(); }
     void status(uint sts, const char *mime = "text/plain", time_t mtime = 0,
-	const char *str = NULL, bool close = false);
+	const char *str = nullptr, bool close = false);
     virtual void del(void) { error(501); }
     virtual void disconnect(DispatchObjCB cb = done) { ready(cb); }
     virtual void exec(void);
@@ -99,9 +99,9 @@ private:
     static bool date;
 
     const char *find(const attrmap &amap, const char *name) const {
-	attrmap::const_iterator it = amap.find(name);
+	auto it = amap.find(name);
 
-	return it == amap.end() ? (const char *)NULL : it->second;
+	return it == amap.end() ? nullptr : it->second;
     }
     void scan(char *buf, ulong len, bool append = false);
     DSP_DECLARE(HTTPServerSocket, parse);

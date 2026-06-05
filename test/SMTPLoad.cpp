@@ -33,9 +33,9 @@
 #include "Log.h"
 #include "SMTPClient.h"
 
-typedef unordered_map<tstring, tstring, strhash<tchar>, streq<tchar> > attrmap;
+using attrmap = unordered_map<tstring, tstring, strhash<tchar>, streq<tchar>>;
 
-static const tchar *default_host = T("localhost:25");
+static constexpr const tchar *default_host = T("localhost:25");
 static atomic_bool qflag = false, rflag = false;
 
 class SMTPLoad: public Thread {
@@ -55,7 +55,7 @@ private:
     class LoadCmd {
     public:
 	LoadCmd(const tchar *comment, const tchar *command, const tchar
-	    *argument, const tchar *status = NULL): cmt(comment), cmd(command),
+	    *argument, const tchar *status = nullptr): cmt(comment), cmd(command),
 	    arg(argument ? argument : T("")),
 	    sts((ushort)(status ? ttoi(status) : 200)), usec(0), tusec(0),
 	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0), count(0),
@@ -175,7 +175,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     const tchar *bodyfile, ulong cachesz, bool all, int fcnt) {
     Sockaddr addr;
     tchar buf[1024];
-    const tchar *cmt, *cmd, *arg = NULL, *status = NULL;
+    const tchar *cmt, *cmd, *arg = nullptr, *status = nullptr;
     tchar *p;
     tifstream is(file);
     LoadCmd *lcmd;
@@ -292,7 +292,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	}
 	arg = cmd + tstrlen(cmd);
 	if (arg - buf == len)
-	    arg = NULL;
+	    arg = nullptr;
 	else
 	    arg++;
 	if (!arg && !bodycnt &&
@@ -313,7 +313,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 
 char *SMTPLoad::load(uint idx, usec_t &iousec) {
     int fd;
-    char *ret = NULL;
+    char *ret = nullptr;
     const tchar *file = body[idx];
     ulong filelen = bodysz[idx];
 
@@ -332,7 +332,7 @@ char *SMTPLoad::load(uint idx, usec_t &iousec) {
 	    }
 	} else {
 	    delete [] ret;
-	    ret = NULL;
+	    ret = nullptr;
 	}
 	close(fd);
     }
@@ -357,7 +357,7 @@ void SMTPLoad::add(const tchar *file) {
     } else {
 	body[bodycnt] = new tchar[tstrlen(file) + 1];
 	tstrcpy(body[bodycnt], file);
-	bodycache[bodycnt] = NULL;
+	bodycache[bodycnt] = nullptr;
 	bodysz[bodycnt] = (ulong)sbuf.st_size;
 	bodycnt++;
     }
@@ -507,7 +507,7 @@ int SMTPLoad::onStart(void) {
 	    } else if (cmd->cmd == T("quit")) {
 		ret = sc.quit();
 	    } else {
-		ret = sc.cmd(cmd->cmd.c_str(), *buf ? buf : NULL);
+		ret = sc.cmd(cmd->cmd.c_str(), *buf ? buf : nullptr);
 	    }
 	    now = uticks();
 	    diff = (ulong)(now - last - io);
@@ -670,7 +670,7 @@ static void signal_handler(int sig) {
 
 int tmain(int argc, tchar *argv[]) {
     bool allfiles = false;
-    const tchar *bodyfile = NULL;
+    const tchar *bodyfile = nullptr;
     ulong cachesz = 64;
     const tchar *host = default_host;
     int filecnt = 0;
@@ -686,7 +686,7 @@ int tmain(int argc, tchar *argv[]) {
     uint timeout = 30000;
     uint threads = 1;
     bool wflag = false;
-    const tchar *wld = NULL;
+    const tchar *wld = nullptr;
 
     dlog.level(Log::Note);
     for (i = 1; i < argc; i++) {
@@ -793,7 +793,7 @@ int tmain(int argc, tchar *argv[]) {
     if (fs.is_open())
 	fs.close();
     while ((thread = (SMTPLoad *)(ThreadGroup::MainThreadGroup.wait(
-	3000))) != NULL)
+	3000))) != nullptr)
 	delete thread;
     SMTPLoad::uninit();
     return 0;

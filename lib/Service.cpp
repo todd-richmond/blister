@@ -35,7 +35,7 @@
 #define SERVICE_PREFIX T("service_")
 #endif
 
-static const uint STATUS_LOOPS = 400;
+static constexpr uint STATUS_LOOPS = 400;
 
 ulong Service::Timer::dmsec = 120;
 bool Service::aborted;
@@ -97,11 +97,11 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	}
     }
 #endif
-    if ((p = tstrrchr(full, '/')) == NULL && (p = tstrrchr(full, '\\')) == NULL)
+    if ((p = tstrrchr(full, '/')) == nullptr && (p = tstrrchr(full, '\\')) == nullptr)
 	p = full;
     else
 	p++;
-    if ((sep = tstrrchr(full, '.')) != NULL && !tstrnicmp(sep, T(".exe"), 4))
+    if ((sep = tstrrchr(full, '.')) != nullptr && !tstrnicmp(sep, T(".exe"), 4))
 	prog.assign(p, (tstring::size_type)(sep - p));
     else
 	prog = p;
@@ -109,7 +109,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 
 #ifdef _WIN32
 
-Service::Timer::Timer(ulong msec): timer(NULL) {
+Service::Timer::Timer(ulong msec): timer(nullptr) {
     (void)msec;
     (void)timer;
 }
@@ -119,8 +119,8 @@ void Service::Timer::cancel() {
 
 Service::Service(const tchar *servicename, const tchar *h): bPause(false),
     errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0),
-    ctrlfunc(NULL), checkpoint(0), hService(0), hSCManager(0), hStatus(0),
-    map(NULL), maphdl(0), mapsz(0) {
+    ctrlfunc(nullptr), checkpoint(0), hService(0), hSCManager(0), hStatus(0),
+    map(nullptr), maphdl(0), mapsz(0) {
     ZERO(ssStatus);
     if (h)
 	host = h;
@@ -128,15 +128,15 @@ Service::Service(const tchar *servicename, const tchar *h): bPause(false),
 
 Service::Service(const tchar *servicename, bool pauseable): bPause(pauseable),
     errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0),
-    ctrlfunc(NULL), checkpoint(0), hService(0), hSCManager(0), hStatus(0),
-    map(NULL), maphdl(0), mapsz(0) {
+    ctrlfunc(nullptr), checkpoint(0), hService(0), hSCManager(0), hStatus(0),
+    map(nullptr), maphdl(0), mapsz(0) {
     service = this;
     ZERO(ssStatus);
 }
 
 Service::~Service() {
     if (ctrlfunc)
-	service = NULL;
+	service = nullptr;
     close();
 }
 
@@ -159,7 +159,7 @@ bool Service::open(const tchar *file) {
 bool Service::close() {
     if (map) {
 	UnmapViewOfFile(map);
-	map = NULL;
+	map = nullptr;
     }
     if (maphdl) {
 	CloseHandle(maphdl);
@@ -167,11 +167,11 @@ bool Service::close() {
     }
     if (hService) {
 	CloseServiceHandle(hService);
-	hService = NULL;
+	hService = nullptr;
     }
     if (hSCManager) {
 	CloseServiceHandle(hSCManager);
-	hSCManager = NULL;
+	hSCManager = nullptr;
 	return true;
     }
     return false;
@@ -391,7 +391,7 @@ bool Service::install(const tchar *file, const tchar *desc, const tchar * const
     *depend, bool manual) {
     tchar buf[PATH_MAX];
     size_t i;
-    tchar *p = NULL;
+    tchar *p = nullptr;
     tstring prog;
 
     if (uninstall())
@@ -414,7 +414,7 @@ bool Service::install(const tchar *file, const tchar *desc, const tchar * const
 
 	for (i = 0; depend[i]; i++)
 	    sz += tstrlen(depend[i]) + 1;
-	if ((p = new tchar[sz + 1]) != NULL) {
+	if ((p = new tchar[sz + 1]) != nullptr) {
 	    tchar *pp;
 
 	    for (i = 0, pp = p; depend[i]; i++) {
@@ -431,7 +431,7 @@ bool Service::install(const tchar *file, const tchar *desc, const tchar * const
 	SERVICE_ERROR_NORMAL, file, NULL, NULL, p, NULL, NULL);
     errnum = GetLastError();
     delete [] p;
-    return hService != NULL;
+    return hService != nullptr;
 }
 
 bool Service::uninstall() {
@@ -516,7 +516,7 @@ void Service::exit(int code) {
 }
 
 tstring Service::errstr() const {
-    tchar *msg = NULL;
+    tchar *msg = nullptr;
     tstring s(T("Service Error"));
 
     if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
@@ -533,12 +533,12 @@ void *Service::open(uint size) {
 
     mapsz = size;
     if ((maphdl = CreateFileMapping((HANDLE)-1, NULL, PAGE_READWRITE, 0, mapsz,
-	s.c_str())) == NULL)
-	return NULL;
-    if ((map = MapViewOfFile(maphdl, FILE_MAP_WRITE, 0, 0, mapsz)) == NULL) {
+	s.c_str())) == nullptr)
+	return nullptr;
+    if ((map = MapViewOfFile(maphdl, FILE_MAP_WRITE, 0, 0, mapsz)) == nullptr) {
 	CloseHandle(maphdl);
 	maphdl = 0;
-	return NULL;
+	return nullptr;
     }
     return map;
 }
@@ -546,8 +546,8 @@ void *Service::open(uint size) {
 Lock ServiceData::lock;
 
 ServiceData::ServiceData(const tchar *service, uint num, uint size):
-    count(0), counter(0), data(NULL), ctrs(num), datasz(0), mapsz(size),
-    help(0), init(false), last(0), offset(0), map(NULL), name(service) {}
+    count(0), counter(0), data(nullptr), ctrs(num), datasz(0), mapsz(size),
+    help(0), init(false), last(0), offset(0), map(nullptr), name(service) {}
 
 DWORD ServiceData::open(LPWSTR lpDeviceNames) {
     FastLocker lkr(lock);
@@ -587,9 +587,9 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	}
 	RegCloseKey(key);
 	s = SERVICE_PREFIX + name;
-	if ((hdl = OpenFileMapping(FILE_MAP_READ, FALSE, s.c_str())) == NULL)
+	if ((hdl = OpenFileMapping(FILE_MAP_READ, FALSE, s.c_str())) == nullptr)
 	    return 1;
-	if ((map = MapViewOfFile(hdl, FILE_MAP_READ, 0, 0, mapsz)) == NULL) {
+	if ((map = MapViewOfFile(hdl, FILE_MAP_READ, 0, 0, mapsz)) == nullptr) {
 	    CloseHandle(hdl);
 	    return 1;
 	}
@@ -601,7 +601,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    ctrs * sizeof (PERF_COUNTER_DEFINITION));
 	datasz = (uint)(size + sizeof (PERF_INSTANCE_DEFINITION) + DWORD_MULTIPLE(
 	    namesz) + sizeof (PERF_COUNTER_BLOCK));
-	if ((data = new char[datasz]) == NULL) {
+	if ((data = new char[datasz]) == nullptr) {
 	    UnmapViewOfFile(map);
 	    return 1;
 	}
@@ -642,7 +642,7 @@ DWORD ServiceData::close(void) {
     if (!--count) {
 	init = false;
 	UnmapViewOfFile(map);
-	map = NULL;
+	map = nullptr;
 	delete [] data;
     }
     return 0;
@@ -696,7 +696,7 @@ void ServiceData::add(uint size, uint type, uint level) {
 #include <sys/resource.h>
 #include <sys/wait.h>
 
-Service::Timer::Timer(ulong msec): timer(NULL) {
+Service::Timer::Timer(ulong msec): timer(0) {
 #ifdef BSD_BASE
     (void)msec;
 #elif defined(__linux__)
@@ -716,7 +716,7 @@ Service::Timer::Timer(ulong msec): timer(NULL) {
     *(ulong *)&its.it_value.tv_nsec = (msec % 1000) * 1000000;
     if (timer_settime(timer, 0, &its, NULL)) {
 	timer_delete(timer);
-	timer = NULL;
+	timer = 0;
     }
 #endif
 }
@@ -727,7 +727,7 @@ void Service::Timer::cancel() {
 #elif defined(__linux__)
 	timer_delete(timer);
 #endif
-	timer = NULL;
+	timer = 0;
     }
 }
 
@@ -742,7 +742,7 @@ Service::Service(const char *servicename, bool pauseable): bPause(pauseable),
 }
 
 Service::~Service() {
-    service = NULL;
+    service = nullptr;
 }
 
 bool Service::open(const tchar *file) {
@@ -808,7 +808,7 @@ void Service::signal_handler(int sig, siginfo_t *si, void *) {
     se.sigev_notify_function = abort_handler;
     se.sigev_value.sival_ptr = &timer;	// NOLINT
     if (timer_create(CLOCK_MONOTONIC, &se, &timer)) {
-	timer = NULL;
+	timer = 0;
     } else {
 	ZERO(its);
 	its.it_value.tv_sec = (time_t)(Timer::dmsec / 1000U);
@@ -1280,7 +1280,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     if ((ret = command(cmd, ac, av)) != -1) {
 	// handled by virtual method
     } else if (tstreq(cmd, T("install"))) {
-	ret = !install(NULL, av[0], &av[1]);
+	ret = !install(nullptr, av[0], &av[1]);
     } else if (tstreq(cmd, T("uninstall"))) {
 	ret = !uninstall();
     } else if (tstreq(cmd, T("abort")) || tstreq(cmd, T("kill"))) {
@@ -1620,7 +1620,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		    struct pidstat psbuf;
 		    int sts;
 
-		    dlog.close();
+		    (void)dlog.close();
 		    alarm(intvl);
 		    if (lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Running, 0) ==
 			-1) {

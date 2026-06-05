@@ -31,9 +31,9 @@
 #define s6_addr16	u.Word
 #define s6_addr32	u.Dword
 
-typedef ushort sa_family_t;
-typedef int socklen_t;
-typedef SOCKET socket_t;
+using sa_family_t = ushort;
+using socklen_t = int;
+using socket_t = SOCKET;
 
 inline int sockerrno(void) { return WSAGetLastError(); }
 
@@ -62,7 +62,7 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #define s6_addr32	__u6_addr.__u6_addr32
 #endif
 
-typedef int socket_t;
+using socket_t = int;
 
 inline int closesocket(socket_t fd) { return ::close(fd); }
 inline int sockerrno(void) { return errno; }
@@ -161,7 +161,7 @@ public:
 #ifndef _WIN32
     const char *path(void) const {
 	return family() == AF_UNIX ? *addr.sau.sun_path == '\0' ?
-	    addr.sau.sun_path + 1 : addr.sau.sun_path : NULL;
+	    addr.sau.sun_path + 1 : addr.sau.sun_path : nullptr;
     }
 #endif
     ushort port(void) const;
@@ -241,13 +241,13 @@ public:
     SockaddrList() {}
     SockaddrList(const tchar *host, ushort port, Sockaddr::Proto proto =
 	Sockaddr::TCP) { insert(host, port, proto); }
-    SockaddrList(const tchar *host, const tchar *service = NULL,
+    SockaddrList(const tchar *host, const tchar *service = nullptr,
 	Sockaddr::Proto proto = Sockaddr::TCP) { insert(host, service, proto); }
     ~SockaddrList() { free(); }
 
     bool insert(const tchar *host, ushort port, Sockaddr::Proto proto =
 	Sockaddr::TCP);
-    bool insert(const tchar *host, const tchar *service = NULL,
+    bool insert(const tchar *host, const tchar *service = nullptr,
 	Sockaddr::Proto proto = Sockaddr::TCP);
     void insert(const Sockaddr &addr) {
 	push_back(*new ObjectListNode<Sockaddr>(addr));
@@ -259,7 +259,7 @@ public:
  */
 class BLISTER CIDR {
 public:
-    explicit CIDR(const tchar *addrs = NULL) { add(addrs); }
+    explicit CIDR(const tchar *addrs = nullptr) { add(addrs); }
 
     bool add(const tchar *addrs);
     void clear(void) { ranges.clear(); }
@@ -415,7 +415,7 @@ protected:
     class BLISTER SocketBuf: nocopy {
     public:
 	SocketBuf(int t, socket_t s, bool o): sock(s), count(1), err(0),
-	    path(NULL), rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE),
+	    path(nullptr), rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE),
 	    blck(true), own(o) {}
 	~SocketBuf() { if (own) close(); }
 
@@ -438,7 +438,7 @@ protected:
 		if (path) {
 		    (void)::unlink(path);
 		    free(path);
-		    path = NULL;
+		    path = nullptr;
 		}
 		if (ret)
 		    err = sockerrno();
@@ -482,7 +482,7 @@ protected:
 class BLISTER SocketSet {
 public:
     explicit SocketSet(uint maxfds = 0);
-    SocketSet(const SocketSet &ss): fds(NULL), maxsz(0), sz(0) { *this = ss; }
+    SocketSet(const SocketSet &ss): fds(nullptr), maxsz(0), sz(0) { *this = ss; }
     ~SocketSet() { delete [] fds; }
 
     SocketSet &operator =(const SocketSet &ss);
@@ -525,7 +525,7 @@ inline SocketSet::SocketSet(uint maxfds): maxsz(maxfds), sz(0) {
     fds = (fd_set *)new socket_t[(size_t)maxsz + 1];
     fds->fd_count = 0;
 #else
-    fds = maxsz ? new pollfd[maxsz] : NULL;
+    fds = maxsz ? new pollfd[maxsz] : nullptr;
 #endif
 }
 
@@ -550,7 +550,7 @@ inline SocketSet &SocketSet::operator =(const SocketSet &ss) {
 	if (maxsz < sz) {
 	    maxsz = ss.maxsz;
 	    delete [] fds;
-	    fds = maxsz ? new pollfd[maxsz] : NULL;
+	    fds = maxsz ? new pollfd[maxsz] : nullptr;
 	}
 	if (fds)
 	    memcpy(fds, ss.fds, sz * sizeof (pollfd));
@@ -601,14 +601,14 @@ inline bool SocketSet::unset(socket_t fd) {
 }
 
 // socket streams
-typedef faststreambuf<Socket> socketbuf;
+using socketbuf = faststreambuf<Socket>;
 
 class BLISTER isockstream: public istream {
 public:
-    explicit isockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
-	istream(NULL), sb(sz, p) { ios::init(&sb); }
-    explicit isockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
-	istream(NULL), sb(s, sz, p) { ios::init(&sb); }
+    explicit isockstream(streamsize sz = SOCK_BUFSZ, char *p = nullptr):
+	istream(nullptr), sb(sz, p) { ios::init(&sb); }
+    explicit isockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = nullptr):
+	istream(nullptr), sb(s, sz, p) { ios::init(&sb); }
 
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
@@ -622,10 +622,10 @@ private:
 
 class BLISTER osockstream: public ostream {
 public:
-    explicit osockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
-	ostream(NULL), sb(sz, p) { ios::init(&sb); }
-    explicit osockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
-	ostream(NULL), sb(s, sz, p) { ios::init(&sb); }
+    explicit osockstream(streamsize sz = SOCK_BUFSZ, char *p = nullptr):
+	ostream(nullptr), sb(sz, p) { ios::init(&sb); }
+    explicit osockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = nullptr):
+	ostream(nullptr), sb(s, sz, p) { ios::init(&sb); }
 
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
@@ -643,10 +643,10 @@ private:
 
 class BLISTER sockstream: public iostream {
 public:
-    explicit sockstream(streamsize sz = SOCK_BUFSZ, char *p = NULL):
-	iostream(NULL), sb(sz, p) { ios::init(&sb); }
-    explicit sockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = NULL):
-	iostream(NULL), sb(s, sz, p) { ios::init(&sb); }
+    explicit sockstream(streamsize sz = SOCK_BUFSZ, char *p = nullptr):
+	iostream(nullptr), sb(sz, p) { ios::init(&sb); }
+    explicit sockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = nullptr):
+	iostream(nullptr), sb(s, sz, p) { ios::init(&sb); }
 
     socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }

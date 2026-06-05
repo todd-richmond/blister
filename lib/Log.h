@@ -109,28 +109,28 @@ public:
     // cppcheck-suppress constParameterReference
     __forceinline Log &operator <<(Escalator &e) { log(e); return *this; }
 
-    bool alertfile(void) const { return afd.enable; }
+    [[nodiscard]] bool alertfile(void) const { return afd.enable; }
     void alertfile(bool b) { afd.enable = b; }
-    void alertfile(Level L, const tchar *file = NULL, uint cnt = 0,
+    void alertfile(Level L, const tchar *file = nullptr, uint cnt = 0,
 	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
     const tchar *alertname(void) const { return afd.filename(); }
     const tchar *alertpath(void) const { return afd.pathname(); }
-    bool buffer(void) const { return bufenable; }
+    [[nodiscard]] bool buffer(void) const { return bufenable; }
     void buffer(bool b);
     void buffer(uint sz = 32U * 1024, ulong msec = 1000) {
 	bufsz = sz; buftm = msec; buffer(true);
     }
     uint bufsize(void) const { return bufsz; }
     ulong buftime(void) const { return buftm; }
-    bool file(void) const { return ffd.enable; }
+    [[nodiscard]] bool file(void) const { return ffd.enable; }
     void file(bool b) { ffd.enable = b; }
-    void file(Level l, const tchar *file = NULL, uint cnt = 0,
+    void file(Level l, const tchar *file = nullptr, uint cnt = 0,
 	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
     const tchar *filename(void) const { return ffd.filename(); }
     const tchar *filepath(void) const { return ffd.pathname(); }
     const tchar *format(void) const { return fmt.c_str(); }
     void format(const tchar *s);
-    bool gmttime(void) const { return gmt; }
+    [[nodiscard]] bool gmttime(void) const { return gmt; }
     void gmttime(bool b) { gmt = b; }
     Level level(void) const { return lvl; }
     void level(Level l) { ffd.lvl = lvl = l; }
@@ -143,15 +143,15 @@ public:
     void separate(bool b = true) { tls.get().sep = b ? ' ' : '\0'; }
     const tchar *source(void) const { return src.c_str(); }
     void source(const tchar *s) { src = s; }
-    bool syslog(void) const { return syslogenable; }
+    [[nodiscard]] bool syslog(void) const { return syslogenable; }
     void syslog(bool b) { syslogenable = b; }
-    void syslog(Level l, const tchar *host = NULL, uint fac = 1);
+    void syslog(Level l, const tchar *host = nullptr, uint fac = 1);
     uint syslogfacility(void) const { return syslogfac; }
     void syslogfacility(uint fac) { syslogfac = fac; }
     Type type(void) const { return _type; }
     void type(Type t) { _type = t; }
 
-    bool close(void);
+    [[nodiscard]] bool close(void);
     // main thread does not call TLS destruction
     void destruct(void) { tls.erase(); }
     __forceinline void endlog(void) {
@@ -181,7 +181,7 @@ public:
 	return *this;
     }
     void logv(int l, ...);
-    bool reopen(void) { Locker lkr(lck); return ffd.reopen(); }
+    [[nodiscard]] bool reopen(void) { Locker lkr(lck); return ffd.reopen(); }
     void roll(void) { Locker lkr(lck); ffd.roll(); }
     void set(const Config &cfg, const tchar *sect = T("log"));
     bool setids(uid_t uid, gid_t gid) const;

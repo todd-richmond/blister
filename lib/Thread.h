@@ -193,11 +193,11 @@ private:
  */
 class BLISTER DLLibrary: nocopy {
 public:
-    explicit DLLibrary(const tchar *dll = NULL): hdl(0) { open(dll); }
+    explicit DLLibrary(const tchar *dll = nullptr): hdl(0) { open(dll); }
     ~DLLibrary() { close(); }
 
     operator void *(void) const { return hdl; }
-    bool operator !(void) const { return hdl == NULL; }
+    bool operator !(void) const { return hdl == nullptr; }
 
     const tstring &error(void) const { return err; }
     const tstring &name(void) const { return file; }
@@ -229,7 +229,7 @@ public:
     __forceinline ThreadLocal &operator =(C c) { set(c); return *this; }
     // cppcheck-suppress returnDanglingLifetime
     __forceinline C *operator ->(void) const { return &get(); }
-    __forceinline operator bool(void) const { return tls_get(key) != NULL; }
+    __forceinline operator bool(void) const { return tls_get(key) != nullptr; }
     __forceinline operator C() const { return (C)tls_get(key); }
 
     __forceinline C get(void) const { return (C)tls_get(key); }
@@ -240,7 +240,7 @@ protected:
 };
 
 /* Thread local storage for classes with proper destruction when theads exit */
-typedef void (*ThreadLocalFree)(void *data);
+using ThreadLocalFree = void (*)(void *data);
 
 /*
  * Thread synchronization classes
@@ -292,8 +292,8 @@ protected:
     alignas(64) mutex mtx;
 };
 
-typedef LockerTemplate<Lock> Locker;
-typedef FastLockerTemplate<Lock> FastLocker;
+using Locker = LockerTemplate<Lock>;
+using FastLocker = FastLockerTemplate<Lock>;
 
 class BLISTER RWLock: nocopy {
 public:
@@ -311,10 +311,10 @@ private:
     alignas(64) shared_mutex mtx;
 };
 
-typedef LockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> RLocker;
-typedef LockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> WLocker;
-typedef FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock> FastRLocker;
-typedef FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock> FastWLocker;
+using RLocker = LockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock>;
+using WLocker = LockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock>;
+using FastRLocker = FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock>;
+using FastWLocker = FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock>;
 
 template<class C>
 class BLISTER _Semaphore: nocopy {
@@ -420,9 +420,9 @@ private:
     const uint spins;
 };
 
-typedef FastLockerTemplate<SpinLock> FastSpinLocker;
-typedef FastUnlockerTemplate<SpinLock> FastSpinUnlocker;
-typedef LockerTemplate<SpinLock> SpinLocker;
+using FastSpinLocker = FastLockerTemplate<SpinLock>;
+using FastSpinUnlocker = FastUnlockerTemplate<SpinLock>;
+using SpinLocker = LockerTemplate<SpinLock>;
 
 class BLISTER SpinRWLock: nocopy {
 public:
@@ -513,14 +513,14 @@ private:
     static constexpr uint_fast32_t WRITE_BIT = 1U << 31;
 };
 
-typedef LockerTemplate<SpinRWLock, &SpinRWLock::rlock, &SpinRWLock::runlock>
-    SpinRLocker;
-typedef LockerTemplate<SpinRWLock, &SpinRWLock::wlock, &SpinRWLock::wunlock>
-    SpinWLocker;
-typedef FastLockerTemplate<SpinRWLock, &SpinRWLock::rlock, &SpinRWLock::runlock>
-    FastSpinRLocker;
-typedef FastLockerTemplate<SpinRWLock, &SpinRWLock::wlock, &SpinRWLock::wunlock>
-    FastSpinWLocker;
+using SpinRLocker = LockerTemplate<SpinRWLock, &SpinRWLock::rlock,
+    &SpinRWLock::runlock>;
+using SpinWLocker = LockerTemplate<SpinRWLock, &SpinRWLock::wlock,
+    &SpinRWLock::wunlock>;
+using FastSpinRLocker = FastLockerTemplate<SpinRWLock, &SpinRWLock::rlock,
+    &SpinRWLock::runlock>;
+using FastSpinWLocker = FastLockerTemplate<SpinRWLock, &SpinRWLock::wlock,
+    &SpinRWLock::wunlock>;
 
 class TicketLock: nocopy {
 public:
@@ -554,9 +554,9 @@ private:
     const uint yield;
 };
 
-typedef FastLockerTemplate<TicketLock> FastTicketLocker;
-typedef FastUnlockerTemplate<TicketLock> FastTicketUnlocker;
-typedef LockerTemplate<TicketLock> TicketLocker;
+using FastTicketLocker = FastLockerTemplate<TicketLock>;
+using FastTicketUnlocker = FastUnlockerTemplate<TicketLock>;
+using TicketLocker = LockerTemplate<TicketLock>;
 
 class BLISTER Condvar: nocopy {
 public:
@@ -593,7 +593,7 @@ protected:
 class BLISTER Event: nocopy {
 public:
     explicit Event(bool manual = false, bool set = false, const tchar *name =
-	NULL): hdl(NULL) { open(manual, set, name); }
+	nullptr): hdl(nullptr) { open(manual, set, name); }
     ~Event() { close(); }
 
     __forceinline operator HANDLE(void) const { return hdl; }
@@ -602,12 +602,12 @@ public:
     bool close(void) {
 	HANDLE h = hdl;
 
-	hdl = NULL;
+	hdl = nullptr;
 	return h ? CloseHandle(h) != 0 : true;
     }
-    bool open(bool manual = false, bool set = false, const tchar *name = NULL) {
+    bool open(bool manual = false, bool set = false, const tchar *name = nullptr) {
 	close();
-	return (hdl = CreateEvent(NULL, manual, set, name)) != NULL;
+	return (hdl = CreateEvent(NULL, manual, set, name)) != nullptr;
     }
     __forceinline bool pulse(void) const { return PulseEvent(hdl) != 0; }
     __forceinline bool reset(void) const { return ResetEvent(hdl) != 0; }
@@ -622,7 +622,8 @@ protected:
 
 class BLISTER SharedSemaphore: nocopy {
 public:
-    explicit SharedSemaphore(const tchar *name = NULL, uint init = 0): hdl(NULL) {
+    explicit SharedSemaphore(const tchar *name = nullptr, uint init = 0):
+	hdl(nullptr) {
 	if (init != (uint)-1)
 	    open(name, init);
     }
@@ -634,15 +635,15 @@ public:
     bool close(void) {
 	HANDLE h = hdl;
 
-	hdl = NULL;
-	return h == NULL || CloseHandle(h) != 0;
+	hdl = nullptr;
+	return h == nullptr || CloseHandle(h) != 0;
     }
     bool open(const tchar *name, uint init, bool exclusive = false) {
 	close();
 	hdl = CreateSemaphore(NULL, (LONG)init, LONG_MAX, name);
-	if (hdl == NULL && !exclusive)
+	if (hdl == nullptr && !exclusive)
 	    hdl = OpenSemaphore(SEMAPHORE_ALL_ACCESS, 0, name);
-	return hdl != NULL;
+	return hdl != nullptr;
     }
     __forceinline bool set(uint cnt = 1) const {
 	return ReleaseSemaphore(hdl, (LONG)cnt, NULL) != 0;
@@ -670,7 +671,7 @@ public:
 
     operator HANDLE(void) const { return hdl; }
     bool mask(ulong m) const { return SetProcessAffinityMask(hdl, m) != 0; }
-    static Process start(tchar * const *args, const int *fds = NULL);
+    static Process start(tchar * const *args, const int *fds = nullptr);
 
 private:
     HANDLE hdl;
@@ -691,7 +692,7 @@ inline void msleep(ulong msec) {
 
 class BLISTER SharedSemaphore: nocopy {
 public:
-    explicit SharedSemaphore(const tchar *name = NULL, uint init = 0): hdl(-1) {
+    explicit SharedSemaphore(const tchar *name = nullptr, uint init = 0): hdl(-1) {
 	open(name, init);
     }
     ~SharedSemaphore() { close(); }
@@ -707,7 +708,7 @@ public:
 	hdl = -1;
 	return h == -1 || semctl(h, 0, IPC_RMID) == 0;
     }
-    bool open(const tchar *name = NULL, uint init = 0, bool exclusive = false);
+    bool open(const tchar *name = nullptr, uint init = 0, bool exclusive = false);
     __forceinline bool set(uint cnt = 1) {
 	sembuf op;
 
@@ -892,16 +893,16 @@ private:
 class Thread;
 class ThreadGroup;
 
-typedef int (*ThreadRoutine)(void *userdata);
-typedef bool (Thread::*ThreadControlRoutine)(void);
+using ThreadRoutine = int (*)(void *userdata);
+using ThreadControlRoutine = bool (Thread::*)(void);
 
 enum ThreadState { Init, Running, Suspended, Terminated };
 
 /* manage OS native threads */
 class BLISTER Thread: nocopy {
 public:
-    explicit Thread(thread_hdl_t handle, ThreadGroup *tg = NULL, bool autoterm =
-	false);
+    explicit Thread(thread_hdl_t handle, ThreadGroup *tg = nullptr, bool
+	autoterm = false);
     Thread(void);
     virtual ~Thread();
 
@@ -922,10 +923,10 @@ public:
     bool operator !=(const Thread &t) const { return !operator ==(t); }
 
     bool priority(int pri = 0);			// -20 -> 20
-    bool start(uint stacksz = 0, ThreadGroup *tg = NULL, bool suspend = false,
+    bool start(uint stacksz = 0, ThreadGroup *tg = nullptr, bool suspend = false,
 	bool autoterm = false);
-    bool start(ThreadRoutine main, void *data = NULL, uint stacksz = 0,
-	ThreadGroup *tg = NULL, bool suspend = false, bool autoterm = false);
+    bool start(ThreadRoutine main, void *data = nullptr, uint stacksz = 0,
+	ThreadGroup *tg = nullptr, bool suspend = false, bool autoterm = false);
     bool stop(void);
     bool terminate(void);
     bool wait(ulong timeout = INFINITE);
@@ -937,7 +938,7 @@ protected:
     virtual void onStop(void) {}
 
 private:
-    typedef unordered_map<void *, ThreadLocalFree> ThreadLocalMap;
+    using ThreadLocalMap = unordered_map<void *, ThreadLocalFree>;
 
     mutable Lock lck;
     Condvar cv;
@@ -960,7 +961,7 @@ private:
 };
 
 /* manage a group of one or more, possibly dissimilar threads */
-typedef void (ThreadGroup::*ThreadGroupControlRoutine)(bool);
+using ThreadGroupControlRoutine = void (ThreadGroup::*)(bool);
 
 class BLISTER ThreadGroup: nocopy {
 public:
@@ -986,7 +987,7 @@ public:
     Thread *wait(ulong msec = INFINITE, bool all = false);
     bool waitForMain(ulong msec = INFINITE) { return master.wait(msec); }
 
-    static ThreadGroup *add(Thread &thread, ThreadGroup *tg = NULL);
+    static ThreadGroup *add(Thread &thread, ThreadGroup *tg = nullptr);
 
 protected:
     void control(ThreadState, ThreadControlRoutine);
@@ -1024,7 +1025,7 @@ public:
 	C *c = (C *)tls_get(key);
 
 	tls_set(key, 0);
-	Thread::thread_cleanup(c, NULL);
+	Thread::thread_cleanup(c, nullptr);
     }
     __forceinline C &get(void) const {
 	C *c = (C *)tls_get(key);

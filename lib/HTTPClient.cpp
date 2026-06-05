@@ -21,7 +21,7 @@
 #include "HTTPClient.h"
 #include "Log.h"
 
-static const int StreamSize = 3 * 1460;
+static constexpr int StreamSize = 3 * 1460;
 
 URL &URL::operator =(const URL &url) {
     if (this != &url) {
@@ -208,10 +208,10 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     string req, s, ss, sss;
     bool sent;
     msec_t start;
-    static const tchar connection[] = T("Connection");
-    static const tchar contentlen[] = T("Content-Length");
-    static const tchar keep_alive[] = T("Keep-Alive");
-    static const tchar pragma[] = T("Pragma");
+    static constexpr tchar connection[] = T("Connection");
+    static constexpr tchar contentlen[] = T("Content-Length");
+    static constexpr tchar keep_alive[] = T("Keep-Alive");
+    static constexpr tchar pragma[] = T("Pragma");
 
     sts = 0;
     s.reserve(128);
@@ -258,11 +258,11 @@ loop:
 	} else {
 	    dlogn(Log::mod(T("http")), Log::cmd(T("disconnect")),
 		Log::kv(T("addr"), addr.ipstr()));
-	    iov[0].iov_base = (char *)NULL;
+	    iov[0].iov_base = (char *)nullptr;
 	    goto done;
 	}
     }
-    iov[0].iov_base = (char *)NULL;
+    iov[0].iov_base = (char *)nullptr;
     p = s.c_str();
     while (*p && *p != ' ' && *p != '\t')
 	p++;
@@ -277,7 +277,7 @@ loop:
 	    p++;
 	if (*p == '\r' || !*p)
 	    break;
-	if ((pp = strchr(p, ':')) == NULL)
+	if ((pp = strchr(p, ':')) == nullptr)
 	    continue;
 	ss = s.substr((string::size_type)(p - s.c_str()), (string::size_type)
 	    (pp - p));
@@ -293,16 +293,16 @@ loop:
     if (!sstrm)
 	goto done;
     if (ka) {
-	if ((resp = response(connection)) != NULL &&
+	if ((resp = response(connection)) != nullptr &&
 	    !tstrnicmp(resp, keep_alive, sizeof (keep_alive) - 1))
 	    keep = true;
-	else if ((resp = response(pragma)) != NULL &&
+	else if ((resp = response(pragma)) != nullptr &&
 	    !tstrnicmp(resp, keep_alive, sizeof (keep_alive) - 1))
 	    keep = true;
     }
     if (sts == 204 || sts == 304)
 	ressz = 0;
-    else if ((resp = response(contentlen)) != NULL)
+    else if ((resp = response(contentlen)) != nullptr)
 	ressz = tstrtoul(resp, NULL, 10);
     else
 	ressz = (ulong)-1;

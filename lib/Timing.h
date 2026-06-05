@@ -72,7 +72,7 @@
  *   dtiming.record();
  */
 
-typedef usec_t timing_t;
+using timing_t = usec_t;
 
 class BLISTER TimingKey: public StringHash {
 public:
@@ -93,8 +93,8 @@ private:
 
 class BLISTER Timing: nocopy {
 public:
-    static const uint CACHESIZE = 4096;
-    static const uint TIMINGSLOTS = 10;
+    static constexpr uint CACHESIZE = 4096;
+    static constexpr uint TIMINGSLOTS = 10;
 
     Timing(): cache{}, flist(nullptr) {}
     ~Timing() {
@@ -161,7 +161,7 @@ private:
 	vector<timing_t> starts;
     };
 
-    typedef unordered_map<size_t, Stats *> timingmap;
+    using timingmap = unordered_map<size_t, Stats *>;
 
     atomic<Stats *> cache[CACHESIZE];
     atomic<Stats *> flist;

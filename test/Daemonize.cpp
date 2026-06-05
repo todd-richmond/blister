@@ -26,7 +26,7 @@
 
 class WatchDaemon: public Daemon {
 public:
-    WatchDaemon(int argc, const tchar * const *argv, const tchar *name = NULL);
+    WatchDaemon(int argc, const tchar * const *argv, const tchar *name = nullptr);
 
 protected:
     ulong interval, maxmem;
@@ -99,18 +99,18 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     if (ret)
 	return ret;
     for (ac = 1; ac < argc; ac += 2) {
-        if (argv[ac][0] != '-')
-            break;
+	if (argv[ac][0] != '-')
+	    break;
     }
     for (int i = ac + 1; i < argc; ++i) {
-        if (!args.empty())
-            args += ' ';
-        args += argv[i];
+	if (!args.empty())
+	    args += ' ';
+	args += argv[i];
     }
     running();
     dlogi(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[0]),
 	Log::kv(T("args"), args));
-    dlog.close();
+    (void)dlog.close();
 #ifdef _WIN32
     if (tspawnvp(P_WAIT, argv[ac], (tchar **)&argv[ac]) == 0)
 	return 0;
@@ -118,9 +118,9 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     cpid = fork();
     if (cpid == 0) {
 	unsetsignal();
-        texecvp(argv[ac], (tchar **)&argv[ac]);
+	texecvp(argv[ac], (tchar **)&argv[ac]);
     } else if (cpid > 0) {
-        int sts;
+	int sts;
 
 	waitpid(cpid, &sts, 0);
 	return WEXITSTATUS(sts);

@@ -37,7 +37,7 @@ uint Dispatcher::socketmsg;
 #define EPOLLONESHOT (1 << 30)
 #endif
 
-typedef epoll_event event_t;
+using event_t = epoll_event;
 
 #elif defined(DSP_KQUEUE)
 
@@ -47,7 +47,7 @@ typedef epoll_event event_t;
 #define NOTE_EOF 0
 #endif
 
-typedef struct kevent event_t;
+using event_t = struct kevent;
 
 static constexpr uint MIN_EVENTS = 32;
 
@@ -56,7 +56,7 @@ static constexpr uint MIN_EVENTS = 32;
 #include <sys/devpoll.h>
 #include <sys/queue.h>
 
-typedef struct pollfd event_t;
+using event_t = struct pollfd;
 
 #endif
 
@@ -1219,7 +1219,7 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
 
 DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &sa,
     int type, bool reuse, int qlen, DispatchObjCB cb): DispatchSocket(d, type) {
-    listen(sa, reuse, qlen, cb);
+    (void)listen(sa, reuse, qlen, cb);
 }
 
 void DispatchListenSocket::connection() {

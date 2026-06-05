@@ -108,7 +108,7 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 	    sstrm.write(&sep, 1);
 	    sstrm.write(as2, (streamsize)strlen(as2));
 	    if (addbracket) {
-		static const char rb[] = ">\r\n";
+		static constexpr char rb[] = ">\r\n";
 		sstrm.write(rb, 3);
 	    } else {
 		sstrm.write(crlf, 2);
@@ -410,7 +410,7 @@ bool SMTPClient::stuff(const void *data, size_t sz) {
 #define IS_DIGIT(c) (chartraits[(uchar)(c)] & 8)
 #define IS_DOMAIN(c) (chartraits[(uchar)(c)] & (2 + 4 + 8))
 
-static const uchar chartraits[] = {
+static constexpr uchar chartraits[] = {
     0,    0,    0,    0,    0,    0,    0,    0, 	// 0x0..0x7
     0,    0,    0,    0,    0,    0,    0,    0, 	// 0x8..0xf
     0,    0,    0,    0,    0,    0,    0,    0, 	// 0x10..0x17
@@ -445,7 +445,7 @@ static const uchar chartraits[] = {
     0,    0,    0,    0,    0,    0,    0,    0 	// 0xf8..0xff
 };
 
-static const tchar *NonASCII = T("Non-ASCII character");
+static constexpr const tchar *NonASCII = T("Non-ASCII character");
 
 void RFC821Addr::parseaddr(const tchar *&input) {
     uint angledepth = 0;
@@ -1067,7 +1067,7 @@ const tstring RFC822Addr::address(uint u, bool n, bool b) const {
     return s;
 }
 
-static const uint maxlen = 45;
+static constexpr uint maxlen = 45;
 
 #define	DEC(c) (((c) - ' ') & 077)
 #define ENC(c) (char)(table[(c) & 077])
@@ -1121,7 +1121,7 @@ static inline void encode(const void *input, size_t len, void *output, size_t
 }
 
 bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
-    static const uchar table[64] = {
+    static constexpr uchar table[64] = {
 	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
 	'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b',
 	'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
@@ -1140,9 +1140,9 @@ bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
 bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
     size_t &outsz) {
     string filestr = tchartotstring(file);
-    static const char begin[] = "begin 644 ";
-    static const char end[] = "\r\nend\r\n";
-    static const uchar table[64] = {
+    static constexpr char begin[] = "begin 644 ";
+    static constexpr char end[] = "\r\nend\r\n";
+    static constexpr uchar table[64] = {
 	'`', '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-',
 	'.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';',
 	'<', '=', '>', '?', '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
@@ -1248,7 +1248,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
     char *out;
     uint out_bits = 0, out_byte = 0;
-    static const uchar table[256] = {
+    static constexpr uchar table[256] = {
 	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*000-007*/
 	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*010-017*/
 	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*020-027*/
@@ -1433,7 +1433,7 @@ time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {
     bool rfcerr = false;
     tm tm;
     time_t t;
-    static const tchar *monthname[] = {
+    static constexpr const tchar *monthname[] = {
 	T("jan"), T("feb"), T("mar"), T("apr"), T("may"), T("jun"), T("jul"),
 	T("aug"), T("sep"), T("oct"), T("nov"), T("dec")
     };

@@ -29,9 +29,9 @@ const char HTTPServerSocket::CRLF[] = "\r\n";
 bool HTTPServerSocket::date;
 
 HTTPServerSocket::HTTPServerSocket(Dispatcher &d, Socket &sock):
-    DispatchServerSocket(d, sock), path(NULL), prot(NULL), postdata(NULL),
-    postsz(0), chunkin(0), chunktrailer(false), postchunking(false), cmd(NULL),
-    data(NULL), datasz(0), sz(0), fmap(NULL), ka(false), nagleon(true),
+    DispatchServerSocket(d, sock), path(nullptr), prot(nullptr), postdata(nullptr),
+    postsz(0), chunkin(0), chunktrailer(false), postchunking(false), cmd(nullptr),
+    data(nullptr), datasz(0), sz(0), fmap(nullptr), ka(false), nagleon(true),
     postdatasz(0), postin(0), rto(RTimeout), wto(WTimeout), savechar(0),
     _status(0) {
     ZERO(iov);
@@ -100,7 +100,7 @@ void HTTPServerSocket::readpost() {
     ulong in = 0;
     ulong room = postdatasz ? postdatasz - postin : sz - datasz;
     ulong left = room > 100 && postsz == (ulong)-1 ? room : postsz - postin;
-    static const char chunkmap[256] = {
+    static constexpr char chunkmap[256] = {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -1, -1, -2, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -280,7 +280,7 @@ void HTTPServerSocket::parse(void) {
 	continue;
     noprot = (*p == '\r');
     *p++ = '\0';
-    if ((pp = strchr(pp, '?')) == NULL) {
+    if ((pp = strchr(pp, '?')) == nullptr) {
 	args.clear();
     } else {
 	*pp++ = '\0';
@@ -309,7 +309,7 @@ void HTTPServerSocket::parse(void) {
     while (*buf) {
 	bool crlf = true;
 
-	if ((end = strchr(buf, '\r')) == NULL) {
+	if ((end = strchr(buf, '\r')) == nullptr) {
 	    end = buf + strlen(buf);
 	    crlf = false;
 	} else if (end[1] != '\n') {
@@ -318,7 +318,7 @@ void HTTPServerSocket::parse(void) {
 	while (end[0] && end[1] && (end[2] == ' ' || end[2] == '\t')) {
 	    for (start = end + 2; *start == ' ' || *start == '\t'; start++)
 		continue;
-	    if ((p = strchr(start, '\r')) == NULL)
+	    if ((p = strchr(start, '\r')) == nullptr)
 		p = start + strlen(start);
 	    memmove(end, start, (size_t)(p - start));
 	    end = p;
@@ -331,7 +331,7 @@ void HTTPServerSocket::parse(void) {
 	*p = '\0';
 	if (p == buf)
 	    break;
-	if ((p = strchr(buf, ':')) != NULL) {
+	if ((p = strchr(buf, ':')) != nullptr) {
 	    pp = p + 1;
 	    while (p > buf && (p[-1] == ' ' || p[-1] == '\t'))
 		p--;
@@ -390,7 +390,7 @@ void HTTPServerSocket::exec(void) {
     } else if (!stricmp(cmd, "POST")) {
 	const char *val = attr("content-type");
 
-	if (val != NULL && !stricmp(val, "application/x-www-form-urlencoded"))
+	if (val != nullptr && !stricmp(val, "application/x-www-form-urlencoded"))
 	    urldecode(postdata, postargs);
 	else
 	    postargs.clear();
@@ -412,7 +412,7 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 	while (*p == ' ' || *p == '\t')
 	    p++;
 	buf = p;
-	if ((p = strchr(p, '&')) != NULL)
+	if ((p = strchr(p, '&')) != nullptr)
 	    *p++ = '\0';
 #ifdef UNICODE
 	tstring s(achartotchar(buf));
@@ -422,7 +422,7 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 #else
 	URL::unescape(buf);
 #endif
-	if ((pp = strchr(buf, '=')) == NULL) {
+	if ((pp = strchr(buf, '=')) == nullptr) {
 	    amap[buf] = "";
 	} else {
 	    *pp++ = '\0';
@@ -434,14 +434,14 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 void HTTPServerSocket::keepalive(void) {
     const char *p = "Pragma";
     const char *val = attr(p);
-    static const char keep[] = "keep-alive";
+    static constexpr char keep[] = "keep-alive";
 
     ka = prot[7] == '1';		// HTTP 1.1
-    if (val != NULL && !stricmp(val, keep)) {
+    if (val != nullptr && !stricmp(val, keep)) {
 	ka = true;
     } else {
 	p = "Connection";
-	if ((val = attr(p)) != NULL) {
+	if ((val = attr(p)) != nullptr) {
 	    if (!strnicmp(val, keep, 10))
 		ka = true;
 	    else if (!stricmp(val, "close"))
@@ -488,7 +488,7 @@ void HTTPServerSocket::send(void) {
 #else
 	delete [] fmap;
 #endif
-	fmap = NULL;
+	fmap = nullptr;
     }
     if (ka && out != (ulong)-1) {
 	datasz -= postdatasz ? datasz : postsz + (ulong)(postdata - data);
@@ -553,19 +553,19 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 	HANDLE hdl;
 
 	if ((hdl = CreateFileMapping((HANDLE)(ullong)fd, NULL, PAGE_READONLY,
-	    0, (DWORD)len, NULL)) == NULL) {
+	    0, (DWORD)len, NULL)) == nullptr) {
 	    error(404);
 	    return;
 	}
 	if ((fmap = (char *)MapViewOfFile(hdl, FILE_MAP_READ,
-	    0, 0, len)) == NULL) {
+	    0, 0, len)) == nullptr) {
 	    CloseHandle(hdl);
 	    error(404);
 	    return;
 	}
 	CloseHandle(hdl);
 #else
-	if ((fmap = new char[len]) == NULL || (ulong)::read(fd, fmap, len) !=
+	if ((fmap = new char[len]) == nullptr || (ulong)::read(fd, fmap, len) !=
 	    len) {
 	    error(404);
 	    return;
@@ -635,15 +635,15 @@ void HTTPServerSocket::header(const char *attr, const char *val) {
 
 void HTTPServerSocket::error(uint sts, bool close) {
     const char *p;
-    static const char *err2xx[] = {
+    static constexpr const char *err2xx[] = {
 	"OK", "Created", "Accepted", "Non-Authoritative Information",
 	"No Content", "Reset Content", "Partial Content"
     };
-    static const char *err3xx[] = {
+    static constexpr const char *err3xx[] = {
 	"Multiple Choices", "Moved Permanently", "Found", "See Other",
 	"Not Modified", "Use Proxy", "Reserved", "Temporary Redirect"
     };
-    static const char *err4xx[] = {
+    static constexpr const char *err4xx[] = {
 	"Bad Request", "Unauthorized", "Payment required", "Forbidden",
 	"Not Found", "Method Not Allowed", "Not Acceptable",
 	"Proxy Authentication Required", "Request Timeout", "Conflict",
@@ -652,7 +652,7 @@ void HTTPServerSocket::error(uint sts, bool close) {
 	"Unsupported Media Type", "Requested Range Not Satisfiable",
 	"Expectation Failed"
     };
-    static const char *err5xx[] = {
+    static constexpr const char *err5xx[] = {
 	"Bad Request", "Unauthorized", "Payment required", "Forbidden",
 	"Internal Server Error", "Not Implemented", "Bad Gateway",
 	"Service Unavailable", "Gateway Timeout", "Version Not Supported"
@@ -671,7 +671,7 @@ void HTTPServerSocket::error(uint sts, bool close) {
     else
 	p = "HTTP error";
 #pragma warning(pop)		// +V557
-    status(sts, "text/plain", 0, NULL, close);
+    status(sts, "text/plain", 0, nullptr, close);
     {
 	char nbuf[8];
 	auto [nend, nec] = to_chars(nbuf, nbuf + sizeof(nbuf), sts);
@@ -703,14 +703,14 @@ void HTTPServerSocket::done() {
 }
 
 void HTTPServerSocket::get(bool head) {
-    const char *ext = NULL;
+    const char *ext = nullptr;
     int fd;
     string s;
     struct stat statbuf;
     uint sts = 200;
     const char *val;
 
-    for (const char *pp = path; (pp = strstr(pp, "/..")) != NULL; pp += 3) {
+    for (const char *pp = path; (pp = strstr(pp, "/..")) != nullptr; pp += 3) {
 	if (pp[3] == '/' || pp[3] == '\0') {
 	    error(403);
 	    return;
@@ -724,7 +724,7 @@ void HTTPServerSocket::get(bool head) {
 	s += path;
     else
 	s += "/default.html";		    // deal w/ language later
-    if ((ext = strrchr(s.c_str(), '.')) != NULL) {
+    if ((ext = strrchr(s.c_str(), '.')) != nullptr) {
 	ext++;
 	if (!stricmp(ext, "./")) {
 	    error(403);
@@ -740,14 +740,14 @@ void HTTPServerSocket::get(bool head) {
 	error(404);
 	return;
     }
-    if ((val = attr("if-modified-since")) != NULL) {
+    if ((val = attr("if-modified-since")) != nullptr) {
 	if (parse_date(achartotchar(val)) >= statbuf.st_mtime)
 	    sts = 304;
-    } else if ((val = attr("if-unmodified-since")) != NULL) {
+    } else if ((val = attr("if-unmodified-since")) != nullptr) {
 	if (parse_date(achartotchar(val)) < statbuf.st_mtime)
 	    sts = 304;
     }
-    if (val != NULL && (val = strchr(val, ';')) != NULL &&
+    if (val != nullptr && (val = strchr(val, ';')) != nullptr &&
 	!strnicmp(val + 1, "length=", 7) &&
 	(ulong)atol(val + 8) != (ulong)statbuf.st_size)
 	sts = 200;
@@ -755,7 +755,7 @@ void HTTPServerSocket::get(bool head) {
     if (sts == 200 && !head)
 	reply(fd, (ulong)statbuf.st_size);
     else
-	reply((const char *)NULL);
+	reply((const char *)nullptr);
     ::close(fd);
 }
 

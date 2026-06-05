@@ -83,12 +83,12 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
 	hints.ai_family = proto == TCP || proto == TCP4 || proto == TCP6 ?
 	    families[TCP6] : families[UDP6];
 	hints.ai_flags = AI_PASSIVE;
-	host = NULL;
+	host = nullptr;
     } else if (!tstricmp(host, T("INADDR_ANY"))) {
 	hints.ai_family = proto == TCP || proto == TCP4 ? families[TCP4] :
 	    families[UDP4];
 	hints.ai_flags = AI_PASSIVE;
-	host = NULL;
+	host = nullptr;
     } else if (istdigit(*host)) {
 	hints.ai_flags = AI_NUMERICHOST;
     } else {
@@ -181,7 +181,7 @@ Sockaddr::Proto Sockaddr::proto(void) const {
 bool Sockaddr::service(const tchar *service, Proto proto) {
     Sockaddr sa;
 
-    if (sa.set(NULL, service, proto)) {
+    if (sa.set(nullptr, service, proto)) {
 	port(sa.port());
 	return true;
     } else {
@@ -209,28 +209,28 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
     tstring s;
 
     if (!host) {
-	p = NULL;
+	p = nullptr;
     } else if (*host == ':' && host[1] == ':') {
-	if ((p = tstrchr(host + 2, ':')) != NULL) {
+	if ((p = tstrchr(host + 2, ':')) != nullptr) {
 	    s.assign(host, (tstring::size_type)(p - host));
 	    host = s.c_str();
 	}
     } else if (*host == '[') {
-	if ((p = tstrchr(host, ']')) == NULL) {
+	if ((p = tstrchr(host, ']')) == nullptr) {
 	    family(AF_UNSPEC);
 	    return false;
 	}
 	s.assign(host + 1, (tstring::size_type)(p - host - 1));
 	host = s.c_str();
 	p = tstrchr(p, ':');
-    } else if ((p = tstrrchr(host, ':')) != NULL) {
+    } else if ((p = tstrrchr(host, ':')) != nullptr) {
 	s.assign(host, (tstring::size_type)(p - host));
 	if (s == T("unix"))
-	    p = NULL;
+	    p = nullptr;
 	else
 	    host = s.c_str();
     }
-    return set(host, p ? p + 1 : NULL, proto);
+    return set(host, p ? p + 1 : nullptr, proto);
 }
 
 bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
@@ -240,7 +240,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 	tsprintf(portstr, T("%u"), portno);
 	return set(host, portstr, proto);
     } else {
-	return set(host, (tchar *)NULL, proto);
+	return set(host, (tchar *)nullptr, proto);
     }
 }
 
@@ -302,7 +302,7 @@ bool Sockaddr::set(const sockaddr &sa) {
 
 const tstring Sockaddr::service_name(ushort port, Proto proto) {
     char buf[NI_MAXSERV];
-    Sockaddr sa(NULL, port, proto);
+    Sockaddr sa(nullptr, port, proto);
 
     if (getnameinfo(sa, sa.size(), NULL, 0, buf, sizeof (buf), dgram(proto) ?
 	NI_DGRAM : 0)) {
@@ -317,7 +317,7 @@ const tstring Sockaddr::service_name(ushort port, Proto proto) {
 ushort Sockaddr::service_port(const tchar *svc, Proto proto) {
     Sockaddr sa;
 
-    return sa.set(NULL, svc, proto) ? sa.port() : (ushort)0;
+    return sa.set(nullptr, svc, proto) ? sa.port() : (ushort)0;
 }
 
 ushort Sockaddr::size(ushort family) {
@@ -403,9 +403,9 @@ bool CIDR::add(const tchar *addrs) {
 	    range.rmin = range.rmax = BUILD_IP(ip1);
 	    ranges.emplace_back(range);
 	}
-	if ((addrs = tstrchr(p, ',')) != NULL ||
-	    (addrs = tstrchr(p, ';')) != NULL ||
-	    (addrs = tstrchr(p, ' ')) != NULL)
+	if ((addrs = tstrchr(p, ',')) != nullptr ||
+	    (addrs = tstrchr(p, ';')) != nullptr ||
+	    (addrs = tstrchr(p, ' ')) != nullptr)
 	    addrs++;
     }
     if (ranges.size() != sz) {

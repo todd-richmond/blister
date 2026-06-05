@@ -18,13 +18,14 @@
 #define LRUCache_h
 
 #include <list>
+#include <type_traits>
 #include <unordered_map>
 #include "Thread.h"
 
 /*
  * Time and size limited LRU Cache
  */
-typedef uint64_t lruhash_t;
+using lruhash_t = uint64_t;
 
 class BLISTER LRUCacheEntry {
 public:
@@ -51,16 +52,16 @@ private:
 template<typename C>
 class BLISTER LRUCache: nocopy {
 public:
-    typedef pair<lruhash_t, C> lru_kv;
-    typedef list<lru_kv> lru_list;
-    typedef typename lru_list::iterator list_iterator;
-    typedef unordered_map<lruhash_t, list_iterator> lru_map;
+    using lru_kv = pair<lruhash_t, C>;
+    using lru_list = list<lru_kv>;
+    using list_iterator = typename lru_list::iterator;
+    using lru_map = unordered_map<lruhash_t, list_iterator>;
     static constexpr int LRUCACHE_SIZE = 10 * 1024 * 1024;
     static constexpr int LRUCACHE_TIME = 5 * 60 * 1000;
 
     explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME):
 	cursz(0), maxsz(sz), maxtm(tm), last_purge(0) {
-	(void)static_cast<LRUCacheEntry *>((C *)0); // enforce base class
+	static_assert(is_base_of_v<LRUCacheEntry, C>, "C must derive from LRUCacheEntry");
 	cache_map.reserve(128);
     }
     ~LRUCache() { clear(); }
@@ -77,7 +78,7 @@ public:
 	for (auto &kv : freed)
 	    delete [] (char *)kv.second.data;
     }
-    const C get(const void *data, ulong sz) {
+    [[nodiscard]] const C get(const void *data, ulong sz) {
 	C entry(data, sz);
 	msec_t now = LIKELY(maxtm) ? mticks() : 0;
 	lru_list freed;
@@ -88,7 +89,7 @@ public:
 	    purge(0, now, freed);
 	    last_purge = now;
 	}
-	typename lru_map::const_iterator it = cache_map.find(entry);
+	auto it = cache_map.find(entry);
 	if (it != cache_map.end() && it->second->second.sz == sz &&
 	    (!maxtm || now - it->second->second.touch() <= maxtm)) {
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
@@ -101,7 +102,7 @@ public:
 	    delete [] (char *)kv.second.data;
 	return result;
     }
-    bool put(C &entry, const void *data, ulong sz) {
+    [[nodiscard]] bool put(C &entry, const void *data, ulong sz) {
 	if (UNLIKELY(sz > maxsz)) {
 	    entry.data = nullptr;
 	    entry.sz = 0;
@@ -113,7 +114,7 @@ public:
 	const void *old_data = nullptr;
 
 	lock.lock();
-	typename lru_map::iterator it = cache_map.find(entry);
+	auto it = cache_map.find(entry);
 	if (it != cache_map.end()) {
 	    old_data = it->second->second.data;
 	    cursz -= it->second->second.sz;

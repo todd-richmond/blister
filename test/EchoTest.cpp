@@ -60,12 +60,12 @@ public:
     class EchoServerSocket: public DispatchServerSocket {
     public:
 	EchoServerSocket(Dispatcher &d, Socket &sock):
-	    DispatchServerSocket(d, sock), buf(NULL), bufsz(0), in(0), out(0),
+	    DispatchServerSocket(d, sock), buf(nullptr), bufsz(0), in(0), out(0),
 	    tmt(TIMEOUT) {}
 	virtual ~EchoServerSocket() { delete [] buf; }
 
 	void timeout(ulong timeout) { tmt = timeout; }
-	static const tchar *section(void) { return T("echo"); }
+	static constexpr const tchar *section(void) { return T("echo"); }
 
 	virtual void start(void) {
 	    cork(false);
@@ -302,7 +302,7 @@ int tmain(int argc, const tchar * const argv[]) {
     Config config;
     EchoTest et(config);
     int fd;
-    const tchar *host = NULL;
+    const tchar *host = nullptr;
     int i;
     msec_t last, now;
     const tchar *path = T("echo this short test string as quickly as possible");

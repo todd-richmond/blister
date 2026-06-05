@@ -23,7 +23,7 @@
 
 class BLISTER URL {
 public:
-    URL(): port(80) { set(NULL); }
+    URL(): port(80) { set(nullptr); }
     explicit URL(const tchar *url): port(80) { set(url); }
     URL(const URL &url): port(0) { operator =(url); }
 
@@ -42,8 +42,8 @@ public:
 
 class BLISTER HTTPClient: nocopy {
 public:
-    typedef unordered_multimap<tstring, tstring, strihash<tchar>,
-	strieq<tchar> > attrmap;
+    using attrmap = unordered_multimap<tstring, tstring, strihash<tchar>,
+	strieq<tchar>>;
 
     HTTPClient();
     ~HTTPClient() { delete [] result; }
@@ -83,8 +83,8 @@ public:
 	return send(T("PUT"), path, data, len);
     }
     const tchar *response(const tstring &name) const {
-	attrmap::const_iterator it = reshdrs.find(name);
-	return it == reshdrs.end() ? NULL : it->second.c_str();
+	auto it = reshdrs.find(name);
+	return it == reshdrs.end() ? nullptr : it->second.c_str();
     }
     const attrmap &responses(void) const { return reshdrs; }
     void timeout(uint r, uint w = SOCK_INFINITE) {
@@ -105,7 +105,7 @@ protected:
     uint sts;
     ulong sz;
 
-    bool send(const tchar *op, const tchar *path, const void *data = NULL,
+    bool send(const tchar *op, const tchar *path, const void *data = nullptr,
 	ulong datasz = 0);
 };
 
