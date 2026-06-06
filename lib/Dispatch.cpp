@@ -72,12 +72,13 @@ static constexpr uint MIN_IDLE_TIMER = 1 * 1000;
 static constexpr uint_fast32_t DSP_IO = DSP_Acceptable | DSP_Readable |
     DSP_Writeable | DSP_Closeable;
 static constexpr uint_fast32_t DSP_ReadyAll = DSP_Ready | DSP_ReadyGroup;
+static constexpr uint_fast32_t DSP_PostCB = DSP_Grouped | DSP_Freed | DSP_Ready;
 static constexpr uint_fast32_t DSP_SelectAll = DSP_SelectAccept |
     DSP_SelectRead | DSP_SelectWrite | DSP_SelectClose;
 
 Dispatcher::Dispatcher(const Config &config): cfg(config),
-    maxthreads(0), polling(false), shutdown(true), scanning(0), workers(0),
-    cache(0), due(DispatchTimer::DSP_NEVER_DUE),
+    maxthreads(0), rsize(0), polling(false), shutdown(true), scanning(0),
+    workers(0), cache(0), due(DispatchTimer::DSP_NEVER_DUE),
 #ifdef DSP_WIN32_ASYNC
     interval(DispatchTimer::DSP_NEVER), wnd(0),
 #elif defined(DSP_POLL)
@@ -101,6 +102,7 @@ bool Dispatcher::exec() {
 	if (!rlist)
 	    break;
 	obj = rlist.pop_front();
+	rsize.fetch_sub(1, memory_order_relaxed);
 	__builtin_prefetch(obj->next, 0, 1);
 	if (UNLIKELY((flags = obj->flags) & DSP_Freed)) {
 	    olock.unlock();
@@ -125,23 +127,31 @@ bool Dispatcher::exec() {
 	scanning.fetch_add(1, memory_order_release);
 	olock.lock();
 	flags = obj->flags &= ~DSP_Active;
-	if (UNLIKELY(flags & DSP_Freed))
-	    rlist.push_front(*obj);
-	if (UNLIKELY(group)) {
-	    group->active = false;
-	    if (UNLIKELY(group->glist)) {
-		if (flags & DSP_Ready && !(flags & DSP_Freed)) {
-		    obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
-		    group->glist.push_back(*obj);
+	if (UNLIKELY(flags & DSP_PostCB)) {
+	    if (flags & DSP_Grouped) {
+		group->active = false;
+		if (UNLIKELY(group->glist)) {
+		    if (flags & DSP_Ready && !(flags & DSP_Freed)) {
+			obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
+			group->glist.push_back(*obj);
+		    }
+		    obj = group->glist.pop_front();
+		    obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
+		    rlist.push_back(*obj);
+		    rsize.fetch_add(1, memory_order_relaxed);
+		    continue;
 		}
-		obj = group->glist.pop_front();
-		obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
-		rlist.push_back(*obj);
+	    }
+	    if (flags & DSP_Freed) {
+		olock.unlock();
+		delete obj;
+		olock.lock();
 		continue;
+	    } else if (flags & DSP_Ready) {
+		rlist.push_back(*obj);
+		rsize.fetch_add(1, memory_order_relaxed);
 	    }
 	}
-	if (UNLIKELY(flags & DSP_Ready))
-	    rlist.push_back(*obj);
     }
     olock.unlock();
     return !shutdown;
@@ -544,8 +554,7 @@ void Dispatcher::cleanup(void) {
 	    break;
 	if (obj->group && obj->group->glist)
 	    rlist.push_front(obj->group->glist);
-	if (obj->flags & DSP_ReadyGroup)
-	    obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
+	obj->flags &= ~(DSP_Ready | DSP_ReadyGroup);
 	if (obj->flags & DSP_Freed)
 	    delete obj;
 	else
@@ -661,6 +670,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		    rlist.push_front(*ds);
 		else
 		    rlist.push_back(*ds);
+		rsize.fetch_add(1, memory_order_relaxed);
 		rcnt++;
 	    }
 	} else {
@@ -674,8 +684,8 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		DSP_SelectWrite);
 	}
     }
-    rsz = rlist.size();
     olock.unlock();
+    rsz = rsize.load(memory_order_relaxed);
     // phase 4: batch wake threads
     if (LIKELY(rcnt && maxthreads)) {
 	uint maxwake = (rcnt + 1) / 2;
@@ -705,9 +715,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		    break;
 		rcnt -= done;
 	    }
-	    olock.lock();
-	    rsz = rlist.size();
-	    olock.unlock();
+	    rsz = rsize.load(memory_order_relaxed);
 	    s = scanning.load(memory_order_acquire);
 	}
     } else if (rcnt && !maxthreads) {
@@ -773,8 +781,10 @@ void Dispatcher::onStop() {
     if (shutdown)
 	return;
     shutdown = true;
-    wakeup(0);
-    waitForMain();
+    while (!waitForMain(0)) {
+	wakeup(0);
+	msleep(1);
+    }
 }
 
 void Dispatcher::wakeup(ulong msec) {
@@ -1110,8 +1120,10 @@ void Dispatcher::cancelReady(DispatchObj &obj, bool del) {
 	removeReady(obj);
     if (del && !(obj.flags & DSP_Freed)) {
 	obj.flags |= DSP_Freed;
-	if (!(obj.flags & DSP_Active))
+	if (!(obj.flags & DSP_Active)) {
 	    rlist.push_front(obj);
+	    rsize.fetch_add(1, memory_order_relaxed);
+	}
     }
     olock.unlock();
 }
@@ -1119,7 +1131,10 @@ void Dispatcher::cancelReady(DispatchObj &obj, bool del) {
 void Dispatcher::removeReady(DispatchObj &obj) {
     if (obj.flags & DSP_Ready) {
 	obj.flags &= ~DSP_Ready;
-	rlist.pop(obj);
+	if (!(obj.flags & DSP_Active)) {
+	    rlist.pop(obj);
+	    rsize.fetch_sub(1, memory_order_relaxed);
+	}
     } else if (obj.flags & DSP_ReadyGroup) {
 	obj.flags &= ~DSP_ReadyGroup;
 	obj.group->glist.pop(obj);
@@ -1155,8 +1170,9 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    rlist.push_front(obj);
 	else
 	    rlist.push_back(obj);
-	rsz = rlist.size();
+	rsize.fetch_add(1, memory_order_relaxed);
 	olock.unlock();
+	rsz = rsize.load(memory_order_relaxed);
 	if (LIKELY(maxthreads)) {
 	    uint_fast32_t s = scanning.load(memory_order_acquire);
 
@@ -1174,9 +1190,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 			break;
 		    }
 		}
-		olock.lock();
-		rsz = rlist.size();
-		olock.unlock();
+		rsz = rsize.load(memory_order_relaxed);
 		s = scanning.load(memory_order_acquire);
 	    }
 	} else if (polling.load(memory_order_relaxed)) {

@@ -59,6 +59,7 @@ using dspflag_t = uint_fast32_t;
 
 // Dispatch flags
 enum DispatchFlag: dspflag_t {
+    DSP_Grouped = 0x0001,
     DSP_Detached = 0x0002,
     DSP_Connecting = 0x0004,
     DSP_Scheduled = 0x0008,
@@ -89,7 +90,7 @@ public:
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = nullptr): dcb(cb),
 	dspr(d), flags(0), msg(DispatchNone), group(nullptr) {}
     DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb = nullptr):
-	dcb(cb), dspr(parent.dspr), flags(0), msg(DispatchNone), group(nullptr) {
+	dcb(cb), dspr(parent.dspr), flags(DSP_Grouped), msg(DispatchNone), group(nullptr) {
 	if (!parent.group)
 	    parent.group = new Group();
 	group = &parent.group->add();
@@ -403,6 +404,8 @@ private:
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
     void removeTimer(DispatchTimer &dt) {
+	if (dt.due == DispatchTimer::DSP_NEVER_DUE)
+	    return;
 	tlock.lock();
 	timers.set(dt, DispatchTimer::DSP_NEVER_DUE);
 	tlock.unlock();
@@ -434,6 +437,7 @@ private:
     SpinLock olock;
     uint maxthreads;
     ObjectList<DispatchObj> rlist;
+    atomic<uint> rsize;
     atomic_bool polling, shutdown;
     alignas(64) atomic_uint_fast32_t scanning, workers;
     SpinLock tlock;

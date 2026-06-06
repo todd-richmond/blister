@@ -1,6 +1,7 @@
 # Configure output
 .cmake
 .deps
+.devin
 .libs
 .ninja_*
 .vs
