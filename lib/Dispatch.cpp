@@ -69,12 +69,12 @@ static constexpr uint MAX_WAIT_TIME = 1 * 60 * 1000;
 static constexpr uint MAX_IDLE_TIMER = 10 * 1000;
 static constexpr uint MIN_IDLE_TIMER = 1 * 1000;
 
-static constexpr uint_fast32_t DSP_IO = DSP_Acceptable | DSP_Readable |
+static constexpr dspflag_t DSP_IO = DSP_Acceptable | DSP_Readable |
     DSP_Writeable | DSP_Closeable;
-static constexpr uint_fast32_t DSP_ReadyAll = DSP_Ready | DSP_ReadyGroup;
-static constexpr uint_fast32_t DSP_PostCB = DSP_Grouped | DSP_Freed | DSP_Ready;
-static constexpr uint_fast32_t DSP_SelectAll = DSP_SelectAccept |
-    DSP_SelectRead | DSP_SelectWrite | DSP_SelectClose;
+static constexpr dspflag_t DSP_ReadyAll = DSP_Ready | DSP_ReadyGroup;
+static constexpr dspflag_t DSP_PostCB = DSP_Grouped | DSP_Freed | DSP_Ready;
+static constexpr dspflag_t DSP_SelectAll = DSP_SelectAccept | DSP_SelectRead |
+    DSP_SelectWrite | DSP_SelectClose;
 
 Dispatcher::Dispatcher(const Config &config): cfg(config),
     maxthreads(0), rsize(0), polling(false), shutdown(true), scanning(0),
@@ -94,14 +94,11 @@ Dispatcher::Dispatcher(const Config &config): cfg(config),
 WARN_DISABLE(26430)
 bool Dispatcher::exec() {
     olock.lock();
-    while (!shutdown.load(memory_order_relaxed)) {
-	uint_fast32_t flags;
+    while (rlist) {
+	dspflag_t flags;
 	DispatchObj::Group *group;
-	DispatchObj *obj;
+	DispatchObj *obj = rlist.pop_front();
 
-	if (!rlist)
-	    break;
-	obj = rlist.pop_front();
 	rsize.fetch_sub(1, memory_order_relaxed);
 	__builtin_prefetch(obj->next, 0, 1);
 	if (UNLIKELY((flags = obj->flags) & DSP_Freed)) {
@@ -111,8 +108,9 @@ bool Dispatcher::exec() {
 	    continue;
 	}
 	__builtin_prefetch((const void *)obj->dcb, 0, 3);
-	__builtin_prefetch((const void *)obj->group, 0, 3);
-	if (UNLIKELY((group = obj->group) != nullptr)) {
+	if (UNLIKELY((flags & DSP_Grouped) && (group = obj->group) !=
+	    nullptr)) {
+	    __builtin_prefetch(group, 0, 3);
 	    if (group->active) {
 		obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
 		group->glist.push_back(*obj);
@@ -386,13 +384,17 @@ int Dispatcher::onStart() {
 	    due = now + msec;
 	}
 	tlock.unlock();
-	if (!maxthreads)
+	if (UNLIKELY(!maxthreads)) {
 	    exec();
+	    polling.store(true, memory_order_relaxed);
+	    if (UNLIKELY(shutdown.load(memory_order_relaxed)))
+		break;
+	}
 	cache.store(0, memory_order_relaxed);
 #ifdef DSP_POLL
 	DispatchSocket *ds = nullptr;
 	socket_t fd;
-	uint_fast32_t flags;
+	dspflag_t flags;
 
 	slock.lock();
 	irset = rset;
@@ -552,7 +554,7 @@ void Dispatcher::cleanup(void) {
 
 	if (!obj)
 	    break;
-	if (obj->group && obj->group->glist)
+	if ((obj->flags & DSP_Grouped) && obj->group->glist)
 	    rlist.push_front(obj->group->glist);
 	obj->flags &= ~(DSP_Ready | DSP_ReadyGroup);
 	if (obj->flags & DSP_Freed)
@@ -626,14 +628,14 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds = batch[u];
 	const event_t *evt = (const event_t *)evts + u;
-	uint_fast32_t flags;
+	dspflag_t flags;
 
 	if (UNLIKELY(!ds))
 	    continue;
 	flags = ds->flags;
-	if (UNLIKELY(flags & DSP_Freed))
+	if (UNLIKELY(flags & DSP_Freed)) {
 	    continue;
-	if (flags & DSP_Scheduled) {
+	} else if (LIKELY(flags & DSP_Scheduled)) {
 	    DispatchMsg msg = ds->msg;
 
 	    if (LIKELY(DSP_EVENT_READ(evt)))
@@ -654,19 +656,20 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		    ds->flags |= DSP_Closeable;
 	    }
 	    ds->msg = msg;
-	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose | DSP_SelectRead |
-		DSP_SelectWrite | DSP_Scheduled);
+	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose |
+		DSP_SelectRead | DSP_SelectWrite | DSP_Scheduled);
 	    if (UNLIKELY(flags & DSP_Active)) {
 		ds->flags |= DSP_Ready;
-	    } else if (UNLIKELY(ds->group && ds->group->active)) {
+	    } else if (UNLIKELY((ds->flags & DSP_Grouped) &&
+		ds->group->active)) {
 		ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_ReadyGroup;
-		if (UNLIKELY(ds->msg == DispatchAccept))
+		if (UNLIKELY(msg == DispatchAccept))
 		    ds->group->glist.push_front(*ds);
 		else
 		    ds->group->glist.push_back(*ds);
 	    } else {
 		ds->flags |= DSP_Ready;
-		if (UNLIKELY(ds->msg == DispatchAccept))
+		if (UNLIKELY(msg == DispatchAccept))
 		    rlist.push_front(*ds);
 		else
 		    rlist.push_back(*ds);
@@ -680,8 +683,8 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		ds->flags |= DSP_Writeable;
 	    if (UNLIKELY(DSP_EVENT_ERR(evt)))
 		ds->flags |= DSP_Closeable;
-	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose | DSP_SelectRead |
-		DSP_SelectWrite);
+	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose |
+		DSP_SelectRead | DSP_SelectWrite);
 	}
     }
     olock.unlock();
@@ -718,9 +721,8 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    rsz = rsize.load(memory_order_relaxed);
 	    s = scanning.load(memory_order_acquire);
 	}
-    } else if (rcnt && !maxthreads) {
-	if (polling.load(memory_order_relaxed))
-	    wakeup(0);
+    } else if (rcnt && polling.load(memory_order_relaxed)) {
+	wakeup(0);
     }
 }
 
@@ -728,24 +730,20 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 
 DispatchTimer *Dispatcher::handleTimers(msec_t now) {
     static constexpr uint BATCHSZ = 32;
-    while (true) {
-	uint cnt = 0;
-	DispatchTimer *dts[BATCHSZ];
+    uint cnt;
+    DispatchTimer *dts[BATCHSZ + 1];
 
-	while (cnt < BATCHSZ && (dts[cnt] = timers.get(now)) != nullptr)
-	    cnt++;
-	if (!cnt)
-	    break;
+    while ((cnt = timers.get(now, dts, BATCHSZ)) > 0) {
 	tlock.unlock();
-	olock.lock();
 	for (uint u = 0; u < cnt; u++) {
+	    olock.lock();
 	    dts[u]->flags &= ~DSP_Scheduled;
 	    dts[u]->msg = DispatchTimeout;
 	    ready(*dts[u]);
 	}
 	tlock.lock();
     }
-    return timers.peek();
+    return dts[cnt];
 }
 
 #ifndef DSP_WIN32_ASYNC
@@ -946,15 +944,15 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
 
 void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     bool b;
-    uint_fast32_t flags;
+    dspflag_t flags;
     msec_t now = 0;
     msec_t tmt = 0;
-    static constexpr uint_fast32_t ioarray[] = {
+    static constexpr dspflag_t ioarray[] = {
 	DSP_Readable | DSP_Closeable, DSP_Writeable | DSP_Closeable,
 	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable,
 	DSP_Writeable | DSP_Closeable, DSP_Closeable, 0, 0
     };
-    static constexpr uint_fast32_t sarray[] = {
+    static constexpr dspflag_t sarray[] = {
 	DSP_SelectRead, DSP_SelectWrite, DSP_SelectRead | DSP_SelectWrite,
 	DSP_SelectAccept, DSP_Connecting | DSP_SelectWrite, DSP_SelectClose, 0,
 	0
@@ -1148,7 +1146,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
     if (UNLIKELY(flags & DSP_Active)) {
 	obj.flags = (flags & ~DSP_Scheduled) | DSP_Ready;
 	olock.unlock();
-    } else if (UNLIKELY(obj.group && obj.group->active)) {
+    } else if (UNLIKELY((flags & DSP_Grouped) && obj.group->active)) {
 	obj.flags = (obj.flags & ~DSP_Scheduled) | DSP_ReadyGroup;
 	if (UNLIKELY(hipri))
 	    obj.group->glist.push_front(obj);

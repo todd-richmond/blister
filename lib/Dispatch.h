@@ -344,19 +344,18 @@ private:
 		sorted.erase(&dt);
 	    unsorted.erase(&dt);
 	}
-	DispatchTimer *get(msec_t when) {
+	uint get(msec_t when, DispatchTimer **batch, uint maxcnt) {
+	    uint cnt = 0;
 	    auto it = sorted.begin();
 
-	    if (it != sorted.end()) {
-		DispatchTimer *dt = *it;
-
-		if (dt->due <= when) {
-		    sorted.erase(it);
-		    dt->due = DispatchTimer::DSP_NEVER_DUE;
-		    return dt;
-		}
+	    while (cnt < maxcnt && it != sorted.end() && (*it)->due <= when) {
+		(*it)->due = DispatchTimer::DSP_NEVER_DUE;
+		batch[cnt++] = *it++;
 	    }
-	    return nullptr;
+	    sorted.erase(sorted.begin(), it);
+	    batch[cnt] = cnt < maxcnt ? (it != sorted.end() ? *it : nullptr)
+		: nullptr;
+	    return cnt;
 	}
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
 	DispatchTimer *reorder(msec_t when) {
