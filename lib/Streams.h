@@ -239,9 +239,9 @@ private:
 };
 
 /*
- * bufferstream is a string stream providing cross platform compatibility and
- * works around broken MSVC sstream::seekp() that leaks memory. Use this as a
- * replacement for strstream / sstream
+ * bufferstream is a fast string stream providing cross platform compatibility
+ * and works around broken MSVC sstream::seekp() that leaks memory. Use this as
+ * a replacement for strstream / sstream
  */
 template <class C>
 class BLISTER bufferstream: public basic_ostream<C> {
@@ -261,7 +261,7 @@ public:
     __forceinline void write(const T &val) {
 	if constexpr (is_integral_v<T> || is_floating_point_v<T>) {
 #ifdef UNICODE
-	    char buf[24];
+	    wchar buf[24];
 	    auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
 
 	    if (LIKELY(ec == errc{})) {

@@ -179,15 +179,15 @@ bool Log::LogFile::reopen(void) {
 #endif
     lock();
     if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
-	char buf[PATH_MAX];
+	tchar buf[PATH_MAX];
 	time_t now = ::time(NULL);
 	const struct tm *tm;
 	struct tm tmbuf;
 
 	while (true) {
 	    tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(&now, &tmbuf);
-	    strftime(buf, sizeof (buf), tstringtoachar(file), tm);
-	    if (!link(path.c_str(), buf)) {
+	    tstrftime(buf, sizeof (buf), file.c_str(), tm);
+	    if (!tlink(path.c_str(), buf)) {
 		break;
 	    } else if (errno == EEXIST) {
 		++now;
@@ -561,7 +561,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (upos == last_format.npos) {
 	    strbuf = last_format;
 	} else {
-	    char cbuf[8];
+	    tchar cbuf[8];
 	    auto [ep, ec] = to_chars(cbuf, cbuf + 6, (uint)now_usec);
 	    size_t dlen = (size_t)(ep - cbuf);
 

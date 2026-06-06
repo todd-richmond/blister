@@ -312,7 +312,8 @@ bool Config::parse(tistream &is) {
 
 		    trim(sv);
 		    if (!sv.empty())
-			line += sv.front() == ';' || sv.front() == '#' ? "\\" : s;
+			line += sv.front() == ';' || sv.front() == '#' ?
+			    T("\\") : s;
 		}
 	    } while (!line.empty() && line.back() == '\\');
 	    len = line.size();
@@ -328,7 +329,7 @@ bool Config::parse(tistream &is) {
 	    break;
 	case '#':
 	    if (key.size() > 8 && !key.compare(1, 7, T("include"), 7)) {
-		string file;
+		tstring file;
 		unique_ptr<tchar[]> fbuf;
 		tifstream iis;
 		ulong sz;

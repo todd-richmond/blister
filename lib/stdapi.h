@@ -1065,8 +1065,8 @@ __forceinline size_t bernstein_hash(const C *s, F xfrm) {
 	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(c3);
 	s += 4;
     }
-    ret = r0 ^ r1;
-    while ((c0 = *s++) != 0)
+    ret = r0 ^ r1; 
+    while ((c0 = *s++) != '\0')
 	ret = ((ret << 5) + ret) ^ (size_t)xfrm(c0);
     return ret;
 }

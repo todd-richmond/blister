@@ -748,7 +748,7 @@ void HTTPServerSocket::get(bool head) {
     }
     if (val != nullptr && (val = strchr(val, ';')) != nullptr &&
 	!strnicmp(val + 1, "length=", 7) &&
-	atou<ulong>(val + 8) != (ulong)statbuf.st_size)
+	strtoul(val + 8, NULL, 10) != (ulong)statbuf.st_size)
 	sts = 200;
     status(sts, mimetype(ext), statbuf.st_mtime);
     if (sts == 200 && !head)

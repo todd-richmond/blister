@@ -119,8 +119,8 @@ const tstring &Sockaddr::hostname() {
 #ifdef _WIN32
 	    ulong sz = sizeof (buf);
 
-	    GetComputerName(buf, &sz);
-	    hname = buf;
+	    GetComputerName((tchar *)buf, &sz);
+	    hname = (tchar *)buf;
 #else
 	    hname = T("localhost");
 #endif
