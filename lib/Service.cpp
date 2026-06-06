@@ -109,13 +109,12 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 
 #ifdef _WIN32
 
-Service::Timer::Timer(ulong msec): timer(nullptr) {
+Service::Timer::Timer(ulong msec): timer(NULL) {
     (void)msec;
     (void)timer;
 }
 
-void Service::Timer::cancel() {
-}
+void Service::Timer::cancel() {}
 
 Service::Service(const tchar *servicename, const tchar *h): bPause(false),
     errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0),
@@ -182,14 +181,15 @@ int __stdcall Service::ctrl_handler(ulong sig) {
 	if (!service->onRefresh()) {
 	    service->onStop(false);
 	}
-    } else if (sig == CTRL_C_EVENT)
+    } else if (sig == CTRL_C_EVENT) {
 	service->onStop(false);
-    else if (sig == CTRL_SHUTDOWN_EVENT || sig == CTRL_CLOSE_EVENT)
+    } else if (sig == CTRL_SHUTDOWN_EVENT || sig == CTRL_CLOSE_EVENT) {
 	service->onStop(true);
 #ifndef NDEBUG
-    else
+    } else {
 	DebugBreak();
 #endif
+    }
     dlog.flush();
     return 1;
 }
@@ -1217,7 +1217,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	return 1;
     }
 #endif
-    av = new const tchar *[(uint)argc + 1U];
+    av = new const tchar *[(size_t)argc + 1];
     path = argv[0];
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];

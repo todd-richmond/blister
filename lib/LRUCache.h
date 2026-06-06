@@ -54,8 +54,7 @@ class BLISTER LRUCache: nocopy {
 public:
     using lru_kv = pair<lruhash_t, C>;
     using lru_list = list<lru_kv>;
-    using list_iterator = typename lru_list::iterator;
-    using lru_map = unordered_map<lruhash_t, list_iterator>;
+    using lru_map = unordered_map<lruhash_t, typename lru_list::iterator>;
     static constexpr int LRUCACHE_SIZE = 10 * 1024 * 1024;
     static constexpr int LRUCACHE_TIME = 5 * 60 * 1000;
 

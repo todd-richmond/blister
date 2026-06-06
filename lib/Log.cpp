@@ -412,8 +412,8 @@ void Log::strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz) 
     const tchar *q = data;
     const tchar *end = data + sz;
 
-#if !defined(UNICODE)
-#if defined(__AVX2__)
+#ifndef _WIN32
+#ifdef __AVX2__
     {
 	// bias trick: (uchar)c < 0x20 via signed cmpgt after XOR with 0x80
 	const __m256i bias = _mm256_set1_epi8((char)0x80);
@@ -456,7 +456,7 @@ void Log::strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz) 
 #endif
     while (q < end && LIKELY(!((uchar)*q < ' ' && *q != '\t')))
 	++q;
-#if !defined(UNICODE) && (defined(__AVX2__) || defined(__ARM_NEON))
+#if !defined(_WIN32) && (defined(__AVX2__) || defined(__ARM_NEON))
 scan_done:
 #endif
     if (LIKELY(q == end)) {
@@ -896,7 +896,7 @@ Log::Level Log::str2enum(const tchar *l) {
 	if (!sv.empty() && sv.back() == ' ')
 	    sv.remove_suffix(1);
 	if ((!tstrnicmp(l, sv.data(), sv.size()) && l[sv.size()] == '\0') ||
-	    !tstricmp(l, LevelStr2[u].data()))
+	    !tstrnicmp(l, LevelStr2[u].data(), LevelStr2[u].size()))
 	    return (Level)u;
     }
     return None;

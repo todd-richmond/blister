@@ -1066,7 +1066,7 @@ __forceinline size_t bernstein_hash(const C *s, F xfrm) {
 	s += 4;
     }
     ret = r0 ^ r1;
-    while ((c0 = *s++))
+    while ((c0 = *s++) != 0)
 	ret = ((ret << 5) + ret) ^ (size_t)xfrm(c0);
     return ret;
 }
@@ -1095,8 +1095,9 @@ __forceinline size_t bernstein_hash(const C *s, size_t len, F xfrm) {
 // rapidhash for arbitrary binary data
 static __forceinline uint64_t rapidmix(uint64_t a, uint64_t b) {
 #ifdef _MSC_VER
-    unsigned __int64 hi;
-    return _umul128(a, b, &hi) ^ hi;
+    uint64_t hi;
+    ullong r = _umul128(a, b, &hi);
+    return r ^ hi;
 #elif defined(__SIZEOF_INT128__)
     __uint128_t r = (__uint128_t)a * b;
     return (uint64_t)r ^ (uint64_t)(r >> 64);
@@ -1326,6 +1327,7 @@ struct strieq {
 	return b[a.size()] == C('\0') && tstrnicmp(a.data(), b, a.size()) == 0;
     }
     bool operator ()(basic_string_view<C> a, basic_string_view<C> b) const {
+	// NOLINTNEXTLINE
 	return a.size() == b.size() && tstrnicmp(a.data(), b.data(), a.size()) == 0;
     }
     bool operator ()(const C *a, const basic_string<C> &b) const {

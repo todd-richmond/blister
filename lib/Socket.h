@@ -180,7 +180,7 @@ public:
 	if (!v4mapped())
 	    return false;
 #ifdef _WIN32
-	memcpy(addr4, &addr.sa6.sin6_addr.u.Byte[12], sizeof(*addr4));
+	memcpy(addr4, &addr.sa6.sin6_addr.u.Byte[12], sizeof (*addr4));
 #else
 	memcpy(addr4, &addr.sa6.sin6_addr.s6_addr32[3], sizeof (*addr4));
 #endif

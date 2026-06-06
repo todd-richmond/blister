@@ -11,7 +11,9 @@
 #define DLL_IMPORT
 #define LIKELY(c)       (c)
 #define UNLIKELY(c)     (c)
+#define NULL
 #define WARN_DISABLE(w)
 #define WARN_POP
 #define WARN_PUSH_DISABLE(w)
 #define WARN_PUSH
+#define _WIN32

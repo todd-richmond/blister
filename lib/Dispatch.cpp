@@ -108,8 +108,7 @@ bool Dispatcher::exec() {
 	    continue;
 	}
 	__builtin_prefetch((const void *)obj->dcb, 0, 3);
-	if (UNLIKELY((flags & DSP_Grouped) && (group = obj->group) !=
-	    nullptr)) {
+	if (UNLIKELY((group = obj->group) != nullptr)) {
 	    __builtin_prefetch(group, 0, 3);
 	    if (group->active) {
 		obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
@@ -126,7 +125,7 @@ bool Dispatcher::exec() {
 	olock.lock();
 	flags = obj->flags &= ~DSP_Active;
 	if (UNLIKELY(flags & DSP_PostCB)) {
-	    if (flags & DSP_Grouped) {
+	    if (group) {
 		group->active = false;
 		if (UNLIKELY(group->glist)) {
 		    if (flags & DSP_Ready && !(flags & DSP_Freed)) {

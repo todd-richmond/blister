@@ -90,8 +90,8 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	if ((epos = val.find(open == '(' ? ')' : '}', spos + 2)) == val.npos)
 	    break;
 
-	tstring::size_type off = (spos + 3 < val.size() && val[spos + 2] ==
-	    '*' && val[spos + 3] == '.') ? 2 : 0;
+	uint off = (spos + 3 < val.size() && val[spos + 2] =='*' &&
+	    val[spos + 3] == '.') ? 2 : 0;
 	const tchar *repl;
 	size_t repllen;
 	tstring_view sv(val.data() + spos + 2 + off, epos - spos - 2 - off);
@@ -209,8 +209,8 @@ const Config::KV *Config::getkv(tstring_view key, const tchar *sect) const {
 	    tstring s;
 
 	    s.reserve(total);
-	    s.append(sect, slen).append(1, (tchar)'.').
-		append(key.data(), klen);
+	    // NOLINTNEXTLINE
+	    s.append(sect, slen).append(1, (tchar)'.').append(key.data(), klen);
 	    it = amap.find(tstring_view(s.data(), s.size()));
 	}
     } else {

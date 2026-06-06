@@ -570,7 +570,7 @@ int wlink(const wchar *from, const wchar *to) {
     ZERO(sid);
     sid.dwStreamId = BACKUP_LINK;
     sid.Size.LowPart = (DWORD)((sz + 1) * sizeof (wchar));
-    out = (DWORD)((LPBYTE)&sid.cStreamName - (LPBYTE)&sid); //-V206
+    out = (DWORD)offsetof(WIN32_STREAM_ID, cStreamName);
     if (!BackupWrite(hdl, (LPBYTE)&sid, out, &out, FALSE, FALSE, &lpContext)) {
 	_dosmaperr(GetLastError());
 	CloseHandle(hdl);
@@ -819,12 +819,12 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
 	buf->st_ctime = buf->st_mtime;
     }
 #ifdef _USE_INT64
-    buf->st_size = ((int64_t)(bhfi.nFileSizeHigh)) * (0x100000000i64) +
+    buf->st_size = ((int64_t)(bhfi.nFileSizeHigh)) * 0x100000000i64 +
 	(fint64_t)(bhfi.nFileSizeLow);
 #else
     buf->st_size = bhfi.nFileSizeLow;
 #endif
-    buf->st_ino = ((int64_t)(bhfi.nFileIndexHigh)) * (0x100000000I64) +
+    buf->st_ino = ((int64_t)(bhfi.nFileIndexHigh)) * 0x100000000I64 +
 	(int64_t)(bhfi.nFileIndexLow);
     return 0;
 }

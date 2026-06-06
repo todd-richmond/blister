@@ -353,7 +353,7 @@ private:
 	    C *pp = basic_stringbuf<C>::pptr();
 
 	    if (LIKELY(pp + n <= basic_stringbuf<C>::epptr())) {
-		memcpy(pp, s, (size_t)n * sizeof(C));
+		memcpy(pp, s, (size_t)n * sizeof (C));
 		basic_stringbuf<C>::pbump((int)n);
 	    } else {
 		basic_stringbuf<C>::sputn(s, n);

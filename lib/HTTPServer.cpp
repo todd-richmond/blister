@@ -523,8 +523,8 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
 
     if (len == (ulong)-1)
 	len = p ? (ulong)strlen(p) : 0;
-    memcpy(buf, "Content-Length: ", 16);
-    auto [end, ec] = to_chars(buf + 16, buf + sizeof(buf) - 4,
+    memcpy(buf, "Content-Length: ", 16);    // NOLINT
+    auto [end, ec] = to_chars(buf + 16, buf + sizeof (buf) - 4,
 	(ulong)ss.size() + len);
     memcpy(end, "\r\n\r\n", 4);
     hdrs.write(buf, (streamsize)(end - buf + 4));
@@ -639,6 +639,7 @@ void HTTPServerSocket::header(const char *attr, const char *val) {
 }
 
 void HTTPServerSocket::error(uint sts, bool close) {
+    char nbuf[8];
     const char *p;
     static constexpr const char *err2xx[] = {
 	"OK", "Created", "Accepted", "Non-Authoritative Information",
@@ -662,26 +663,19 @@ void HTTPServerSocket::error(uint sts, bool close) {
 	"Internal Server Error", "Not Implemented", "Bad Gateway",
 	"Service Unavailable", "Gateway Timeout", "Version Not Supported"
     };
-#pragma warning(push)
-#pragma warning(disable: 6385)	// -V557
-    if (sts >= 200 && sts - 200 < sizeof (err2xx) / sizeof (char *))
-	// cppcheck-suppress arrayIndexOutOfBounds
+    if (sts >= 200 && sts < 200 + (sizeof (err2xx) / sizeof (char *)))
 	p = err2xx[sts - 200];
-    else if (sts >= 300 && sts - 300 < sizeof (err3xx) / sizeof (char *))
+    else if (sts >= 300 && sts < 300 + (sizeof (err3xx) / sizeof (char *)))
 	p = err3xx[sts - 300];
-    else if (sts >= 400 && sts - 400 < sizeof (err4xx) / sizeof (char *))
+    else if (sts >= 400 && sts < 400 + (sizeof (err4xx) / sizeof (char *)))
 	p = err4xx[sts - 400];
-    else if (sts >= 500 && sts - 500 < sizeof (err5xx) / sizeof (char *))
+    else if (sts >= 500 && sts < 500 + (sizeof (err5xx) / sizeof (char *)))
 	p = err5xx[sts - 500];
     else
 	p = "HTTP error";
-#pragma warning(pop)		// +V557
     status(sts, "text/plain", 0, nullptr, close);
-    {
-	char nbuf[8];
-	auto [nend, nec] = to_chars(nbuf, nbuf + sizeof(nbuf), sts);
-	ss.write(nbuf, nend - nbuf);
-    }
+    auto [nend, nec] = to_chars(nbuf, nbuf + sizeof (nbuf), sts);
+    ss.write(nbuf, nend - nbuf);
     ss.write(" ", 1);
     ss.write(p, (streamsize)strlen(p));
     ss.write(CRLF, 2);
@@ -693,7 +687,7 @@ void HTTPServerSocket::error(uint sts, const char *errstr, bool close) {
     status(sts, "text/plain", 0, errstr, close);
     {
 	char nbuf[8];
-	auto [nend, nec] = to_chars(nbuf, nbuf + sizeof(nbuf), sts);
+	auto [nend, nec] = to_chars(nbuf, nbuf + sizeof (nbuf), sts);
 	ss.write(nbuf, nend - nbuf);
     }
     ss.write(" ", 1);

@@ -227,6 +227,8 @@ public:
     Config &set(const tchar *key, const bool val, const tchar *sect = nullptr) {
 	return set(key, val ? T("t") : T("f"), sect);
     }
+#pragma warning(disable: 26461)
+    // NOLINTNEXTLINE(readability-non-const-parameter)
     Config &set(const tchar *key, tchar *val, const tchar *sect = nullptr) {
 	return set(key, (const tchar *)val, sect);
     }

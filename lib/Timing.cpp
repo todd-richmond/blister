@@ -30,13 +30,13 @@ Timing &dtiming(_dtiming());
 
 Timing::Stats *Timing::Stats::newstats(const tchar *k, size_t h) {
     uint klen = (uint)tstrlen(k);
-    Stats *s = (Stats *)new char[offsetof(Stats, key) + (klen + 1) *
+    Stats *s = (Stats *)new char[offsetof(Stats, key) + ((size_t)klen + 1) *
 	sizeof (tchar)];
 
     memset((void *)s, 0, offsetof(Stats, key));
     s->hash = h;
     s->klen = klen;
-    memcpy(s->key, k, (klen + 1) * sizeof (tchar));
+    memcpy(s->key, k, ((size_t)klen + 1) * sizeof (tchar));
     return s;
 }
 

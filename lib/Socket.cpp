@@ -597,7 +597,7 @@ bool Socket::cloexec(void) {
 #endif
 }
 
-#if defined(TCP_CORK)
+#ifdef TCP_CORK
 #define CORK_VAL TCP_CORK
 #elif defined(TCP_NOPUSH)
 #define CORK_VAL TCP_NOPUSH
