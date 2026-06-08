@@ -268,7 +268,7 @@ loop:
 	p++;
     while (*p == ' ' || *p == '\t')
 	p++;
-    sts = strtoul(p, NULL, 10);
+    sts = (uint)strtoul(p, NULL, 10);
     dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
 	Log::kv(T("path"), path), Log::kv(T("sts"), sts));
     while (getline(sstrm, s)) {		    // does not support folded hdrs

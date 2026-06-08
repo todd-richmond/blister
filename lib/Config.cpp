@@ -18,6 +18,7 @@
 #include "stdapi.h"
 #include <stdarg.h>
 #include <algorithm>
+#include <ranges>
 #include <fstream>
 #include <memory>
 #include <vector>
@@ -517,11 +518,11 @@ bool Config::write(tostream &os, bool inistyle) const {
     for (const auto &kv : amap)
 	keys.emplace_back(kv.first, kv.second);
     if (inistyle) {
-	sort(keys.begin(), keys.end(), [](const auto &a, const auto &b) {
+	ranges::sort(keys, [](const auto &a, const auto &b) {
 	    return keyless()(a.first, b.first);
 	});
     } else {
-	sort(keys.begin(), keys.end(), [](const auto &a, const auto &b) {
+	ranges::sort(keys, [](const auto &a, const auto &b) {
 	    return stringless(a.first, b.first);
 	});
     }

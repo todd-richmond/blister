@@ -467,7 +467,7 @@ inline void endlog(Log &l) { l.endlog(); }
 extern BLISTER Log &dlog;
 
 // performance macros to bypass computing ignored data
-#define LOGL(o, l, ...)	{ if (UNLIKELY(l <= o.level())) o.log(l, __VA_ARGS__); }
+#define LOGL(o, l, ...)	do { if (UNLIKELY(l <= o.level())) o.log(l, __VA_ARGS__); } while (false)
 
 #define logm(o, ...)	LOGL(o, Log::Emerg, __VA_ARGS__)
 #define loga(o, ...)	LOGL(o, Log::Alert, __VA_ARGS__)

@@ -76,27 +76,27 @@ public:
     }
     void clear(void);
     void erase(const tchar *key, const tchar *sect = nullptr);
-    [[nodiscard]] bool exists(const tchar *key, const tchar *sect = nullptr) const {
+    bool exists(const tchar *key, const tchar *sect = nullptr) const {
 	RLocker lkr(lck);
 
 	return getkv(key, sect) != nullptr;
     }
-    [[nodiscard]] tstring get(const tchar *key, const tchar *def = nullptr,
-	const tchar *sect = nullptr) const;
+    tstring get(const tchar *key, const tchar *def = nullptr, const tchar
+	*sect = nullptr) const;
     template<size_t N>
-    [[nodiscard]] tstring get(const tchar (&key)[N], const tchar *def = nullptr,
-	const tchar *sect = nullptr) const {
+    tstring get(const tchar (&key)[N], const tchar *def = nullptr, const tchar
+	*sect = nullptr) const {
 	return get(tstring_view(key, N - 1), def, sect);
     }
-    [[nodiscard]] tstring get(const tstring &key) const { return get(key.c_str()); }
-    [[nodiscard]] tstring get(const tstring &key, const tstring &def) const {
+    tstring get(const tstring &key) const { return get(key.c_str()); }
+    tstring get(const tstring &key, const tstring &def) const {
 	return get(key.c_str(), def.c_str());
     }
-    [[nodiscard]] tstring get(const tstring &key, const tstring &def,
-	const tstring &sect) const {
+    tstring get(const tstring &key, const tstring &def, const tstring &sect)
+	const {
 	return get(key.c_str(), def.c_str(), sect.c_str());
     }
-    [[nodiscard]] bool get(const tchar *key, bool def, const tchar *sect = nullptr) const;
+    bool get(const tchar *key, bool def, const tchar *sect = nullptr) const;
     template<size_t N>
     bool get(const tchar (&key)[N], bool def, const tchar *sect = nullptr) const
     {
@@ -104,8 +104,8 @@ public:
     }
     double get(const tchar *key, double def, const tchar *sect = nullptr) const
     {
-	return get_num(key, def, sect, [](const tchar *s) { return
-	    tstrtod(s, nullptr); });
+	return get_num(key, def, sect,
+	    [](const tchar *s) { return tstrtod(s, nullptr); });
     }
     template<size_t N>
     double get(const tchar (&key)[N], double def, const tchar *sect = nullptr)

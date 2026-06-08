@@ -38,7 +38,7 @@
  * Timing can be used in either "direct" or "stack" mode. There are TimingEntry
  * and TimingFrame classes to simplify timing code blocks
  *
- * direct: lowest overhead for basic or fine grained profile tasks
+ * direct: lowest overhead for fine grained profile tasks
  *   function_c() {
  *     TimingEntry entry(T("function_c"));
  *     code_c();
@@ -70,26 +70,10 @@
  *   function_a();
  *   call_b();
  *   dtiming.record();
+ *   tcout << dtiming.data() << endl;
  */
 
 using timing_t = usec_t;
-
-class BLISTER TimingKey: public StringHash {
-public:
-    __forceinline explicit TimingKey(const DynamicString &ds): StringHash(ds),
-	key(ds.s) {}
-    template<size_t N>
-    __forceinline constexpr TimingKey(const tchar (&k)[N]): StringHash(k),
-	key(k) {}
-
-    __forceinline operator const tchar *(void) const { return key; }
-    __forceinline size_t hash(void) const {
-	return StringHash::operator size_t();
-    }
-
-private:
-    const tchar *key;
-};
 
 class BLISTER Timing: nocopy {
 public:
@@ -97,118 +81,138 @@ public:
     static constexpr uint TIMINGSLOTS = 10;
 
     Timing(): cache{}, flist(nullptr) {}
-    ~Timing() {
-	Stats *next, *s;
+    ~Timing();
 
-        clear();
-        s = flist.exchange(nullptr, memory_order_relaxed);
-        while (s) {
-            next = s->flist;
-            Stats::delstats(s);
-            s = next;
-        }
+    uint depth(void) const { return static_cast<uint>(tls->entries.size()); }
+
+    template<size_t N>
+    __forceinline void add(const tchar (&key)[N], timing_t diff) {
+	add(key, N - 1, stringhash(key), diff);
     }
-
-    vector<tstring>::size_type depth(void) const { return tls->callers.size(); }
-
-    template<class C> __forceinline void add(const C &key, timing_t diff) {
-	add(TimingKey(key), diff);
+    __forceinline void add(const tchar *key, timing_t diff) {
+	add(key, 0, stringhash(key), diff);
     }
-    void add(const TimingKey &key, timing_t diff);
+    __forceinline void add(const tstring &key, timing_t diff) {
+	add(key.c_str(), static_cast<uint>(key.length()), stringhash(key), diff);
+    }
     void clear(void);
     const tstring data(bool sort_by_key = false, uint columns = TIMINGSLOTS - 2)
 	const;
-    template<class C> void erase(const C &key) { erase(TimingKey(key)); }
+    template<size_t N>
+    __forceinline void erase(const tchar (&key)[N]) {
+	erase(stringhash(key));
+    }
+    __forceinline void erase(const tchar *key) {
+	erase(stringhash(key));
+    }
+    __forceinline void erase(const tstring &key) {
+	erase(stringhash(key));
+    }
+    void erase(strhash_t hash);
     void record(void);
-    template<class C> __forceinline void record(const C &key) {
-	record(TimingKey(key));
-    }
-    template<class C> __forceinline timing_t record(const C &key, timing_t
-	begin) {
-	return record(TimingKey(key), begin);
-    }
-    __forceinline timing_t record(const TimingKey &key, timing_t begin) {
+    template<size_t N>
+    __forceinline timing_t record(const tchar (&key)[N], timing_t begin) {
 	timing_t n = now();
 
-	add(key, n - begin);
+	add(key, N - 1, stringhash(key), n - begin);
+	return n;
+    }
+    __forceinline timing_t record(const tchar *key, timing_t begin) {
+	timing_t n = now();
+
+	add(key, 0, stringhash(key), n - begin);
+	return n;
+    }
+    __forceinline timing_t record(const tstring &key, timing_t begin) {
+	timing_t n = now();
+
+	add(key.c_str(), 0, stringhash(key), n - begin);
 	return n;
     }
     void restart(void);
     __forceinline timing_t start(void) const { return now(); }
-    void start(const TimingKey &key);
-    template<class C> __forceinline void start(const C &key) {
-	start(TimingKey(key));
+    template<size_t N>
+    __forceinline void start(const tchar (&key)[N]) {
+	start(key, stringhash(key));
     }
-    void stop(uint lvl = (uint)-1);
+    __forceinline void start(const tchar *key) { start(key, stringhash(key)); }
+    __forceinline void start(const tstring &key) { start(key.c_str()); }
+    void stop(void);
     static __forceinline timing_t now(void) { return uticks(); }
 
 private:
     struct BLISTER Stats: nocopy {
-	alignas(64) atomic_uint_fast32_t cnt;
-	atomic_uint_fast32_t cnts[TIMINGSLOTS];
-	atomic_uint_fast64_t tot;
+	alignas(64) atomic_uint_fast32_t cnt{};
+	atomic_uint_fast32_t cnts[TIMINGSLOTS]{};
+	atomic_uint_fast64_t tot{};
 	Stats *flist = nullptr;
 	size_t hash = 0;
 	uint klen = 0;
 	tchar key[];
 
-	static Stats *newstats(const tchar *k, size_t h);
+	static Stats *newstats(const tchar *k, uint klen, strhash_t h);
 	static void delstats(Stats *s) { delete [] (char *)s; }
     };
 
     struct BLISTER Tlsdata {
-	vector<tstring> callers;
-	vector<timing_t> starts;
+	struct Entry {
+	    const tchar *caller;
+	    strhash_t hash;
+	    timing_t start;
+	};
+
+	vector<Entry> entries;
     };
 
-    using timingmap = unordered_map<size_t, Stats *>;
+    using timingmap = unordered_map<strhash_t, Stats *>;
 
-    atomic<Stats *> cache[CACHESIZE];
+    atomic<Stats *> cache[CACHESIZE]{};
     atomic<Stats *> flist;
     mutable SpinRWLock lck;
-    timingmap tmap;
     ThreadLocalClass<Tlsdata> tls;
+    timingmap tmap;
 
-    void callstack(const tchar *key, timing_t diff, const Tlsdata &tlsd);
-    void erase(const TimingKey &key);
-    void record(const TimingKey &key);
+    void add(const tchar *key, uint klen, strhash_t hash, timing_t diff);
+    void start(const tchar *key, strhash_t hash);
     static const tchar *format(timing_t tot, tchar *buf);
-    static bool less_key(const Stats *a, const Stats *b) {
-	return stringless(a->key, b->key);
-    }
-    static bool greater_time(const Stats *a, const Stats *b) {
-	return a->tot == b->tot ? stringless(a->key, b->key) : a->tot >
-	    b->tot;
-    }
 };
 
 extern BLISTER Timing &dtiming;
 
-// time a code block including destructors
+// time a code block
 class BLISTER TimingEntry: nocopy {
 public:
-    template<class C> __forceinline explicit TimingEntry(const C &k, Timing &t =
-	dtiming): key(k), start(t.start()), timing(t) {}
+    template<class C> __forceinline explicit TimingEntry(const C &key,
+	Timing &t = dtiming): key(key), start(t.start()), timing(t) {}
+    template<size_t N> __forceinline explicit TimingEntry(const tchar (&key)[N],
+	Timing &t = dtiming): key(key), start(t.start()), timing(t) {}
     __forceinline ~TimingEntry() {
 	if (start != (timing_t)-1)
 	    timing.add(key, Timing::now() - start);
     }
 
-    __forceinline void record(void) { start = timing.record(key, start); }
+    __forceinline void record(void) {
+	timing.record(key, start);
+	stop();
+    }
     void restart(void) { start = timing.start(); }
     void stop(void) { start = (timing_t)-1; }
 
 private:
-    const TimingKey key;
+    const tchar *key;
     timing_t start;
     Timing &timing;
 };
 
-// time a function block including destructors
+// time a stack call including destructors
 class BLISTER TimingFrame: nocopy {
 public:
-    template<class C> __forceinline explicit TimingFrame(const C &k, Timing &t =
-	dtiming): key(k), started(true), timing(t) {
+    template<class C> __forceinline explicit TimingFrame(const C &key,
+	Timing &t = dtiming): started(true), timing(t) {
+	timing.start(key);
+    }
+    template<size_t N> __forceinline explicit TimingFrame(const tchar (&key)[N],
+	Timing &t = dtiming): started(true), timing(t) {
 	timing.start(key);
     }
     __forceinline ~TimingFrame() {
@@ -216,19 +220,20 @@ public:
 	    timing.record();
     }
 
-    __forceinline void record(void) { timing.record(); started = false; }
-    void restart(void) {
-	if (started) {
-	    timing.restart();
-	} else {
-	    started = true;
-	    timing.start(key);
-	}
+    __forceinline void record(void) {
+	timing.record();
+	started = false;
     }
-    void stop(void) { timing.stop(1); started = false; }
+    void restart(void) {
+	if (started)
+	    timing.restart();
+    }
+    void stop(void) {
+	timing.stop();
+	started = false;
+    }
 
 private:
-    const TimingKey key;
     bool started;
     Timing &timing;
 };

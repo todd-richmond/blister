@@ -276,10 +276,10 @@ public:
 	DispatchObjCB cb = connection);
 
     const Sockaddr &address(void) const { return addr; }
-    [[nodiscard]] bool listen(const Sockaddr &addr, bool reuse = true,
-	int backlog = SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true);
-    [[nodiscard]] bool listen(const tchar *addrstr, bool reuse = true,
-	int backlog = SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true) {
+    [[nodiscard]] bool listen(const Sockaddr &addr, bool reuse = true, int
+	backlog = SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true);
+    [[nodiscard]] bool listen(const tchar *addrstr, bool reuse = true, int
+	backlog = SOCK_BACKLOG, DispatchObjCB cb = nullptr, bool start = true) {
 	return listen(Sockaddr(addrstr), reuse, backlog, cb, start);
     }
     void relisten(void) { poll(nullptr, DSP_PREVIOUS, DispatchAccept); }

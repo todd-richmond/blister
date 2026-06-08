@@ -1003,6 +1003,22 @@ __forceinline T atoin(const tchar *str, size_t len) {
 	atoun<T>(str, len);
 }
 
+// wchar_t to_chars overload
+template<typename T>
+auto to_chars(wchar_t *first, wchar_t *last, T value) {
+    struct result {
+	wchar_t *ptr;
+	errc ec;
+    };
+    char buf[128];
+    auto [char_end, char_ec] = to_chars(buf, buf + sizeof (buf), value);
+    result r{first, char_ec};
+
+    for (char *p = buf; p != char_end && r.ptr != last; ++p)
+	*r.ptr++ = static_cast<wchar_t>(static_cast<uchar>(*p));
+    return r;
+}
+
 inline int stringcmp(const char *a, const char *b) { return strcmp(a, b); }
 inline int stringcmp(const wchar *a, const wchar *b) { return wcscmp(a, b); }
 inline int stringicmp(const char *a, const char *b) { return stricmp(a, b); }
@@ -1035,88 +1051,79 @@ inline bool stringless(const basic_string<C> &a, const basic_string<C> &b) {
     return a < b;
 }
 
-// compile time Bernstein hash - same value as bernstein_hash with identity xfrm
-template<class C>
-constexpr size_t bernstein_const(const C *s, size_t len) {
-    size_t i, r0 = 5381, r1 = 5381, ret;
+// Bernstein string hash with transform
+using strhash_t = uint64_t;
+
+template<class C, class F = decltype([](C c) { return c; })>
+constexpr strhash_t bernstein_hash(const C *s, size_t len, F xfrm = {}) {
+    size_t i;
+    strhash_t r0 = 5381, r1 = 5381, ret;
 
     for (i = 0; i + 4 <= len; i += 4) {
-	r0 = ((r0 << 5) + r0) ^ (size_t)s[i];
-	r1 = ((r1 << 5) + r1) ^ (size_t)s[i + 1];
-	r0 = ((r0 << 5) + r0) ^ (size_t)s[i + 2];
-	r1 = ((r1 << 5) + r1) ^ (size_t)s[i + 3];
+	r0 = ((r0 << 5) + r0) ^ (strhash_t)xfrm(s[i]);
+	r1 = ((r1 << 5) + r1) ^ (strhash_t)xfrm(s[i + 1]);
+	r0 = ((r0 << 5) + r0) ^ (strhash_t)xfrm(s[i + 2]);
+	r1 = ((r1 << 5) + r1) ^ (strhash_t)xfrm(s[i + 3]);
     }
     ret = r0 ^ r1;
     for (; i < len; ++i)
-	ret = ((ret << 5) + ret) ^ (size_t)s[i];
+	ret = ((ret << 5) + ret) ^ (strhash_t)xfrm(s[i]);
     return ret;
 }
 
-// Bernstein hash with xor improvement - shared loop, transform applied per char
-template<class C, class F>
-__forceinline size_t bernstein_hash(const C *s, F xfrm) {
+template<class C, class F = decltype([](C c) { return c; })>
+__forceinline strhash_t bernstein_hash(const C *s, F xfrm = {}) {
     C c0, c1, c2, c3;
-    size_t r0 = 5381, r1 = 5381, ret;
+    strhash_t r0 = 5381, r1 = 5381, ret;
 
     while ((c0 = s[0]) && (c1 = s[1]) && (c2 = s[2]) && (c3 = s[3])) {
-	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(c0);
-	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(c1);
-	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(c2);
-	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(c3);
+	r0 = ((r0 << 5) + r0) ^ (strhash_t)xfrm(c0);
+	r1 = ((r1 << 5) + r1) ^ (strhash_t)xfrm(c1);
+	r0 = ((r0 << 5) + r0) ^ (strhash_t)xfrm(c2);
+	r1 = ((r1 << 5) + r1) ^ (strhash_t)xfrm(c3);
 	s += 4;
     }
-    ret = r0 ^ r1; 
+    ret = r0 ^ r1;
     while ((c0 = *s++) != '\0')
-	ret = ((ret << 5) + ret) ^ (size_t)xfrm(c0);
+	ret = ((ret << 5) + ret) ^ (strhash_t)xfrm(c0);
     return ret;
 }
 
-template<class C, class F>
-__forceinline size_t bernstein_hash(const C *s, size_t len, F xfrm) {
-    size_t r0 = 5381, r1 = 5381, ret;
-
-    while (len >= 4) {
-	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(s[0]);
-	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(s[1]);
-	r0 = ((r0 << 5) + r0) ^ (size_t)xfrm(s[2]);
-	r1 = ((r1 << 5) + r1) ^ (size_t)xfrm(s[3]);
-	s += 4;
-	len -= 4;
-    }
-    ret = r0 ^ r1;
-    switch (len) {
-    case 3: ret = ((ret << 5) + ret) ^ (size_t)xfrm(*s++); [[fallthrough]];
-    case 2: ret = ((ret << 5) + ret) ^ (size_t)xfrm(*s++); [[fallthrough]];
-    case 1: ret = ((ret << 5) + ret) ^ (size_t)xfrm(*s++);
-    }
-    return ret;
+// compile-time version for string literals
+template<class C, size_t N, class F = decltype([](C c) { return c; })>
+constexpr strhash_t bernstein_hash(const C (&s)[N], F xfrm = {}) {
+    static_assert(N > 0, "string literal required");
+    return bernstein_hash(s, N - 1, xfrm);
 }
 
 // rapidhash for arbitrary binary data
-static __forceinline uint64_t rapidmix(uint64_t a, uint64_t b) {
+static __forceinline strhash_t rapidmix(strhash_t a, strhash_t b) {
 #ifdef _MSC_VER
-    uint64_t hi;
+    strhash_t hi;
     ullong r = _umul128(a, b, &hi);
+
     return r ^ hi;
 #elif defined(__SIZEOF_INT128__)
     __uint128_t r = (__uint128_t)a * b;
-    return (uint64_t)r ^ (uint64_t)(r >> 64);
+
+    return (strhash_t)r ^ (strhash_t)(r >> 64);
 #else
-    uint64_t lo = (uint32_t)a * (uint64_t)(uint32_t)b;
-    uint64_t hi = (a >> 32) * (b >> 32);
+    strhash_t lo = (uint32_t)a * (strhash_t)(uint32_t)b;
+    strhash_t hi = (a >> 32) * (b >> 32);
+
     return lo ^ hi;
 #endif
 }
 
-inline uint64_t rapidhash(const void *data, size_t len) {
-    static constexpr uint64_t RAPID_SECRET0 = 0x9e3779b97f4a7c15ULL;
-    static constexpr uint64_t RAPID_SECRET1 = 0x6c62272e07bb0142ULL;
-    static constexpr uint64_t RAPID_SECRET2 = 0x94d049bb133111ebULL;
+inline strhash_t rapidhash(const void *data, size_t len) {
+    static constexpr strhash_t RAPID_SECRET0 = 0x9e3779b97f4a7c15ULL;
+    static constexpr strhash_t RAPID_SECRET1 = 0x6c62272e07bb0142ULL;
+    static constexpr strhash_t RAPID_SECRET2 = 0x94d049bb133111ebULL;
+    strhash_t a = RAPID_SECRET0 ^ (strhash_t)len;
+    strhash_t b = RAPID_SECRET1;
+    strhash_t c = RAPID_SECRET2;
     const uint8_t *p = (const uint8_t *)data;
-    uint64_t a = RAPID_SECRET0 ^ (uint64_t)len;
-    uint64_t b = RAPID_SECRET1;
-    uint64_t c = RAPID_SECRET2;
-    uint64_t r0, r1;
+    strhash_t r0, r1;
 
     if (LIKELY(len <= 16)) {
 	r0 = r1 = 0;
@@ -1128,19 +1135,20 @@ inline uint64_t rapidhash(const void *data, size_t len) {
 
 	    memcpy(&lo, p, 4);
 	    memcpy(&hi, p + len - 4, 4);
-	    r0 = ((uint64_t)lo << 32) | hi;
+	    r0 = ((strhash_t)lo << 32) | hi;
 	} else if (len > 0) {
-	    r0 = ((uint64_t)p[0] << 16) | ((uint64_t)p[len >> 1] << 8) |
+	    r0 = ((strhash_t)p[0] << 16) | ((strhash_t)p[len >> 1] << 8) |
 		p[len - 1];
 	}
 	a = rapidmix(r0 ^ RAPID_SECRET0, r1 ^ a);
 	b = rapidmix(r1 ^ RAPID_SECRET1, r0 ^ b);
     } else {
 	if (UNLIKELY(len >= 48)) {
-	    uint64_t d = a, e = b, f = c;
+	    strhash_t d = a, e = b, f = c;
 
 	    do {
-		uint64_t s0, s1, s2, s3, s4, s5;
+		strhash_t s0, s1, s2, s3, s4, s5;
+
 		memcpy(&s0, p, 8); memcpy(&s1, p +  8, 8);
 		memcpy(&s2, p + 16, 8); memcpy(&s3, p + 24, 8);
 		memcpy(&s4, p + 32, 8); memcpy(&s5, p + 40, 8);
@@ -1170,69 +1178,85 @@ inline uint64_t rapidhash(const void *data, size_t len) {
 	}
 	if (len >= 4) {
 	    uint32_t r32;
+
 	    memcpy(&r32, p, 4);
-	    b = rapidmix((uint64_t)r32 ^ RAPID_SECRET1, b ^ RAPID_SECRET0);
+	    b = rapidmix((strhash_t)r32 ^ RAPID_SECRET1, b ^ RAPID_SECRET0);
 	    p += 4;
 	    len -= 4;
 	}
 	for (size_t i = 0; i < len; ++i)
-	    a ^= (uint64_t)p[i] << (i * 8);
+	    a ^= (strhash_t)p[i] << (i * 8);
     }
     return rapidmix(a ^ b ^ c ^ RAPID_SECRET0, a ^ b ^ RAPID_SECRET1);
 }
 
 template<class C>
-__forceinline size_t stringhash(const C *s) {
-    return bernstein_hash(s, [](C c) { return c; });
+__forceinline strhash_t stringhash(const C *s) {
+    return bernstein_hash(s);
+}
+
+template<class C, size_t N>
+constexpr strhash_t stringhash(const C (&s)[N]) {
+    return bernstein_hash(s);
 }
 
 template<class C>
-__forceinline size_t stringhash(const basic_string<C> &s) {
-    return bernstein_hash(s.c_str(), s.size(), [](C c) { return c; });
+__forceinline strhash_t stringhash(const basic_string<C> &s) {
+    return bernstein_hash(s.c_str(), s.size());
 }
 
 template<class C>
-__forceinline size_t stringiasciihash(const C *s) {
-    return bernstein_hash(s, [](C c) {
-	return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0);
-    });
+__forceinline strhash_t stringhash(basic_string_view<C> s) {
+    return bernstein_hash(s.data(), s.size());
 }
 
 template<class C>
-__forceinline size_t stringiasciihash(const basic_string<C> &s) {
-    return bernstein_hash(s.c_str(), s.size(), [](C c) {
-	return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0);
-    });
-}
-template<class C>
-__forceinline size_t stringiasciihash(basic_string_view<C> s) {
-    return bernstein_hash(s.data(), s.size(), [](C c) {
-	return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0);
-    });
+__forceinline strhash_t stringiasciihash(const C *s) {
+    return bernstein_hash(s,
+	[](C c) { return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0); });
 }
 
-inline size_t stringihash(const char *s) {
+template<class C, size_t N>
+constexpr strhash_t stringiasciihash(const C (&s)[N]) {
+    return bernstein_hash(s,
+	[](C c) { return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0); });
+}
+
+template<class C>
+__forceinline strhash_t stringiasciihash(const basic_string<C> &s) {
+    return bernstein_hash(s.c_str(), s.size(),
+	[](C c) { return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0); });
+}
+template<class C>
+__forceinline strhash_t stringiasciihash(basic_string_view<C> s) {
+    return bernstein_hash(s.data(), s.size(),
+	[](C c) { return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0); });
+}
+
+inline strhash_t stringihash(const char *s) {
     return bernstein_hash(s, [](char c) { return (char)toupper((uchar)c); });
 }
 
-inline size_t stringihash(const string &s) {
-    return bernstein_hash(s.c_str(), s.size(), [](char c) { return (char)toupper((uchar)c); });
+inline strhash_t stringihash(const string &s) {
+    return bernstein_hash(s.c_str(), s.size(),
+	[](char c) { return (char)toupper((uchar)c); });
 }
 
-inline size_t stringihash(const wchar *s) {
+inline strhash_t stringihash(const wchar *s) {
     return bernstein_hash(s, [](wchar c) { return towupper((ushort)c); });
 }
 
-inline size_t stringihash(const wstring &s) {
-    return bernstein_hash(s.c_str(), s.size(), [](wchar c) {
-	return towupper((ushort)c);
-    });
+inline strhash_t stringihash(const wstring &s) {
+    return bernstein_hash(s.c_str(), s.size(),
+	[](wchar c) { return towupper((ushort)c); });
 }
-inline size_t stringihash(string_view s) {
-    return bernstein_hash(s.data(), s.size(), [](char c) { return (char)toupper((uchar)c); });
+inline strhash_t stringihash(string_view s) {
+    return bernstein_hash(s.data(), s.size(),
+	[](char c) { return (char)toupper((uchar)c); });
 }
-inline size_t stringihash(wstring_view s) {
-    return bernstein_hash(s.data(), s.size(), [](wchar c) { return towupper((ushort)c); });
+inline strhash_t stringihash(wstring_view s) {
+    return bernstein_hash(s.data(), s.size(),
+	[](wchar c) { return towupper((ushort)c); });
 }
 
 template<class C>
@@ -1262,7 +1286,11 @@ struct strhash {
     size_t operator ()(const C *s) const { return stringhash(s); }
     size_t operator ()(const basic_string<C> &s) const { return stringhash(s); }
     size_t operator ()(basic_string_view<C> s) const {
-	return bernstein_hash(s.data(), s.size(), [](C c) { return c; });
+	return bernstein_hash(s.data(), s.size());
+    }
+    template<size_t N>
+    constexpr size_t operator ()(const C (&s)[N]) const {
+	return bernstein_hash(s);
     }
 };
 
@@ -1272,6 +1300,15 @@ struct strihash {
     size_t operator ()(const C *s) const { return stringihash(s); }
     size_t operator ()(const basic_string<C> &s) const { return stringihash(s); }
     size_t operator ()(basic_string_view<C> s) const { return stringihash(s); }
+    template<size_t N>
+    size_t operator ()(const C (&s)[N]) const {
+	return bernstein_hash(s, N - 1, [](C c) {
+	    if constexpr (sizeof(C) == 1)
+		return (C)toupper((uchar)c);
+	    else
+		return towupper((ushort)c);
+	});
+    }
 };
 
 template <class C>
@@ -1280,6 +1317,12 @@ struct striasciihash {
     size_t operator ()(const C *s) const { return stringiasciihash(s); }
     size_t operator ()(const basic_string<C> &s) const { return stringiasciihash(s); }
     size_t operator ()(basic_string_view<C> s) const { return stringiasciihash(s); }
+    template<size_t N>
+    constexpr size_t operator ()(const C (&s)[N]) const {
+	return bernstein_hash(s, [](C c) {
+	    return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0);
+	});
+    }
 };
 
 template<class C>
@@ -1422,25 +1465,6 @@ struct striless {
     static bool less(const basic_string<C> &a, const basic_string<C> &b) {
 	return stringicmp(a.c_str(), b.c_str()) < 0;
     }
-};
-
-class BLISTER StringHash {
-public:
-    struct DynamicString {
-	__forceinline DynamicString(const tchar *str): s(str) {}
-
-	const tchar *s;
-    };
-
-    __forceinline StringHash(const DynamicString ds): hash(stringhash(ds.s)) {}
-    template<size_t N>
-    __forceinline constexpr explicit StringHash(const tchar (&s)[N]):
-	hash(bernstein_const(s, N - 1)) {}
-
-    __forceinline operator size_t(void) const { return hash; }
-
-private:
-    size_t hash;
 };
 
 // prohibit object copies by subclassing this
