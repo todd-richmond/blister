@@ -130,7 +130,6 @@ public:
 	return n;
     }
     void restart(void);
-    __forceinline timing_t start(void) const { return now(); }
     template<size_t N>
     __forceinline void start(const tchar (&key)[N]) {
 	start(key, stringhash(key));
@@ -139,6 +138,7 @@ public:
     __forceinline void start(const tstring &key) { start(key.c_str()); }
     void stop(void);
     static __forceinline timing_t now(void) { return uticks(); }
+    static __forceinline timing_t start(void) { return now(); }
 
 private:
     struct BLISTER Stats: nocopy {

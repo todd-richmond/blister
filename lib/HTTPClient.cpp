@@ -23,37 +23,45 @@
 
 static constexpr int StreamSize = 3 * 1460;
 
-URL &URL::operator =(const URL &url) {
-    if (this != &url) {
-	prot = url.prot;
-	host = url.host;
-	path = url.path;
-	query = url.query;
-	port = url.port;
-    }
-    return *this;
-}
+// Hex lookup table for fast parsing
+static constexpr uchar hex_lut[256] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0,
+    0, 10, 11, 12, 13, 14, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 10, 11, 12, 13, 14, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
 
-const tstring URL::fullpath(void) const {
-    tstring s(prot + T("://"));
+tstring URL::fullpath(void) const {
+    tstring s;
+    s.reserve(prot.length() + host.length() + relpath().length() + 20);
+
+    s += prot;
+    s += T("://");
 
     if (port && port != 80) {
 	tchar buf[8];
 
-	tsprintf(buf, T(":%u"), port);
+	*buf = ':';
+	to_str(buf + 1, buf + 8, port);
 	s += host;
 	s += buf;
     } else if (!port && (prot == T("http+unix") || prot == T("https+unix"))) {
-	for (tstring::const_iterator it = host.begin(); it != host.end(); ++it) {
-	    if (*it == '/')
+	s.reserve(s.capacity() + host.length() * 3); // Worst case for URL encoding
+	for (tchar c : host) {
+	    if (c == '/')
 		s += T("%2F");
 	    else
-		s += *it;
+		s += c;
 	}
     } else {
 	s += host;
     }
-    return s + relpath();
+    s += relpath();
+    return s;
 }
 
 bool URL::set(const tchar *url) {
@@ -118,17 +126,29 @@ bool URL::set(const tchar *url) {
 void URL::unescape(tchar *str, bool plus) {
     for (tchar *p = str; *p; p++) {
 	if (*p == '%') {
-	    uint hex;
+	    uchar hex;
 
-	    if (*++p <= '9')
-		hex = (uint)(*p - '0');
-	    else
-		hex = (uint)((*p | 0x20) - 'a' + 10);
-	    hex <<= 4;
-	    if (*++p <= '9')
-		hex += (uint)(*p - '0');
-	    else
-		hex += (uint)((*p | 0x20) - 'a' + 10);
+	    if (!*(p + 1) || !*(p + 2)) {
+		*str++ = *p;
+		break;
+	    }
+
+	    uchar hex_val1 = hex_lut[(uchar)*++p];
+	    uchar hex_val2 = hex_lut[(uchar)*++p];
+
+	    if (hex_val1 == 0 || hex_val2 == 0) {
+		// Invalid hex digit
+		*str++ = '%';
+		if (hex_val1 == 0) {
+		    *str++ = *(p-1);
+		} else {
+		    *str++ = *(p-1);
+		    *str++ = *p;
+		}
+		break;
+	    }
+
+	    hex = (uchar)((hex_val1 << 4) | hex_val2);
 	    *str++ = (tchar)hex;
 	} else if (*p == '+' && plus) {
 	    *str++ = ' ';
@@ -146,19 +166,32 @@ void URL::unescape(tstring &str, bool plus) {
 	tchar p = str[j];
 
 	if (p == '%') {
-	    uint hex;
+	    uchar hex;
 
-	    p = str[++j];
-	    if (p <= '9')
-		hex = (uint)(p - '0');
-	    else
-		hex = (uint)((p | 0x20) - 'a' + 10);
-	    hex <<= 4;
-	    p = str[++j];
-	    if (p <= '9')
-		hex += (uint)(p - '0');
-	    else
-		hex += (uint)((p | 0x20) - 'a' + 10);
+	    if (j + 2 >= str.size()) {
+		// Invalid % sequence
+		str[i] = p;
+		i++;
+		break;
+	    }
+
+	    uchar hex_val1 = hex_lut[(uchar)str[++j]];
+	    uchar hex_val2 = hex_lut[(uchar)str[++j]];
+
+	    if (hex_val1 == 0 || hex_val2 == 0) {
+		// Invalid hex digit
+		str[i] = '%';
+		if (hex_val1 == 0) {
+		    str[++i] = str[j-1];
+		} else {
+		    str[++i] = str[j-1];
+		    str[++i] = str[j];
+		}
+		i++;
+		break;
+	    }
+
+	    hex = (uchar)((hex_val1 << 4) | hex_val2);
 	    str[i] = (tchar)hex;
 	} else if (p == '+' && plus) {
 	    str[i] = ' ';
@@ -222,12 +255,12 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     req += " HTTP/1.1\r\nHost: ";
     req += tstringtoastring(addr.host());
     if (addr.port() != 80) {
-	sprintf(buf, ":%u", addr.port());
+	snprintf(buf, sizeof(buf), ":%u", addr.port());
 	req += buf;
     }
     req += "\r\n";
     if (datasz) {
-	sprintf(buf, "Content-Length: %lu\r\n", datasz);
+	snprintf(buf, sizeof (buf), "Content-Length: %lu\r\n", (ulong)datasz);
 	req += buf;
     }
     if (ka)
@@ -279,16 +312,25 @@ loop:
 	    break;
 	if ((pp = strchr(p, ':')) == nullptr)
 	    continue;
-	ss = s.substr((string::size_type)(p - s.c_str()), (string::size_type)
-	    (pp - p));
-	do {
+
+	// Use string_view-like approach to avoid substr allocations
+	size_t name_len = (size_t)(pp - p);
+	const char *val_end;
+	size_t val_len = 0;
+
+	pp++;
+	while (*pp && (*pp == '\r' || *pp == ' ' || *pp == '\t'))
 	    pp++;
-	} while (*pp && (*pp == '\r' || *pp == ' ' || *pp == '\t'));
-	sss.assign(pp, *pp ? strlen(pp) - 1 : 0);
+	val_end = strchr(pp, '\r');
+	if (!val_end)
+	    val_end = pp + strlen(pp);
+	val_len = (size_t)(val_end - pp);
 
-	pair<tstring, tstring> pr(astringtotstring(ss), astringtotstring(sss));
+	// Create strings directly without intermediate substr
+	tstring header_name(p, name_len);
+	tstring header_val(pp, val_len);
 
-	reshdrs.insert(pr);
+	reshdrs.emplace(header_name, header_val);
     }
     if (!sstrm)
 	goto done;
@@ -308,9 +350,11 @@ loop:
 	ressz = (ulong)-1;
     if (ressz && ressz != (ulong)-1) {
 	if (ressz > sz) {
+	    char *new_result = new char[(size_t)ressz + 1];
+
 	    delete [] result;
+	    result = new_result;
 	    sz = ressz;
-	    result = new char[(size_t)sz + 1];
 	}
 	ret = (ulong)sstrm.read(result, (streamsize)ressz) == ressz;
     } else if (ressz) {
@@ -323,8 +367,13 @@ loop:
 	    char *newres;
 
 	    if (!room) {
-		room = ressz ? ressz : 12UL * 1024;
-		sz = ressz + room;
+		// Use exponential growth to reduce reallocations
+		ulong new_size = ressz ? ressz * 2 : 12UL * 1024;
+
+		if (new_size < 12UL * 1024)
+		    new_size = 12UL * 1024;
+		room = new_size - ressz;
+		sz = new_size;
 		newres = new char[(size_t)sz + 1];
 		memcpy(newres, result, ressz);
 		delete [] result;

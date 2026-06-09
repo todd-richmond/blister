@@ -237,7 +237,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
     if (portno) {
 	tchar portstr[8];
 
-	tsprintf(portstr, T("%u"), portno);
+	to_str(portstr, portstr + 8, portno);
 	return set(host, portstr, proto);
     } else {
 	return set(host, (tchar *)nullptr, proto);

@@ -61,17 +61,17 @@ public:
     }
     ~RFC822Addr() { delete [] buf; }
 
-    const tstring address(uint u = 0, bool name = false, bool brkt = true) const;
-    const tstring domain(uint u = 0) const {
+    tstring address(uint u = 0, bool name = false, bool brkt = true) const;
+    tstring domain(uint u = 0) const {
 	return domains.empty() ? T("") : domains[u];
     }
-    const tstring local(uint u = 0) const {
+    tstring local(uint u = 0) const {
 	return locals.empty() ? T("") : locals[u];
     }
-    const tstring phrase(uint u = 0) const {
+    tstring phrase(uint u = 0) const {
 	return phrases.empty() ? T("") : phrases[u];
     }
-    const tstring route(uint u = 0) const {
+    tstring route(uint u = 0) const {
 	return routes.empty() ? T("") : routes[u];
     }
     size_t size(void) const { return locals.size(); }

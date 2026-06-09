@@ -271,7 +271,7 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
 }
 
 bool SMTPClient::data(bool m, const tchar *txt) {
-    static atomic<uint64_t> nextmid(((uint64_t)time(NULL) << 18) & uticks());
+    static atomic<uint64_t> nextmid(((uint64_t)seconds() << 18) & uticks());
     char buf[64], gmtoff[16];
     int diff;
     char *encbuf;
@@ -293,7 +293,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     sstrm << "Message-ID: <" << encbuf << '@' <<
 	tstringtoastring(Sockaddr::hostname()) << '>' << crlf;
     delete [] encbuf;
-    time(&now);
+    now = seconds();
     if ((tm = localtime_r(&now, &tmbuf)) == NULL)
 	return false;
     tm2 = gmtime_r(&now, &tm2buf);
@@ -732,6 +732,12 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 	    domain_buf += '\\';
 	    domain_buf += c;
 	    continue;
+	case ':':
+	case ',':
+	case '@':
+	case ';':
+	    --pos;
+	    goto done;
 	default:
 	    sawspace = false;
 	    if ((tuchar)c & 0x80) {
@@ -740,12 +746,6 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 	    }
 	    domain_buf += c;
 	    continue;
-	case ':':
-	case ',':
-	case '@':
-	case ';':
-	    --pos;
-	    goto done;
 	}
     }
     done:
@@ -1021,7 +1021,7 @@ bool RFC822Addr::skip_whitespace(tchar *&in) {
     return true;
 }
 
-const tstring RFC822Addr::address(uint u, bool n, bool b) const {
+tstring RFC822Addr::address(uint u, bool n, bool b) const {
     tchar c;
     uint pos = 0;
     tstring s;

@@ -16,6 +16,8 @@
  */
 
 #include "stdapi.h"
+#include <chrono>
+#include <ctime>
 #include <ctype.h>
 #include <time.h>
 #include <fcntl.h>
@@ -586,7 +588,6 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     char buf[128];
     int i;
     struct tm tmbuf;
-    const struct tm *tmptr;
 
     hdrs.reset();
     ss.reset();
@@ -604,11 +605,11 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 	hdrs.write(buf, (streamsize)((size_t)(nend - buf) + rl + 2));
     }
     if (date) {
-	time_t now = time(NULL);
+	auto time_t_now = seconds();
+	auto tm_now = gmtime_r(&time_t_now, &tmbuf);
 
-	tmptr = gmtime_r(&now, &tmbuf);
 	i = (int)strftime(buf, sizeof (buf),
-	    "Date: %a, %d %b %Y %H:%M:%S UTC\r\n", tmptr);
+	    "Date: %a, %d %b %Y %H:%M:%S UTC\r\n", tm_now);
 	hdrs.write(buf, i);
     }
     if (mime) {
@@ -617,9 +618,10 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 	hdrs.write(CRLF, 2);
     }
     if (mtime) {
-	tmptr = gmtime_r(&mtime, &tmbuf);
+	auto tm_mtime = gmtime_r(&mtime, &tmbuf);
+
 	i = (int)strftime(buf, sizeof (buf),
-	    "Last-Modified: %a, %d %b %Y %H:%M:%S UTC\r\n", tmptr);
+	    "Last-Modified: %a, %d %b %Y %H:%M:%S UTC\r\n", tm_mtime);
 	hdrs.write(buf, i);
     }
     _status = sts;
@@ -739,13 +741,12 @@ void HTTPServerSocket::get(bool head) {
 	error(404);
 	return;
     }
-    if ((val = attr("if-modified-since")) != nullptr) {
-	if (parse_date(achartotchar(val)) >= statbuf.st_mtime)
-	    sts = 304;
-    } else if ((val = attr("if-unmodified-since")) != nullptr) {
-	if (parse_date(achartotchar(val)) < statbuf.st_mtime)
-	    sts = 304;
-    }
+    if ((val = attr("if-modified-since")) != nullptr &&
+	parse_date(achartotchar(val)) >= statbuf.st_mtime)
+	sts = 304;
+    else if ((val = attr("if-unmodified-since")) != nullptr &&
+	parse_date(achartotchar(val)) < statbuf.st_mtime)
+	sts = 304;
     if (val != nullptr && (val = strchr(val, ';')) != nullptr &&
 	!strnicmp(val + 1, "length=", 7) &&
 	strtoul(val + 8, NULL, 10) != (ulong)statbuf.st_size)

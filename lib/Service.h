@@ -205,6 +205,7 @@ class BLISTER Daemon: public Service {
 public:
     enum Quit { None, Slow, Fast };
 
+    using Service::Service;
     Daemon(const tchar *name, const tchar *display = NULL, bool pauseable =
 	false);
     virtual ~Daemon();
@@ -225,14 +226,14 @@ protected:
     bool setids(void);
 
     virtual bool check(string &err) { (void)err; return true; }
-    virtual int onStart(int argc, const tchar * const *argv);
-    virtual void onAbort(void);
-    virtual void onPause(void);
-    virtual void onResume(void);
-    virtual bool onRefresh(void);
-    virtual void onStop(bool fast);
-    virtual void onSigusr1(void);
-    virtual bool update(Status status);
+    virtual int onStart(int argc, const tchar * const *argv) override;
+    virtual void onAbort(void) override;
+    virtual void onPause(void) override;
+    virtual void onResume(void) override;
+    virtual bool onRefresh(void) override;
+    virtual void onStop(bool fast) override;
+    virtual void onSigusr1(void) override;
+    virtual bool update(Status status) override;
     static ulong addTimer(ulong msec = 0);
 
 private:

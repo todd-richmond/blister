@@ -93,8 +93,7 @@ public:
     struct KV {
 	__forceinline KV(tstring_view k, const T &v): key(k), val(v) {}
 	template<size_t N>
-	__forceinline constexpr KV(const tchar (&k)[N], const T &v): key(k, N - 1),
-	    val(v) {}
+	constexpr KV(const tchar (&k)[N], const T &v): key(k, N - 1), val(v) {}
 
 	tstring_view key;
 	const T &val;
@@ -111,20 +110,20 @@ public:
     // cppcheck-suppress constParameterReference
     __forceinline Log &operator <<(Escalator &e) { (void)log(e); return *this; }
 
-    [[nodiscard]] bool alertfile(void) const { return afd.enable; }
+    bool alertfile(void) const { return afd.enable; }
     void alertfile(bool b) { afd.enable = b; }
     void alertfile(Level L, const tchar *file = nullptr, uint cnt = 0,
 	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
     const tchar *alertname(void) const { return afd.filename(); }
     const tchar *alertpath(void) const { return afd.pathname(); }
-    [[nodiscard]] bool buffer(void) const { return bufenable; }
+    bool buffer(void) const { return bufenable; }
     void buffer(bool b);
     void buffer(uint sz = 32U * 1024, ulong msec = 1000) {
 	bufsz = sz; buftm = msec; buffer(true);
     }
     uint bufsize(void) const { return bufsz; }
     ulong buftime(void) const { return buftm; }
-    [[nodiscard]] bool file(void) const { return ffd.enable; }
+    bool file(void) const { return ffd.enable; }
     void file(bool b) { ffd.enable = b; }
     void file(Level l, const tchar *file = nullptr, uint cnt = 0,
 	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
@@ -132,7 +131,7 @@ public:
     const tchar *filepath(void) const { return ffd.pathname(); }
     const tchar *format(void) const { return fmt.c_str(); }
     void format(const tchar *s);
-    [[nodiscard]] bool gmttime(void) const { return gmt; }
+    bool gmttime(void) const { return gmt; }
     void gmttime(bool b) { gmt = b; }
     Level level(void) const { return lvl; }
     void level(Level l) { ffd.lvl = lvl = l; }
@@ -142,10 +141,10 @@ public:
 	*host = T("localhost"));
     const tchar *prefix(void) const { return tls->prefix.c_str(); }
     void prefix(const tchar *p) { tls->prefix = p ? p : T(""); }
-    void separate(bool b = true) { tls.get().sep = b ? ' ' : '\0'; }
+    void separate(bool b = true) { tls->sep = b ? ' ' : '\0'; }
     const tchar *source(void) const { return src.c_str(); }
     void source(const tchar *s) { src = s; }
-    [[nodiscard]] bool syslog(void) const { return syslogenable; }
+    bool syslog(void) const { return syslogenable; }
     void syslog(bool b) { syslogenable = b; }
     void syslog(Level l, const tchar *host = nullptr, uint fac = 1);
     uint syslogfacility(void) const { return syslogfac; }
@@ -153,7 +152,7 @@ public:
     Type type(void) const { return _type; }
     void type(Type t) { _type = t; }
 
-    [[nodiscard]] bool close(void);
+    bool close(void);
     // main thread does not call TLS destruction
     void destruct(void) { tls.erase(); }
     __forceinline void endlog(void) {
@@ -183,7 +182,7 @@ public:
 	return *this;
     }
     void logv(int l, ...);
-    [[nodiscard]] bool reopen(void) { Locker lkr(lck); return ffd.reopen(); }
+    bool reopen(void) { Locker lkr(lck); return ffd.reopen(); }
     void roll(void) { Locker lkr(lck); ffd.roll(); }
     void set(const Config &cfg, const tchar *sect = T("log"));
     bool setids(uid_t uid, gid_t gid) const;
@@ -236,15 +235,12 @@ public:
 	return KV<T>(key, val);
     }
     template<typename T, size_t N>
-    static __forceinline constexpr const KV<T> kv(const tchar (&key)[N],
-	const T &val) {
+    static constexpr const KV<T> kv(const tchar (&key)[N], const T &val) {
 	return KV<T>(key, val);
     }
 #define LOG_KV_FN(name, key) \
     template<typename U> \
-    static __forceinline constexpr const KV<U> name(const U &val) { \
-	return kv(T(key), val); \
-    }
+    static constexpr const KV<U> name(const U &val) { return kv(T(key), val); }
     LOG_KV_FN(cmd,      "cmd")
     LOG_KV_FN(duration, "msec")
     LOG_KV_FN(error,    "err")
@@ -421,7 +417,7 @@ private:
 	return *this;
     }
     __forceinline void write_str(Tlsdata &tlsd, const tchar *data,
-	streamsize sz) {
+	streamsize sz) const {
 	if (LIKELY(sz > 0)) {
 	    if (tlsd.sep && tlsd.strm.size())
 		tlsd.strm.write(tlsd.sep);

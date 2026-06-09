@@ -446,6 +446,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	tstring s;
 
 	delkv(kv);
+	s.reserve(oldkv->vlen + vlen + (oldkv->quote ? 2 : 0));
 	if (oldkv->quote)
 	    s = oldkv->quote;
 	s.append(oldkv->val, oldkv->vlen);

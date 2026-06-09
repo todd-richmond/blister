@@ -409,7 +409,7 @@ private:
  */
 class BLISTER nullstream: public bufferstream<tchar> {
 public:
-    nullstream() {}
+    using bufferstream<tchar>::bufferstream;
 
     nullstream &flush(void) { return *this; }
     nullstream &put(char_type) { return *this; }

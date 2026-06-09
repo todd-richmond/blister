@@ -29,9 +29,8 @@ using lruhash_t = uint64_t;
 
 class BLISTER LRUCacheEntry {
 public:
-    LRUCacheEntry(const void *d, ulong s): data(nullptr), sz(0), msec(0) {
-	hash = rapidhash(d, s);
-    }
+    LRUCacheEntry(const void *d, ulong s): data(nullptr), sz(0), msec(0),
+	hash(rapidhash(d, s)) {}
     LRUCacheEntry(const LRUCacheEntry &ce): data(ce.data), sz(ce.sz),
 	hash(ce.hash), msec(ce.msec) {}
 
@@ -61,7 +60,7 @@ public:
     explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME):
 	cursz(0), maxsz(sz), maxtm(tm), last_purge(0) {
 	static_assert(is_base_of_v<LRUCacheEntry, C>, "C must derive from LRUCacheEntry");
-	cache_map.reserve(128);
+	cache_map.reserve(sz / 1024 > 128 ? sz / 1024 : 128);
     }
     ~LRUCache() { clear(); }
 
@@ -77,11 +76,10 @@ public:
 	for (auto &kv : freed)
 	    delete [] (char *)kv.second.data;
     }
-    [[nodiscard]] const C get(const void *data, ulong sz) {
+    const C get(const void *data, ulong sz) {
 	C entry(data, sz);
-	msec_t now = LIKELY(maxtm) ? mticks() : 0;
 	lru_list freed;
-	C result(entry);
+	msec_t now = LIKELY(maxtm) ? mticks() : 0;
 
 	lock.lock();
 	if (LIKELY(maxtm) && now - last_purge > maxtm / 2) {
@@ -94,14 +92,18 @@ public:
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
 	    if (LIKELY(maxtm))
 		it->second->second.touch(now);
-	    result = it->second->second;
+	    C result = it->second->second;
+	    lock.unlock();
+	    for (auto &kv : freed)
+		delete [] (char *)kv.second.data;
+	    return result;
 	}
 	lock.unlock();
 	for (auto &kv : freed)
 	    delete [] (char *)kv.second.data;
-	return result;
+	return entry;
     }
-    [[nodiscard]] bool put(C &entry, const void *data, ulong sz) {
+    bool put(C &entry, const void *data, ulong sz) {
 	if (UNLIKELY(sz > maxsz)) {
 	    entry.data = nullptr;
 	    entry.sz = 0;
@@ -161,19 +163,20 @@ private:
     void purge(ulong sz, msec_t now, lru_list &freed) {
 	if (maxtm && now) {
 	    while (!cache_list.empty()) {
-		if (LIKELY(now - cache_list.back().second.touch() > maxtm)) {
-		    cursz -= cache_list.back().second.sz;
-		    cache_map.erase(cache_list.back().first);
-		    freed.splice(freed.end(), cache_list,
-			prev(cache_list.end()));
+		auto &back_entry = cache_list.back();
+		if (LIKELY(now - back_entry.second.touch() > maxtm)) {
+		    cursz -= back_entry.second.sz;
+		    cache_map.erase(back_entry.first);
+		    freed.splice(freed.end(), cache_list, prev(cache_list.end()));
 		} else {
 		    break;
 		}
 	    }
 	}
 	while (UNLIKELY(cursz + sz > maxsz) && !cache_list.empty()) {
-	    cursz -= cache_list.back().second.sz;
-	    cache_map.erase(cache_list.back().first);
+	    auto &back_entry = cache_list.back();
+	    cursz -= back_entry.second.sz;
+	    cache_map.erase(back_entry.first);
 	    freed.splice(freed.end(), cache_list, prev(cache_list.end()));
 	}
     }

@@ -204,7 +204,7 @@ public:
 	    atou<ulong>);
     }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
-    [[nodiscard]] bool read(tistream &is, const tchar *pre = nullptr,
+    bool read(tistream &is, const tchar *pre = nullptr,
 	bool append = false, ulong sz = 0);
     void reserve(ulong sz) { amap.reserve(amap.size() + sz / 64); }
     template<typename T>
@@ -240,8 +240,8 @@ public:
     }
     Config &setv(const tchar *key, const tchar *val, ... /* , const tchar
 	*sect = nullptr, nullptr */);
-    [[nodiscard]] bool write(tostream &os) const { return write(os, ini); }
-    [[nodiscard]] bool write(tostream &os, bool ini) const;
+    bool write(tostream &os) const { return write(os, ini); }
+    bool write(tostream &os, bool ini) const;
     void lock(void) { lck.wlock(); }
     void unlock(void) { lck.wunlock(); }
     friend tistream &operator >>(tistream &is, Config &cfg);
@@ -323,6 +323,7 @@ inline tostream &operator <<(tostream &os, const Config &cfg) {
 
 class BLISTER ConfigFile: public Config {
 public:
+    using Config::Config;
     explicit ConfigFile(const tchar *file = nullptr, const tchar *_pre = nullptr);
 
     using Config::read;

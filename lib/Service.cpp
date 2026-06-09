@@ -1006,7 +1006,7 @@ int Service::ctrl_handler(void *) {
 	    str = T("user");
 	    break;
 	default:
-	    tsprintf(buf, T("%i"), sig);
+	    to_str(buf, buf + 16, sig);
 	    str = buf;
 	    break;
 	}
@@ -1464,7 +1464,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     struct stat sbuf, sfile;
     time_t start;
 
-    time(&start);
+    start = seconds();
     srvcpath = path;
     cfg.prefix(name.c_str());
     stStatus = Starting;
@@ -1578,7 +1578,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	sigaction(SIGUSR2, &sa, NULL);
 	dlog.stop();
 	do {
-	    time(&start);
+	    start = seconds();
 	    watchpid = getpid();
 	    child = fork();
 	    if (child == -1) {
@@ -1635,7 +1635,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			    dlog.alert(Log::mod(name), Log::cmd(T("watch")),
 				Log::kv(T("pid"), child), Log::kv(T("sts"), ret),
 				Log::error(T("unexpected exit")),
-				Log::kv(T("duration"), time(NULL) - start));
+				Log::kv(T("duration"), seconds() - start));
 			break;
 		    }
 		    alarm(0);
@@ -1665,7 +1665,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 			} else if (!flg) {
 			    dlog.note(Log::mod(name), Log::cmd(qflag == Fast ?
 				T("exit") : T("stop")), Log::kv(T("duration"),
-				time(NULL) - start), Log::kv(T("mem"), kb),
+				seconds() - start), Log::kv(T("mem"), kb),
 				Log::kv(T("rss"), psbuf.rss));
 			}
 			ret = 0;

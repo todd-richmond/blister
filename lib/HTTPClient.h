@@ -23,16 +23,21 @@
 
 class BLISTER URL {
 public:
-    URL(): port(80) { set(nullptr); }
+    constexpr URL(): port(80) { set(nullptr); }
     explicit URL(const tchar *url): port(80) { set(url); }
-    URL(const URL &url): port(0) { operator =(url); }
+    URL(const URL &url) = default;
+    ~URL() = default;
 
     tstring host, path, prot, query;
     ushort port;
 
-    URL &operator =(const URL &url);
-    const tstring fullpath(void) const;
-    const tstring relpath(void) const {
+    URL &operator =(const URL &url) = default;
+
+    friend auto operator <=>(const URL &a, const URL &b) = default;
+    friend bool operator ==(const URL &a, const URL &b) = default;
+
+    tstring fullpath(void) const;
+    constexpr tstring relpath(void) const {
 	return query.empty() ? path : path + T("?") + query;
     }
     bool set(const tchar *url);
@@ -65,10 +70,12 @@ public:
 	uint timeout = SOCK_INFINITE) {
 	return connect(Sockaddr(host, port), keepalive, timeout);
     }
-    template<class C> void header(const tchar *hdr, const C &val) {
+    template<typename C>
+    void header(const tchar *hdr, const C &val) {
 	hstrm << hdr << T(": ") << val << T("\r\n");
     }
-    template<class C> void header(const tstring &hdr, const C &val) {
+    template<typename C>
+    void header(const tstring &hdr, const C &val) {
 	hstrm << hdr << T(": ") << val << T("\r\n");
     }
     void headers(const tstring &headers) { hstrm << headers; }

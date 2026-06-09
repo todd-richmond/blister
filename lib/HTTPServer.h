@@ -35,7 +35,7 @@ public:
     const attrmap &postarguments(void) const { return postargs; }
     void urldecode(char *buf, attrmap &amap) const;
     virtual const char *mimetype(const char *ext) const;
-    virtual void start(void) { readable(readhdrs, rto); }
+    void start(void) override { readable(readhdrs, rto); }
     static void senddate(bool b) { date = b; }
     static const tchar *section(void) { return T("http"); }
 

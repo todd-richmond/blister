@@ -102,15 +102,15 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     char buf[PATH_MAX];
     struct stat sbuf;
 
-    sprintf(buf, "/proc/%ld/as", (long)pid);
+    snprintf(buf, sizeof (buf), "/proc/%ld/as", (long)pid);
     if (stat(buf, &sbuf) == -1)
 	return -1;
     psbuf->sz = sbuf.st_size / 1024;
 #elif defined(__linux__)
-    char buf[PATH_MAX + 128], fbuf[4096];
+    char buf[512], fbuf[4096];
     FILE *f;
 
-    sprintf(buf, "/proc/%ld/smaps", (long)pid);
+    snprintf(buf, sizeof (buf), "/proc/%ld/smaps", (long)pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
     setvbuf(f, fbuf, _IOFBF, sizeof (fbuf));
@@ -133,7 +133,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	}
     }
     fclose(f);
-    sprintf(buf, "/proc/%ld/stat", (long)pid);
+    snprintf(buf, sizeof (buf), "/proc/%ld/stat", (long)pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
     if (fgets(buf, (int)sizeof (buf), f) != NULL) {
@@ -146,8 +146,8 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	if (p) {
 	    sscanf(p + 2, "%c %ld %ld %ld %ld %ld %lu %lu %lu %lu %lu %lu %lu",
 		&c, &d, &d, &d, &d, &d, &u, &u, &u, &u, &u, &utime, &stime);
-		psbuf->stime = stime / HZ * 1000 + (stime % HZ) * 1000 / HZ;
-		psbuf->utime = utime / HZ * 1000 + (utime % HZ) * 1000 / HZ;
+		psbuf->stime = stime * 1000 / HZ;
+		psbuf->utime = utime * 1000 / HZ;
 	}
     }
     fclose(f);

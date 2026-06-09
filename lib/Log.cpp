@@ -180,7 +180,7 @@ bool Log::LogFile::reopen(void) {
     lock();
     if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
 	tchar buf[PATH_MAX];
-	time_t now = ::time(NULL);
+	time_t now = seconds();
 	const struct tm *tm;
 	struct tm tmbuf;
 
@@ -222,7 +222,8 @@ void Log::LogFile::roll(void) {
     lock();
     if (fd < 0 || (!fstat(fd, &sbuf) && mp && sbuf.st_ino != inode))
 	return;
-    now = cnt && !sec ? (time_t)sbuf.st_ctime : ::time(NULL);
+    now = cnt && !sec ? (time_t)sbuf.st_ctime :
+	seconds();
     s1 = path;
     if ((pos = s1.rfind('/')) == s1.npos && (pos = s1.rfind('\\')) == s1.npos) {
 	sep = '/';
@@ -289,10 +290,12 @@ void Log::LogFile::roll(void) {
 	tchar buf[32];
 	uint u;
 
-	tsprintf(buf, T(".%u"), files);
+	buf[0] = '.';
+	to_str(buf + 1, buf + 32, files);
 	s1 = file + buf;
 	for (u = files; u > 1; u--) {
-	    tsprintf(buf, T(".%u"), u - 1);
+	    buf[0] = '.';
+	    to_str(buf + 1, buf + 32, u - 1);
 	    s2 = file + buf;
 	    (void)tunlink(s1.c_str());
 	    if (trename(s2.c_str(), s1.c_str()))
@@ -517,7 +520,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (afd.len >= afd.sz)
 	    afd.roll();
     }
-    time(&now_sec);
+    now_sec = seconds();
     now_usec = uticks();
     now_usec %= 1000000;
     if (now_sec != last_sec) {
@@ -546,10 +549,13 @@ void Log::endlog(Tlsdata &tlsd) {
 	    if (tm->tm_wday != tm2->tm_wday)
 		diff -= 2400 * (tm->tm_wday > tm2->tm_wday ||
 		    (tm->tm_wday == 0  && tm2->tm_wday == 6) ? 1 : -1);
-	    if (diff < 0)
-		tsprintf(gmtoff, T("-%04d"), -1 * diff);
-	    else
-		tsprintf(gmtoff, T("+%04d"), diff);
+	    if (diff < 0) {
+		gmtoff[0] = '-';
+		to_str(gmtoff + 1, gmtoff + 6, -1 * diff);
+	    } else {
+		gmtoff[0] = '+';
+		to_str(gmtoff + 1, gmtoff + 6, diff);
+	    }
 	    last_format.replace(zpos, 2, gmtoff);
 	}
 #endif
@@ -643,9 +649,11 @@ void Log::endlog(Tlsdata &tlsd) {
 	string::size_type pos;
 	char buf[64], cbuf[32];
 	uint u = (syslogfac << 3) | (uint)(clvl - (clvl < Debug ? 1 : 2));
+	struct tm syslog_tm;
+	auto tm = gmtime_r(&now_sec, &syslog_tm);
 
-	sprintf(buf, "<%u>%.15s.%06u ", u, ctime_r(&now_sec, cbuf) + 4,
-	    (uint)now_usec);
+	strftime(cbuf, sizeof(cbuf), "%b %d %H:%M:%S", tm);
+	sprintf(buf, "<%u>%.15s.%06u ", u, cbuf, (uint)now_usec);
 	ss = buf;
 	ss += tstringtoastring(hostname);
 	if (!mailfrom.empty() && mailfrom != T("<>")) {
@@ -773,7 +781,7 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 	    os.write((const tchar *)start, p - start);
 	    auto flush = [&]() { if (bsz) { os.write(buf, bsz); bsz = 0; } };
 	    auto esc2 = [&](tchar e) {
-		if (UNLIKELY(bsz + 2 > (streamsize)sizeof (buf)))
+		if (UNLIKELY(bsz + 2 >= (streamsize)sizeof (buf)))
 		    flush();
 		buf[bsz++] = '\\';
 		buf[bsz++] = e;
@@ -890,7 +898,7 @@ void Log::stop(void) {
 }
 
 Log::Level Log::str2enum(const tchar *l) {
-    for (uint u = 0; u < sizeof (LevelStr) / sizeof (LevelStr[0]); ++u) {
+    for (uint u = 0; u < std::size(LevelStr); ++u) {
 	tstring_view sv = LevelStr[u];
 
 	if (!sv.empty() && sv.back() == ' ')

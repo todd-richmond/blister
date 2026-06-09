@@ -197,7 +197,7 @@ public:
     ~DLLibrary() { close(); }
 
     operator void *(void) const { return hdl; }
-    bool operator !(void) const { return hdl == nullptr; }
+    friend bool operator !(const DLLibrary &dll) { return dll.hdl == nullptr; }
 
     const tstring &error(void) const { return err; }
     const tstring &name(void) const { return file; }
@@ -919,12 +919,16 @@ public:
     bool terminated(void) const { return getState() == Terminated; }
 
     operator thread_hdl_t(void) const { return hdl; }
-    bool operator ==(const Thread &t) const { return THREAD_EQUAL(id, t.id); }
-    bool operator !=(const Thread &t) const { return !operator ==(t); }
+    friend bool operator ==(const Thread &a, const Thread &b) {
+	return THREAD_EQUAL(a.id, b.id);
+    }
+    friend bool operator !=(const Thread &a, const Thread &b) {
+	return !(a == b);
+    }
 
     bool priority(int pri = 0);			// -20 -> 20
-    bool start(uint stacksz = 0, ThreadGroup *tg = nullptr, bool suspend = false,
-	bool autoterm = false);
+    bool start(uint stacksz = 0, ThreadGroup *tg = nullptr, bool suspend =
+	false, bool autoterm = false);
     bool start(ThreadRoutine main, void *data = nullptr, uint stacksz = 0,
 	ThreadGroup *tg = nullptr, bool suspend = false, bool autoterm = false);
     bool stop(void);
@@ -975,8 +979,12 @@ public:
     const Thread &getMainThread(void) const { return master; }
     size_t size(void) const { return threads.size(); }
 
-    bool operator ==(const ThreadGroup &t) const { return id == t.id; }
-    bool operator !=(const ThreadGroup &t) const { return id != t.id; }
+    friend bool operator ==(const ThreadGroup &a, const ThreadGroup &b) {
+	return a.id == b.id;
+    }
+    friend bool operator !=(const ThreadGroup &a, const ThreadGroup &b) {
+	return a.id != b.id;
+    }
 
     void priority(int pri = 0);
     void remove(Thread &thread);

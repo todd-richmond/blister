@@ -1019,6 +1019,21 @@ auto to_chars(wchar_t *first, wchar_t *last, T value) {
     return r;
 }
 
+template<typename T>
+__forceinline tchar *to_str(tchar *buf, tchar *last, T val) {
+    auto [end, ec] = to_chars(buf, last, val);
+    if (end < last) {
+	*end = '\0';
+	return end;
+    }
+    return buf;
+}
+
+// modern time(NULL) replacement
+static inline time_t seconds(void) {
+    return chrono::system_clock::to_time_t(chrono::system_clock::now());
+}
+
 // string comparison functions
 template<class C>
 __forceinline int stringcmp(const C *a, const C *b) { return tstrcmp(a, b); }

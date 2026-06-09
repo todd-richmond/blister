@@ -118,10 +118,12 @@ public:
     }
     Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
 
-    bool operator ==(const Sockaddr &sa) const {
-	return !memcmp(&addr, &sa.addr, size());
+    friend bool operator ==(const Sockaddr &a, const Sockaddr &b) {
+	return !memcmp(&a.addr, &b.addr, a.size());
     }
-    bool operator !=(const Sockaddr &sa) const { return !operator ==(sa); }
+    friend bool operator !=(const Sockaddr &a, const Sockaddr &b) {
+	return !(a == b);
+    }
     Sockaddr &operator =(const Sockaddr &sa) {
 	if (this != &sa) {
 	    addr = sa.addr;
@@ -302,12 +304,21 @@ public:
 
     Socket &operator =(socket_t sock);
     Socket &operator =(const Socket &r);
-    bool operator ==(socket_t sock) const { return sbuf->sock == sock; }
-    bool operator ==(const Socket &r) const {
-	return sbuf == r.sbuf || sbuf->sock == r.sbuf->sock;
+    friend bool operator ==(const Socket &s, socket_t sock) {
+	return s.sbuf->sock == sock;
     }
-    bool operator !=(const Socket &r) const { return !operator ==(r); }
-    bool operator !(void) const { return sbuf->sock == SOCK_INVALID; }
+    friend bool operator ==(socket_t sock, const Socket &s) {
+	return s.sbuf->sock == sock;
+    }
+    friend bool operator ==(const Socket &a, const Socket &b) {
+	return a.sbuf == b.sbuf || a.sbuf->sock == b.sbuf->sock;
+    }
+    friend bool operator !=(const Socket &a, const Socket &b) {
+	return !(a == b);
+    }
+    friend bool operator !(const Socket &s) {
+	return s.sbuf->sock == SOCK_INVALID;
+    }
     operator socket_t() const { return sbuf->sock; }
 
     bool __forceinline blocked(void) const { return sbuf->blocked(); }

@@ -164,8 +164,8 @@ public:
     ulong timeout(void) const { return to; }
 
     void timeout(DispatchObjCB cb, ulong msec = DSP_PREVIOUS);
-    virtual void cancel(void);
-    virtual void erase(void);
+    void cancel(void) override;
+    void erase(void) override;
 
 protected:
     struct compare {
@@ -199,8 +199,8 @@ public:
 	DSP_NEVER): DispatchTimer(parent, msec), Socket(s), mapped(false) {}
     virtual ~DispatchSocket() { DispatchSocket::cancel(); }
 
-    virtual void cancel(void);
-    virtual void erase(void);
+    void cancel(void) override;
+    void erase(void) override;
 
 protected:
     void poll(DispatchObjCB cb, ulong msec, DispatchMsg msg);
@@ -212,14 +212,7 @@ protected:
 
 class BLISTER DispatchIOSocket: public DispatchSocket {
 public:
-    explicit DispatchIOSocket(Dispatcher &d, int type = SOCK_STREAM,
-	ulong msec = DSP_NEVER): DispatchSocket(d, type, msec) {}
-    DispatchIOSocket(Dispatcher &d, const Socket &sock, ulong msec = DSP_NEVER):
-	DispatchSocket(d, sock, msec) {}
-    explicit DispatchIOSocket(DispatchObj &parent, int type = SOCK_STREAM,
-	ulong msec = DSP_NEVER): DispatchSocket(parent, type, msec) {}
-    DispatchIOSocket(DispatchObj &parent, const Socket &sock, ulong msec =
-	DSP_NEVER): DispatchSocket(parent, sock, msec) {}
+    using DispatchSocket::DispatchSocket;
 
     void acceptable(DispatchObjCB cb = nullptr, ulong msec = DSP_PREVIOUS) {
 	poll(cb, msec, DispatchAccept);
@@ -240,14 +233,7 @@ public:
 
 class BLISTER DispatchClientSocket: public DispatchIOSocket {
 public:
-    explicit DispatchClientSocket(Dispatcher &d, int type = SOCK_STREAM,
-	ulong msec = DSP_NEVER): DispatchIOSocket(d, type, msec) {}
-    DispatchClientSocket(Dispatcher &d, const Socket &sock,
-	ulong msec = DSP_NEVER): DispatchIOSocket(d, sock, msec) {}
-    explicit DispatchClientSocket(DispatchObj &parent, int type = SOCK_STREAM,
-	ulong msec = DSP_NEVER): DispatchIOSocket(parent, type, msec) {}
-    DispatchClientSocket(DispatchObj &parent, const Socket &sock,
-	ulong msec = DSP_NEVER): DispatchIOSocket(parent, sock, msec) {}
+    using DispatchIOSocket::DispatchIOSocket;
 
     void connect(const Sockaddr &addr, ulong msec = 30000, DispatchObjCB cb =
 	connected);
@@ -261,16 +247,14 @@ private:
 
 class BLISTER DispatchServerSocket: public DispatchIOSocket {
 public:
-    DispatchServerSocket(Dispatcher &d, const Socket &sock,
-	ulong msec = DSP_NEVER): DispatchIOSocket(d, sock, msec) {}
+    using DispatchIOSocket::DispatchIOSocket;
 
     virtual void start(void) = 0;
 };
 
 class BLISTER DispatchListenSocket: public DispatchSocket {
 public:
-    explicit DispatchListenSocket(Dispatcher &d, int type = SOCK_STREAM):
-	DispatchSocket(d, type) {}
+    using DispatchSocket::DispatchSocket;
     DispatchListenSocket(Dispatcher &d, const Sockaddr &addr,
 	int type = SOCK_STREAM, bool reuse = true, int backlog = SOCK_BACKLOG,
 	DispatchObjCB cb = connection);
@@ -303,8 +287,8 @@ public:
     [[nodiscard]] bool start(uint maxthreads = 100, uint stacksz = 0);
 
 protected:
-    virtual int onStart(void);
-    virtual void onStop(void);
+    int onStart(void) override;
+    void onStop(void) override;
 
     const Config &cfg;
 
@@ -353,8 +337,7 @@ private:
 		batch[cnt++] = *it++;
 	    }
 	    sorted.erase(sorted.begin(), it);
-	    batch[cnt] = cnt < maxcnt ? (it != sorted.end() ? *it : nullptr)
-		: nullptr;
+	    batch[cnt] = cnt < maxcnt && it != sorted.end() ? *it : nullptr;
 	    return cnt;
 	}
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
@@ -554,7 +537,7 @@ public:
 	    callback(cb);
 	    ac.wait(*this);
 	}
-	virtual void cancel(void) { ac.cancel(*this); }
+	void cancel(void) override { ac.cancel(*this); }
 
     private:
 	AsyncCondvar &ac;
