@@ -1019,37 +1019,128 @@ auto to_chars(wchar_t *first, wchar_t *last, T value) {
     return r;
 }
 
-inline int stringcmp(const char *a, const char *b) { return strcmp(a, b); }
-inline int stringcmp(const wchar *a, const wchar *b) { return wcscmp(a, b); }
-inline int stringicmp(const char *a, const char *b) { return stricmp(a, b); }
-inline int stringicmp(const wchar *a, const wchar *b) { return wcsicmp(a, b); }
+// string comparison functions
+template<class C>
+__forceinline int stringcmp(const C *a, const C *b) { return tstrcmp(a, b); }
 
-inline bool stringieq(const char *a, const char *b) {
-    return stricmp(a, b) == 0;
-}
-inline bool stringieq(const wchar *a, const wchar *b) {
-    return wcsicmp(a, b) == 0;
+template<typename T>
+__forceinline int stringcmp(const T &a, const T &b) {
+    if constexpr (is_same_v<T, basic_string<typename T::value_type>>) {
+	return tstrcmp(a.c_str(), b.c_str());
+    } else {
+	return tstrcmp(a.data(), b.data());
+    }
 }
 
 template<class C>
-inline bool stringeq(const C *a, const C *b) {
+__forceinline int stringicmp(const C *a, const C *b) { return tstricmp(a, b); }
+
+template<typename T>
+__forceinline int stringicmp(const T &a, const T &b) {
+    if constexpr (is_same_v<T, basic_string<typename T::value_type>>) {
+	return tstricmp(a.c_str(), b.c_str());
+    } else {
+	return tstricmp(a.data(), b.data());
+    }
+}
+
+template<class C>
+__forceinline bool stringeq(const C *a, const C *b) {
     return *a == *b && tstrcmp(a, b) == 0;
 }
 
-template<class C>
-inline bool stringeq(const basic_string<C> &a, const basic_string<C> &b) {
+template<typename T>
+__forceinline bool stringeq(const T &a, const T &b) {
     return a == b;
 }
 
+template<class C, typename T>
+__forceinline bool stringeq(const C *a, const T &b) {
+    if constexpr (is_same_v<T, basic_string<typename T::value_type>>)
+	return stringeq(a, basic_string_view<typename T::value_type>(b));
+    else
+	return stringeq(a, basic_string_view<C>(b));
+}
+
+template<class C, typename T>
+__forceinline bool stringeq(const T &a, const C *b) { return stringeq(b, a); }
+
 template<class C>
-inline bool stringless(const C *a, const C *b) {
+__forceinline bool stringieq(const C *a, const C *b) {
+    return stringicmp(a, b) == 0;
+}
+
+template<typename T>
+__forceinline bool stringieq(const T &a, const T &b) {
+    return stringicmp(a, b) == 0;
+}
+
+template<class C, typename T>
+__forceinline bool stringieq(const C *a, const T &b) {
+    if constexpr (is_same_v<T, basic_string<typename T::value_type>>)
+	return stringieq(a, basic_string_view<typename T::value_type>(b));
+    else
+	return stringieq(a, basic_string_view<C>(b));
+}
+
+template<class C, typename T>
+__forceinline bool stringieq(const T &a, const C *b) { return stringieq(b, a); }
+
+template<class C>
+__forceinline bool stringless(const C *a, const C *b) {
     return tstrcmp(a, b) < 0;
 }
 
-template<class C>
-inline bool stringless(const basic_string<C> &a, const basic_string<C> &b) {
+template<typename T>
+__forceinline bool stringless(const T &a, const T &b) {
     return a < b;
 }
+
+template<class C, typename T>
+__forceinline bool stringless(const C *a, const T &b) {
+    if constexpr (is_same_v<T, basic_string<typename T::value_type>>)
+	return stringless(a, basic_string_view<typename T::value_type>(b));
+    else
+	return stringless(a, basic_string_view<C>(b));
+}
+
+template<class C, typename T>
+__forceinline bool stringless(const T &a, const C *b) {
+    return stringless(b, a);
+}
+
+// string comparison functors
+struct streq {
+    using is_transparent = void;
+    template<typename T1, typename T2>
+    bool operator ()(const T1 &a, const T2 &b) const { return equal(a, b); }
+    template<typename T1, typename T2>
+    static bool equal(const T1 &a, const T2 &b) { return stringeq(a, b); }
+};
+
+struct strieq {
+    using is_transparent = void;
+    template<typename T1, typename T2>
+    bool operator ()(const T1 &a, const T2 &b) const { return equal(a, b); }
+    template<typename T1, typename T2>
+    static bool equal(const T1 &a, const T2 &b) { return stringieq(a, b); }
+};
+
+struct strless {
+    using is_transparent = void;
+    template<typename T1, typename T2>
+    bool operator ()(const T1 &a, const T2 &b) const { return less(a, b); }
+    template<typename T1, typename T2>
+    static bool less(const T1 &a, const T2 &b) { return stringless(a, b); }
+};
+
+struct striless {
+    using is_transparent = void;
+    template<typename T1, typename T2>
+    bool operator ()(const T1 &a, const T2 &b) const { return less(a, b); }
+    template<typename T1, typename T2>
+    static bool less(const T1 &a, const T2 &b) { return stringicmp(a, b) < 0; }
+};
 
 // Bernstein string hash with transform
 using strhash_t = uint64_t;
@@ -1190,280 +1281,140 @@ inline strhash_t rapidhash(const void *data, size_t len) {
     return rapidmix(a ^ b ^ c ^ RAPID_SECRET0, a ^ b ^ RAPID_SECRET1);
 }
 
-template<class C>
-__forceinline strhash_t stringhash(const C *s) {
-    return bernstein_hash(s);
-}
-
 template<class C, size_t N>
 constexpr strhash_t stringhash(const C (&s)[N]) {
     return bernstein_hash(s);
 }
 
-template<class C>
-__forceinline strhash_t stringhash(const basic_string<C> &s) {
-    return bernstein_hash(s.c_str(), s.size());
+template<typename T>
+__forceinline strhash_t stringhash(const T &s) {
+    if constexpr (is_class_v<T> && requires { typename T::value_type;
+	s.c_str(); s.size(); }) {
+	return bernstein_hash(s.c_str(), s.size());
+    } else if constexpr (requires { s.data(); s.size(); }) {
+	return bernstein_hash(s.data(), s.size());
+    } else {
+	return bernstein_hash(s);
+    }
 }
 
-template<class C>
-__forceinline strhash_t stringhash(basic_string_view<C> s) {
-    return bernstein_hash(s.data(), s.size());
-}
+template<typename C>
+constexpr auto ascii_fold = [](C c) { return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0); };
+constexpr auto unicode_fold = [](wchar c) { return towupper((ushort)c); };
 
-template<class C>
-__forceinline strhash_t stringiasciihash(const C *s) {
-    return bernstein_hash(s,
-	[](C c) { return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0); });
-}
-
-template<class C, size_t N>
+template<typename C, size_t N>
 constexpr strhash_t stringiasciihash(const C (&s)[N]) {
-    return bernstein_hash(s,
-	[](C c) { return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0); });
+    return bernstein_hash(s, ascii_fold<C>);
 }
 
-template<class C>
-__forceinline strhash_t stringiasciihash(const basic_string<C> &s) {
-    return bernstein_hash(s.c_str(), s.size(),
-	[](C c) { return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0); });
-}
-template<class C>
-__forceinline strhash_t stringiasciihash(basic_string_view<C> s) {
-    return bernstein_hash(s.data(), s.size(),
-	[](C c) { return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0); });
-}
-
-inline strhash_t stringihash(const char *s) {
-    return bernstein_hash(s, [](char c) { return (char)toupper((uchar)c); });
-}
-
-inline strhash_t stringihash(const string &s) {
-    return bernstein_hash(s.c_str(), s.size(),
-	[](char c) { return (char)toupper((uchar)c); });
+template<typename T>
+__forceinline strhash_t stringiasciihash(const T &s) {
+    if constexpr (is_class_v<T> && requires { typename T::value_type;
+	s.c_str(); s.size(); }) {
+	return bernstein_hash(s.c_str(), s.size(), ascii_fold<typename
+	    T::value_type>);
+    } else if constexpr (requires { s.data(); s.size(); }) {
+	return bernstein_hash(s.data(), s.size(), ascii_fold<typename
+	    T::value_type>);
+    } else {
+	using C = remove_pointer_t<remove_cv_t<T>>;
+	return bernstein_hash(s, ascii_fold<C>);
+    }
 }
 
-inline strhash_t stringihash(const wchar *s) {
-    return bernstein_hash(s, [](wchar c) { return towupper((ushort)c); });
+template<typename C, size_t N>
+constexpr strhash_t stringihash(const C (&s)[N]) {
+    return bernstein_hash(s, ascii_fold<C>);
 }
 
-inline strhash_t stringihash(const wstring &s) {
-    return bernstein_hash(s.c_str(), s.size(),
-	[](wchar c) { return towupper((ushort)c); });
-}
-inline strhash_t stringihash(string_view s) {
-    return bernstein_hash(s.data(), s.size(),
-	[](char c) { return (char)toupper((uchar)c); });
-}
-inline strhash_t stringihash(wstring_view s) {
-    return bernstein_hash(s.data(), s.size(),
-	[](wchar c) { return towupper((ushort)c); });
+template<typename T>
+__forceinline strhash_t stringihash(const T &s) {
+    if constexpr (is_class_v<T> && requires { typename T::value_type;
+	s.c_str(); s.size(); }) {
+	return bernstein_hash(s.c_str(), s.size(), ascii_fold<typename
+	    T::value_type>);
+    } else if constexpr (requires { s.data(); s.size(); }) {
+	return bernstein_hash(s.data(), s.size(), ascii_fold<typename
+	    T::value_type>);
+    } else {
+	using C = remove_pointer_t<remove_cv_t<T>>;
+	return bernstein_hash(s, ascii_fold<C>);
+    }
 }
 
 template<class C>
 struct ptrhash {
-    size_t operator ()(const C *p) const { return (size_t)p; }
+    constexpr size_t operator ()(const C *p) const {
+	if constexpr (sizeof (size_t) == 4 && sizeof (void*) == 8) {
+	    uintptr_t addr = reinterpret_cast<uintptr_t>(p);
+
+	    return (size_t)((addr >> 32) ^ addr);
+	} else {
+	    return (size_t)p;
+	}
+    }
 };
 
 struct llonghash {
-#if SIZE_MAX == UINT32_MAX
-    size_t operator ()(llong l) const { return (size_t)((l >> 32) ^ l); }
-#else
-    size_t operator ()(llong l) const { return (size_t)l; }
-#endif
+    constexpr size_t operator ()(llong l) const {
+	if constexpr (sizeof (size_t) == 4)
+	    return (size_t)((l >> 32) ^ l);
+	else
+	    return (size_t)l;
+    }
 };
 
 struct ullonghash {
-#if SIZE_MAX == UINT32_MAX
-    size_t operator ()(ullong u) const { return (size_t)((u >> 32) ^ u); }
-#else
-    size_t operator ()(ullong u) const { return (size_t)u; }
-#endif
+    constexpr size_t operator ()(ullong u) const {
+	if constexpr (sizeof (size_t) == 4)
+	    return (size_t)((u >> 32) ^ u);
+	else
+	    return (size_t)u;
+    }
 };
 
 template <class C>
 struct strhash {
     using is_transparent = void;
-    size_t operator ()(const C *s) const { return stringhash(s); }
-    size_t operator ()(const basic_string<C> &s) const { return stringhash(s); }
-    size_t operator ()(basic_string_view<C> s) const {
-	return bernstein_hash(s.data(), s.size());
+    template<typename T>
+    size_t operator ()(const T &s) const { return stringhash(s); }
+    template<size_t N>
+    constexpr size_t operator ()(const char (&s)[N]) const {
+	return bernstein_hash<char, N>(s);
     }
     template<size_t N>
-    constexpr size_t operator ()(const C (&s)[N]) const {
-	return bernstein_hash(s);
-    }
-};
-
-template <class C>
-struct strihash {
-    using is_transparent = void;
-    size_t operator ()(const C *s) const { return stringihash(s); }
-    size_t operator ()(const basic_string<C> &s) const { return stringihash(s); }
-    size_t operator ()(basic_string_view<C> s) const { return stringihash(s); }
-    template<size_t N>
-    size_t operator ()(const C (&s)[N]) const {
-	return bernstein_hash(s, N - 1, [](C c) {
-	    if constexpr (sizeof(C) == 1)
-		return (C)toupper((uchar)c);
-	    else
-		return towupper((ushort)c);
-	});
+    constexpr size_t operator ()(const wchar (&s)[N]) const {
+	return bernstein_hash<wchar, N>(s);
     }
 };
 
 template <class C>
 struct striasciihash {
     using is_transparent = void;
-    size_t operator ()(const C *s) const { return stringiasciihash(s); }
-    size_t operator ()(const basic_string<C> &s) const { return stringiasciihash(s); }
-    size_t operator ()(basic_string_view<C> s) const { return stringiasciihash(s); }
+    template<typename T>
+    size_t operator ()(const T &s) const { return stringiasciihash(s); }
     template<size_t N>
-    constexpr size_t operator ()(const C (&s)[N]) const {
-	return bernstein_hash(s, [](C c) {
-	    return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0);
-	});
+    constexpr size_t operator ()(const char (&s)[N]) const {
+	return bernstein_hash<char, N>(s, ascii_fold<char>);
     }
-};
-
-template<class C>
-struct streq {
-    using is_transparent = void;
-    bool operator ()(const C *a, const C *b) const { return stringeq(a, b); }
-    bool operator ()(const C *a, basic_string_view<C> b) const {
-	return memcmp(a, b.data(), b.size() * sizeof (C)) == 0 && a[b.size()] == C('\0');
-    }
-    bool operator ()(basic_string_view<C> a, const C *b) const {
-	return memcmp(a.data(), b, a.size() * sizeof (C)) == 0 && b[a.size()] == C('\0');
-    }
-    bool operator ()(basic_string_view<C> a, basic_string_view<C> b) const {
-	return a == b;
-    }
-    bool operator ()(const C *a, const basic_string<C> &b) const {
-	return (*this)(a, basic_string_view<C>(b));
-    }
-    bool operator ()(const basic_string<C> &a, const C *b) const {
-	return (*this)(basic_string_view<C>(a), b);
-    }
-    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return (*this)(basic_string_view<C>(a), basic_string_view<C>(b));
-    }
-    bool operator ()(const basic_string<C> &a, basic_string_view<C> b) const {
-	return (*this)(basic_string_view<C>(a), b);
-    }
-    bool operator ()(basic_string_view<C> a, const basic_string<C> &b) const {
-	return (*this)(a, basic_string_view<C>(b));
-    }
-    static bool equal(const C *a, const C *b) { return stringeq(a, b); }
-    static bool equal(const basic_string<C> &a, const basic_string<C> &b) {
-	return stringeq(a, b);
-    }
-};
-
-template<class C>
-struct strieq {
-    using is_transparent = void;
-    bool operator ()(const C *a, const C *b) const { return stringieq(a, b); }
-    bool operator ()(const C *a, basic_string_view<C> b) const {
-	return a[b.size()] == C('\0') && tstrnicmp(a, b.data(), b.size()) == 0;
-    }
-    bool operator ()(basic_string_view<C> a, const C *b) const {
-	return b[a.size()] == C('\0') && tstrnicmp(a.data(), b, a.size()) == 0;
-    }
-    bool operator ()(basic_string_view<C> a, basic_string_view<C> b) const {
-	// NOLINTNEXTLINE
-	return a.size() == b.size() && tstrnicmp(a.data(), b.data(), a.size()) == 0;
-    }
-    bool operator ()(const C *a, const basic_string<C> &b) const {
-	return (*this)(a, basic_string_view<C>(b));
-    }
-    bool operator ()(const basic_string<C> &a, const C *b) const {
-	return (*this)(basic_string_view<C>(a), b);
-    }
-    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return (*this)(basic_string_view<C>(a), basic_string_view<C>(b));
-    }
-    bool operator ()(const basic_string<C> &a, basic_string_view<C> b) const {
-	return (*this)(basic_string_view<C>(a), b);
-    }
-    bool operator ()(basic_string_view<C> a, const basic_string<C> &b) const {
-	return (*this)(a, basic_string_view<C>(b));
-    }
-    static bool equal(const C *a, const C *b) { return stringieq(a, b); }
-    static bool equal(const basic_string<C> &a, const basic_string<C> &b) {
-	return a.size() == b.size() && stringicmp(a.c_str(), b.c_str()) == 0;
+    template<size_t N>
+    constexpr size_t operator ()(const wchar (&s)[N]) const {
+	return bernstein_hash<wchar, N>(s, ascii_fold<wchar>);
     }
 };
 
 template <class C>
-struct strless {
+struct strihash {
     using is_transparent = void;
-    bool operator ()(const C *a, const C *b) const { return stringless(a, b); }
-    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return stringless(a, b);
+    template<typename T>
+    size_t operator ()(const T &s) const { return stringihash(s); }
+    template<size_t N>
+    constexpr size_t operator ()(const char (&s)[N]) const {
+	return bernstein_hash<char, N>(s, ascii_fold<char>);
     }
-    bool operator ()(const C *a, const basic_string<C> &b) const {
-	return basic_string_view<C>(a) < basic_string_view<C>(b);
-    }
-    bool operator ()(const basic_string<C> &a, const C *b) const {
-	return basic_string_view<C>(a) < basic_string_view<C>(b);
-    }
-    bool operator ()(const C *a, basic_string_view<C> b) const {
-	return basic_string_view<C>(a) < b;
-    }
-    bool operator ()(basic_string_view<C> a, const C *b) const {
-	return a < basic_string_view<C>(b);
-    }
-    bool operator ()(const basic_string<C> &a, basic_string_view<C> b) const {
-	return basic_string_view<C>(a) < b;
-    }
-    bool operator ()(basic_string_view<C> a, const basic_string<C> &b) const {
-	return a < basic_string_view<C>(b);
-    }
-    bool operator ()(basic_string_view<C> a, basic_string_view<C> b) const {
-	return a < b;
-    }
-    static bool less(const C *a, const C *b) { return stringless(a, b); }
-    static bool less(const basic_string<C> &a, const basic_string<C> &b) {
-	return stringless(a, b);
-    }
-};
-
-template <class C>
-struct striless {
-    using is_transparent = void;
-    bool operator ()(const C *a, const C *b) const {
-	return stringicmp(a, b) < 0;
-    }
-    bool operator ()(const C *a, basic_string_view<C> b) const {
-	return tstrnicmp(a, b.data(), b.size()) < 0;
-    }
-    bool operator ()(basic_string_view<C> a, const C *b) const {
-	int cmp = tstrnicmp(a.data(), b, a.size());
-	return cmp < 0 || (cmp == 0 && b[a.size()] != C('\0'));
-    }
-    bool operator ()(basic_string_view<C> a, basic_string_view<C> b) const {
-	int cmp = tstrnicmp(a.data(), b.data(), min(a.size(), b.size()));
-
-	return cmp < 0 || (cmp == 0 && a.size() < b.size());
-    }
-    bool operator ()(const C *a, const basic_string<C> &b) const {
-	return (*this)(a, basic_string_view<C>(b));
-    }
-    bool operator ()(const basic_string<C> &a, const C *b) const {
-	return (*this)(basic_string_view<C>(a), b);
-    }
-    bool operator ()(const basic_string<C> &a, const basic_string<C> &b) const {
-	return (*this)(basic_string_view<C>(a), basic_string_view<C>(b));
-    }
-    bool operator ()(const basic_string<C> &a, basic_string_view<C> b) const {
-	return (*this)(basic_string_view<C>(a), b);
-    }
-    bool operator ()(basic_string_view<C> a, const basic_string<C> &b) const {
-	return (*this)(a, basic_string_view<C>(b));
-    }
-    static bool less(const C *a, const C *b) { return stringicmp(a, b) < 0; }
-    static bool less(const basic_string<C> &a, const basic_string<C> &b) {
-	return stringicmp(a.c_str(), b.c_str()) < 0;
+    template<size_t N>
+    constexpr size_t operator ()(const wchar (&s)[N]) const {
+	return bernstein_hash<wchar, N>(s, unicode_fold);
     }
 };
 

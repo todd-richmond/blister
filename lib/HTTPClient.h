@@ -43,7 +43,7 @@ public:
 class BLISTER HTTPClient: nocopy {
 public:
     using attrmap = unordered_multimap<tstring, tstring, strihash<tchar>,
-	strieq<tchar>>;
+	strieq>;
 
     HTTPClient();
     ~HTTPClient() { delete [] result; }

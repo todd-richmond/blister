@@ -274,7 +274,7 @@ private:
     };
 
     using kvmap = unordered_map<const tchar *, const KV *, strhash<tchar>,
-	streq<tchar>>;
+	streq>;
 
     kvmap amap;
     mutable RWLock lck;
