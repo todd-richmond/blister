@@ -92,7 +92,6 @@ typedef pthread_key_t tlskey_t;
 #ifdef __cplusplus
 
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <semaphore>

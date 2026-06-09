@@ -818,6 +818,7 @@ EXTERNC_
 // common includes, defines and code for C++ software
 #ifdef __cplusplus
 
+#include <chrono>
 #include <functional>
 #include <iostream>
 #include <string>

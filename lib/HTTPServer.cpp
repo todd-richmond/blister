@@ -16,7 +16,6 @@
  */
 
 #include "stdapi.h"
-#include <chrono>
 #include <ctime>
 #include <ctype.h>
 #include <time.h>
