@@ -27,8 +27,8 @@ jobs:
   analyze:
     permissions:
       contents: read
-      security-events:
-      actions: read #
+      security-events: write
+      actions: read
     name: Run MSVC Analyzers
     runs-on: windows-2025-vs2026
 
