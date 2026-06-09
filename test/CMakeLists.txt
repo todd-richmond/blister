@@ -25,6 +25,13 @@ target_link_libraries(smtpload blister_static)
 add_executable(uhttpd HTTPd.cpp)
 target_link_libraries(uhttpd blister)
 
+add_executable(hashtest HashTest.cpp)
+set_target_properties(hashtest PROPERTIES EXCLUDE_FROM_ALL TRUE)
+target_link_libraries(hashtest blister)
+
+add_test(NAME HashFunctors
+    COMMAND bash -c "${CMAKE_COMMAND} --build . --target hashtest && ${CMAKE_CURRENT_BINARY_DIR}/hashtest")
+
 if(COMPILE_PCH AND NOT CMAKE_VERSION VERSION_LESS 3.16)
     target_precompile_headers(cfg PRIVATE [["stdapi.h"]])
     target_precompile_headers(daemonize REUSE_FROM cfg)
@@ -34,6 +41,7 @@ if(COMPILE_PCH AND NOT CMAKE_VERSION VERSION_LESS 3.16)
     target_precompile_headers(httpload REUSE_FROM cfg)
     target_precompile_headers(smtpload REUSE_FROM cfg)
     target_precompile_headers(uhttpd REUSE_FROM cfg)
+    target_precompile_headers(hashtest REUSE_FROM cfg)
 endif()
 
 install(FILES http.wld smtp.wld DESTINATION etc)

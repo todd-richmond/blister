@@ -259,5 +259,6 @@ add_custom_command(
     POST_BUILD
     TARGET distclean)
 
+enable_testing()
 add_subdirectory(lib)
 add_subdirectory(test)
