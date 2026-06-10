@@ -272,14 +272,13 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
 
 bool SMTPClient::data(bool m, const tchar *txt) {
     static atomic<uint64_t> nextmid(((uint64_t)seconds() << 18) & uticks());
-    char buf[64], gmtoff[16];
-    int diff;
+    char buf[64];
     char *encbuf;
     size_t encbufsz;
     uint64_t mid = nextmid++;
-    time_t now;
+    time_t now = seconds();
     pid_t pid = getpid();
-    tm *tm = NULL, tmbuf, *tm2, tm2buf;
+    tm tmbuf;
 
     mime = m;
     if (!cmd(T("DATA"), NULL, 354))
@@ -292,20 +291,13 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     sstrm << "Message-ID: <" << encbuf << '@' <<
 	tstringtoastring(Sockaddr::hostname()) << '>' << crlf;
     delete [] encbuf;
-    now = seconds();
-    if ((tm = localtime_r(&now, &tmbuf)) == NULL)
+    if (localtime_r(&now, &tmbuf) == nullptr)
 	return false;
-    tm2 = gmtime_r(&now, &tm2buf);
-    strftime(buf, sizeof (buf), "%a, %d %b %Y %H:%M:%S ", tm);
-    diff = (tm->tm_hour - tm2->tm_hour) * 100 + tm->tm_min - tm2->tm_min;
-    if (tm2->tm_wday != tm->tm_wday)
-	diff -= 2400 * (tm2->tm_wday > tm->tm_wday ||
-	    (tm2->tm_wday == 0 && tm->tm_wday == 6) ? 1 : -1);
-    if (diff < 0)
-	sprintf(gmtoff, "-%04d", -1 * diff);
-    else
-	sprintf(gmtoff, "+%04d", diff);
-    sstrm << "Date: " << buf << gmtoff << crlf;
+    const auto off_min = static_cast<int>(tmbuf.tm_gmtoff / 60);
+    sstrm << "Date: " << format("{:%a, %d %b %Y %H:%M:%S}",
+	chrono::system_clock::from_time_t(now) +
+	chrono::seconds(tmbuf.tm_gmtoff)) << ' ' << format("{:+03d}{:02d}",
+	off_min / 60, abs(off_min % 60)) << crlf;
     sstrm << "From: " << tstringtoastring(frm) << crlf;
     recip(T("To: "), tov);
     recip(T("Cc: "), ccv);
