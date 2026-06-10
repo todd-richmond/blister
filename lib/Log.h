@@ -109,6 +109,9 @@ public:
     __forceinline Log &operator <<(void(Log &)) { endlog(); return *this; }
     // cppcheck-suppress constParameterReference
     __forceinline Log &operator <<(Escalator &e) { (void)log(e); return *this; }
+    friend inline Log &operator <<(Log &l, Log &(* const func)(Log &)) {
+	return func(l);
+    }
 
     bool alertfile(void) const { return afd.enable; }
     void alertfile(bool b) { afd.enable = b; }
@@ -230,12 +233,8 @@ public:
     __forceinline void trace(const T&... args) { log(Trace, args...); }
     __forceinline Log &trace(void) { return log(Trace); }
 
-    template<typename T>
-    static __forceinline const KV<T> kv(tstring_view key, const T &val) {
-	return KV<T>(key, val);
-    }
-    template<typename T, size_t N>
-    static constexpr const KV<T> kv(const tchar (&key)[N], const T &val) {
+    template<typename K, typename T>
+    static constexpr KV<T> kv(const K &key, const T &val) {
 	return KV<T>(key, val);
     }
 #define LOG_KV_FN(name, key) \
@@ -262,7 +261,7 @@ private:
 	Log &l;
 	atomic_bool qflag;
 
-	int onStart(void);
+	int onStart(void) override;
     };
 
     class BLISTER LogFile: nocopy {
@@ -394,7 +393,7 @@ private:
 	return *this;
     }
 #pragma warning(disable: 26461)
-    __forceinline Log &log(Tlsdata &tlsd, tchar *val) {
+    __forceinline Log &log(Tlsdata &tlsd, tchar *val) {	// NOSONAR
 	return log(tlsd, (const tchar *)val);
     }
     // cppcheck-suppress constParameterReference
@@ -404,6 +403,7 @@ private:
 	    tlsd.clvl = l;
 	return *this;
     }
+    __forceinline void log(Tlsdata &) const {}
     template<typename T>
     Log &log(Tlsdata &tlsd, const KV<T> &val) {
 	if (LIKELY(tlsd.clvl != None)) {
@@ -416,6 +416,11 @@ private:
 	}
 	return *this;
     }
+    template <typename T, typename... U>
+    __forceinline void log(Tlsdata &tlsd, const T &first, const U&...  rest) {
+	log(tlsd, first);
+	log(tlsd, rest...);	// recursive call using pack expansion
+    }
     __forceinline void write_str(Tlsdata &tlsd, const tchar *data,
 	streamsize sz) const {
 	if (LIKELY(sz > 0)) {
@@ -427,13 +432,6 @@ private:
 	} else {
 	    tlsd.sep = '\0';
 	}
-    }
-    __forceinline void log(Tlsdata &) {}
-    template <typename T, typename... U>
-    __forceinline void log(Tlsdata &tlsd, const T &first, const U&...
-	rest) {
-	log(tlsd, first);
-	log(tlsd, rest...);	// recursive call using pack expansion
     }
     static void strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz);
 };
@@ -457,7 +455,6 @@ template<> inline Log &Log::log(Tlsdata &tlsd, const tstring_view &val) {
     return *this;
 }
 
-inline Log &operator <<(Log &l, Log &(* const func)(Log &)) { return func(l); }
 inline void endlog(Log &l) { l.endlog(); }
 
 extern BLISTER Log &dlog;

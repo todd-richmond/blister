@@ -93,7 +93,7 @@ private:
 class BLISTER SMTPClient: nocopy {
 public:
     SMTPClient();
-    virtual ~SMTPClient() {}
+    virtual ~SMTPClient() = default;
 
     int code(void) const { return atoi<int>(sts.c_str()); }
     bool exts_find(const tchar *s) const { return exts.find(s) != exts.npos; }

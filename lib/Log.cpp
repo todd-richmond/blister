@@ -525,13 +525,14 @@ void Log::endlog(Tlsdata &tlsd) {
     if (now_sec != last_sec) {
 #ifdef NO_PERCENT_Z
 	auto fmt_str = "{:" + tstringtoastring(fmt) + "}";
-	if (gmt)
-	    last_format = achartotstring(vformat(fmt_str,
-		make_format_args(chrono::system_clock::from_time_t(now_sec))));
-	else
-	    last_format = achartotstring(vformat(fmt_str,
-		make_format_args(chrono::zoned_time{chrono::current_zone(),
-		    chrono::system_clock::from_time_t(now_sec)})));
+	if (gmt) {
+	    auto tp = chrono::system_clock::from_time_t(now_sec);
+	    last_format = achartotstring(vformat(fmt_str, make_format_args(tp)));
+	} else {
+	    auto zt = chrono::zoned_time{chrono::current_zone(),
+		chrono::system_clock::from_time_t(now_sec)};
+	    last_format = achartotstring(vformat(fmt_str, make_format_args(zt)));
+	}
 #else
 	tchar tbuf[128];
 	const struct tm *tm;
