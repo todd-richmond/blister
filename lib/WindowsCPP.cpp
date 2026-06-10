@@ -31,7 +31,7 @@ extern "C" {
 
 #endif
 
-const wstring _achartowstring(const char *s, size_t len) {
+wstring _achartowstring(const char *s, size_t len) {
     wchar sbuf[512];
     int sz;
 
@@ -43,16 +43,13 @@ const wstring _achartowstring(const char *s, size_t len) {
     else if ((sz = MultiByteToWideChar(CP_UTF8, 0, s, (int)len, NULL, 0)) == 0)
 	return L"";
 
-    wchar *buf = new wchar[(uint)sz];
-    wstring ret;
+    vector<wchar> buf((uint)sz);
 
-    MultiByteToWideChar(CP_UTF8, 0, s, (int)len, buf, sz);
-    ret.assign(buf, (size_t)sz - 1);
-    delete [] buf;
-    return ret;
+    MultiByteToWideChar(CP_UTF8, 0, s, (int)len, buf.data(), sz);
+    return wstring(buf.data(), (size_t)sz - 1);
 }
 
-const string _wchartoastring(const wchar *s, size_t len) {
+string _wchartoastring(const wchar *s, size_t len) {
     char sbuf[1024];
     int sz;
 
@@ -65,13 +62,10 @@ const string _wchartoastring(const wchar *s, size_t len) {
 	NULL)) == 0)
 	return "";
 
-    char *buf = new char[(uint)sz];
-    string ret;
+    vector<char> buf((uint)sz);
 
-    WideCharToMultiByte(CP_UTF8, 0, s, (int)len, buf, (int)len, NULL, NULL);
-    ret.assign(buf, (size_t)sz - 1);
-    delete [] buf;
-    return ret;
+    WideCharToMultiByte(CP_UTF8, 0, s, (int)len, buf.data(), sz, NULL, NULL);
+    return string(buf.data(), (size_t)sz - 1);
 }
 #endif
 

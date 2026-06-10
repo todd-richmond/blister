@@ -113,7 +113,7 @@ private:
     static vector<LoadCmd *> cmds;
 
     int onStart(void);
-    static bool expand(tchar *str, const attrmap &amap = vars);
+    static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
     static const tchar *format(ulong u);
     static const tchar *format(float f);
     static char *load(uint idx, usec_t &iousec);
@@ -145,7 +145,7 @@ atomic<ulong> HTTPLoad::usec, HTTPLoad::tusec;
 atomic<ulong> HTTPLoad::count, HTTPLoad::tcount;
 vector<HTTPLoad::LoadCmd *> HTTPLoad::cmds;
 
-bool HTTPLoad::expand(tchar *str, const attrmap &amap) {
+bool HTTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
     tchar *p;
     attrmap::const_iterator it;
     tstring::size_type len;
@@ -154,7 +154,12 @@ bool HTTPLoad::expand(tchar *str, const attrmap &amap) {
 	tchar *end = tstrchr(p, ')');
 
 	if (p != str && p[-1] == '$') {	    // $$() -> $()
-	    memmove(p - 1, p, tstrlen(p) + 1);
+	    size_t remaining_len = tstrlen(p) + 1;
+	    size_t current_pos = (size_t)(p - str);
+	    if (current_pos + remaining_len > buf_size) {
+		return false;  // Not enough space
+	    }
+	    memmove(p - 1, p, remaining_len);
 	} else if (!end) {
 	    return false;
 	} else {
@@ -162,7 +167,12 @@ bool HTTPLoad::expand(tchar *str, const attrmap &amap) {
 	    if ((it = amap.find(p + 2)) == amap.end())
 		return false;
 	    len = it->second.size();
-	    memmove(p + len, end, tstrlen(end) + 1);
+	    size_t end_len = tstrlen(end) + 1;
+	    size_t current_pos = (size_t)(p - str);
+	    if (current_pos + len + end_len > buf_size) {
+		return false;  // Not enough space for expansion
+	    }
+	    memmove(p + len, end, end_len);
 	    memcpy(p, it->second.c_str(), len);
 	}
 	str = p + 1;
@@ -211,7 +221,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	    while ((ent = readdir(dir)) != NULL) {
 		tstring s(bodyfile);
 
-		if (*ent->d_name == '.')
+		if (ent->d_name[0] == '.')
 		    continue;
 		s += '/';
 		s += achartotstring(ent->d_name);
@@ -242,7 +252,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
 	    continue;
-	if (!expand(buf)) {
+	if (!expand(buf, sizeof (buf))) {
 	    tcerr << T("variable syntax err on line ") << line << T(": ") <<
 		buf << endl;
 	    return false;
@@ -389,8 +399,6 @@ int HTTPLoad::onStart(void) {
     ulong diff;
     tstring s;
     vector<tstring> cookies;
-    vector<tstring>::const_iterator cit;
-    vector<LoadCmd *>::const_iterator it;
     attrmap::const_iterator ait;
     thread_local mt19937 rng(random_device {}());
     thread_local uniform_int_distribution<ulong> dist;
@@ -431,7 +439,7 @@ int HTTPLoad::onStart(void) {
 	cookies.clear();
 	start = last = uticks();
 	io = 0;
-	for (it = cmds.begin(); it != cmds.end() && !qflag; ++it) {
+	for (auto it = cmds.begin(); it != cmds.end() && !qflag; ++it) {
 	    LoadCmd *cmd = *it;
 
 	    if (!tstricmp(cmd->cmd.c_str(), T("sleep"))) {
@@ -458,7 +466,7 @@ int HTTPLoad::onStart(void) {
 	    if ((ret = hc.connect(cmd->addr, ka, to)) == true) {
 		if (!cookies.empty()) {
 		    s.erase();
-		    for (cit = cookies.begin(); cit != cookies.end(); ++cit) {
+		    for (auto cit = cookies.begin(); cit != cookies.end(); ++cit) {
 			if (!s.empty())
 			    s += T("; ");
 			s += *cit;
@@ -467,19 +475,19 @@ int HTTPLoad::onStart(void) {
 		    if (dbg)
 			fs << T("SEND Cookie: ") << s << endl;
 		}
-		for (ait = hdrs.begin(); ait != hdrs.end(); ++ait)
+		for (auto ait = hdrs.begin(); ait != hdrs.end(); ++ait)
 		    hc.header((*ait).first, (*ait).second);
 	    }
 	    if (!ret) {
 		tstrcpy(buf, cmd->url.fullpath().c_str());
 	    } else if (!tstricmp(cmd->cmd.c_str(), T("get"))) {
 		tstrcpy(buf, cmd->url.relpath().c_str());
-		expand(buf, lvars);
-		ret = hc.get(buf);
+		ret = expand(buf, sizeof (buf), lvars) && hc.get(buf);
 	    } else if (!tstricmp(cmd->cmd.c_str(), T("post"))) {
 		tstrcpy(buf, cmd->url.relpath().c_str());
-		expand(buf, lvars);
-		if (cmd->data.empty()) {
+		if (!expand(buf, sizeof (buf), lvars)) {
+		    ret = false;
+		} else if (cmd->data.empty()) {
 		    uint u = allfiles ? next() : ((uint)dist(rng) % bodycnt);
 		    char *d = load(u, io);
 
@@ -493,7 +501,7 @@ int HTTPLoad::onStart(void) {
 		    ret = false;
 		} else {
 		    tstrcpy(data, cmd->data.c_str());
-		    expand(data, lvars);
+		    expand(data, sizeof (data), lvars);
 		    hc.header(T("content-type"), T("application/x-www-form-urlencoded"));
 		    ret = hc.post(buf, data, (ulong)(tstrlen(data) * sizeof (tchar)));
 		}
@@ -522,8 +530,8 @@ int HTTPLoad::onStart(void) {
 		    fs << cmd->cmd << T(" status: ") << hc.status() << endl <<
 			endl;
 		rmap = hc.responses();
-		for (rit = rmap.begin(); rit != rmap.end(); ++rit) {
-		    if (!tstrcmp(rit->first.c_str(), T("set-cookie"))) {
+		for (auto rit = rmap.begin(); rit != rmap.end(); ++rit) {
+		    if (rit->first == T("set-cookie")) {
 			tstring::size_type pos;
 
 			s = rit->second;
@@ -542,7 +550,7 @@ int HTTPLoad::onStart(void) {
 		    fs.flush();
 		}
 		if (!cmd->value.empty() &&
-		    tstrstr(hc.data(), cmd->value.c_str()) == nullptr) {
+		    tstring_view(hc.data(), hc.size()).find(cmd->value) == tstring_view::npos) {
 		    dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") <<
 			buf << T(" invalid return data") << endlog;
 		    lock.lock();
@@ -596,8 +604,6 @@ static inline float round(ulong count, ulong div) {
 
 void HTTPLoad::print(tostream &os, usec_t last) {
     tchar buf[32];
-    LoadCmd *cmd;
-    vector<LoadCmd *>::const_iterator it;
     ulong lusec = (ulong)(uticks() - last);
     ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0;
@@ -605,8 +611,8 @@ void HTTPLoad::print(tostream &os, usec_t last) {
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
-    for (it = cmds.begin(); it != cmds.end(); ++it) {
-	cmd = *it;
+    for (auto it = cmds.begin(); it != cmds.end(); ++it) {
+	LoadCmd *cmd = *it;
 	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
 	    continue;
 	ops += cmd->count;
@@ -647,12 +653,9 @@ void HTTPLoad::print(tostream &os, usec_t last) {
 }
 
 void HTTPLoad::reset(bool all) {
-    vector<LoadCmd *>::const_iterator it;
-    LoadCmd *cmd;
-
     lock.lock();
-    for (it = cmds.begin(); it != cmds.end(); ++it) {
-	cmd = *it;
+    for (auto it = cmds.begin(); it != cmds.end(); ++it) {
+	LoadCmd *cmd = *it;
 	cmd->count = 0;
 	cmd->err = 0;
 	cmd->usec = cmd->minusec = cmd->maxusec = 0;
@@ -679,7 +682,7 @@ void HTTPLoad::uninit(void) {
     delete [] body;
     delete [] bodycache;
     delete [] bodysz;
-    for (vector<LoadCmd *>::const_iterator it = cmds.begin(); it != cmds.end(); ++it)
+    for (auto it = cmds.begin(); it != cmds.end(); ++it)
 	delete *it;
     cmds.clear();
 }
@@ -721,12 +724,12 @@ int tmain(int argc, tchar *argv[]) {
     for (i = 1; i < argc; i++) {
 	if (!tstricmp(argv[i], T("-a"))) {
 	    allfiles = true;
-	    if (ttoi(argv[i + 1]) != 0)
-		filecnt = ttoi(argv[++i]);
+	    if (atoi<int>(argv[i + 1]) != 0)
+		filecnt = atoi<int>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-b"))) {
 	    bodyfile = argv[++i];
 	} else if (!tstricmp(argv[i], T("-c"))) {
-	    cachesz = tstrtoul(argv[++i], NULL, 10);
+	    cachesz = atoi<ulong>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-d"))) {
 	    debug = true;
 	    unlink("debug.out");
@@ -735,21 +738,21 @@ int tmain(int argc, tchar *argv[]) {
 	} else if (!tstricmp(argv[i], T("-k"))) {
 	    ka = true;
 	} else if (!tstricmp(argv[i], T("-l"))) {
-	    loops = ttol(argv[++i]);
+	    loops = atoi<long>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-m"))) {
-	    maxuser = tstrtoul(argv[++i], NULL, 10);
+	    maxuser = atoi<ulong>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-q"))) {
 	    dlog.level(Log::Level(dlog.level() - 1));
 	} else if (!tstricmp(argv[i], T("-r"))) {
 	    ruser = true;
 	} else if (!tstricmp(argv[i], T("-s"))) {
-	    stattime = tstrtoul(argv[++i], NULL, 10);
+	    stattime = atoi<ulong>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-t"))) {
-	    threads = (uint)tstrtoul(argv[++i], NULL, 10);
+	    threads = (uint)atoi<ulong>(argv[++i]);
 	    if (!maxuser)
 		maxuser = threads;
 	} else if (!tstricmp(argv[i], T("-w"))) {
-	    timeout = (uint)tstrtoul(argv[++i], NULL, 10);
+	    timeout = (uint)atoi<ulong>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-v"))) {
 	    dlog.level(Log::Level(dlog.level() + 1));
 	} else if (!wld && *argv[i] != '-') {

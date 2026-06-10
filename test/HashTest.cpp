@@ -3,9 +3,6 @@
  * Tests all variations of hash and string functors with different string types
  */
 
-// cppcheck-suppress missingInclude
-// cppcheck-suppress missingIncludeSystem
-// cppcheck-suppress normalCheckLevelMaxBranches
 #include "stdapi.h"
 #include <map>
 #include <unordered_map>
@@ -20,10 +17,10 @@ vector<char> read_file_content(const tstring& filename) {
 	tcout << "ERROR: no such file\n";
 	exit(2);
     }
-    
+
     streamsize size = file.tellg();
     file.seekg(0, ios::beg);
-    
+
     vector<char> buffer(static_cast<size_t>(size));
     if (!file.read(buffer.data(), size))
 	return {};
@@ -32,9 +29,9 @@ vector<char> read_file_content(const tstring& filename) {
 
 vector<char> read_stdin_content() {
     vector<char> buffer;
-    constexpr size_t block_size = 8192; // 8k blocks
+    constexpr size_t block_size = 8192;
     char block[block_size];
-    
+
     while (tcin.read(block, block_size))
 	buffer.insert(buffer.end(), block, block + tcin.gcount());
     if (tcin.gcount() > 0)
@@ -42,10 +39,10 @@ vector<char> read_stdin_content() {
     return buffer;
 }
 
-int tmain(int argc, tchar* argv[]) { // cppcheck-suppress constParameter unusedFunction
+int tmain(int argc, const tchar * const argv[]) {
     if (argc >= 2) {
 	tstring arg = argv[1];
-	
+
 	if (arg == "-b" || arg == "-r") {
 	    tstring filename;
 	    if (argc >= 3)
@@ -70,7 +67,7 @@ int tmain(int argc, tchar* argv[]) { // cppcheck-suppress constParameter unusedF
 	    return 0;
 	}
     }
-    
+
     // Run the test suite if no hash arguments provided
     int failures = 0;
     int tests = 0;
@@ -160,7 +157,7 @@ int tmain(int argc, tchar* argv[]) { // cppcheck-suppress constParameter unusedF
 	if (map_view[tstring_view(key_str)] != T("value"))
 	    fail(T("FAIL: tstring_view map test"));
 	// string literal keys with ASCII case-insensitive equality
-	unordered_map<const tchar*, tstring, striasciihash<tchar>, strieq> 
+	unordered_map<const tchar*, tstring, striasciihash<tchar>, strieq>
 	map_asciiliteral;
 	map_asciiliteral[T("ASCIILITERAL_KEY")] = T("asciiliteral_value");
 	tests++;
@@ -282,8 +279,8 @@ int tmain(int argc, tchar* argv[]) { // cppcheck-suppress constParameter unusedF
 	// Test case-insensitive hash consistency
 	unordered_map<const tchar*, int, strihash<tchar>, strieq> ihash_consistency;
 	ihash_consistency[T("CASE")] = 1;
-	ihash_consistency[T("case")] = 2;  // Should overwrite, proving 
-			     // case-insensitive hash
+	ihash_consistency[T("case")] = 2;	// Should overwrite, proving
+						// case-insensitive hash
 	tests++;
 	if (ihash_consistency[T("CASE")] != 2)
 	    fail(T("FAIL: Case-insensitive hash consistency test"));
@@ -291,7 +288,7 @@ int tmain(int argc, tchar* argv[]) { // cppcheck-suppress constParameter unusedF
 	if (ihash_consistency[T("case")] != 2)
 	    fail(T("FAIL: Case-insensitive hash consistency (lowercase) test"));
 	// Test ASCII case-insensitive hash consistency
-	unordered_map<const tchar*, int, striasciihash<tchar>, strieq> 
+	unordered_map<const tchar*, int, striasciihash<tchar>, strieq>
 	ahash_consistency;
 	ahash_consistency[T("ASCII")] = 1;
 	 // Should overwrite, proving ASCII case-insensitive hash
@@ -302,6 +299,37 @@ int tmain(int argc, tchar* argv[]) { // cppcheck-suppress constParameter unusedF
 	tests++;
 	if (ahash_consistency[T("ascii")] != 2)
 	    fail(T("FAIL: ASCII case-insensitive hash consistency (lowercase) test"));
+    }
+    // Test heterogeneous lookups with transparent function objects
+    {
+	tcout << "Testing heterogeneous lookups...\n";
+	unordered_map<tstring, tstring, strhash<tchar>, streq> map_hetero;
+	map_hetero[T("key")] = T("value");
+	// Test heterogeneous lookup with const char* key
+	tests++;
+	auto it1 = map_hetero.find(T("key"));
+	if (it1 == map_hetero.end() || it1->second != T("value"))
+	    fail(T("FAIL: Heterogeneous lookup with const char*"));
+	// Test heterogeneous lookup with string_view key
+	tstring_view sv_key = T("key");
+	tests++;
+	if (auto it2 = map_hetero.find(sv_key); it2 == map_hetero.end() ||
+	    it2->second != T("value"))
+	    fail(T("FAIL: Heterogeneous lookup with string_view"));
+	// Test case-insensitive heterogeneous lookup
+	unordered_map<tstring, tstring, strihash<tchar>, strieq> map_case_hetero;
+	map_case_hetero[T("KEY")] = T("value");
+	tests++;
+	auto it3 = map_case_hetero.find(T("key"));  // Different case
+	if (it3 == map_case_hetero.end() || it3->second != T("value"))
+	    fail(T("FAIL: Case-insensitive heterogeneous lookup"));
+	// Test heterogeneous lookup with map (ordered container)
+	map<tstring, tstring, strless> map_ordered_hetero;
+	map_ordered_hetero[T("key")] = T("value");
+	tests++;
+	auto it4 = map_ordered_hetero.find(T("key"));
+	if (it4 == map_ordered_hetero.end() || it4->second != T("value"))
+	    fail(T("FAIL: Heterogeneous lookup with ordered map"));
     }
     tcout << "Test Results: " << (tests - failures) << "/" << tests <<
 	" tests passed\n";

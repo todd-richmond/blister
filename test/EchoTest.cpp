@@ -33,7 +33,7 @@ const int MAXREAD = 8 * 1024;
 
 class EchoTest: public Dispatcher {
 public:
-    explicit EchoTest(const Config &config): Dispatcher(config) {}
+    using Dispatcher::Dispatcher;
 
     class EchoClientSocket: public DispatchClientSocket {
     public:
@@ -41,7 +41,7 @@ public:
 	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0), tmt(t),
 	    wait(w) {}
 
-	virtual void start(ulong msec) { timeout(start, msec); }
+	void start(ulong msec) { timeout(start, msec); }
 
     protected:
 	const Sockaddr &sa;
@@ -49,7 +49,7 @@ public:
 	uint in, out;
 	ulong tmt, wait;
 
-	virtual void onConnect(void);
+	void onConnect(void) override;
 
 	DSP_DECLARE(EchoClientSocket, input);
 	DSP_DECLARE(EchoClientSocket, output);
@@ -67,7 +67,7 @@ public:
 	void timeout(ulong timeout) { tmt = timeout; }
 	static constexpr const tchar *section(void) { return T("echo"); }
 
-	virtual void start(void) {
+	void start(void) override {
 	    cork(false);
 	    loopback(true);
 	    nodelay(true);
@@ -310,7 +310,6 @@ int tmain(int argc, const tchar * const argv[]) {
     struct stat sbuf;
     uint sockets = 20, threads = 20;
 
-    etp = &et;
     for (i = 1; i < argc; i++) {
 	if (!tstricmp(argv[i], T("-c"))) {
 	    server = false;
@@ -321,7 +320,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	} else if (!tstricmp(argv[i], T("-h"))) {
 	    host = argv[++i];
 	} else if (!tstricmp(argv[i], T("-l"))) {
-	    loops = tstrtol(argv[++i], NULL, 10);
+	    loops = atoi<llong>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-p"))) {
 	    threads = (uint)tstrtoul(argv[++i], NULL, 10);
 	} else if (!tstricmp(argv[i], T("-s"))) {
@@ -363,7 +362,11 @@ int tmain(int argc, const tchar * const argv[]) {
 	(void)fstat(fd, &sbuf);
 	dsz = (uint)sbuf.st_size;
 	dbuf = new char[dsz];
-	dsz = (uint)read(fd, dbuf, dsz);
+	if ((dsz = (uint)read(fd, dbuf, dsz)) == (uint)-1) {
+	    delete [] dbuf;
+	    dbuf = nullptr;
+	    dsz = 0;
+	}
 	close(fd);
     }
     if (!host)
@@ -377,13 +380,12 @@ int tmain(int argc, const tchar * const argv[]) {
     signal(SIGINT, signal_handler);
 #ifndef _WIN32
     struct rlimit rl;
-    struct sigaction sig;
+    struct sigaction sig{};
 
     if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
 	rl.rlim_cur = rl.rlim_max;
 	setrlimit(RLIMIT_NOFILE, &rl);
     }
-    ZERO(sig);
     sig.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sig, NULL);
 #endif
@@ -393,6 +395,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     if (server && !et.listen(sa, tmt))
 	return 1;
+    etp = &et;
     if (client) {
 	dlogi(Log::mod(T("echo")), Log::cmd(T("echo")), Log::kv(T("addr"),
 	    sa.str()), Log::kv(T("data"), path));
@@ -418,6 +421,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	et.waitForMain();
     }
     et.stop();
+    etp = nullptr;
     delete [] dbuf;
     tcout << dtiming.data() << endl;
     return qflag ? -1 : 0;

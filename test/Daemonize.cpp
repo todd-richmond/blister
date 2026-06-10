@@ -32,9 +32,9 @@ protected:
     ulong interval, maxmem;
     pid_t cpid;
 
-    virtual bool onRefresh(void);
-    virtual int onStart(int argc, const tchar * const *argv);
-    virtual void onStop(bool fast);
+    bool onRefresh(void) override;
+    int onStart(int argc, const tchar * const *argv) override;
+    void onStop(bool fast) override;
 };
 
 WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
@@ -49,9 +49,9 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
 	while (*p == '-')
 	    ++p;
 	if (!tstrcmp(p, T("check")))
-	    interval = tstrtoul(argv[++ac], NULL, 10);
+	    interval = atoi<ulong>(argv[++ac]);
 	else if (!tstrcmp(p, T("maxmem")))
-	    maxmem = tstrtoul(argv[++ac], NULL, 10);
+	    maxmem = atoi<ulong>(argv[++ac]);
 	else if (!tstrcmp(p, T("name")))
 	    name = argv[++ac];
 	else if (tstrcmp(p, T("console")) && tstrcmp(p, T("daemon")))

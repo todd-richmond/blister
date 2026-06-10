@@ -276,7 +276,6 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     int diff;
     char *encbuf;
     size_t encbufsz;
-    vector<tstring>::const_iterator it;
     uint64_t mid = nextmid++;
     time_t now;
     pid_t pid = getpid();
@@ -311,7 +310,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     recip(T("To: "), tov);
     recip(T("Cc: "), ccv);
     sstrm << "Subject: " << tstringtoastring(sub) << crlf;
-    for (it = hdrv.begin(); it != hdrv.end(); ++it)
+    for (auto it = hdrv.begin(); it != hdrv.end(); ++it)
 	sstrm << tstringtoastring(*it) << crlf;
     if (mime) {
 	thread_local mt19937 rng(random_device {}());
@@ -371,12 +370,10 @@ bool SMTPClient::enddata() {
 }
 
 void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
-    vector<tstring>::const_iterator it;
-
     if (v.empty())
 	return;
     sstrm << tchartoachar(hdr);
-    for (it = v.begin(); it != v.end(); ++it) {
+    for (auto it = v.begin(); it != v.end(); ++it) {
 	const tstring &s = *it;
 
 	if (it != v.begin())

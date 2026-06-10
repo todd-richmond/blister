@@ -18,6 +18,10 @@
 #include "stdapi.h"
 #include "Config.h"
 
+static bool is_true(tchar c) {
+    return c == 't' || c == 'T' || c == '1' || c == 'y' || c == 'Y';
+}
+
 int tmain(int argc, const tchar * const argv[]) {
     const tchar *attr = nullptr, *file = T("-"), *prefix = nullptr, *section = nullptr,
 	*val = nullptr;
@@ -95,10 +99,13 @@ int tmain(int argc, const tchar * const argv[]) {
     if (check) {
 	return exists ? 0 : 1;
     } else if (boolean) {
-	return cfg.get(attr, val && (*val == '1' || *val == 't' || *val ==
-	    'T' || *val == 'y' || *val == 'Y'), section) ? 0 : 1;
+	return cfg.get(attr, val && is_true(*val), section) ? 0 : 1;
     } else if (integer) {
-	return cfg.get(attr, val ? (int)tstrtol(val, NULL, 10) : 0, section);
+	long int_val = 0;
+
+	if (val)
+	    int_val = atoi<long>(val);
+	return cfg.get(attr, (int)int_val, section);
     } else if (update) {
 	if (val)
 	    cfg.set(attr, val, section);

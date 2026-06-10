@@ -87,7 +87,7 @@ bool URL::set(const tchar *url) {
     }
     pp = tstrchr(url, '/');
     if (p && (!pp || p < pp)) {
-	port = (ushort)tstrtoul(p + 1, NULL, 10);
+	port = atoi<ushort>(p + 1);
 	if (!port)
 	    return false;
 	host.assign(url, (tstring::size_type)(p - url));
@@ -345,7 +345,7 @@ loop:
     if (sts == 204 || sts == 304)
 	ressz = 0;
     else if ((resp = response(contentlen)) != nullptr)
-	ressz = tstrtoul(resp, NULL, 10);
+	ressz = atoi<ulong>(resp);
     else
 	ressz = (ulong)-1;
     if (ressz && ressz != (ulong)-1) {
@@ -400,10 +400,8 @@ done:
 }
 
 tostream &HTTPClient::operator <<(tostream &os) const {
-    attrmap::const_iterator it;
-
     os << sts << endl;
-    for (it = reshdrs.begin(); it != reshdrs.end(); ++it)
+    for (auto it = reshdrs.begin(); it != reshdrs.end(); ++it)
 	os << it->first << ": " << it->second << endl;
     os.write(achartotchar(result), (streamsize)ressz);
     os << endl;

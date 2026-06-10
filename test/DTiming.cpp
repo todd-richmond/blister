@@ -39,7 +39,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("--columns"))) {
 	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
-	    columns = (uint)ttoi(argv[++i]);
+	    columns = (uint)atoi<int>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-i")) || !tstricmp(argv[i],
 	    T("--input"))) {
 	    if (++i == argc)
@@ -66,7 +66,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	} else if (argv[i][0] != '-') {
 	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
-	    timing(argv[i], (usec_t)tstrtoul(argv[i + 1], NULL, 10) * mult);
+	    timing(argv[i], (usec_t)atoi<ulong>(argv[i + 1]) * mult);
 	    i++;
 	    out = true;
 	} else {
@@ -96,7 +96,7 @@ int tmain(int argc, const tchar * const argv[]) {
 		while (*pp != '=' && !istspace(*pp))
 		    pp++;
 		key.assign(p, (tstring::size_type)(pp - p));
-		timing(key.c_str(), (usec_t)tstrtoul(pp, NULL, 10) * mult);
+		timing(key.c_str(), (usec_t)atoi<ulong>(pp) * mult);
 	    }
 	}
     }

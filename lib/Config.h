@@ -105,13 +105,13 @@ public:
     double get(const tchar *key, double def, const tchar *sect = nullptr) const
     {
 	return get_num(key, def, sect,
-	    [](const tchar *s) { return tstrtod(s, nullptr); });
+	    [](const tchar *s) { return atod<double>(s); });
     }
     template<size_t N>
     double get(const tchar (&key)[N], double def, const tchar *sect = nullptr)
 	const {
 	return get_num(tstring_view(key, N - 1), def, sect,
-	    [](const tchar *s) { return tstrtod(s, nullptr); });
+	    [](const tchar *s) { return atod<double>(s); });
     }
     float get(const tchar *key, float def, const tchar *sect = nullptr) const {
 	return (float)get(key, (double)def, sect);
@@ -120,7 +120,7 @@ public:
     float get(const tchar (&key)[N], float def, const tchar *sect = nullptr)
 	const {
 	return (float)get_num(tstring_view(key, N - 1), (double)def, sect,
-	    [](const tchar *s) { return tstrtod(s, nullptr); });
+	    [](const tchar *s) { return atod<double>(s); });
     }
     int get(const tchar *key, int def, const tchar *sect = nullptr) const {
 	return (int)get(key, (long)def, sect);

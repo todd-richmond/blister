@@ -43,10 +43,10 @@ public:
 protected:
     Dispatcher dspr;
 
-    virtual void onPause(void) { HTTPDaemonSocket::pause(true); }
-    virtual void onResume(void) { HTTPDaemonSocket::pause(false); }
-    virtual int onStart(int argc, const tchar * const *argv);
-    virtual void onStop(bool fast) { dspr.stop(); Daemon::onStop(fast); }
+    void onPause(void) override { HTTPDaemonSocket::pause(true); }
+    void onResume(void) override { HTTPDaemonSocket::pause(false); }
+    int onStart(int argc, const tchar * const *argv) override;
+    void onStop(bool fast) override { dspr.stop(); Daemon::onStop(fast); }
 };
 
 int HTTPDaemon::onStart(int argc, const tchar * const *argv) {

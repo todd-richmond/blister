@@ -31,10 +31,9 @@ static void log(Log::Level lvl, const tchar *str) {
 
     if ((p = tstrchr(str, ' ')) != NULL || (p = tstrchr(str, '\t')) != NULL) {
 	Log::Level l;
-	tstring s;
+	tstring_view sv(str, (tstring_view::size_type)(p - str));
 
-	s.assign(str, (tstring::size_type)0, (tstring::size_type)(p - str));
-	l = Log::str2enum(s.c_str());
+	l = Log::str2enum(tstring(sv).c_str());
 	if (l != Log::None) {
 	    lvl = l;
 	    str += p - str + 1;
@@ -65,10 +64,9 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stderr");
-	    if (i + 1 < argc && argv[i + 1][0] != '-') {
-		if ((alvl = Log::str2enum(argv[++i])) == Log::None)
-		    break;
-	    }
+	    if (i + 1 < argc && argv[i + 1][0] != '-' &&
+		(alvl = Log::str2enum(argv[++i])) == Log::None)
+		break;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		cnt = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
@@ -131,7 +129,7 @@ int tmain(int argc, tchar *argv[]) {
 	    if (tstrcmp(argv[i], T("-")) != 0) {
 		ifs.open(tchartoachar(argv[i]));
 		if (!ifs.good()) {
-		    tcerr<< T("unable to open ") << argv[i] << endl;
+		    tcerr << T("unable to open ") << argv[i] << endl;
 		    return 1;
 		}
 	    }

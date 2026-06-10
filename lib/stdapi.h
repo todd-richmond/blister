@@ -416,7 +416,7 @@ extern BLISTER int wstatvfs(const wchar *wpath, struct statvfs *buf);
 extern BLISTER int wunlink(const wchar *path);
 EXTERNC_
 
-#define asctime_r(tm, buf, sz)	((void)(sz), asctime_s(buf, sizeof (*(buf)), tm))
+#define asctime_r(tm, buf, sz)	asctime_s(buf, sz, tm)
 #define ctime_r(clock, buf)	(ctime_s(buf, 26, clock), (buf))
 #define gmtime_r(clock, buf)	(gmtime_s((buf), (clock)), (buf))
 #define localtime_r(clock, buf)	(localtime_s((buf), (clock)), (buf))
@@ -827,14 +827,14 @@ EXTERNC_
 using namespace std;
 
 // narrow / wide string routines
-extern BLISTER const wstring _achartowstring(const char *s, size_t len);
-extern BLISTER const string _wchartoastring(const wchar *s, size_t len);
+extern BLISTER wstring _achartowstring(const char *s, size_t len);
+extern BLISTER string _wchartoastring(const wchar *s, size_t len);
 
-inline const wstring astringtowstring(const string &s) {
+inline wstring astringtowstring(const string &s) {
     return _achartowstring(s.c_str(), s.size() + 1);
 }
 
-inline const string wstringtoastring(const wstring &s) {
+inline string wstringtoastring(const wstring &s) {
     return _wchartoastring(s.c_str(), s.size() + 1);
 }
 
@@ -999,6 +999,11 @@ __forceinline T atoi(const tchar *str) {
 }
 
 template<typename T>
+__forceinline T atod(const tchar *str) {
+    return (T)tstrtod(str, nullptr);
+}
+
+template<typename T>
 __forceinline T atoin(const tchar *str, size_t len) {
     return *str == '-' ? (T)(~atoun<size_t>(str + 1, len - 1) + 1) :
 	atoun<T>(str, len);
@@ -1082,6 +1087,22 @@ __forceinline bool stringeq(const C *a, const T &b) {
 
 template<class C, typename T>
 __forceinline bool stringeq(const T &a, const C *b) { return stringeq(b, a); }
+
+template<typename T1, typename T2>
+__forceinline bool stringeq(const T1 &a, const T2 &b) {
+    if constexpr (is_same_v<T1, T2>) {
+        return a == b;
+    } else if constexpr (is_convertible_v<T1, basic_string_view<typename
+	T1::value_type>> && is_convertible_v<T2,
+	basic_string_view<typename T2::value_type>>) {
+        basic_string_view<typename T1::value_type> av(a);
+        basic_string_view<typename T2::value_type> bv(b);
+
+        return av == bv;
+    } else {
+        return tstring(a) == tstring(b);
+    }
+}
 
 template<class C>
 __forceinline bool stringieq(const C *a, const C *b) {
@@ -1450,15 +1471,15 @@ struct strihash {
 
 // prohibit object copies by subclassing this
 class BLISTER nocopy {
-protected:
-    __forceinline nocopy() = default;
-    __forceinline ~nocopy() = default;
-
-private:
+public:
     nocopy(const nocopy &) = delete;
-    nocopy(const nocopy &&) = delete;
-    const nocopy & operator =(const nocopy &) = delete;
-    const nocopy & operator =(const nocopy &&) = delete;
+    nocopy(nocopy &&) = delete;
+    nocopy & operator =(const nocopy &) = delete;
+    nocopy & operator =(nocopy &&) = delete;
+
+protected:
+    nocopy() = default;
+    ~nocopy() = default;
 };
 
 // fast single linked object list
@@ -1486,12 +1507,8 @@ public:
 	    cur = cur->next;
 	    return tmp;
 	}
-	__forceinline bool operator ==(const const_iterator &it) const {
-	    return cur == it.cur;
-	}
-	__forceinline bool operator !=(const const_iterator &it) const {
-	    return cur != it.cur;
-	}
+	bool operator ==(const const_iterator &it) const = default;
+	bool operator !=(const const_iterator &it) const = default;
 
     private:
 	const C *cur;
@@ -1500,7 +1517,7 @@ public:
     ObjectList(): back(nullptr), front(nullptr), sz(0) {}
 
     __forceinline bool operator !(void) const { return front == nullptr; }
-    __forceinline operator bool(void) const { return front != nullptr; }
+    __forceinline explicit operator bool(void) const { return front != nullptr; }
     __forceinline const_iterator begin(void) const {
 	return const_iterator(front);
     }
