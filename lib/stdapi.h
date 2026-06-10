@@ -1092,12 +1092,30 @@ template<typename T1, typename T2>
 __forceinline bool stringeq(const T1 &a, const T2 &b) {
     if constexpr (is_same_v<T1, T2>) {
         return a == b;
-    } else if constexpr (is_convertible_v<T1, basic_string_view<typename
-	T1::value_type>> && is_convertible_v<T2,
+    } else if constexpr (is_pointer_v<T1> && is_pointer_v<T2>) {
+        return tstrcmp(a, b) == 0;
+    } else if constexpr (is_pointer_v<T1>) {
+        using CharType = remove_pointer_t<T1>;
+        if constexpr (is_convertible_v<T2, basic_string_view<CharType>>) {
+            basic_string_view<CharType> bv(b);
+            return tstrncmp(a, bv.data(), bv.size()) == 0 && a[bv.size()] ==
+			'\0';
+        } else {
+            return tstrcmp(a, tstring(b).c_str()) == 0;
+        }
+    } else if constexpr (is_pointer_v<T2>) {
+        using CharType = remove_pointer_t<T2>;
+        if constexpr (is_convertible_v<T1, basic_string_view<CharType>>) {
+            basic_string_view<CharType> av(a);
+            return tstrncmp(av.data(), b, av.size()) == 0 && b[av.size()] == '\0';
+        } else {
+            return tstrcmp(tstring(a).c_str(), b) == 0;
+        }
+    } else if constexpr (is_convertible_v<T1,
+	basic_string_view<typename T1::value_type>> && is_convertible_v<T2,
 	basic_string_view<typename T2::value_type>>) {
         basic_string_view<typename T1::value_type> av(a);
         basic_string_view<typename T2::value_type> bv(b);
-
         return av == bv;
     } else {
         return tstring(a) == tstring(b);
