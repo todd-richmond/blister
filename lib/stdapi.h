@@ -1098,8 +1098,9 @@ __forceinline bool stringeq(const T1 &a, const T2 &b) {
         using CharType = remove_pointer_t<T1>;
         if constexpr (is_convertible_v<T2, basic_string_view<CharType>>) {
             basic_string_view<CharType> bv(b);
+
             return tstrncmp(a, bv.data(), bv.size()) == 0 && a[bv.size()] ==
-			'\0';
+		'\0';
         } else {
             return tstrcmp(a, tstring(b).c_str()) == 0;
         }
@@ -1107,6 +1108,7 @@ __forceinline bool stringeq(const T1 &a, const T2 &b) {
         using CharType = remove_pointer_t<T2>;
         if constexpr (is_convertible_v<T1, basic_string_view<CharType>>) {
             basic_string_view<CharType> av(a);
+
             return tstrncmp(av.data(), b, av.size()) == 0 && b[av.size()] == '\0';
         } else {
             return tstrcmp(tstring(a).c_str(), b) == 0;
@@ -1116,6 +1118,7 @@ __forceinline bool stringeq(const T1 &a, const T2 &b) {
 	basic_string_view<typename T2::value_type>>) {
         basic_string_view<typename T1::value_type> av(a);
         basic_string_view<typename T2::value_type> bv(b);
+
         return av == bv;
     } else {
         return tstring(a) == tstring(b);

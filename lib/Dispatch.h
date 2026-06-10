@@ -280,7 +280,6 @@ protected:
 class BLISTER Dispatcher: public ThreadGroup {
 public:
     explicit Dispatcher(const Config &config);
-    virtual ~Dispatcher() { stop(); }
 
     const Config &config(void) const { return cfg; }
 
@@ -480,7 +479,7 @@ public:
     }
 
 protected:
-    virtual void onAccept(Socket &sock) {
+    void onAccept(Socket &sock) override {
 	C *c = new(std::nothrow) C(static_cast<D &>(dspr), sock);
 
 	if (c == nullptr) {
@@ -545,7 +544,8 @@ public:
 
     AsyncCondvar(Dispatcher &d, Lock &l): dspr(d), lck(l), signaled(false) {}
 
-    __forceinline operator bool(void) const { return !waiters.empty(); }
+    __forceinline explicit operator bool(void) const { return !waiters.empty(); }
+
     __forceinline Dispatcher &dispatcher(void) const { return dspr; }
     __forceinline uint size(void) const { return waiters.size(); }
     __forceinline Waiter *peek(void) const { return waiters.peek(); }

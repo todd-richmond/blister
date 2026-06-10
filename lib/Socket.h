@@ -305,21 +305,21 @@ public:
     Socket &operator =(socket_t sock);
     Socket &operator =(const Socket &r);
     friend bool operator ==(const Socket &s, socket_t sock) {
-	return s.sbuf->sock == sock;
+	return s.fd() == sock;
     }
     friend bool operator ==(socket_t sock, const Socket &s) {
-	return s.sbuf->sock == sock;
+	return s.fd() == sock;
     }
     friend bool operator ==(const Socket &a, const Socket &b) {
-	return a.sbuf == b.sbuf || a.sbuf->sock == b.sbuf->sock;
+	return a.sbuf == b.sbuf || a.fd() == b.fd();
     }
     friend bool operator !=(const Socket &a, const Socket &b) {
 	return !(a == b);
     }
     friend bool operator !(const Socket &s) {
-	return s.sbuf->sock == SOCK_INVALID;
+	return s.fd() == SOCK_INVALID;
     }
-    operator socket_t() const { return sbuf->sock; }
+    operator socket_t() const { return fd(); }
 
     bool __forceinline blocked(void) const { return sbuf->blocked(); }
     bool __forceinline interrupted(void) const { return sbuf->interrupted(); }

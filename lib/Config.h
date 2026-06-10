@@ -64,6 +64,16 @@ public:
     }
     ~Config() { clear(); }
 
+    friend tistream &operator >>(tistream &is, Config &cfg) {
+	if (!cfg.read(is, nullptr, true))
+	    is.setstate(ios::badbit);
+	return is;
+    }
+    friend tostream &operator <<(tostream &os, const Config &cfg) {
+	(void)cfg.write(os);
+	return os;
+    }
+
     bool iniformat(void) const { return ini; }
     const tstring &prefix(void) const { return pre; }
 
@@ -227,16 +237,17 @@ public:
     Config &set(const tchar *key, const bool val, const tchar *sect = nullptr) {
 	return set(key, val ? T("t") : T("f"), sect);
     }
-#pragma warning(disable: 26461)
-    // NOLINTNEXTLINE(readability-non-const-parameter)
-    Config &set(const tchar *key, tchar *val, const tchar *sect = nullptr) {
-	return set(key, (const tchar *)val, sect);
-    }
     Config &set(const tstring &key, const tstring &val, const tstring &sect) {
 	WLocker lkr(lck);
 
 	return set(key.c_str(), key.size(), val.c_str(), val.size(),
 	    sect.c_str(), sect.size());
+    }
+    Config &set(tstring_view key, tstring_view val, tstring_view sect = {}) {
+	WLocker lkr(lck);
+
+	return set(key.data(), key.size(), val.data(), val.size(),
+	    sect.data(), sect.size());
     }
     Config &setv(const tchar *key, const tchar *val, ... /* , const tchar
 	*sect = nullptr, nullptr */);
@@ -273,8 +284,7 @@ private:
 	}
     };
 
-    using kvmap = unordered_map<const tchar *, const KV *, strhash<tchar>,
-	streq>;
+    using kvmap = unordered_map<const tchar *, KV *, strhash<tchar>, streq>;
 
     kvmap amap;
     mutable RWLock lck;
@@ -304,22 +314,11 @@ private:
     bool parse(tistream &is);
     Config &set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
 	const tchar *sect, size_t slen, bool append = false);
-    static void delkv(const KV *kv) { delete [] (char *)kv; }
-    static const KV *newkv(const tchar *key, size_t klen, const tchar *val,
-	size_t vlen);
+    static void delkv(KV *kv) { delete [] (char *)kv; }
+    static KV *newkv(const tchar *key, size_t klen, const tchar *val, size_t
+	vlen);
     static void trim(tstring_view &str);
 };
-
-inline tistream &operator >>(tistream &is, Config &cfg) {
-    if (!cfg.read(is, nullptr, true))
-	is.setstate(ios::badbit);
-    return is;
-}
-
-inline tostream &operator <<(tostream &os, const Config &cfg) {
-    (void)cfg.write(os);
-    return os;
-}
 
 class BLISTER ConfigFile: public Config {
 public:

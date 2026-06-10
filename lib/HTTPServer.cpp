@@ -585,8 +585,6 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     char *str, bool close) {
     char buf[128];
-    int i;
-    struct tm tmbuf;
 
     hdrs.reset();
     ss.reset();
@@ -604,12 +602,10 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 	hdrs.write(buf, (streamsize)((size_t)(nend - buf) + rl + 2));
     }
     if (date) {
-	auto time_t_now = seconds();
-	auto tm_now = gmtime_r(&time_t_now, &tmbuf);
+	auto hdr = format("Date: {:%a, %d %b %Y %H:%M:%S} UTC\r\n",
+	    chrono::system_clock::now());
 
-	i = (int)strftime(buf, sizeof (buf),
-	    "Date: %a, %d %b %Y %H:%M:%S UTC\r\n", tm_now);
-	hdrs.write(buf, i);
+	hdrs.write(hdr.c_str(), (streamsize)hdr.size());
     }
     if (mime) {
 	hdrs.write("Content-Type: ", 14);
@@ -617,11 +613,10 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 	hdrs.write(CRLF, 2);
     }
     if (mtime) {
-	auto tm_mtime = gmtime_r(&mtime, &tmbuf);
+	auto hdr = format("Last-Modified: {:%a, %d %b %Y %H:%M:%S} UTC\r\n",
+	    chrono::system_clock::from_time_t(mtime));
 
-	i = (int)strftime(buf, sizeof (buf),
-	    "Last-Modified: %a, %d %b %Y %H:%M:%S UTC\r\n", tm_mtime);
-	hdrs.write(buf, i);
+	hdrs.write(hdr.c_str(), (streamsize)hdr.size());
     }
     _status = sts;
     if (close) {
@@ -754,7 +749,7 @@ void HTTPServerSocket::get(bool head) {
     if (sts == 200 && !head)
 	reply(fd, (ulong)statbuf.st_size);
     else
-	reply((const char *)nullptr);
+	reply(nullptr);
     ::close(fd);
 }
 

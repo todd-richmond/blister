@@ -59,7 +59,7 @@ void Config::erase(const tchar *key, const tchar *sect) {
 	auto it = amap.find(s);
 
 	if (it != amap.end()) {
-	    const KV *kv = it->second;
+	    KV *kv = it->second;
 
 	    amap.erase(it);
 	    delkv(kv);
@@ -67,7 +67,7 @@ void Config::erase(const tchar *key, const tchar *sect) {
 	return;
     }
     if (auto it = amap.find(key); it != amap.end()) {
-	const KV *kv = it->second;
+	KV *kv = it->second;
 
 	amap.erase(it);
 	delkv(kv);
@@ -221,17 +221,16 @@ const Config::KV *Config::getkv(tstring_view key, const tchar *sect) const {
 }
 
 // 1 allocation for key, val, state
-const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
+Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     size_t vlen) {
     KV *kv;
     tchar quote = '\0';
 
-    if (UNLIKELY(vlen > 1 && (val[0] == '"' || val[0] == '\''))) {
-	if (val[vlen - 1] == val[0]) {
-	    quote = val[0];
-	    ++val;
-	    vlen -= 2;
-	}
+    if ((UNLIKELY(vlen > 1 && (val[0] == '"' || val[0] == '\''))) && val[vlen -
+	1] == val[0]) {
+	quote = val[0];
+	++val;
+	vlen -= 2;
     }
     kv = (KV *)new char[offsetof(KV, val) + klen + vlen + 2];
     kv->quote = quote;
@@ -239,8 +238,9 @@ const Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     kv->vlen = (uint)vlen;
     memcpy(kv->val, val, vlen * sizeof (tchar));
     kv->val[vlen] = '\0';
-    kv->key = (tchar *)memcpy(kv->val + vlen + 1, key, klen * sizeof (tchar));
-    ((tchar *)kv->key)[klen] = '\0';
+    memcpy(kv->val + vlen + 1, key, klen * sizeof (tchar));
+    kv->val[vlen + 1 + klen] = '\0';
+    kv->key = kv->val + vlen + 1;
     kv->expand = false;
     if (LIKELY(vlen > 3 && quote != '\'')) {
 #ifdef _UNICODE
@@ -412,7 +412,7 @@ bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
 
 Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     vlen, const tchar *sect, size_t slen, bool append) {
-    const KV *kv, *oldkv;
+    KV *kv, *oldkv;
 
     if (UNLIKELY(slen)) {
 	size_t total = slen + 1 + klen;

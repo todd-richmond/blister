@@ -45,7 +45,7 @@ tstring URL::fullpath(void) const {
     if (port && port != 80) {
 	tchar buf[8];
 
-	*buf = ':';
+	buf[0] = ':';
 	to_str(buf + 1, buf + 8, port);
 	s += host;
 	s += buf;
@@ -124,36 +124,26 @@ bool URL::set(const tchar *url) {
 }
 
 void URL::unescape(tchar *str, bool plus) {
-    for (tchar *p = str; *p; p++) {
-	if (*p == '%') {
-	    uchar hex;
-
-	    if (!*(p + 1) || !*(p + 2)) {
-		*str++ = *p;
-		break;
-	    }
-
-	    uchar hex_val1 = hex_lut[(uchar)*++p];
-	    uchar hex_val2 = hex_lut[(uchar)*++p];
+    for (const tuchar *p = (const tuchar *)str; *p; p++) {
+	if (*p == '%' && *(p + 1) && *(p + 2)) {
+	    tuchar hex;
+	    tuchar hex_val1 = hex_lut[*++p];
+	    tuchar hex_val2 = hex_lut[*++p];
 
 	    if (hex_val1 == 0 || hex_val2 == 0) {
 		// Invalid hex digit
 		*str++ = '%';
-		if (hex_val1 == 0) {
-		    *str++ = *(p-1);
-		} else {
-		    *str++ = *(p-1);
-		    *str++ = *p;
-		}
-		break;
+		*str++ = (tchar)*(p - 1);
+		if (hex_val1 != 0)
+		    *str++ = (tchar)*p;
+		continue;
 	    }
-
-	    hex = (uchar)((hex_val1 << 4) | hex_val2);
+	    hex = (tuchar)((hex_val1 << 4) | hex_val2);
 	    *str++ = (tchar)hex;
 	} else if (*p == '+' && plus) {
 	    *str++ = ' ';
 	} else {
-	    *str++ = *p;
+	    *str++ = (tchar)*p;
 	}
     }
     *str = '\0';
@@ -268,9 +258,9 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     if (hstrm.size())
 	req += tchartoachar(hstrm.str());
     req += "\r\n";
-    iov[0].iov_base = (char *)req.c_str();
+    iov[0].iov_base = (char *)req.c_str();	// NOSONAR
     iov[0].iov_len = (iovlen_t)req.size();
-    iov[1].iov_base = (char *)data;
+    iov[1].iov_base = (char *)data;		// NOSONAR
     iov[1].iov_len = datasz;
 loop:
     if (!connect(addr, ka))
@@ -399,11 +389,3 @@ done:
     return ret;
 }
 
-tostream &HTTPClient::operator <<(tostream &os) const {
-    os << sts << endl;
-    for (auto it = reshdrs.begin(); it != reshdrs.end(); ++it)
-	os << it->first << ": " << it->second << endl;
-    os.write(achartotchar(result), (streamsize)ressz);
-    os << endl;
-    return os;
-}

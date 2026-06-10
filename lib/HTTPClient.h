@@ -34,7 +34,6 @@ public:
     URL &operator =(const URL &url) = default;
 
     friend auto operator <=>(const URL &a, const URL &b) = default;
-    friend bool operator ==(const URL &a, const URL &b) = default;
 
     tstring fullpath(void) const;
     constexpr tstring relpath(void) const {
@@ -53,6 +52,15 @@ public:
     HTTPClient();
     ~HTTPClient() { delete [] result; }
 
+    friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
+	os << hc.sts << endl;
+	for (const auto &[key, value] : hc.reshdrs)
+	    os << key << ": " << value << endl;
+	os.write(achartotchar(hc.result), (streamsize)hc.ressz);
+	os << endl;
+	return os;
+    }
+
     const Sockaddr &address(void) const { return addr; }
     const char *data(void) const { return result; }
     int err(void) const { return sock.err(); }
@@ -62,8 +70,7 @@ public:
     uint status(void) const { return sts; }
     uint wtimeout(void) const { return wto; }
 
-    tostream &operator <<(tostream &os) const;
-    bool close(void) { return sock.close(); }
+        bool close(void) { return sock.close(); }
     bool connect(const Sockaddr &sa, bool keepalive = false, uint timeout =
 	SOCK_INFINITE);
     bool connect(const tchar *host, ushort port = 80, bool keepalive = false,

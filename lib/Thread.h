@@ -569,16 +569,17 @@ public:
     }
     __forceinline bool wait(ulong msec = INFINITE) {
 	unique_lock<mutex> ulck(lock, adopt_lock);
+	bool ret;
 
 	if (msec == INFINITE) {
 	    cv.wait(ulck);
 	    ulck.release();
 	    return true;
 	}
-	bool ret = cv.wait_for(ulck, chrono::milliseconds(msec)) !=
+	ret = cv.wait_for(ulck, chrono::milliseconds(msec)) !=
             cv_status::timeout;
-        ulck.release();
-        return ret;
+	ulck.release();
+	return ret;
     }
 
 protected:

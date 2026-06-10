@@ -60,13 +60,18 @@ Process Process::start(tchar *const *args, const int *fds) {
     }
     while (*args) {
 	cmd += *(args++);
+	if (*(args))
 	cmd += ' ';
     }
     if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL,
-	NULL, &si, &proc))
+	NULL, &si, &proc)) {
 	CloseHandle(proc.hThread);
-    else
-	errno = EINVAL;
+    } else {
+	DWORD err = GetLastError();
+	errno = (err == ERROR_FILE_NOT_FOUND) ? ENOENT :
+	    (err == ERROR_ACCESS_DENIED) ? EACCES :
+	    (err == ERROR_NOT_ENOUGH_MEMORY) ? ENOMEM : EINVAL;
+    }
     return Process(proc.hProcess);
 }
 
@@ -188,7 +193,7 @@ bool Processor::affinity(ullong mask) {
 
     CPU_ZERO(&cset);
     for (uint u = 0; u < sizeof (mask) * 8; u++) {
-	if (mask && ((ullong)1 << u))
+	if (mask & ((ullong)1 << u))
 	    CPU_SET(u, &cset);
     }
     return sched_setaffinity(0, sizeof (cset), &cset) == 0;
@@ -315,10 +320,10 @@ void Thread::thread_cleanup(void) {
     ThreadLocalMap *fmap = flocal.get();
 
     if (fmap) {
+	flocal.set(nullptr);
 	for (const auto &[data, func] : *fmap)
 	    func(data);
 	delete fmap;
-	flocal.set(nullptr);
     }
 }
 
@@ -405,12 +410,14 @@ bool Thread::terminate(void) {
     if (state == Running || state == Suspended) {
 #ifdef _WIN32
 #pragma warning(disable: 6258)
+	if (hdl && hdl != GetCurrentThread())
 	ret = TerminateThread(hdl, 1) != FALSE;
 #else
 	ret = pthread_cancel(hdl) == 0;
 #endif
 	if (ret) {
 	    retval = -2;
+	    state.store(Terminated, memory_order_release);
 	    lkr.unlock();
 	    clear();
 	}
@@ -463,19 +470,21 @@ ThreadGroup::~ThreadGroup() {
 ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
     if (!tg) {
 	grouplck.lock();
-	for (auto i = groups.begin(); i != groups.end(); ++i) {
-	    tg = *i;
+	for (auto group : groups) {
+	    tg = group;
 	    if (THREAD_ISSELF(tg->master.id)) {
 		break;
 	    } else {
 		tg->cvlck.lock();
-		auto ii = tg->threads.begin();
-		for (; ii != tg->threads.end(); ++ii) {
-		    if (THREAD_ISSELF((*ii)->id))
+		auto found = false;
+		for (auto thread : tg->threads) {
+		    if (THREAD_ISSELF(thread->id)) {
+			found = true;
 			break;
+		    }
 		}
 		tg->cvlck.unlock();
-		if (ii == tg->threads.end())
+		if (!found)
 		    tg = nullptr;
 		else
 		    break;
@@ -498,9 +507,9 @@ void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
     Locker lck(cvlck);
 
     state = ts;
-    for (auto it = threads.begin(); it != threads.end(); ++it) {
-	if (!THREAD_ISSELF((*it)->id))
-	    ((*it)->*func)();
+    for (auto thread : threads) {
+	if (!THREAD_ISSELF(thread->id))
+	    (thread->*func)();
     }
 }
 
@@ -519,8 +528,8 @@ void ThreadGroup::notify(const Thread &thread) {
 void ThreadGroup::priority(int pri) {
     Locker lkr(cvlck);
 
-    for (auto it = threads.begin(); it != threads.end(); ++it)
-	(*it)->priority(pri);
+    for (auto thread : threads)
+	thread->priority(pri);
 }
 
 void ThreadGroup::remove(Thread &thread) {
@@ -563,9 +572,9 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 
 	if (count > 0) {
 	    lkr.unlock();
-	    for (uint i = 0; i < count; i++) {
-		batch[i]->wait();
-		batch[i]->group = nullptr;
+	    for (auto thread : batch) {
+		thread->wait();
+		thread->group = nullptr;
 	    }
 	    if (all) {
 		lkr.lock();
@@ -586,7 +595,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	    if (!cv.wait(msec))
 		break;
 	    diff = (ulong)(mticks() - ticks);
-	    msec -= diff < msec ? diff : msec;
+	    msec = diff < msec ? msec - diff : 0;
 	}
     } while (true);
     return nullptr;

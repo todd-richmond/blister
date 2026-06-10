@@ -29,8 +29,8 @@ using lruhash_t = uint64_t;
 
 class BLISTER LRUCacheEntry {
 public:
-    LRUCacheEntry(const void *d, ulong s): data(nullptr), sz(0), msec(0),
-	hash(rapidhash(d, s)) {}
+    LRUCacheEntry(const void *d, ulong s): data(nullptr), sz(0),
+	hash(rapidhash(d, s)), msec(0) {}
     LRUCacheEntry(const LRUCacheEntry &ce): data(ce.data), sz(ce.sz),
 	hash(ce.hash), msec(ce.msec) {}
 
