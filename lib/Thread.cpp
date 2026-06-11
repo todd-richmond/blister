@@ -63,8 +63,8 @@ Process Process::start(tchar *const *args, const int *fds) {
 	if (*args)
 	    cmd += ' ';
     }
-    if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL,
-	NULL, &si, &proc)) {		// NOSONAR
+    if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, // NOSONAR
+	0, NULL, NULL, &si, &proc)) {
 	CloseHandle(proc.hThread);
     } else {
 	DWORD err = GetLastError();

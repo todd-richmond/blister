@@ -572,7 +572,7 @@ public:
 	bool ret;
 
 	if (msec == INFINITE) {
-	    cv.wait(ulck);
+	    cv.wait(ulck);		// NOSONAR
 	    ulck.release();
 	    return true;
 	}

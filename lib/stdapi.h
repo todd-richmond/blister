@@ -980,7 +980,7 @@ __forceinline T atoun(const tchar *str, size_t len) {
 	str += 4;
 	len -= 4;
     }
-    switch (len) {
+    switch (len) {  // NOSONAR
     case 3: val = val * 1000 + (size_t)(str[0] - '0') * 100 +
 	(size_t)(str[1] - '0') * 10 + (size_t)(str[2] - '0'); break;
     case 2: val = val * 100 + (size_t)(str[0] - '0') * 10 +

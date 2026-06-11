@@ -117,6 +117,7 @@ public:
 	set(host, service, proto);
     }
     Sockaddr(const Sockaddr &sa) = default;
+    Sockaddr(Sockaddr &&sa) = default;
 
     friend bool operator ==(const Sockaddr &a, const Sockaddr &b) {
 	if (a.family() != b.family())
@@ -135,6 +136,13 @@ public:
 	if (this != &sa) {
 	    addr = sa.addr;
 	    name = sa.name;
+	}
+	return *this;
+    }
+    Sockaddr &operator =(Sockaddr &&sa) {
+	if (this != &sa) {
+	    addr = std::move(sa.addr);
+	    name = std::move(sa.name);
 	}
 	return *this;
     }
@@ -223,7 +231,7 @@ private:
     } sockaddr_any;
 
 #ifdef _WIN32
-    class BLISTER SockInit {
+    class BLISTER SockInit: nocopy {
     public:
 	SockInit() { WSADATA w; (void)WSAStartup(MAKEWORD(2, 2), &w); }
 	~SockInit() { WSACleanup(); }
@@ -379,7 +387,9 @@ public:
     }
     bool loopback(void) const;
     bool loopback(bool on);
-    bool nodelay(void) { return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0; }
+    bool nodelay(void) const {
+	return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0;
+    }
     bool nodelay(bool on) { return setsockopt(IPPROTO_TCP, TCP_NODELAY, on); }
     bool reuseaddr(void) const {
 	return getsockopt(SOL_SOCKET, SO_REUSEADDR) != 0;

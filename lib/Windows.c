@@ -116,7 +116,11 @@ usec_t uticks(void) {
 
 static INIT_ONCE init_once = INIT_ONCE_STATIC_INIT;
 
-static BOOL CALLBACK InitRenameLock(PINIT_ONCE, PVOID, PVOID *) {
+static BOOL CALLBACK InitRenameLock(PINIT_ONCE InitOnce, PVOID Parameter,
+    PVOID *lpContext) {
+    (void)InitOnce;
+    (void)Parameter;
+    (void)lpContext;
     if ((lockhdl = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL,
 	PAGE_READWRITE, 0, HASH_SIZE * sizeof (long),
 	"rename_locks")) != NULL) {
@@ -568,8 +572,8 @@ int wlink(const wchar *from, const wchar *to) {
 	CloseHandle(hdl);
 	return ret;
     }
-    if (BackupWrite(hdl, (LPBYTE)(const void *)to, sid.Size.LowPart,
-	&out, FALSE, FALSE, &lpContext))
+    if (BackupWrite(hdl, (LPBYTE)to, sid.Size.LowPart, &out, FALSE, // NOSONAR
+	FALSE, &lpContext))
 	ret = 0;
     else
 	_dosmaperr(GetLastError());
@@ -958,7 +962,7 @@ int sigsend(idtype_t type, id_t id, int sig) {
     return ret ? 0 : -1;
 }
 
-int pidstat(pid_t, struct pidstat *) {
+int pidstat(pid_t pid, struct pidstat *psbuf) {
     return 0;
 }
 

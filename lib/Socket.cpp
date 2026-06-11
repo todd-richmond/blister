@@ -284,7 +284,7 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 bool Sockaddr::set(const hostent *h) {
     ZERO(addr);
     family((sa_family_t)h->h_addrtype);
-    memcpy((void *)address(), h->h_addr, (size_t)h->h_length);
+    memcpy((void *)address(), h->h_addr, (size_t)h->h_length);	// NOSONAR
     name = achartotstring(h->h_name);
     return true;
 }
@@ -778,8 +778,8 @@ long Socket::writev(const iovec *iov, int count) const {
 
 #ifdef _WIN32
     out = -1;
-    check(WSASend(sbuf->sock, (iovec *)iov, count, (ulong *)&out, 0, NULL,
-	NULL));
+    check(WSASend(sbuf->sock, (iovec *)iov, count, (ulong *)&out, 0, // NOSONAR
+	NULL, NULL));
 #else
     do {
 	if (check((int)(out = ::writev(sbuf->sock, iov, count))))
@@ -794,8 +794,8 @@ long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
 
 #ifdef _WIN32
     out = -1;
-    check(WSASendTo(sbuf->sock, (iovec *)iov, count, (ulong *)&out, 0, sa,
-	sa.size(), NULL, NULL));
+    check(WSASendTo(sbuf->sock, (iovec *)iov, count, (ulong *)&out, // NOSONAR
+	0, sa, sa.size(), NULL, NULL));
     return out <= 0 && blocked() ? 0 : out;
 #else
     out = 0;
