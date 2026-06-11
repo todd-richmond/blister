@@ -443,8 +443,8 @@ bool Service::uninstall() {
 int Service::start(int argc, const tchar *const *argv) {
     if (!open())
 	return false;
-    errnum = StartService(hService, argc - 1, (LPCTSTR *)&argv[1]) ? 0 :
-	GetLastError();
+    errnum = StartService(hService, argc - 1, (LPCTSTR *)&argv[1]) ? // NOSONAR
+	0 : GetLastError();
     return errnum;
 }
 

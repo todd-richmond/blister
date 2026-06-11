@@ -1237,7 +1237,7 @@ DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &sa,
 void DispatchListenSocket::connection() {
     Socket s;
 
-    while (accept(s, true, true)) {
+    while (accept(s, true, true)) { // NOSONAR
 	s.movehigh();
 	onAccept(s);
 #if defined(DSP_EPOLL) && defined(EPOLLEXCLUSIVE)

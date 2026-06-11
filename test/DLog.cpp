@@ -113,6 +113,7 @@ int tmain(int argc, tchar *argv[]) {
 	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stdout");
 	    if (i + 1 < argc && argv[i + 1][0] != '-' && (flvl =
 		Log::str2enum(argv[++i])) == Log::None)
+		break;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		cnt = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
