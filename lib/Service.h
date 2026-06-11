@@ -178,7 +178,7 @@ protected:
 class BLISTER ServiceData: nocopy {
 public:
     ServiceData(const tchar *service, uint ctrs, uint size);
-    virtual ~ServiceData() {}
+    virtual ~ServiceData() = default;
 
     virtual DWORD open(LPWSTR lpDeviceNames);
     virtual DWORD close(void);
@@ -206,8 +206,8 @@ public:
     enum Quit { None, Slow, Fast };
 
     using Service::Service;
-    Daemon(const tchar *name, const tchar *display = NULL, bool pauseable =
-	false);
+    explicit Daemon(const tchar *name, const tchar *display = NULL,
+	bool pauseable = false);
     virtual ~Daemon();
 
     atomic<Quit> qflag;
@@ -225,7 +225,7 @@ protected:
 
     bool setids(void);
 
-    bool check(string &err) { (void)err; return true; }
+    bool check(const string &err) { (void)err; return true; }
     int onStart(int argc, const tchar * const *argv) override;
     void onAbort(void) override;
     void onPause(void) override;

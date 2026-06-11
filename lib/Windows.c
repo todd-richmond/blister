@@ -116,7 +116,7 @@ usec_t uticks(void) {
 
 static INIT_ONCE init_once = INIT_ONCE_STATIC_INIT;
 
-static BOOL CALLBACK InitRenameLock(PINIT_ONCE InitOnce, PVOID Parameter, PVOID* lpContext) {
+static BOOL CALLBACK InitRenameLock(PINIT_ONCE, PVOID, PVOID *) {
     if ((lockhdl = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL,
 	PAGE_READWRITE, 0, HASH_SIZE * sizeof (long),
 	"rename_locks")) != NULL) {
@@ -319,12 +319,11 @@ long writev(int fd, const iovec *io , int num) {
     ulong len = 0;
     char buf[1024];
     char *p = buf;
-    int i;
     int out;
 
     if (num == 1)
 	return write(fd, io->iov_base, (int)io->iov_len);
-    for (i = 0; i < num; i++, io++) {
+    for (int i = 0; i < num; i++, io++) {
 	if (p - buf + io->iov_len > sizeof (buf)) {
 	    if (p != buf) {
 		if ((out = write(fd, buf, (uint)(p - buf))) == -1)
@@ -569,7 +568,7 @@ int wlink(const wchar *from, const wchar *to) {
 	CloseHandle(hdl);
 	return ret;
     }
-    if (BackupWrite(hdl, (LPBYTE)to, sid.Size.LowPart,
+    if (BackupWrite(hdl, (LPBYTE)(const void *)to, sid.Size.LowPart,
 	&out, FALSE, FALSE, &lpContext))
 	ret = 0;
     else
@@ -692,11 +691,9 @@ int wopen(const wchar *path, int oflag, ...) {	// NOSONAR
 	_dosmaperr(GetLastError());
 	return -1;
     }
-    if (oflag & O_APPEND) {
-	if (SetFilePointer(hdl, 0, 0, FILE_END) == -1) {
-	    CloseHandle(hdl);
-	    return -1;
-	}
+    if (oflag & O_APPEND && SetFilePointer(hdl, 0, 0, FILE_END) == -1) {
+	CloseHandle(hdl);
+	return -1;
     }
     if (oflag & O_TEXT && oflag & O_RDWR) {
 	filetype = GetFileType(hdl);

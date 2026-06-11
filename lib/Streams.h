@@ -224,7 +224,7 @@ public:
 	iovec iov[2]{};
 	iov[0].iov_base = pb;
 	iov[0].iov_len = (iovlen_t)used;
-	iov[1].iov_base = (char *)p;
+	iov[1].iov_base = (char *)p;		// NOSONAR
 	iov[1].iov_len = (iovlen_t)sz;
 	out = fd->writev(iov, 2);
 	return UNLIKELY(out == -1 || (ulong)out < (ulong)used) ? -1 :
@@ -373,8 +373,8 @@ public:
 private:
     class BLISTER membuf: public streambuf, private nocopy {
     public:
-	explicit membuf(const void *data, streamsize sz): begin((char *)data),
-	    last(begin + sz) {
+	explicit membuf(const void *data, streamsize sz):
+	    begin((char *)data), last(begin + sz) {	// NOSONAR
 	    setg(begin, begin, last);
 	}
 
@@ -410,7 +410,7 @@ private:
 class BLISTER nullstream: public basic_ostream<tchar> {
 public:
     nullstream() : basic_ostream<tchar>(&null_buf) {}
-    
+
 private:
     struct null_buffer : public basic_streambuf<tchar> {
         streamsize xsputn(const tchar *, streamsize n) override { return n; }
@@ -420,7 +420,7 @@ private:
         pos_type seekpos(pos_type, ios_base::openmode) override { return -1; }
         int sync() override { return 0; }
     };
-    
+
     null_buffer null_buf;
 };
 

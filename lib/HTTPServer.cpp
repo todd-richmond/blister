@@ -524,16 +524,16 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
 
     if (len == (ulong)-1)
 	len = p ? (ulong)strlen(p) : 0;
-    memcpy(buf, "Content-Length: ", 16);    // NOLINT
+    memcpy(buf, "Content-Length: ", 16);	// NOLINT
     auto [end, ec] = to_chars(buf + 16, buf + sizeof (buf) - 4,
 	(ulong)ss.size() + len);
     memcpy(end, "\r\n\r\n", 4);
     hdrs.write(buf, (streamsize)(end - buf + 4));
-    iov[0].iov_base = (char *)hdrs.str();
+    iov[0].iov_base = (char *)hdrs.str();	// NOSONAR
     iov[0].iov_len = (iovlen_t)hdrs.size();
-    iov[1].iov_base = (char *)ss.str();
+    iov[1].iov_base = (char *)ss.str();		// NOSONAR
     iov[1].iov_len = (iovlen_t)ss.size();
-    iov[2].iov_base = (char *)p;
+    iov[2].iov_base = (char *)p;		// NOSONAR
     iov[2].iov_len = (iovlen_t)len;
     dlogl(_status < 400 ? Log::Info : Log::Note, Log::cmd(cmd),
 	Log::kv(T("path"), path), Log::kv(T("sts"), _status));

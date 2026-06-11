@@ -112,13 +112,13 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
 	Log::kv(T("args"), args));
     (void)dlog.close();
 #ifdef _WIN32
-    if (tspawnvp(P_WAIT, argv[ac], (tchar **)&argv[ac]) == 0)
+    if (tspawnvp(P_WAIT, argv[ac], (tchar *const *)&argv[ac]) == 0)
 	return 0;
 #else
     cpid = fork();
     if (cpid == 0) {
 	unsetsignal();
-	texecvp(argv[ac], (tchar **)&argv[ac]);
+	texecvp(argv[ac], (tchar *const *)&argv[ac]);
     } else if (cpid > 0) {
 	int sts;
 

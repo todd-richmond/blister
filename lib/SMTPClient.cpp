@@ -293,10 +293,15 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     delete [] encbuf;
     if (localtime_r(&now, &tmbuf) == nullptr)
 	return false;
-    const auto off_min = static_cast<int>(tmbuf.tm_gmtoff / 60);
+#ifdef _WIN32
+    const long gmtoff = -_timezone + (tmbuf.tm_isdst > 0 ? 3600L : 0L);
+#else
+    const long gmtoff = tmbuf.tm_gmtoff;
+#endif
+    const auto off_min = static_cast<int>(gmtoff / 60);
     sstrm << "Date: " << format("{:%a, %d %b %Y %H:%M:%S}",
 	chrono::system_clock::from_time_t(now) +
-	chrono::seconds(tmbuf.tm_gmtoff)) << ' ' << format("{:+03d}{:02d}",
+	chrono::seconds(gmtoff)) << ' ' << format("{:+03d}{:02d}",
 	off_min / 60, abs(off_min % 60)) << crlf;
     sstrm << "From: " << tstringtoastring(frm) << crlf;
     recip(T("To: "), tov);
@@ -627,7 +632,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		goto fail;
 	    }
 	    /* fall-thru */
-	default:
+	default:    // NOSONAR
 	    local_part += c;
 	    continue;
 	case ',':

@@ -116,7 +116,7 @@ public:
     Sockaddr(const tchar *host, const tchar *service, Proto proto = TCP) {
 	set(host, service, proto);
     }
-    Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
+    Sockaddr(const Sockaddr &sa) = default;
 
     friend bool operator ==(const Sockaddr &a, const Sockaddr &b) {
 	if (a.family() != b.family())
@@ -124,9 +124,9 @@ public:
 	if (a.family() == AF_INET6)
 	    return a.addr.sa6.sin6_port == b.addr.sa6.sin6_port &&
 		a.addr.sa6.sin6_scope_id == b.addr.sa6.sin6_scope_id &&
-		!memcmp(&a.addr.sa6.sin6_addr, &b.addr.sa6.sin6_addr,
+		!memcmp(&a.addr.sa6.sin6_addr, &b.addr.sa6.sin6_addr, // NOSONAR
 		sizeof (in6_addr));
-	return !memcmp(&a.addr, &b.addr, a.size());
+	return !memcmp(&a.addr, &b.addr, a.size());	// NOSONAR
     }
     friend tostream &operator <<(tostream &os, const Sockaddr &addr) {
 	return os << addr.str();
@@ -244,10 +244,10 @@ WARN_POP()
 // Socket address list for hosts that resolve to multiple results
 class BLISTER SockaddrList: public ObjectList<ObjectListNode<Sockaddr> > {
 public:
-    SockaddrList() {}
+    SockaddrList() = default;
     SockaddrList(const tchar *host, ushort port, Sockaddr::Proto proto =
 	Sockaddr::TCP) { insert(host, port, proto); }
-    SockaddrList(const tchar *host, const tchar *service = nullptr,
+    explicit SockaddrList(const tchar *host, const tchar *service = nullptr,
 	Sockaddr::Proto proto = Sockaddr::TCP) { insert(host, service, proto); }
     ~SockaddrList() { free(); }
 
@@ -368,22 +368,22 @@ public:
 
 	return getsockopt(lvl, opt, i) ? i : -1;
     }
-    template<class C> bool setsockopt(int lvl, int opt, C &val) const {
+    template<class C> bool setsockopt(int lvl, int opt, C &val) { // NOSONAR
 	return check(::setsockopt(sbuf->sock, lvl, opt, (char *)&val,
 	    sizeof (val)));
     }
-    bool setsockopt(int lvl, int opt, bool val) const {
+    bool setsockopt(int lvl, int opt, bool val) { // NOSONAR
 	int i = (int)val;
 
 	return setsockopt(lvl, opt, i);
     }
     bool loopback(void) const;
     bool loopback(bool on);
-    bool nodelay(void) const {
-	return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0;
-    }
+    bool nodelay(void) { return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0; }
     bool nodelay(bool on) { return setsockopt(IPPROTO_TCP, TCP_NODELAY, on); }
-    bool reuseaddr(void) const { return getsockopt(SOL_SOCKET, SO_REUSEADDR) != 0; }
+    bool reuseaddr(void) const {
+	return getsockopt(SOL_SOCKET, SO_REUSEADDR) != 0;
+    }
     bool reuseaddr(bool on) { return setsockopt(SOL_SOCKET, SO_REUSEADDR, on); }
     int type(void) const { return getsockopt(SOL_SOCKET, SO_TYPE); }
     int rbuffer(void) const { return getsockopt(SOL_SOCKET, SO_RCVBUF); }
@@ -391,9 +391,13 @@ public:
     int wbuffer(void) const { return getsockopt(SOL_SOCKET, SO_SNDBUF); }
     bool wbuffer(int size) { return setsockopt(SOL_SOCKET, SO_SNDBUF, size); }
     int rlowater(void) const { return getsockopt(SOL_SOCKET, SO_RCVLOWAT); }
-    bool rlowater(int size) { return setsockopt(SOL_SOCKET, SO_RCVLOWAT, size); }
+    bool rlowater(int size) {
+	return setsockopt(SOL_SOCKET, SO_RCVLOWAT, size);
+    }
     int wlowater( void) const { return getsockopt(SOL_SOCKET, SO_SNDLOWAT); }
-    bool wlowater(int size) { return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size); }
+    bool wlowater(int size) {
+	return setsockopt(SOL_SOCKET, SO_SNDLOWAT, size);
+    }
     uint rtimeout(void) const { return sbuf->rto; }
     bool rtimeout(uint msec) { sbuf->rto = msec; return true; }
     bool rtimeout(const timeval &tv) {

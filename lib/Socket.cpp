@@ -197,8 +197,8 @@ bool Sockaddr::set(const addrinfo *ai) {
     if (ai->ai_canonname)
 	name = achartotstring(ai->ai_canonname);
     else if ((family() == AF_INET && addr.sa4.sin_addr.s_addr == INADDR_ANY) ||
-	(family() == AF_INET6 && !memcmp(&addr.sa6.sin6_addr, &in6addr_any,
-	sizeof (in6addr_any))))		// NOSONAR
+	(family() == AF_INET6 && !memcmp(&addr.sa6.sin6_addr,	// NOSONAR
+	&in6addr_any, sizeof (in6addr_any))))
 	name = T("*");
     else
 	name.erase();

@@ -112,7 +112,7 @@ private:
     static atomic<ulong> usec, tusec,	count, tcount;
     static vector<LoadCmd *> cmds;
 
-    int onStart(void);
+    int onStart(void) override;
     static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
     static const tchar *format(ulong u);
     static const tchar *format(float f);
@@ -433,7 +433,7 @@ int HTTPLoad::onStart(void) {
 	if (auto ait = vars.find(T("pass")); ait == vars.end())
 	    tsprintf(data, T("pass_%06lu"), id);
 	else
-	    tsprintf(data, ait->second.c_str(), id);
+	    tsprintf(data, ait->second.c_str(), id);	// NOSONAR
 	lvars[T("pass")] = data;
 	cookies.clear();
 	start = last = uticks();
@@ -611,7 +611,7 @@ void HTTPLoad::print(tostream &os, usec_t last) {
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
-    for (auto *cmd : cmds) {
+    for (const auto *cmd : cmds) {
 	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
 	    continue;
 	ops += cmd->count;

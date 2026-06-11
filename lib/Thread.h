@@ -24,7 +24,7 @@
 
 #ifdef _WIN32
 #include <process.h>
-#include <windows.h>
+#include <Windows.h>
 
 typedef HANDLE thread_hdl_t;
 typedef DWORD thread_id_t;

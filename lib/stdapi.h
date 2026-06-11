@@ -159,7 +159,7 @@ typedef __int64 _ino_t;	// -V677
 #include <string.h>
 #include <time.h>
 #include <wchar.h>
-#include <winsock2.h>
+#include <WinSock2.h>
 #include <ws2def.h>
 #include <sys/stat.h>
 

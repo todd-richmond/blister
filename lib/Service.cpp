@@ -60,8 +60,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
     } else {
 	if (full[0] == '.' && full[1] == '/')
 	    full += 2;
-	if (full[0] != '/' && full[1] != ':' && tgetcwd(buf, sizeof (buf) /
-	    sizeof (tchar))) {
+	if (full[0] != '/' && full[1] != ':' && tgetcwd(buf, size(buf))) {
 	    root = buf;
 	    root += '/';
 	    root += full;
@@ -259,7 +258,7 @@ void __stdcall Service::srv_main(DWORD argc, tchar **argv) {
 	    service->ctrlfunc);
     else if (!service->hStatus)
 	return;
-    GetModuleFileName(NULL, modulename, sizeof (modulename) / sizeof (tchar));
+    GetModuleFileName(NULL, modulename, (DWORD)size(modulename));
     argv[0] = modulename;
     service->ssStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     service->ssStatus.dwServiceSpecificExitCode = 0;
@@ -395,7 +394,7 @@ bool Service::install(const tchar *file, const tchar *desc, const tchar * const
     if (uninstall())
 	open();
     if (!file) {
-	GetModuleFileName(NULL, buf, sizeof (buf) / sizeof (tchar));
+	GetModuleFileName(NULL, buf, (DWORD)size(buf));
 	file = buf;
     }
     if (!desc) {
@@ -1220,7 +1219,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];
 
-	if (!tgetcwd(buf, sizeof (buf) / sizeof (tchar))) {
+	if (!tgetcwd(buf, size(buf))) {
 	    path = buf;
 	    path += '/';
 	    path += argv[0];

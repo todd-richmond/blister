@@ -61,8 +61,8 @@ private:
 	    sts((ushort)(status ? ttoi(status) : 200)), usec(0), tusec(0),
 	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0), count(0),
 	    tcount(0), err(0), terr(0) {
-	    for (uint i = 0; i < cmd.size(); i++)
-		cmd[i] = (char)tolower(cmd[i]);
+	    for (auto &c : cmd)
+		c = (char)tolower(c);
 	}
 
 	tstring cmt, cmd, arg;
@@ -246,7 +246,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	lock.unlock();
     }
     vars[T("host")] = host ? host : default_host;
-    while (is.getline(buf, (streamsize)(sizeof (buf) / sizeof (tchar)))) {
+    while (is.getline(buf, (streamsize)std::size(buf))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
 	    continue;
@@ -415,7 +415,7 @@ int SMTPLoad::onStart(void) {
 	if (auto ait = vars.find(T("user")); ait == vars.end())
 	    tsprintf(data, T("user_%06lu"), id);
 	else
-	    tsprintf(data, ait->second.c_str(), id);
+	    tsprintf(data, ait->second.c_str(), id);	// NOSONAR
 	lvars[T("user")] = data;
 	if (auto ait = vars.find(T("pass")); ait == vars.end())
 	    tsprintf(data, T("pass_%06lu"), id);
@@ -587,7 +587,7 @@ void SMTPLoad::print(tostream &os, usec_t last) {
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
-    for (auto *cmd : cmds) {
+    for (const auto *cmd : cmds) {
 	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
 	    continue;
 	ops += cmd->count;

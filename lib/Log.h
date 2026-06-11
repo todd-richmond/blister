@@ -167,9 +167,10 @@ public:
     template <typename T>
     __forceinline Log &log(const T &val) { log(tls.get(), val); return *this; }
     __forceinline Log &log(const tchar *val) { log(tls.get(), val); return *this; }
+    // required to log tchar * - ignore linters
 #pragma warning(disable: 26461)
     // NOLINTNEXTLINE(readability-non-const-parameter)
-    __forceinline Log &log(tchar *val) {
+    __forceinline Log &log(tchar *val) {	// NOSONAR
 	log(tls.get(), (const tchar *)val); return *this;
     }
     // cppcheck-suppress constParameterReference
@@ -291,7 +292,7 @@ private:
 
     private:
 	friend class Log;
-	
+
 	uint cnt;
 	bool enable;
 	int fd;
