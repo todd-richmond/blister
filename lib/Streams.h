@@ -361,7 +361,7 @@ private:
 	}
     };
 
-    bufferbuf sb;
+    [[no_unique_address]] bufferbuf sb;
 };
 
 using tbufferstream = bufferstream<tchar>;
@@ -374,8 +374,8 @@ private:
     class BLISTER membuf: public streambuf, private nocopy {
     public:
 	explicit membuf(const void *data, streamsize sz): begin((char *)data),
-	    end(begin + sz) {
-	    setg(begin, begin, end);
+	    last(begin + sz) {
+	    setg(begin, begin, last);
 	}
 
     private:
@@ -384,13 +384,13 @@ private:
 	    if (dir == ios_base::cur) {
 		char *np = gptr() + off;
 
-		setg(begin, np < begin ? begin : np >= end ? end : np, end);
+		setg(begin, np < begin ? begin : np >= last ? last : np, last);
 	    } else if (dir == ios_base::beg) {
 		char *np = begin + off;
 
-		setg(begin, np < begin ? begin : np >= end ? end : np, end);
+		setg(begin, np < begin ? begin : np >= last ? last : np, last);
 	    } else {
-		setg(begin, end, end);
+		setg(begin, last, last);
 	    }
 	    return gptr() - eback();
 	}
@@ -398,7 +398,7 @@ private:
 	    return seekoff(pos, ios_base::beg, mode);
 	}
 
-	char *begin, *end;
+	char *begin, *last;
     };
 
     membuf mb;
@@ -407,21 +407,23 @@ private:
 /*
  * nullstream is a byte sink stream that ignores all writes
  */
-class BLISTER nullstream: public bufferstream<tchar> {
+class BLISTER nullstream: public basic_ostream<tchar> {
 public:
-    using bufferstream<tchar>::bufferstream;
-
-    nullstream &flush(void) { return *this; }
-    nullstream &put(char_type) { return *this; }
-    nullstream &seekp(pos_type) { return *this; }
-    pos_type tellp(void) { return 0; }
-    // NOLINTNEXTLINE bugprone-derived-method-shadowing-base-method
-    nullstream &write(const char_type *, streamsize) { return *this; }
+    nullstream() : basic_ostream<tchar>(&null_buf) {}
+    
+private:
+    struct null_buffer : public basic_streambuf<tchar> {
+        streamsize xsputn(const tchar *, streamsize n) override { return n; }
+        int overflow(int c) override { return c; }
+        pos_type seekoff(off_type, ios_base::seekdir, ios_base::openmode)
+	    override { return -1; }
+        pos_type seekpos(pos_type, ios_base::openmode) override { return -1; }
+        int sync() override { return 0; }
+    };
+    
+    null_buffer null_buf;
 };
 
-template<class C> nullstream &operator <<(nullstream &os, const C &) {
-    return os;
-}
 
 // NOLINTEND(misc-multiple-inheritance)
 

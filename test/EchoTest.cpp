@@ -17,6 +17,7 @@
 
 #include "stdapi.h"
 #include <fcntl.h>
+#include <random>
 #include <signal.h>
 #include <sys/stat.h>
 #ifndef _WIN32
@@ -59,7 +60,7 @@ public:
 
     class EchoServerSocket: public DispatchServerSocket {
     public:
-	EchoServerSocket(Dispatcher &d, Socket &sock):
+	EchoServerSocket(Dispatcher &d, const Socket &sock):
 	    DispatchServerSocket(d, sock), buf(nullptr), bufsz(0), in(0), out(0),
 	    tmt(TIMEOUT) {}
 	virtual ~EchoServerSocket() { delete [] buf; }
@@ -105,7 +106,7 @@ static char *dbuf;
 static uint dsz;
 static EchoTest *etp;
 static atomic<uint> errs, ops;
-static atomic<long long> loops(MAXLLONG);
+static atomic loops(MAXLLONG);
 static volatile bool qflag;
 static atomic<usec_t> usecs;
 
@@ -157,9 +158,10 @@ void EchoTest::EchoClientSocket::input() {
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read="), len);
 	    if (wait) {
-		// coverity[dont_call : FALSE ]
-		// NOLINTNEXTLINE
-		timeout(repeat, wait + (wait < 2000 ? 0 : (uint)rand() % 50));
+		static thread_local mt19937 rng(random_device{}());
+
+		timeout(repeat, wait + (wait < 2000 ? 0 :
+		    uniform_int_distribution<uint>(0, 49)(rng)));
 	    } else {
 		in = out = 0;
 		begin = Timing::now();

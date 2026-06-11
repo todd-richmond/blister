@@ -55,11 +55,11 @@ private:
     class LoadCmd {
     public:
 	LoadCmd(const tchar *c, const tchar *a, const URL &u, const tchar *d =
-	    nullptr, const tchar *s = nullptr, const tchar *v = nullptr): cmd(c), arg(a ?
-	    a : T("")), data(d ? d : T("")), value(v ? v : T("")),
-	    status((ushort)(s ? ttoi(s) : 0)), url(u), usec(0), tusec(0),
-	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0), count(0),
-	    tcount(0), err(0), terr(0) {}
+	    nullptr, const tchar *s = nullptr, const tchar *v = nullptr):
+	    cmd(c), arg(a ? a : T("")), data(d ? d : T("")), value(v ? v :
+	    T("")), status((ushort)(s ? ttoi(s) : 0)), url(u), usec(0),
+	    tusec(0), minusec(0), tminusec(0), maxusec(0), tmaxusec(0),
+	    count(0), tcount(0), err(0), terr(0) {}
 
 	tstring cmd, arg, data, value;
 	ushort status;
@@ -248,7 +248,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	lock.unlock();
     }
     vars[T("host")] = host;
-    while (is.getline(buf, (streamsize)(sizeof (buf) / sizeof (tchar)))) {
+    while (is.getline(buf, (streamsize)size(buf))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
 	    continue;
@@ -399,7 +399,6 @@ int HTTPLoad::onStart(void) {
     ulong diff;
     tstring s;
     vector<tstring> cookies;
-    attrmap::const_iterator ait;
     thread_local mt19937 rng(random_device {}());
     thread_local uniform_int_distribution<ulong> dist;
 
@@ -426,12 +425,12 @@ int HTTPLoad::onStart(void) {
 	id = tmpid ? tmpid % (muser ? muser : id) : 0;	// NOLINT
 	tsprintf(data, T("%lu"), id);
 	lvars[T("id")] = data;
-	if ((ait = vars.find(T("user"))) == vars.end())
+	if (auto ait = vars.find(T("user")); ait == vars.end())
 	    tsprintf(data, T("user_%06lu"), id);
 	else
-	    tsprintf(data, ait->second.c_str(), id);
+	    tsprintf(data, ait->second.c_str(), id);	// NOSONAR
 	lvars[T("user")] = data;
-	if ((ait = vars.find(T("pass"))) == vars.end())
+	if (auto ait = vars.find(T("pass")); ait == vars.end())
 	    tsprintf(data, T("pass_%06lu"), id);
 	else
 	    tsprintf(data, ait->second.c_str(), id);
@@ -439,8 +438,9 @@ int HTTPLoad::onStart(void) {
 	cookies.clear();
 	start = last = uticks();
 	io = 0;
-	for (auto it = cmds.begin(); it != cmds.end() && !qflag; ++it) {
-	    LoadCmd *cmd = *it;
+	for (auto *cmd : cmds) {
+	    if (qflag)
+		break;
 
 	    if (!tstricmp(cmd->cmd.c_str(), T("sleep"))) {
 		ulong len;
@@ -466,17 +466,17 @@ int HTTPLoad::onStart(void) {
 	    if ((ret = hc.connect(cmd->addr, ka, to)) == true) {
 		if (!cookies.empty()) {
 		    s.erase();
-		    for (auto cit = cookies.begin(); cit != cookies.end(); ++cit) {
+		    for (const auto &c : cookies) {
 			if (!s.empty())
 			    s += T("; ");
-			s += *cit;
+			s += c;
 		    }
 		    hc.header(T("cookie"), s);
 		    if (dbg)
 			fs << T("SEND Cookie: ") << s << endl;
 		}
-		for (auto ait = hdrs.begin(); ait != hdrs.end(); ++ait)
-		    hc.header((*ait).first, (*ait).second);
+		for (const auto& [key, value] : hdrs)
+		    hc.header(key, value);
 	    }
 	    if (!ret) {
 		tstrcpy(buf, cmd->url.fullpath().c_str());
@@ -530,18 +530,18 @@ int HTTPLoad::onStart(void) {
 		    fs << cmd->cmd << T(" status: ") << hc.status() << endl <<
 			endl;
 		rmap = hc.responses();
-		for (auto rit = rmap.begin(); rit != rmap.end(); ++rit) {
-		    if (rit->first == T("set-cookie")) {
+		for (const auto &[key, val] : rmap) {
+		    if (key == T("set-cookie")) {
 			tstring::size_type pos;
 
-			s = rit->second;
+			s = val;
 			if ((pos = s.find_first_of(T(';'))) != string::npos)
 			    s.erase(pos);
 			if (s != T("invalid"))
 			    cookies.push_back(s);
 		    }
 		    if (dbg)
-			fs << rit->first << ": " << rit->second << endl;
+			fs << key << ": " << val << endl;
 		}
 #ifndef UNICODE	// TODO
 		if (dbg) {
@@ -611,8 +611,7 @@ void HTTPLoad::print(tostream &os, usec_t last) {
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
-    for (auto it = cmds.begin(); it != cmds.end(); ++it) {
-	LoadCmd *cmd = *it;
+    for (auto *cmd : cmds) {
 	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
 	    continue;
 	ops += cmd->count;
@@ -654,8 +653,7 @@ void HTTPLoad::print(tostream &os, usec_t last) {
 
 void HTTPLoad::reset(bool all) {
     lock.lock();
-    for (auto it = cmds.begin(); it != cmds.end(); ++it) {
-	LoadCmd *cmd = *it;
+    for (auto *cmd : cmds) {
 	cmd->count = 0;
 	cmd->err = 0;
 	cmd->usec = cmd->minusec = cmd->maxusec = 0;
@@ -682,8 +680,8 @@ void HTTPLoad::uninit(void) {
     delete [] body;
     delete [] bodycache;
     delete [] bodysz;
-    for (auto it = cmds.begin(); it != cmds.end(); ++it)
-	delete *it;
+    for (auto *p : cmds)
+	delete p;
     cmds.clear();
 }
 
@@ -829,8 +827,8 @@ int tmain(int argc, tchar *argv[]) {
     dlog.level(Log::None);
     if (fs.is_open())
 	fs.close();
-    while ((thread = (HTTPLoad *)(ThreadGroup::MainThreadGroup.wait(
-	3000))) != nullptr)
+    while ((thread = (HTTPLoad *)(ThreadGroup::MainThreadGroup.wait( 3000))) !=
+	nullptr)
 	delete thread;
     HTTPLoad::uninit();
     return 0;

@@ -56,7 +56,7 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
     static constexpr timing_t limits[TIMINGSLOTS - 1] = {
 	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
     };
-    
+
     for (slot = 0; slot < TIMINGSLOTS - 1; ++slot) {
 	if (diff < limits[slot])
 	    break;
@@ -105,7 +105,7 @@ void Timing::clear() {
     }
 }
 
-const tstring Timing::data(bool sort_key, uint columns) const {
+tstring Timing::data(bool sort_key, uint columns) const {
     uint begin = 0, last = 0;
     tstring s;
     vector<const Stats *> sorted;
@@ -140,7 +140,7 @@ const tstring Timing::data(bool sort_key, uint columns) const {
     begin = (!columns || last < columns) ? 0 : last - columns + 1;
     const size_t estimated_size = tmap.size() * (columns ? 60 : 90) + 200;
     s.reserve(estimated_size);
-    
+
     s = columns ? T("key                            msec   cnt   avg") :
 	T("key,msec,cnt,avg");
     for (uint u = begin; u <= last; ++u) {
@@ -284,12 +284,12 @@ void Timing::record(void) {
 	dloge(Log::mod(T("Timing")), T("stack mismatch"));
 	return;
     }
-    
+
     const size_t entries = tlsd.entries.size() - 1;
     const auto &entry = tlsd.entries.back();
     const timing_t diff = now() - entry.start;
     size_t len;
-    
+
     if (!entries) {
 	add(entry.caller, 0, entry.hash, diff);
 	tlsd.entries.pop_back();

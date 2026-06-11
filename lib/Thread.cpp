@@ -60,11 +60,11 @@ Process Process::start(tchar *const *args, const int *fds) {
     }
     while (*args) {
 	cmd += *(args++);
-	if (*(args))
-	cmd += ' ';
+	if (*args)
+	    cmd += ' ';
     }
     if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, 0, NULL,
-	NULL, &si, &proc)) {
+	NULL, &si, &proc)) {		// NOSONAR
 	CloseHandle(proc.hThread);
     } else {
 	DWORD err = GetLastError();
@@ -333,7 +333,7 @@ THREAD_FUNC Thread::thread_init(void *arg) {
 
     thread->lck.lock();
     thread->id = THREAD_ID();
-    srand((uint)((ulong)uticks() ^ (ulong)(usec_t)thread->id));
+    srand((uint)((ulong)uticks() ^ (ulong)(usec_t)thread->id));	// NOSONAR
     thread->state = Running;
     thread->cv.set();
     thread->lck.unlock();
@@ -411,7 +411,7 @@ bool Thread::terminate(void) {
 #ifdef _WIN32
 #pragma warning(disable: 6258)
 	if (hdl && hdl != GetCurrentThread())
-	ret = TerminateThread(hdl, 1) != FALSE;
+	    ret = TerminateThread(hdl, 1) != FALSE;
 #else
 	ret = pthread_cancel(hdl) == 0;
 #endif
@@ -572,9 +572,9 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 
 	if (count > 0) {
 	    lkr.unlock();
-	    for (auto thread : batch) {
-		thread->wait();
-		thread->group = nullptr;
+	    for (uint i = 0; i < count; i++) {
+		batch[i]->wait();
+		batch[i]->group = nullptr;
 	    }
 	    if (all) {
 		lkr.lock();

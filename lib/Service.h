@@ -19,7 +19,7 @@
 #define Service_h
 
 #ifdef _WIN32
-#include <windows.h>
+#include <Windows.h>
 #include <winperf.h>
 #include <winsvc.h>
 
@@ -50,7 +50,7 @@ const int SERVICE_CONTROL_SIGUSR2 = 132;
 class BLISTER Service: nocopy {
 public:
     enum Status { Error, Pausing, Paused, Refreshing, Resuming, Running,
-	Starting, Stopping, Stopped };
+	Starting, Stopping, Stopped };		// NOSONAR
 
     class BLISTER Timer: nocopy {
     public:
@@ -71,8 +71,6 @@ public:
 
     long error(void) const { return errnum; }
     tstring errstr(void) const;
-    const tstring &version(void) const { return ver; }
-    void version(const tstring &s) { ver = s; }
     Status status(void);
     bool install(const tchar *path = nullptr, const tchar *desc = nullptr,
 	const tchar * const *depend = nullptr, bool manual = false);
@@ -93,6 +91,8 @@ public:
     static void setsignal(bool abrt = false);
     static const tchar *status(Status status);
     static void unsetsignal(void);
+    static const tstring &version(void) { return ver; }
+    static void version(const tstring &s) { ver = s; }
 
 protected:
     bool bPause;
@@ -115,7 +115,7 @@ protected:
     static atomic<pid_t> watchpid;
 
     void *open(uint mapsz);
-    void exit(int code);
+    [[noreturn]] void exit(int code);
     void handle(ulong sig);
     bool running(void) { return update(Running); }
     virtual int command(const tchar *cmd, int argc, const tchar * const *argv) {
@@ -225,15 +225,15 @@ protected:
 
     bool setids(void);
 
-    virtual bool check(string &err) { (void)err; return true; }
-    virtual int onStart(int argc, const tchar * const *argv) override;
-    virtual void onAbort(void) override;
-    virtual void onPause(void) override;
-    virtual void onResume(void) override;
-    virtual bool onRefresh(void) override;
-    virtual void onStop(bool fast) override;
-    virtual void onSigusr1(void) override;
-    virtual bool update(Status status) override;
+    bool check(string &err) { (void)err; return true; }
+    int onStart(int argc, const tchar * const *argv) override;
+    void onAbort(void) override;
+    void onPause(void) override;
+    void onResume(void) override;
+    bool onRefresh(void) override;
+    void onStop(bool fast) override;
+    void onSigusr1(void) override;
+    bool update(Status status) override;
     static ulong addTimer(ulong msec = 0);
 
 private:

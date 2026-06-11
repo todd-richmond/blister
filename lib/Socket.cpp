@@ -133,7 +133,7 @@ const tstring &Sockaddr::hostname() {
     return hname;
 }
 
-const tstring Sockaddr::ip(void) const {
+tstring Sockaddr::ip(void) const {
     ushort fam = family();
 
     if (fam == AF_INET) {
@@ -192,12 +192,13 @@ bool Sockaddr::service(const tchar *service, Proto proto) {
 bool Sockaddr::set(const addrinfo *ai) {
     family((sa_family_t)ai->ai_family);
     memcpy(&addr.sa, ai->ai_addr, ai->ai_addrlen);
-    memset((char *)&addr.sa + ai->ai_addrlen, 0, sizeof (addr) - ai->ai_addrlen);
+    memset((char *)&addr.sa + ai->ai_addrlen, 0, sizeof (addr) -
+	ai->ai_addrlen);
     if (ai->ai_canonname)
 	name = achartotstring(ai->ai_canonname);
     else if ((family() == AF_INET && addr.sa4.sin_addr.s_addr == INADDR_ANY) ||
 	(family() == AF_INET6 && !memcmp(&addr.sa6.sin6_addr, &in6addr_any,
-	sizeof (in6addr_any))))
+	sizeof (in6addr_any))))		// NOSONAR
 	name = T("*");
     else
 	name.erase();
@@ -300,7 +301,7 @@ bool Sockaddr::set(const sockaddr &sa) {
     return true;
 }
 
-const tstring Sockaddr::service_name(ushort port, Proto proto) {
+tstring Sockaddr::service_name(ushort port, Proto proto) {
     char buf[NI_MAXSERV];
     Sockaddr sa(nullptr, port, proto);
 
@@ -331,7 +332,7 @@ ushort Sockaddr::size(ushort family) {
     }
 }
 
-const tstring Sockaddr::str(const tstring &val) const {
+tstring Sockaddr::str(const tstring &val) const {
     tchar buf[12];
     ushort p = port();
 
@@ -409,7 +410,7 @@ bool CIDR::add(const tchar *addrs) {
 	    addrs++;
     }
     if (ranges.size() != sz) {
-	sort(ranges.begin(), ranges.end());
+	ranges::sort(ranges, less<Range>{});
 	return true;
     } else {
 	return false;
@@ -524,7 +525,7 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
     return ret;
 }
 
-const tstring Socket::errstr(void) const {
+tstring Socket::errstr(void) const {
     if (sbuf->err == EOF)
 	return T("socket EOF");
 

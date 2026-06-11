@@ -21,8 +21,8 @@
 #ifdef _WIN32
 #pragma warning(push)
 #pragma warning(disable: 4365 6386)
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <WinSock2.h>
+#include <WS2tcpip.h>
 #pragma warning(pop)
 #pragma warning(disable: 4097)
 
@@ -119,10 +119,17 @@ public:
     Sockaddr(const Sockaddr &sa): addr(sa.addr), name(sa.name) {}
 
     friend bool operator ==(const Sockaddr &a, const Sockaddr &b) {
+	if (a.family() != b.family())
+	    return false;
+	if (a.family() == AF_INET6)
+	    return a.addr.sa6.sin6_port == b.addr.sa6.sin6_port &&
+		a.addr.sa6.sin6_scope_id == b.addr.sa6.sin6_scope_id &&
+		!memcmp(&a.addr.sa6.sin6_addr, &b.addr.sa6.sin6_addr,
+		sizeof (in6_addr));
 	return !memcmp(&a.addr, &b.addr, a.size());
     }
-    friend bool operator !=(const Sockaddr &a, const Sockaddr &b) {
-	return !(a == b);
+    friend tostream &operator <<(tostream &os, const Sockaddr &addr) {
+	return os << addr.str();
     }
     Sockaddr &operator =(const Sockaddr &sa) {
 	if (this != &sa) {
@@ -150,8 +157,8 @@ public:
     bool host(const tchar *host, Proto proto = TCP) {
 	return port() ? set(host, port(), proto) : set(host, proto);
     }
-    const tstring ip(void) const;
-    const tstring ipstr(void) const { return str(ip()); }
+    tstring ip(void) const;
+    tstring ipstr(void) const { return str(ip()); }
     bool ipv4(void) const { return family() == AF_INET; }
     bool ipv6(void) const { return family() == AF_INET6; }
     bool localhost(void) const {
@@ -162,7 +169,7 @@ public:
     }
 #ifndef _WIN32
     const char *path(void) const {
-	return family() == AF_UNIX ? *addr.sau.sun_path == '\0' ?
+	return family() == AF_UNIX ? addr.sau.sun_path[0] == '\0' ?
 	    addr.sau.sun_path + 1 : addr.sau.sun_path : nullptr;
     }
 #endif
@@ -177,7 +184,7 @@ public:
     bool set(const hostent *h);
     bool set(const sockaddr &sa);
     ushort size(void) const { return size(family()); }
-    const tstring str(void) const { return str(host()); }
+    tstring str(void) const { return str(host()); }
     bool v4addr(in_addr *addr4) const {
 	if (!v4mapped())
 	    return false;
@@ -198,7 +205,7 @@ public:
     static addrinfo *getaddrinfo(const tchar *host, const tchar *service, Proto
 	proto = TCP);
     static const tstring &hostname(void);
-    static const tstring service_name(ushort port, Proto proto = TCP);
+    static tstring service_name(ushort port, Proto proto = TCP);
     static ushort service_port(const tchar *service, Proto proto = TCP);
     static ushort size(ushort family);
     static bool stream(Proto proto) {
@@ -229,13 +236,10 @@ private:
     mutable tstring name;
     static sa_family_t families[];
 
-    const tstring str(const tstring &val) const;
+    tstring str(const tstring &val) const;
 };
 WARN_POP()
 
-inline tostream &operator <<(tostream &os, const Sockaddr &addr) {
-    return os << addr.str();
-}
 
 // Socket address list for hosts that resolve to multiple results
 class BLISTER SockaddrList: public ObjectList<ObjectListNode<Sockaddr> > {
@@ -277,8 +281,10 @@ private:
 	bool operator ()(const Range &a, const Range &b) const {
 	    return a.rmax < b.rmin;
 	}
-	bool operator <(const Range &a) const {
-	    return rmin < a.rmin || (rmin == a.rmin && rmax < a.rmax);
+	auto operator <=>(const Range &a) const {
+	    if (rmin != a.rmin)
+		return rmin <=> a.rmin;
+	    return rmax <=> a.rmax;
 	}
 
 	ulong rmin, rmax;
@@ -313,9 +319,6 @@ public:
     friend bool operator ==(const Socket &a, const Socket &b) {
 	return a.sbuf == b.sbuf || a.fd() == b.fd();
     }
-    friend bool operator !=(const Socket &a, const Socket &b) {
-	return !(a == b);
-    }
     friend bool operator !(const Socket &s) {
 	return s.fd() == SOCK_INVALID;
     }
@@ -325,7 +328,7 @@ public:
     bool __forceinline interrupted(void) const { return sbuf->interrupted(); }
     int err(void) const { return sbuf->err; }
     void err(int err) const { sbuf->err = err; }
-    const tstring errstr(void) const;
+    tstring errstr(void) const;
     socket_t fd(void) const { return sbuf->sock; }
     bool open(void) const { return sbuf->sock != SOCK_INVALID; }
 
@@ -365,11 +368,11 @@ public:
 
 	return getsockopt(lvl, opt, i) ? i : -1;
     }
-    template<class C> bool setsockopt(int lvl, int opt, C &val) {
+    template<class C> bool setsockopt(int lvl, int opt, C &val) const {
 	return check(::setsockopt(sbuf->sock, lvl, opt, (char *)&val,
 	    sizeof (val)));
     }
-    bool setsockopt(int lvl, int opt, bool val) { // NOLINT(misc-no-recursion)
+    bool setsockopt(int lvl, int opt, bool val) const {
 	int i = (int)val;
 
 	return setsockopt(lvl, opt, i);
@@ -621,14 +624,16 @@ class BLISTER isockstream: public istream {
 public:
     explicit isockstream(streamsize sz = SOCK_BUFSZ, char *p = nullptr):
 	istream(nullptr), sb(sz, p) { ios::init(&sb); }
-    explicit isockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = nullptr):
-	istream(nullptr), sb(s, sz, p) { ios::init(&sb); }
+    explicit isockstream(const Socket &s, streamsize sz = SOCK_BUFSZ, char *p =
+	nullptr): istream(nullptr), sb(s, sz, p) { ios::init(&sb); }
 
-    socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
     streamsize read(void *p, streamsize sz) { return sb.read(p, (uint)sz); }
     template<class C> streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
+
+    socketbuf *rdbuf(void) { return &sb; }
+    const socketbuf *rdbuf(void) const { return &sb; }
 
 private:
     socketbuf sb;
@@ -638,10 +643,9 @@ class BLISTER osockstream: public ostream {
 public:
     explicit osockstream(streamsize sz = SOCK_BUFSZ, char *p = nullptr):
 	ostream(nullptr), sb(sz, p) { ios::init(&sb); }
-    explicit osockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = nullptr):
-	ostream(nullptr), sb(s, sz, p) { ios::init(&sb); }
+    explicit osockstream(const Socket &s, streamsize sz = SOCK_BUFSZ, char *p =
+	nullptr): ostream(nullptr), sb(s, sz, p) { ios::init(&sb); }
 
-    socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
     streamsize write(const void *p, streamsize sz) {
@@ -651,6 +655,9 @@ public:
 	return sb.write(&c, sizeof (c));
     }
 
+    socketbuf *rdbuf(void) { return &sb; }
+    const socketbuf *rdbuf(void) const { return &sb; }
+
 private:
     socketbuf sb;
 };
@@ -659,10 +666,9 @@ class BLISTER sockstream: public iostream {
 public:
     explicit sockstream(streamsize sz = SOCK_BUFSZ, char *p = nullptr):
 	iostream(nullptr), sb(sz, p) { ios::init(&sb); }
-    explicit sockstream(Socket &s, streamsize sz = SOCK_BUFSZ, char *p = nullptr):
-	iostream(nullptr), sb(s, sz, p) { ios::init(&sb); }
+    explicit sockstream(const Socket &s, streamsize sz = SOCK_BUFSZ, char *p =
+	nullptr): iostream(nullptr), sb(s, sz, p) { ios::init(&sb); }
 
-    socketbuf *rdbuf(void) const { return (socketbuf *)&sb; }
     const char *str(void) const { return sb.str(); }
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
     streamsize read(void *p, streamsize sz) { return sb.read(p, (uint)sz); }
@@ -673,6 +679,9 @@ public:
     template<class C> streamsize write(const C &c) {
 	return sb.write(&c, sizeof (c));
     }
+
+    socketbuf *rdbuf(void) { return &sb; }
+    const socketbuf *rdbuf(void) const { return &sb; }
 
 private:
     socketbuf sb;

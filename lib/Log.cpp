@@ -875,7 +875,7 @@ void Log::stop(void) {
 }
 
 Log::Level Log::str2enum(const tchar *l) {
-    for (uint u = 0; u < std::size(LevelStr); ++u) {
+    for (uint u = 0; u < size(LevelStr); ++u) {
 	tstring_view sv = LevelStr[u];
 
 	if (!sv.empty() && sv.back() == ' ')

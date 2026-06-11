@@ -127,7 +127,7 @@ public:
     }
     __forceinline ~LockerTemplate() { if (LIKELY(locked)) (lck.*UNLOCK)(); }
 
-    __forceinline operator bool(void) const { return locked; }
+    explicit __forceinline operator bool(void) const { return locked; }
 
     __forceinline void lock(void) {
 	if (LIKELY(!locked)) {
@@ -228,8 +228,10 @@ public:
     __forceinline ThreadLocal &operator =(C c) { set(c); return *this; }
     // cppcheck-suppress returnDanglingLifetime
     __forceinline C *operator ->(void) const { return &get(); }
-    __forceinline operator bool(void) const { return tls_get(key) != nullptr; }
-    __forceinline operator C() const { return (C)tls_get(key); }
+    explicit __forceinline operator bool(void) const {
+        return tls_get(key) != nullptr;
+    }
+    explicit __forceinline operator C() const { return (C)tls_get(key); }
 
     __forceinline C get(void) const { return (C)tls_get(key); }
     __forceinline void set(const C c) const { tls_set(key, c); }
@@ -319,9 +321,8 @@ template<class C>
 class BLISTER _Semaphore: nocopy {
 public:
     explicit _Semaphore(uint init = 0): sem(init) {}
-    ~_Semaphore() { close(); }
+    ~_Semaphore() = default;
 
-    bool close(void) { return true; }
     __forceinline void set(uint cnt = 1) { sem.release(cnt); }
     __forceinline bool trywait(void) { return sem.try_acquire(); }
     __forceinline bool wait(ulong msec = INFINITE) {
@@ -342,7 +343,6 @@ public:
     explicit FastSemaphore(uint init = 0): cnt(init) {}
     ~FastSemaphore() = default;
 
-    bool close(void) { return true; }
     __forceinline void set(uint n = 1) {
 	cnt.fetch_add(n, memory_order_release);
 	os_sync_wake_by_address_any(&cnt, sizeof (cnt),
@@ -577,7 +577,7 @@ public:
 	    return true;
 	}
 	ret = cv.wait_for(ulck, chrono::milliseconds(msec)) !=
-            cv_status::timeout;
+            cv_status::timeout;		// NOSONAR
 	ulck.release();
 	return ret;
     }
@@ -659,7 +659,7 @@ protected:
     HANDLE hdl;
 };
 
-class BLISTER Process {
+class BLISTER Process: nocopy {
 public:
     explicit Process(HANDLE hproc): hdl(hproc) {}
     ~Process() { if (hdl) CloseHandle(hdl); }
@@ -709,7 +709,7 @@ public:
 	return h == -1 || semctl(h, 0, IPC_RMID) == 0;
     }
     bool open(const tchar *name = nullptr, uint init = 0, bool exclusive = false);
-    __forceinline bool set(uint cnt = 1) {
+    __forceinline bool set(uint cnt = 1) {		// NOSONAR
 	sembuf op;
 
 	op.sem_num = 0;
@@ -717,7 +717,7 @@ public:
 	op.sem_flg = 0;
 	return semop(op);
     }
-    __forceinline bool trywait(void) {
+    __forceinline bool trywait(void) {			// NOSONAR
 	sembuf op;
 
 	op.sem_num = 0;
@@ -725,7 +725,7 @@ public:
 	op.sem_flg = IPC_NOWAIT;
 	return semop(op);
     }
-    __forceinline bool wait(ulong msec = INFINITE) {
+    __forceinline bool wait(ulong msec = INFINITE) {	// NOSONAR
 	sembuf op;
 
 	op.sem_num = 0;
@@ -739,7 +739,7 @@ public:
 #else
 	timespec ts;
 
-	clock_gettime(CLOCK_REALTIME_COARSE, &ts);
+	clock_gettime(CLOCK_REALTIME_COARSE, &ts);	// NOSONAR
 	time_adjust_msec(&ts, msec);
 	do {
 	    if (LIKELY(!semtimedop(hdl, &op, 1, &ts)))
@@ -752,7 +752,7 @@ public:
 protected:
     int hdl;
 
-    __forceinline bool semop(sembuf &op) const {
+    __forceinline bool semop(sembuf &op) {		// NOSONAR
 	do {
 	    if (LIKELY(!::semop(hdl, &op, 1)))
 		return true;
@@ -768,7 +768,7 @@ class BLISTER RefCount: nocopy {
 public:
     explicit RefCount(uint init = 1): cnt(init) {}
 
-    __forceinline operator bool(void) const { return referenced(); }
+    explicit __forceinline operator bool(void) const { return referenced(); }
     __forceinline bool referenced(void) const { return cnt != 0; }
 
     __forceinline void reference(void) { ++cnt; }
@@ -779,7 +779,7 @@ private:
 };
 
 /* Last-in-first-out queue useful for thread pools */
-class BLISTER Lifo {
+class BLISTER Lifo: nocopy {
 public:
     class Waiting: nocopy {
     public:
@@ -792,7 +792,7 @@ public:
     Lifo(): head(nullptr) {}
     ~Lifo() { close(); }
 
-    __forceinline operator bool(void) const {
+    explicit __forceinline operator bool(void) const {
 	return head.load(memory_order_relaxed) != nullptr;
     }
     __forceinline uint broadcast(void) {
@@ -922,9 +922,6 @@ public:
     friend bool operator ==(const Thread &a, const Thread &b) {
 	return THREAD_EQUAL(a.id, b.id);
     }
-    friend bool operator !=(const Thread &a, const Thread &b) {
-	return !(a == b);
-    }
 
     bool priority(int pri = 0);			// -20 -> 20
     bool start(uint stacksz = 0, ThreadGroup *tg = nullptr, bool suspend =
@@ -981,9 +978,6 @@ public:
 
     friend bool operator ==(const ThreadGroup &a, const ThreadGroup &b) {
 	return a.id == b.id;
-    }
-    friend bool operator !=(const ThreadGroup &a, const ThreadGroup &b) {
-	return a.id != b.id;
     }
 
     void priority(int pri = 0);

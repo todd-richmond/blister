@@ -96,7 +96,7 @@ public:
 	add(key.c_str(), static_cast<uint>(key.length()), stringhash(key), diff);
     }
     void clear(void);
-    const tstring data(bool sort_by_key = false, uint columns = TIMINGSLOTS - 2)
+    tstring data(bool sort_by_key = false, uint columns = TIMINGSLOTS - 2)
 	const;
     template<size_t N>
     __forceinline void erase(const tchar (&key)[N]) {

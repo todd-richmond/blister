@@ -21,14 +21,14 @@
 
 class HTTPDaemonSocket: public HTTPServerSocket {
 public:
-    HTTPDaemonSocket(Dispatcher &d, Socket &s): HTTPServerSocket(d, s) {}
+    using HTTPServerSocket::HTTPServerSocket;
 
     static void pause(bool p) { paused = p; }
 
 protected:
     static bool paused;
 
-    void exec(void) {
+    void exec(void) override {
 	if (paused)
 	    error(503);
 	HTTPServerSocket::exec();

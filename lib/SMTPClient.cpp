@@ -805,7 +805,7 @@ uint RFC822Addr::parse(const tchar *addrs) {
     memcpy(s, addrs, len);
     while (tok) {
 	tok = parse_phrase(s, phrase, T(",@<;:"));
-	switch (tok) {			// NOLINT
+	switch (tok) {			// NOLINT NOSONAR
 	case ',':
 	case '\0':
 	case ';':

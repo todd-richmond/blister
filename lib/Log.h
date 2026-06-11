@@ -19,7 +19,6 @@
 #define Log_h
 
 #include "Socket.h"
-#include "Streams.h"
 #include "Thread.h"
 
 class Config;
@@ -74,7 +73,7 @@ public:
     };
     enum Type { Simple, Syslog, KeyVal, NoLevel, NoTime };
 
-    class BLISTER Escalator {
+    class BLISTER Escalator: nocopy {
     public:
 	Escalator(Level l1, Level l2, ulong per, ulong min, ulong to): count(0),
 	    mincount(min), period(per), timeout(to), level1(l1), level2(l2),
@@ -266,17 +265,8 @@ private:
 
     class BLISTER LogFile: nocopy {
     public:
-	uint cnt;
-	bool enable;
-	tstring file;
-	bool gmt, mp;
-	ulong len, sec, sz;
-	bool locked;
-	Level lvl;
-
 	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m): cnt(0),
-	    gmt(false), mp(m), len(0), sec(0), sz(0), locked(false), lvl(dlvl),
-	    fd(-1) {
+	    fd(-1), gmt(false), mp(m), len(0), sec(0), sz(0), lvl(dlvl) {
 	    set(dlvl, dfile, 3, 5UL * 1024 * 1024, 0);
 	    enable = denable;
 	}
@@ -300,7 +290,15 @@ private:
 	void unlock(void) const;
 
     private:
+	friend class Log;
+	
+	uint cnt;
+	bool enable;
 	int fd;
+	tstring file;
+	bool gmt, mp;
+	ulong len, sec, sz;
+	Level lvl;
 	tstring path;
     };
 

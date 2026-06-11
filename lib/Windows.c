@@ -114,31 +114,25 @@ usec_t uticks(void) {
     return (ULONGLONG)now.QuadPart * 1000000 / (ULONGLONG)tps.QuadPart;
 }
 
+static INIT_ONCE init_once = INIT_ONCE_STATIC_INIT;
+
+static BOOL CALLBACK InitRenameLock(PINIT_ONCE InitOnce, PVOID Parameter, PVOID* lpContext) {
+    if ((lockhdl = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL,
+	PAGE_READWRITE, 0, HASH_SIZE * sizeof (long),
+	"rename_locks")) != NULL) {
+	if ((locks = MapViewOfFile(lockhdl, FILE_MAP_WRITE, 0, 0,
+	    HASH_SIZE * sizeof (long))) == NULL)
+	    CloseHandle(lockhdl);
+	else
+	    atexit(stdapi_cleanup);
+    }
+    return TRUE;
+}
+
 static uint rename_lock(const wchar *path) {
     uint hash = 0;
-    static volatile bool init;
 
-    if (!init) {
-	static volatile bool init1;
-
-	if (init1) {
-	    while (!init)
-		usleep(1);
-	} else {
-	    init1 = true;
-	    if ((lockhdl = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL,
-		PAGE_READWRITE, 0, HASH_SIZE * sizeof (long),
-		"rename_locks")) != NULL) {
-		if ((locks = MapViewOfFile(lockhdl, FILE_MAP_WRITE, 0, 0,
-		    HASH_SIZE * sizeof (long))) == NULL) {
-		    CloseHandle(lockhdl);
-		} else {
-		    atexit(stdapi_cleanup);
-		}
-	    }
-	    init = true;
-	}
-    }
+    InitOnceExecuteOnce(&init_once, InitRenameLock, NULL, NULL);
     while (*path) {
 	hash = hash * *path + *path;
 	path++;
@@ -230,11 +224,10 @@ int flock(int fd, int op) {
 
 /* fsync emulation - don't fail on console output */
 int fsync(int fd) {
-    if (!FlushFileBuffers(to_handle(fd))) {
-	if (GetFileType(to_handle(fd)) != FILE_TYPE_CHAR) {
-	    _dosmaperr(GetLastError());
-	    return -1;
-	}
+    if (!FlushFileBuffers(to_handle(fd)) && GetFileType(to_handle(fd)) !=
+	FILE_TYPE_CHAR) {
+	_dosmaperr(GetLastError());
+	return -1;
     }
     return 0;
 }
@@ -560,8 +553,8 @@ int wlink(const wchar *from, const wchar *to) {
     }
     lck = rename_lock(from);
     if ((hdl = CreateFileW(from, 0,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE) {
+	FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+	NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE) {
 	rename_unlock(lck);
 	_dosmaperr(GetLastError());
 	return ret;
@@ -600,7 +593,7 @@ int open(const char *path, int oflag, ...) {
     return A_TO_W(path, pbuf) ? wopen(pbuf, oflag, mode) : -1;
 }
 
-int wopen(const wchar *path, int oflag, ...) {
+int wopen(const wchar *path, int oflag, ...) {	// NOSONAR
     HANDLE hdl;
     DWORD fileaccess;
     DWORD fileshare;
@@ -705,20 +698,21 @@ int wopen(const wchar *path, int oflag, ...) {
 	    return -1;
 	}
     }
-    if (oflag & O_TEXT && oflag & O_RDWR && (filetype = GetFileType(hdl)) !=
-	FILE_TYPE_UNKNOWN && filetype != FILE_TYPE_PIPE && filetype !=
-	FILE_TYPE_CHAR) {
-	/* remove CTRL-Z from end of file if present */
-	char ch;
+    if (oflag & O_TEXT && oflag & O_RDWR) {
+	filetype = GetFileType(hdl);
+	if (filetype != FILE_TYPE_UNKNOWN && filetype != FILE_TYPE_PIPE &&
+	    filetype != FILE_TYPE_CHAR) {
+	    /* remove CTRL-Z from end of file if present */
+	    char ch;
 
-	if (SetFilePointer(hdl, 0, NULL, FILE_END) == (DWORD)-1) {
-	    CloseHandle(hdl);
-	    return -1;
-	}
-	if (ReadFile(hdl, &ch, 1, &in, NULL) && in && ch == 26) {
-	    if (SetFilePointer(hdl, 1, NULL, FILE_END) == (DWORD)-1 ||
-		!SetEndOfFile(hdl) ||
-		SetFilePointer(hdl, 0, NULL, FILE_BEGIN) == (DWORD)-1) {
+	    if (SetFilePointer(hdl, 0, NULL, FILE_END) == (DWORD)-1) {
+		CloseHandle(hdl);
+		return -1;
+	    }
+	    if (ReadFile(hdl, &ch, 1, &in, NULL) && in && ch == 26 &&
+		(SetFilePointer(hdl, 1, NULL, FILE_END) == (DWORD)-1 ||
+		!SetEndOfFile(hdl) || SetFilePointer(hdl, 0, NULL,
+		FILE_BEGIN) == (DWORD)-1)) {
 		CloseHandle(hdl);
 		return -1;
 	    }
@@ -967,7 +961,7 @@ int sigsend(idtype_t type, id_t id, int sig) {
     return ret ? 0 : -1;
 }
 
-int pidstat(pid_t pid, struct pidstat *psbuf) {
+int pidstat(pid_t, struct pidstat *) {
     return 0;
 }
 
@@ -1219,7 +1213,7 @@ void __dosmaperr(ulong oserrno) {
     /* EACCES errors or exec failure errors (ENOEXEC).  Otherwise   */
     /* EINVAL is returned.                                          */
     if (oserrno >= MIN_EACCES_RANGE && oserrno <= MAX_EACCES_RANGE)
-        errno = EACCES;
+	errno = EACCES;
     else if (oserrno >= MIN_EXEC_ERROR && oserrno <= MAX_EXEC_ERROR)
 	errno = ENOEXEC;
     else

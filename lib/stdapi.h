@@ -1529,7 +1529,6 @@ public:
 	    return tmp;
 	}
 	bool operator ==(const const_iterator &it) const = default;
-	bool operator !=(const const_iterator &it) const = default;
 
     private:
 	const C *cur;

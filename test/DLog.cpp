@@ -21,7 +21,7 @@
 #include "Config.h"
 #include "Log.h"
 
-static void signal_handler(int) {
+[[noreturn]] static void signal_handler(int) {
     dlog.stop();
     exit(1);
 }

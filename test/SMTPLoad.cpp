@@ -114,7 +114,7 @@ private:
     static atomic<ulong> usec, tusec, count, tcount;
     static vector<LoadCmd *> cmds;
 
-    int onStart(void);
+    int onStart(void) override;
     static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
     static const tchar *format(ulong u);
     static const tchar *format(float f);
@@ -148,7 +148,6 @@ vector<SMTPLoad::LoadCmd *> SMTPLoad::cmds;
 
 bool SMTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
     tchar *p;
-    attrmap::const_iterator it;
     tstring::size_type len;
 
     while ((p = tstrstr(str, T("$("))) != NULL) {
@@ -165,7 +164,8 @@ bool SMTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
 	    return false;
 	} else {
 	    *end++ = '\0';
-	    if ((it = amap.find(p + 2)) == amap.end())
+	    auto it = amap.find(p + 2);
+	    if (it == amap.end())
 		return false;
 	    len = it->second.size();
 	    size_t end_len = tstrlen(end) + 1;
@@ -391,8 +391,6 @@ int SMTPLoad::onStart(void) {
     attrmap lvars;
     SMTPClient sc;
     usec_t start, end, last, now, io;
-    attrmap::const_iterator ait;
-
     thread_local mt19937 rng(random_device {}());
     thread_local uniform_int_distribution<ulong> dist;
     if (id > Processor::count())
@@ -414,20 +412,21 @@ int SMTPLoad::onStart(void) {
 	id = tmpid ? tmpid % (muser ? muser : id) : 0;	// NOLINT
 	tsprintf(data, T("%lu"), id);
 	lvars[T("id")] = data;
-	if ((ait = vars.find(T("user"))) == vars.end())
+	if (auto ait = vars.find(T("user")); ait == vars.end())
 	    tsprintf(data, T("user_%06lu"), id);
 	else
 	    tsprintf(data, ait->second.c_str(), id);
 	lvars[T("user")] = data;
-	if ((ait = vars.find(T("pass"))) == vars.end())
+	if (auto ait = vars.find(T("pass")); ait == vars.end())
 	    tsprintf(data, T("pass_%06lu"), id);
 	else
-	    tsprintf(data, ait->second.c_str(), id);
+	    tsprintf(data, ait->second.c_str(), id);	// NOSONAR
 	lvars[T("pass")] = data;
 	start = last = uticks();
 	io = 0;
-	for (auto it = cmds.begin(); it != cmds.end() && !qflag; ++it) {
-	    LoadCmd *cmd = *it;
+	for (auto *cmd : cmds) {
+	    if (qflag)
+		break;
 
 	    if (!tstricmp(cmd->cmd.c_str(), T("sleep"))) {
 		ulong len;
@@ -491,7 +490,7 @@ int SMTPLoad::onStart(void) {
 		sc.subject(buf);
 		ret = true;
 	    } else if (cmd->cmd == T("body")) {
-		if (*buf || !body) {
+		if (buf[0] || !body) {
 		    ret = sc.data(false, buf) && sc.enddata();
 		} else {
 		    uint u = allfiles ? next() : ((uint)dist(rng) % bodycnt);
@@ -518,7 +517,7 @@ int SMTPLoad::onStart(void) {
 	    } else if (cmd->cmd == T("quit")) {
 		ret = sc.quit();
 	    } else {
-		ret = sc.cmd(cmd->cmd.c_str(), *buf ? buf : nullptr);
+		ret = sc.cmd(cmd->cmd.c_str(), buf[0] ? buf : nullptr);
 	    }
 	    now = uticks();
 	    diff = (ulong)(now - last - io);
@@ -588,8 +587,7 @@ void SMTPLoad::print(tostream &os, usec_t last) {
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
-    for (auto it = cmds.begin(); it != cmds.end(); ++it) {
-	LoadCmd *cmd = *it;
+    for (auto *cmd : cmds) {
 	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
 	    continue;
 	ops += cmd->count;
@@ -630,8 +628,7 @@ void SMTPLoad::print(tostream &os, usec_t last) {
 }
 
 void SMTPLoad::reset(bool all) {
-    for (auto it = cmds.begin(); it != cmds.end(); ++it) {
-	LoadCmd *cmd = *it;
+    for (auto *cmd : cmds) {
 	cmd->count = 0;
 	cmd->err = 0;
 	cmd->usec = cmd->minusec = cmd->maxusec = 0;
@@ -657,8 +654,8 @@ void SMTPLoad::uninit(void) {
     delete [] body;
     delete [] bodycache;
     delete [] bodysz;
-    for (auto it = cmds.begin(); it != cmds.end(); ++it)
-	delete *it;
+    for (auto *p : cmds)
+	delete p;
     cmds.clear();
 }
 

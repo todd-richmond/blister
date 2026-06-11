@@ -114,7 +114,7 @@ Service::Timer::Timer(ulong msec): timer(NULL) {
     (void)timer;
 }
 
-void Service::Timer::cancel() {}
+void Service::Timer::cancel() {}		// NOSONAR
 
 Service::Service(const tchar *servicename, const tchar *h): bPause(false),
     errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0),
@@ -194,19 +194,17 @@ int __stdcall Service::ctrl_handler(ulong sig) {
     return 1;
 }
 
-void Service::signal_handler(int sig) {
-    if (!aborted) {
-	if (sig == SIGABRT || sig == SIGFPE || sig == SIGILL || sig == SIGSEGV) {
-	    service->onAbort();
-	}
-    }
+[[noreturn]] void Service::signal_handler(int sig) {
+    if (!aborted && (sig == SIGABRT || sig == SIGFPE || sig == SIGILL || sig ==
+	SIGSEGV))
+	service->onAbort();
     _exit(sig);
 }
 
 #pragma warning(push)
 #pragma warning(disable: 4702)
 
-long Service::exception_handler(_EXCEPTION_POINTERS *info) {
+[[noreturn]] long Service::exception_handler(_EXCEPTION_POINTERS *) {
     if (!aborted)
 	service->onAbort();
     _exit(1);
@@ -509,7 +507,7 @@ Service::Status Service::status() {
     }
 }
 
-void Service::exit(int code) {
+[[noreturn]] void Service::exit(int code) {
     ssStatus.dwWin32ExitCode = code;
     update(Stopped);
     _exit(code);
@@ -1192,7 +1190,7 @@ Service::Status Service::status() {
     return stStatus;
 }
 
-void Service::exit(int code) {
+[[noreturn]] void Service::exit(int code) {
     update(Stopped);
     ::exit(code);
 }

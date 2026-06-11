@@ -86,7 +86,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	tests++;
 	if (map_ptr[key_ptr] != T("value"))
 	    fail(T("FAIL: tchar* map test"));
-	unordered_map<tstring, tstring, strhash<tchar>> map_string;
+	unordered_map<tstring, tstring, strhash<tchar>, streq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
 	if (map_string[T("key")] != T("value"))
@@ -113,7 +113,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	tests++;
 	if (map_ptr[key_ptr] != T("value"))
 	    fail(T("FAIL: tchar* map test"));
-	unordered_map<tstring, tstring, strihash<tchar>> map_string;
+	unordered_map<tstring, tstring, strihash<tchar>, streq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
 	if (map_string[T("key")] != T("value"))
@@ -145,7 +145,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	tests++;
 	if (map_ptr[key_ptr] != T("value"))
 	    fail(T("FAIL: tchar* map test"));
-	unordered_map<tstring, tstring, striasciihash<tchar>> map_string;
+	unordered_map<tstring, tstring, striasciihash<tchar>, streq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
 	if (map_string[T("key")] != T("value"))
