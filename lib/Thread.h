@@ -849,8 +849,10 @@ public:
 	    w.next.store(h, memory_order_relaxed);
 	} while (!head.compare_exchange_weak(h, &w, memory_order_release,
 	    memory_order_relaxed));
-#ifdef THREAD_PAUSE			// park threads for usec
-	for (uint i = 0; i < 256; ++i) {
+#ifdef THREAD_PAUSE			// park 1st thread slower than others
+	uint spins = UNLIKELY(h == nullptr) ? 2048 : 128;
+
+	for (uint i = 0; i < spins; ++i) {
 	    if (w.sema4.trywait())
 		return true;
 	    THREAD_PAUSE();

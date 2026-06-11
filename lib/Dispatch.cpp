@@ -583,7 +583,11 @@ void Dispatcher::cleanup(void) {
 #endif
 
 void Dispatcher::handleEvents(const void *evts, uint nevts) {
+    static constexpr uint_fast8_t EVT_READ = 0x01;
+    static constexpr uint_fast8_t EVT_WRITE = 0x02;
+    static constexpr uint_fast8_t EVT_ERR = 0x04;
     DispatchSocket *batch[MAX_EVENTS];
+    uint_fast8_t masks[MAX_EVENTS];
     uint rcnt = 0, rsz;
     bool rset = false;
 
@@ -591,6 +595,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds;
 	const event_t *evt = (const event_t *)evts + u;
+	uint_fast8_t mask = LIKELY(DSP_EVENT_READ(evt)) ? EVT_READ : 0;
 
 #ifdef DSP_DEVPOLL
 	if (UNLIKELY(evt->fd == rsock)) {
@@ -599,14 +604,21 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    slock.lock();
 	    ds = get_socket(evt->fd);
 	    slock.unlock();
-	    if (UNLIKELY(!ds))
+	    if (UNLIKELY(!ds)) {
+		batch[u] = nullptr;
+		masks[u] = 0;
 		continue;
+	    }
 	}
 #elif defined(DSP_EPOLL)
 	ds = static_cast<DispatchSocket *>(evt->data.ptr);
 #elif defined(DSP_KQUEUE)
 	ds = static_cast<DispatchSocket *>(evt->udata);
 #endif
+	if (UNLIKELY(DSP_EVENT_WRITE(evt)))
+	    mask |= EVT_WRITE;
+	if (UNLIKELY(DSP_EVENT_ERR(evt)))
+	    mask |= EVT_ERR;
 	if (LIKELY(ds)) {
 	    __builtin_prefetch(ds, 1, 3);
 	} else if (!rset) {
@@ -614,6 +626,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    rset = true;
 	}
 	batch[u] = ds;
+	masks[u] = mask;
     }
     // phase 2: batch timer removal — single tlock acquisition
     tlock.lock();
@@ -626,21 +639,22 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
     olock.lock();
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds = batch[u];
-	const event_t *evt = (const event_t *)evts + u;
 	dspflag_t flags;
+	uint_fast8_t mask;
 
 	if (UNLIKELY(!ds))
 	    continue;
+	mask = masks[u];
 	flags = ds->flags;
 	if (UNLIKELY(flags & DSP_Freed)) {
 	    continue;
 	} else if (LIKELY(flags & DSP_Scheduled)) {
 	    DispatchMsg msg = ds->msg;
 
-	    if (LIKELY(DSP_EVENT_READ(evt)))
+	    if (LIKELY(mask & EVT_READ))
 		msg = UNLIKELY(flags & DSP_SelectAccept) ? DispatchAccept :
 		    DispatchRead;
-	    if (UNLIKELY(DSP_EVENT_WRITE(evt))) {
+	    if (UNLIKELY(mask & EVT_WRITE)) {
 		if (flags & DSP_Connecting)
 		    msg = DispatchConnect;
 		else if (msg == DispatchNone)
@@ -648,7 +662,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		else
 		    ds->flags |= DSP_Writeable;
 	    }
-	    if (UNLIKELY(DSP_EVENT_ERR(evt))) {
+	    if (UNLIKELY(mask & EVT_ERR)) {
 		if (msg == DispatchNone)
 		    msg = DispatchClose;
 		else
@@ -676,11 +690,11 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		rcnt++;
 	    }
 	} else {
-	    if (LIKELY(DSP_EVENT_READ(evt)))
+	    if (LIKELY(mask & EVT_READ))
 		ds->flags |= DSP_Readable;
-	    if (UNLIKELY(DSP_EVENT_WRITE(evt)))
+	    if (UNLIKELY(mask & EVT_WRITE))
 		ds->flags |= DSP_Writeable;
-	    if (UNLIKELY(DSP_EVENT_ERR(evt)))
+	    if (UNLIKELY(mask & EVT_ERR))
 		ds->flags |= DSP_Closeable;
 	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose |
 		DSP_SelectRead | DSP_SelectWrite);
