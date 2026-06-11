@@ -255,8 +255,6 @@ public:
     bool write(tostream &os, bool ini) const;
     void lock(void) { lck.wlock(); }
     void unlock(void) { lck.wunlock(); }
-    friend tistream &operator >>(tistream &is, Config &cfg);
-    friend tostream &operator <<(tostream &os, const Config &cfg);
 
 protected:
     static ulong open_file(const tstring &file, tifstream &is,
