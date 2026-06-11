@@ -116,8 +116,8 @@ usec_t uticks(void) {
 
 static INIT_ONCE init_once = INIT_ONCE_STATIC_INIT;
 
-static BOOL CALLBACK InitRenameLock(PINIT_ONCE InitOnce, PVOID Parameter,
-    PVOID *lpContext) {
+static BOOL CALLBACK InitRenameLock(PINIT_ONCE InitOnce,    // NOSONAR
+    PVOID Parameter, PVOID *lpContext) {
     (void)InitOnce;
     (void)Parameter;
     (void)lpContext;
@@ -962,7 +962,7 @@ int sigsend(idtype_t type, id_t id, int sig) {
     return ret ? 0 : -1;
 }
 
-int pidstat(pid_t pid, struct pidstat *psbuf) {
+int pidstat(pid_t , struct pidstat *) {
     return 0;
 }
 

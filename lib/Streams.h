@@ -326,6 +326,7 @@ private:
 	"70717273747576777879"
 	"80818283848586878889"
 	"90919293949596979899";
+
     class BLISTER bufferbuf: public basic_stringbuf<C> {
     public:
 	explicit bufferbuf(ios::openmode m): basic_stringbuf<C>(m) {}
@@ -361,7 +362,7 @@ private:
 	}
     };
 
-    [[no_unique_address]] bufferbuf sb;
+    bufferbuf sb;
 };
 
 using tbufferstream = bufferstream<tchar>;
