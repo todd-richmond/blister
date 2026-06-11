@@ -190,6 +190,7 @@ class BLISTER DispatchSocket: public DispatchTimer, public Socket {
 public:
     explicit DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =
 	DSP_NEVER): DispatchTimer(d, msec), Socket(type), mapped(false) {}
+    DispatchSocket(const DispatchSocket &) = delete;
     DispatchSocket(Dispatcher &d, const Socket &s, ulong msec = DSP_NEVER):
 	DispatchTimer(d, msec), Socket(s), mapped(false) {}
     explicit DispatchSocket(DispatchObj &parent, int type = SOCK_STREAM, ulong

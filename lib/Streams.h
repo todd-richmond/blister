@@ -362,7 +362,7 @@ private:
 	}
     };
 
-    bufferbuf sb;
+    bufferbuf sb;   // NOSONAR
 };
 
 using tbufferstream = bufferstream<tchar>;

@@ -111,10 +111,8 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stdout");
-	    if (i + 1 < argc && argv[i + 1][0] != '-') {
-		if ((flvl = Log::str2enum(argv[++i])) == Log::None)
-		    break;
-	    }
+	    if (i + 1 < argc && argv[i + 1][0] != '-' && (flvl =
+		Log::str2enum(argv[++i])) == Log::None)
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		cnt = tstrtoul(argv[++i], NULL, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
@@ -155,10 +153,9 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    to = argv[i];
-	    if (i + 1 < argc && argv[i + 1][0] != '-') {
-		if ((mlvl = Log::str2enum(argv[++i])) == Log::None)
-		    break;
-	    }
+	    if (i + 1 < argc && argv[i + 1][0] != '-' && (mlvl =
+		Log::str2enum(argv[++i])) == Log::None)
+		break;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		from = argv[++i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
@@ -189,10 +186,9 @@ int tmain(int argc, tchar *argv[]) {
 	    const tchar *host = T("localhost");
 	    Log::Level slvl = Log::Err;
 
-	    if (i + 1 < argc && argv[i + 1][0] != '-') {
-		if ((slvl = Log::str2enum(argv[++i])) == Log::None)
-		    break;
-	    }
+	    if (i + 1 < argc && argv[i + 1][0] != '-' && (slvl =
+		Log::str2enum(argv[++i])) == Log::None)
+		break;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		host = argv[++i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-')

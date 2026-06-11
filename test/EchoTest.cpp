@@ -63,6 +63,7 @@ public:
 	EchoServerSocket(Dispatcher &d, const Socket &sock):
 	    DispatchServerSocket(d, sock), buf(nullptr), bufsz(0), in(0), out(0),
 	    tmt(TIMEOUT) {}
+	EchoServerSocket(const EchoServerSocket &) = delete;
 	virtual ~EchoServerSocket() { delete [] buf; }
 
 	void timeout(ulong timeout) { tmt = timeout; }

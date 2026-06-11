@@ -118,7 +118,7 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     cpid = fork();
     if (cpid == 0) {
 	unsetsignal();
-	texecvp(argv[ac], (tchar *const *)&argv[ac]);
+	texecvp(argv[ac], (tchar *const *)&argv[ac]);	// NOSONAR
     } else if (cpid > 0) {
 	int sts;
 

@@ -119,6 +119,20 @@ public:
     Sockaddr(const Sockaddr &sa) = default;
     Sockaddr(Sockaddr &&sa) = default;
 
+    Sockaddr &operator =(const Sockaddr &sa) {
+	if (this != &sa) {
+	    addr = sa.addr;
+	    name = sa.name;
+	}
+	return *this;
+    }
+    Sockaddr &operator =(Sockaddr &&sa) noexcept {
+	if (this != &sa) {
+	    addr = std::move(sa.addr);
+	    name = std::move(sa.name);
+	}
+	return *this;
+    }
     friend bool operator ==(const Sockaddr &a, const Sockaddr &b) {
 	if (a.family() != b.family())
 	    return false;
@@ -131,20 +145,6 @@ public:
     }
     friend tostream &operator <<(tostream &os, const Sockaddr &addr) {
 	return os << addr.str();
-    }
-    Sockaddr &operator =(const Sockaddr &sa) {
-	if (this != &sa) {
-	    addr = sa.addr;
-	    name = sa.name;
-	}
-	return *this;
-    }
-    Sockaddr &operator =(Sockaddr &&sa) {
-	if (this != &sa) {
-	    addr = std::move(sa.addr);
-	    name = std::move(sa.name);
-	}
-	return *this;
     }
     operator const in_addr *() const { return &addr.sa4.sin_addr; }
     operator const in6_addr *() const { return &addr.sa6.sin6_addr; }
@@ -377,7 +377,7 @@ public:
 	return getsockopt(lvl, opt, i) ? i : -1;
     }
     template<class C> bool setsockopt(int lvl, int opt, C &val) { // NOSONAR
-	return check(::setsockopt(sbuf->sock, lvl, opt, (char *)&val,
+	return check(::setsockopt(sbuf->sock, lvl, opt, (char *)&val, // NOSONAR
 	    sizeof (val)));
     }
     bool setsockopt(int lvl, int opt, bool val) { // NOSONAR
