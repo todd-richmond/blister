@@ -962,7 +962,9 @@ int sigsend(idtype_t type, id_t id, int sig) {
     return ret ? 0 : -1;
 }
 
-int pidstat(pid_t , struct pidstat *) {
+int pidstat(pid_t pid, struct pidstat *psbuf) {
+    (void)pid;
+    (void)psbuf;
     return 0;
 }
 
