@@ -105,7 +105,7 @@ public:
     int underflow(void) override {
 	const char *gp = gptr();
 
-	if (UNLIKELY(gp == NULL)) {
+	if (UNLIKELY(gp == nullptr)) {
 	    uchar c;
 
 	    return fd->read((char *)&c, sizeof (c)) == (int)sizeof (c) ?
@@ -134,7 +134,7 @@ public:
     int overflow(int i) override {
 	uchar c = (uchar)i;
 
-	if (pptr() == NULL) {
+	if (pptr() == nullptr) {
 	    return i == -1 || fd->write((const char *)&c, sizeof (c)) ==
 		(int)sizeof (c) ? i : -1;
 	} else {
@@ -415,7 +415,9 @@ public:
 private:
     struct null_buffer : public basic_streambuf<tchar> {
         streamsize xsputn(const tchar *, streamsize n) override { return n; }
-        int overflow(int c) override { return c; }
+#ifndef _WIN32
+	int overflow(int c) override { return c; }
+#endif
         pos_type seekoff(off_type, ios_base::seekdir, ios_base::openmode)
 	    override { return -1; }
         pos_type seekpos(pos_type, ios_base::openmode) override { return -1; }

@@ -85,7 +85,7 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	if (ret && (ret = base64encode(pass, passlen, uubuf, uusz)) == true) {
 	    while (isspace(uubuf[uusz - 1]))
 		uubuf[--uusz] = '\0';
-	    ret = cmd(achartotchar(uubuf), NULL, 235);
+	    ret = cmd(achartotchar(uubuf), nullptr, 235);
 	    delete[] uubuf;
 	}
     }
@@ -166,8 +166,8 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
     }
     timeout(3 * 60 * 1000, 5 * 60 * 1000);
     sstrm.clear();
-    sstrm.rdbuf()->str(NULL, 4096);
-    return cmd(NULL, NULL, 220);
+    sstrm.rdbuf()->str(nullptr, 4096);
+    return cmd(nullptr, nullptr, 220);
 }
 
 bool SMTPClient::ehlo(const tchar *domain) {
@@ -235,7 +235,7 @@ bool SMTPClient::lhlo(const tchar *domain) {
 }
 
 bool SMTPClient::quit() {
-    bool ret = cmd(T("QUIT"), NULL, 221);
+    bool ret = cmd(T("QUIT"), nullptr, 221);
 
     sock.close();
     return ret || code() == 421;
@@ -255,7 +255,7 @@ bool SMTPClient::vrfy(const tchar *id) {
 
 bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
     if (!datasent) {
-	if (!cmd(T("DATA"), NULL, 354))
+	if (!cmd(T("DATA"), nullptr, 354))
 	    return false;
 	datasent = true;
     }
@@ -281,7 +281,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     tm tmbuf;
 
     mime = m;
-    if (!cmd(T("DATA"), NULL, 354))
+    if (!cmd(T("DATA"), nullptr, 354))
 	return false;
     memcpy(buf, &pid, 4);
     memcpy(buf + 4, &mid, 8);
@@ -800,7 +800,7 @@ uint RFC822Addr::parse(const tchar *addrs) {
 
     if (buf) {
 	delete [] buf;
-	buf = NULL;
+	buf = nullptr;
 	domains.clear();
 	locals.clear();
 	phrases.clear();
@@ -816,15 +816,15 @@ uint RFC822Addr::parse(const tchar *addrs) {
 	case ';':
 	    // include local mbox
 	    if (phrase && *phrase)
-		parse_append(NULL, NULL, phrase, NULL);
+		parse_append(nullptr, nullptr, phrase, nullptr);
 	    continue;
 	case ':':
 	    // ignore group prefix and only return real addresses
-	    // parse_append(NULL, NULL, phrase, NULL);
+	    // parse_append(nullptr, nullptr, phrase, nullptr);
 	    continue;
 	case '@':
 	    tok = parse_domain(s, d, n);
-	    parse_append(n, NULL, phrase, d);
+	    parse_append(n, nullptr, phrase, d);
 	    continue;
 	case '<':
 	    tok = parse_phrase(s, m, T("@>"));
@@ -851,7 +851,7 @@ uint RFC822Addr::parse(const tchar *addrs) {
 		    tok = (int)(uchar)*s++;
 		continue;		// effectively inserts a comma
 	    } else {
-		parse_append(phrase, NULL, m, T(""));
+		parse_append(phrase, nullptr, m, T(""));
 	    }
 	}
     }
@@ -913,7 +913,7 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
     tchar *dst;
     tchar *src = in;
 
-    cmt = NULL;
+    cmt = nullptr;
     skip_whitespace(src);
     dom = dst = src;
     for (;;) {
@@ -924,11 +924,11 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
 	if (isalnum(c) || c == '-' || c == '_' || c == '[' || c == ']' || c ==
 	    ':') {
 	    *dst++ = c;
-	    cmt = NULL;
+	    cmt = nullptr;
 	} else if (c == '.') {
 	    if (dst > dom && dst[-1] != '.')
 		*dst++ = c;
-	    cmt = NULL;
+	    cmt = nullptr;
 	} else if (c == '(') {
 	    cmt = cdst = src;
 	    cnt = 1;
@@ -1127,7 +1127,7 @@ bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
 
     outsz = 0;
     if ((out = new char[(len + 2) * 4 / 3 + (len / maxlen * 2) + 8]) ==
-	NULL) // -V668
+	nullptr) // -V668
 	return false;
     encode(input, len, out, outsz, table, true);
     return true;
@@ -1148,7 +1148,7 @@ bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
 
     outsz = (size_t)filestr.size();
     if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) ==
-	NULL) // -V668
+	nullptr) // -V668
 	return false;
     memcpy(out, begin, sizeof (begin) - 1);
     memcpy(out + sizeof (begin) - 1, filestr.c_str(), outsz);
@@ -1186,7 +1186,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     while (*p != '\r' && *p != '\n'&& !isspace(*p))
 	file.append(1, *p++);
     sz -= (size_t)(p - input);
-    if ((output = out = new char[sz * 3 / 4 + 8]) == NULL)
+    if ((output = out = new char[sz * 3 / 4 + 8]) == nullptr)
 	return false;
     while (sz) {
 	if (isspace(*p)) {
@@ -1280,7 +1280,7 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
     };
 
     outsz = 0;
-    if ((out = new char[sz * 3 / 4 + 8]) == NULL)
+    if ((out = new char[sz * 3 / 4 + 8]) == nullptr)
 	return false;
     output = out;
     while (sz > 0) {
@@ -1332,7 +1332,7 @@ static void parse_rfc822space(const tchar *&s) {
 	if (*p == '\n') {
 	    p++;
 	    if (*p != ' ' && *p != '\t') {
-		s = NULL;
+		s = nullptr;
 		return;
 	    }
 	} else if (*p == '(') {
@@ -1346,7 +1346,7 @@ static void parse_rfc822space(const tchar *&s) {
 			break;
 		    /* fall-thru */
 		case '\0':
-		    s = NULL;
+		    s = nullptr;
 		    return;
 		case '\\':
 		    p++;
@@ -1366,7 +1366,7 @@ static void parse_rfc822space(const tchar *&s) {
 	    p++;
 	}
     }
-    s = *p ? p : NULL;
+    s = *p ? p : nullptr;
 }
 
 static int tmcomp(const tm *const atmp, const tm *const btmp) {
@@ -1402,7 +1402,7 @@ time_t mkgmtime(const tm *tmp) {
 	int dir;
 	const tm *newtm = gmtime_r(&t, &tmbuf);
 
-	if (newtm == NULL)
+	if (newtm == nullptr)
 	    return 0;
 	dir = tmcomp(newtm, &orgtm);
 	if (dir != 0) {

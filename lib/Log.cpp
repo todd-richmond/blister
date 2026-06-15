@@ -35,6 +35,7 @@
 static constexpr const tchar *USubst = T("\001\001");
 #if !defined(__APPLE__) && !defined(__linux__)
 #define NO_PERCENT_Z
+static constexpr const tchar *ZSubst = T("\002\002");
 #endif
 
 const tstring_view Log::LevelStr[] = {
@@ -179,7 +180,7 @@ bool Log::LogFile::reopen(void) {
     lock();
     if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
 	tchar buf[PATH_MAX];
-	time_t now = seconds();
+	time_t now = ::time(NULL);
 	const struct tm *tm;
 	struct tm tmbuf;
 
@@ -221,8 +222,7 @@ void Log::LogFile::roll(void) {
     lock();
     if (fd < 0 || (!fstat(fd, &sbuf) && mp && sbuf.st_ino != inode))
 	return;
-    now = cnt && !sec ? (time_t)sbuf.st_ctime :
-	seconds();
+    now = cnt && !sec ? (time_t)sbuf.st_ctime : ::time(NULL);
     s1 = path;
     if ((pos = s1.rfind('/')) == s1.npos && (pos = s1.rfind('\\')) == s1.npos) {
 	sep = '/';
@@ -289,12 +289,10 @@ void Log::LogFile::roll(void) {
 	tchar buf[32];
 	uint u;
 
-	buf[0] = '.';
-	to_str(buf + 1, buf + 32, files);
+	tsprintf(buf, T(".%u"), files);
 	s1 = file + buf;
 	for (u = files; u > 1; u--) {
-	    buf[0] = '.';
-	    to_str(buf + 1, buf + 32, u - 1);
+	    tsprintf(buf, T(".%u"), u - 1);
 	    s2 = file + buf;
 	    (void)tunlink(s1.c_str());
 	    if (trename(s2.c_str(), s1.c_str()))
@@ -519,30 +517,42 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (afd.len >= afd.sz)
 	    afd.roll();
     }
-    now_sec = seconds();
+    time(&now_sec);
     now_usec = uticks();
     now_usec %= 1000000;
     if (now_sec != last_sec) {
-#ifdef NO_PERCENT_Z
-	auto fmt_str = "{:" + tstringtoastring(fmt) + "}";
-	if (gmt) {
-	    auto tp = chrono::system_clock::from_time_t(now_sec);
-	    last_format = achartotstring(vformat(fmt_str, make_format_args(tp)));
-	} else {
-	    auto zt = chrono::zoned_time{chrono::current_zone(),
-		chrono::system_clock::from_time_t(now_sec)};
-	    last_format = achartotstring(vformat(fmt_str, make_format_args(zt)));
-	}
-#else
 	tchar tbuf[128];
-	const struct tm *tm;
 	struct tm tmbuf;
+	const struct tm *tm;
 
 	tm = gmt ? gmtime_r(&now_sec, &tmbuf) : localtime_r(&now_sec, &tmbuf);
 	tstrftime(tbuf, sizeof (tbuf) / sizeof (tchar), fmt.c_str(), tm);
 	last_format = tbuf;
-#endif
 	last_sec = now_sec;
+#ifdef NO_PERCENT_Z
+	tstring::size_type zpos;
+
+	if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
+	    int diff;
+	    tchar gmtoff[16];
+	    struct tm tmbuf2;
+	    const struct tm *tm2;
+
+	    memcpy(&tmbuf, tm, sizeof (tmbuf));
+	    tm = &tmbuf;
+	    tm2 = gmt ? localtime_r(&now_sec, &tmbuf2) : tm;
+	    tm = gmt ? tm : gmtime_r(&now_sec, &tmbuf2);
+	    diff = (tm2->tm_hour - tm->tm_hour) * 100 + tm2->tm_min - tm->tm_min;
+	    if (tm->tm_wday != tm2->tm_wday)
+		diff -= 2400 * (tm->tm_wday > tm2->tm_wday ||
+		    (tm->tm_wday == 0  && tm2->tm_wday == 6) ? 1 : -1);
+	    if (diff < 0)
+		tsprintf(gmtoff, T("-%04d"), -1 * diff);
+	    else
+		tsprintf(gmtoff, T("+%04d"), diff);
+	    last_format.replace(zpos, 2, gmtoff);
+	}
+#endif
 	upos = last_format.find(USubst);
     }
     if (_type == NoTime) {
@@ -552,8 +562,8 @@ void Log::endlog(Tlsdata &tlsd) {
 	    strbuf = last_format;
 	} else {
 	    tchar cbuf[8];
-	    auto [ep, ec] = to_chars(cbuf, cbuf + 6, now_usec);
-	    uint dlen = (uint)(ep - cbuf);
+	    auto [ep, ec] = to_chars(cbuf, cbuf + 6, (uint)now_usec);
+	    size_t dlen = (size_t)(ep - cbuf);
 
 	    strbuf.assign(last_format, 0, upos);
 	    strbuf.append(6 - dlen, '0');
@@ -631,11 +641,12 @@ void Log::endlog(Tlsdata &tlsd) {
     if (syslogenable && clvl <= sysloglvl) {
 	string ss;
 	string::size_type pos;
-	char buf[64];
+	char buf[64], cbuf[32];
 	uint u = (syslogfac << 3) | (uint)(clvl - (clvl < Debug ? 1 : 2));
 
-	ss = std::format("<{:d}>{:%b %d %H:%M:%S}.{:06d} ", u,
-	    chrono::system_clock::from_time_t(now_sec), (uint)now_usec);
+	sprintf(buf, "<%u>%.15s.%06u ", u, ctime_r(&now_sec, cbuf) + 4,
+	    (uint)now_usec);
+	ss = buf;
 	ss += tstringtoastring(hostname);
 	if (!mailfrom.empty() && mailfrom != T("<>")) {
 	    ss += ' ';
@@ -694,6 +705,10 @@ void Log::format(const tchar *s) {
     last_sec = 0;
     if ((pos = fmt.find(T("%#"))) != fmt.npos)
 	fmt.replace(pos, 2, USubst);
+#ifdef NO_PERCENT_Z
+    if ((pos = fmt.find(T("%z"))) != fmt.npos)
+	fmt.replace(pos, 2, ZSubst);
+#endif
 }
 
 void Log::logv(int il, ...) {
@@ -758,7 +773,7 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 	    os.write((const tchar *)start, p - start);
 	    auto flush = [&]() { if (bsz) { os.write(buf, bsz); bsz = 0; } };
 	    auto esc2 = [&](tchar e) {
-		if (UNLIKELY(bsz + 2 >= (streamsize)sizeof (buf)))
+		if (UNLIKELY(bsz + 2 > (streamsize)sizeof (buf)))
 		    flush();
 		buf[bsz++] = '\\';
 		buf[bsz++] = e;
@@ -875,7 +890,7 @@ void Log::stop(void) {
 }
 
 Log::Level Log::str2enum(const tchar *l) {
-    for (uint u = 0; u < size(LevelStr); ++u) {
+    for (uint u = 0; u < sizeof (LevelStr) / sizeof (LevelStr[0]); ++u) {
 	tstring_view sv = LevelStr[u];
 
 	if (!sv.empty() && sv.back() == ' ')

@@ -11,6 +11,7 @@
 #define DLL_IMPORT
 #define LIKELY(c)       (c)
 #define UNLIKELY(c)     (c)
+#define LOG_KV_FN
 #define NULL
 #define WARN_DISABLE(w)
 #define WARN_POP

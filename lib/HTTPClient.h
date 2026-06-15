@@ -23,13 +23,12 @@
 
 class BLISTER URL {
 public:
-    constexpr URL(): port(80) { set(nullptr); }
-    explicit URL(const tchar *url): port(80) { set(url); }
+    explicit URL(const tchar *url = nullptr) { set(url); }
     URL(const URL &url) = default;
     ~URL() = default;
 
     tstring host, path, prot, query;
-    ushort port;
+    ushort port = 80;
 
     URL &operator =(const URL &url) = default;
 

@@ -108,9 +108,7 @@ public:
     __forceinline Log &operator <<(void(Log &)) { endlog(); return *this; }
     // cppcheck-suppress constParameterReference
     __forceinline Log &operator <<(Escalator &e) { (void)log(e); return *this; }
-    friend inline Log &operator <<(Log &l, Log &(* const func)(Log &)) {
-	return func(l);
-    }
+    friend Log &operator <<(Log &l, Log &(* const f)(Log &)) { return f(l); }
 
     bool alertfile(void) const { return afd.enable; }
     void alertfile(bool b) { afd.enable = b; }

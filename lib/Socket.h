@@ -76,7 +76,7 @@ constexpr int SOCK_BUFSZ = 3 * 1024;
 constexpr uint SOCK_INFINITE = (uint)-1;
 constexpr socket_t SOCK_INVALID = INVALID_SOCKET;
 
-inline bool blocked(int e) {
+constexpr bool blocked(int e) {
 #ifdef _WIN32
     return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY;
 #elif EAGAIN == EWOULDBLOCK
@@ -88,13 +88,12 @@ inline bool blocked(int e) {
 #endif
 }
 
-inline bool interrupted(int e) { return e == WSAEINTR; }
+constexpr bool interrupted(int e) { return e == WSAEINTR; }
 
 /*
  * Socket address class to wrap sockaddr structures and deal with Win32 startup
  * requirements. Limited to IPV4/6 TCP or UDP addresses and UNIX domain paths
  */
-WARN_PUSH_DISABLE(26495)
 class BLISTER Sockaddr {
 public:
     enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNIX, UNSPEC };
@@ -128,7 +127,7 @@ public:
     }
     Sockaddr &operator =(Sockaddr &&sa) noexcept {
 	if (this != &sa) {
-	    addr = std::move(sa.addr);
+	    addr = sa.addr;
 	    name = std::move(sa.name);
 	}
 	return *this;
@@ -246,8 +245,6 @@ private:
 
     tstring str(const tstring &val) const;
 };
-WARN_POP()
-
 
 // Socket address list for hosts that resolve to multiple results
 class BLISTER SockaddrList: public ObjectList<ObjectListNode<Sockaddr> > {
@@ -268,9 +265,7 @@ public:
     }
 };
 
-/*
- * CIDR/Network class to simplify IP range lookups
- */
+// CIDR/Network class to simplify IP range lookups
 class BLISTER CIDR {
 public:
     explicit CIDR(const tchar *addrs = nullptr) { add(addrs); }
@@ -305,8 +300,7 @@ private:
  * Berkeley/WinSock Socket class manages stream or datagram server and client
  * sockets. Deals with OS dependent behavior for non-blocking sockets and
  * readv/writev emulation for improved performance. SIGINT retries are handled
- * automatically. Object copies are also supported by using a reference counted
- * subclass.
+ * automatically. Object copies are supported by using a reference counted subclass
  */
 class BLISTER Socket {
 public:

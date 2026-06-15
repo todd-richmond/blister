@@ -206,7 +206,7 @@ public:
     enum Quit { None, Slow, Fast };
 
     using Service::Service;
-    explicit Daemon(const tchar *name, const tchar *display = NULL,
+    explicit Daemon(const tchar *name, const tchar *display = nullptr,
 	bool pauseable = false);
     virtual ~Daemon();
 

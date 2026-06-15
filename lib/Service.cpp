@@ -207,7 +207,6 @@ int __stdcall Service::ctrl_handler(ulong sig) {
     if (!aborted)
 	service->onAbort();
     _exit(1);
-    return EXCEPTION_CONTINUE_EXECUTION;    // NOSONAR
 }
 
 #pragma warning(pop)

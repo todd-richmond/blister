@@ -1417,8 +1417,8 @@ __forceinline strhash_t stringihash(const T &s) {
 template<class C>
 struct ptrhash {
     constexpr size_t operator ()(const C *p) const {
-	if constexpr (sizeof (size_t) == 4 && sizeof (void*) == 8) {
-	    uintptr_t addr = reinterpret_cast<uintptr_t>(p);
+	if constexpr (sizeof (size_t) == 4 && sizeof (char *) == 8) {
+	    uintptr_t addr = (uintptr_t)p;
 
 	    return (size_t)((addr >> 32) ^ addr);
 	} else {

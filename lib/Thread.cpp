@@ -477,8 +477,8 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 	    } else {
 		tg->cvlck.lock();
 		auto found = false;
-		for (auto thread : tg->threads) {
-		    if (THREAD_ISSELF(thread->id)) {
+		for (auto t : tg->threads) {
+		    if (THREAD_ISSELF(t->id)) {
 			found = true;
 			break;
 		    }
@@ -507,7 +507,7 @@ void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
     Locker lck(cvlck);
 
     state = ts;
-    for (auto thread : threads) {
+    for (auto *thread : threads) {
 	if (!THREAD_ISSELF(thread->id))
 	    (thread->*func)();
     }
@@ -528,7 +528,7 @@ void ThreadGroup::notify(const Thread &thread) {
 void ThreadGroup::priority(int pri) {
     Locker lkr(cvlck);
 
-    for (auto thread : threads)
+    for (auto *thread : threads)
 	thread->priority(pri);
 }
 
