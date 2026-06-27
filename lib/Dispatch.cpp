@@ -155,13 +155,30 @@ bool Dispatcher::exec() {
 }
 
 int Dispatcher::run() {
-    Lifo::Waiting waiting;
+    dspsema4_t::Waiting waiting;
     static uint cpus = Processor::count();
 
     priority(-1);
     while (exec()) {
 	scanning.fetch_sub(1, memory_order_relaxed);
-	if (!lifo.wait(waiting, workers > cpus ? INFINITE : MAX_WAIT_TIME))
+	if (workers < cpus) {
+#ifdef THREAD_PAUSE			// park 1st thread slower than others
+	    if (scanning.load(memory_order_acquire) == 0) {
+		uint u;
+		for (u = 0; u < 1024; ++u) {
+		    if (waiting.sema4.try_acquire())
+			break;
+		    spin_release();
+		}
+		if (u == 1024)
+		    sema4.acquire(waiting);
+	    } else {
+		sema4.try_acquire_for(waiting, MAX_WAIT_TIME);
+	    }
+#else
+	    sema4.acquire(waiting);
+#endif
+	} else if (!sema4.try_acquire_for(waiting, MAX_WAIT_TIME))
 	    break;
     }
     workers--;
@@ -194,7 +211,6 @@ int Dispatcher::onStart() {
 	return -1;
     }
     due = DispatchTimer::DSP_NEVER_DUE;
-    lifo.open();
     scanning = 0;
     shutdown = false;
     workers = 0;
@@ -355,7 +371,6 @@ int Dispatcher::onStart() {
     evts[0].events = EPOLLIN;
     RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, wfd, evts));
 #endif
-    lifo.open();
     cache.store(now = mticks(), memory_order_relaxed);
     due = DispatchTimer::DSP_NEVER_DUE;
     scanning = 0;
@@ -541,12 +556,11 @@ void Dispatcher::cleanup(void) {
     for (;;) {
 	Thread *t;
 
-	lifo.broadcast();
+	sema4.broadcast();
 	if ((t = wait()) == nullptr)
 	    break;
 	delete t;
     }
-    lifo.close();
     timers.erase();
     while (rlist) {
 	DispatchObj *obj = rlist.pop_front();
@@ -715,7 +729,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		wake = maxwake;
 	    if (scanning.compare_exchange_weak(s, s + wake,
 		memory_order_acquire, memory_order_relaxed)) {
-		uint unwoken = lifo.set(wake);
+		uint unwoken = sema4.release(wake);
 
 		done = wake - unwoken;
 		if (UNLIKELY(unwoken)) {
@@ -1190,7 +1204,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    while (rsz > s) {
 		if (scanning.compare_exchange_weak(s, s + 1,
 		    memory_order_acquire, memory_order_relaxed)) {
-		    if (lifo.set()) {
+		    if (sema4.release()) {
 			if (workers < maxthreads && !shutdown) {
 			    worker();
 			    break;

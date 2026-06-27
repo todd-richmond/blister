@@ -585,22 +585,20 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     char *str, bool close) {
     char buf[128];
+    size_t pl = strlen(prot);
+    const char *reason = str ? str : sts < 300 ? "OK" : "ERR";
+    size_t rl = strlen(reason);
 
     hdrs.reset();
     ss.reset();
-    {
-	const char *reason = str ? str : sts < 300 ? "OK" : "ERR";
-	size_t pl = strlen(prot);
-	size_t rl = strlen(reason);
-	memcpy(buf, prot, pl);
-	buf[pl] = ' ';
-	auto [nend, nec] = to_chars(buf + pl + 1, buf + pl + 5, sts);
-	*nend++ = ' ';
-	memcpy(nend, reason, rl);
-	nend[rl] = '\r';
-	nend[rl + 1] = '\n';
-	hdrs.write(buf, (streamsize)((size_t)(nend - buf) + rl + 2));
-    }
+    memcpy(buf, prot, pl);
+    buf[pl] = ' ';
+    auto [nend, nec] = to_chars(buf + pl + 1, buf + pl + 5, sts);
+    *nend++ = ' ';
+    memcpy(nend, reason, rl);
+    nend[rl] = '\r';
+    nend[rl + 1] = '\n';
+    hdrs.write(buf, (streamsize)((size_t)(nend - buf) + rl + 2));
     if (date) {
 	auto hdr = format("Date: {:%a, %d %b %Y %H:%M:%S} UTC\r\n",
 	    chrono::system_clock::now());

@@ -181,11 +181,12 @@ bool Log::LogFile::reopen(void) {
     if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
 	tchar buf[PATH_MAX];
 	time_t now = ::time(NULL);
-	const struct tm *tm;
-	struct tm tmbuf;
 
 	while (true) {
-	    tm = gmt ? gmtime_r(&now, &tmbuf) : localtime_r(&now, &tmbuf);
+	    struct tm tmbuf;
+	    const struct tm *tm = gmt ? gmtime_r(&now, &tmbuf) :
+		localtime_r(&now, &tmbuf);
+
 	    tstrftime(buf, sizeof (buf), file.c_str(), tm);
 	    if (!tlink(path.c_str(), buf)) {
 		break;

@@ -253,8 +253,8 @@ public:
 	*sect = nullptr, nullptr */);
     bool write(tostream &os) const { return write(os, ini); }
     bool write(tostream &os, bool ini) const;
-    void lock(void) { lck.wlock(); }
-    void unlock(void) { lck.wunlock(); }
+    void lock(void) { lck.lock(); }
+    void unlock(void) { lck.unlock(); }
 
 protected:
     static ulong open_file(const tstring &file, tifstream &is,

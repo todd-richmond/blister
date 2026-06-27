@@ -148,20 +148,15 @@ void *DLLibrary::get(const tchar *symbol) const {
 #endif
 }
 
-uint Processor::count(void) {
-    static uint cpus;
-
-    if (!cpus) {
+uint Processor::init(void) {
 #ifdef _WIN32
-	SYSTEM_INFO si;
+    SYSTEM_INFO si;
 
-	GetSystemInfo(&si);
-	cpus = (uint)si.dwNumberOfProcessors;
+    GetSystemInfo(&si);
+    return (uint)si.dwNumberOfProcessors;
 #else
-	cpus = (uint)sysconf(_SC_NPROCESSORS_ONLN);
+    return (uint)sysconf(_SC_NPROCESSORS_ONLN);
 #endif
-    }
-    return cpus;
 }
 
 ullong Processor::affinity(void) {

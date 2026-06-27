@@ -280,6 +280,7 @@ protected:
 
 class BLISTER Dispatcher: public ThreadGroup {
 public:
+    using dspsema4_t = LifoSemaphore;
     explicit Dispatcher(const Config &config);
 
     const Config &config(void) const { return cfg; }
@@ -440,7 +441,7 @@ private:
     int wfd;
 #endif
 #endif
-    Lifo lifo;
+    dspsema4_t sema4;
 #if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
     SpinLock slock;
     socketmap smap;

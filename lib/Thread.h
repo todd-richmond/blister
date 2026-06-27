@@ -87,6 +87,16 @@ typedef pthread_key_t tlskey_t;
 #define tls_set(k, v)		pthread_setspecific(k, v)
 #endif
 
+#if defined(__ARM_ARCH)
+#define SPIN_LIMIT		128
+#elif defined(__AVX2__)
+#define SPIN_LIMIT		16
+#elif defined(THREAD_PAUSE)
+#define SPIN_LIMIT		64
+#else
+#define SPIN_LIMIT		0
+#endif
+
 #define THREAD_ISSELF(x)	THREAD_EQUAL(x, THREAD_ID())
 
 #ifdef __cplusplus
@@ -99,92 +109,31 @@ typedef pthread_key_t tlskey_t;
 #include <shared_mutex>
 #include <unordered_map>
 
-
-#ifdef __APPLE__
-extern "C" {
-int os_sync_wait_on_address(void *addr, uint64_t val, size_t size,
-    uint32_t flags);
-int os_sync_wait_on_address_with_timeout(void *addr, uint64_t val, size_t size,
-    uint32_t flags, uint32_t clockid, uint64_t timeout_ns);
-int os_sync_wait_on_address_with_deadline(void *addr, uint64_t val, size_t size,
-    uint32_t flags, uint32_t clockid, uint64_t deadline_ns);
-int os_sync_wake_by_address_any(void *addr, size_t size, uint32_t flags);
-int os_sync_wake_by_address_all(void *addr, size_t size, uint32_t flags);
-}
-static constexpr uint32_t OS_SYNC_WAIT_ON_ADDRESS_NONE = 0;
-static constexpr uint32_t OS_SYNC_WAKE_BY_ADDRESS_NONE = 0;
-#endif
-
-/* RAII locking templates */
-template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
-    &C::unlock>
-class BLISTER LockerTemplate: nocopy {
-public:
-    explicit __forceinline LockerTemplate(C &lock, bool lockit = true):
-	lck(lock), locked(lockit) {
-	if (LIKELY(lockit))
-	    (lck.*LOCK)();
-    }
-    __forceinline ~LockerTemplate() { if (LIKELY(locked)) (lck.*UNLOCK)(); }
-
-    explicit __forceinline operator bool(void) const { return locked; }
-
-    __forceinline void lock(void) {
-	if (LIKELY(!locked)) {
-	    locked = true;
-	    (lck.*LOCK)();
-	}
-    }
-    __forceinline void relock(void) {
-	if (LIKELY(locked)) {
-	    (lck.*UNLOCK)();
-	    THREAD_YIELD();
-	} else {
-	    locked = true;
-	}
-	(lck.*LOCK)();
-    }
-    __forceinline void unlock(void) {
-	if (LIKELY(locked)) {
-	    (lck.*UNLOCK)();
-	    locked = false;
-	}
-    }
-
-private:
-    C &lck;
-    bool locked;
-};
-
-template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
-class BLISTER FastLockerTemplate: nocopy {
-public:
-    explicit __forceinline FastLockerTemplate(C &lock): lck(lock) {
-	(lck.*LOCK)();
-    }
-    __forceinline ~FastLockerTemplate() { (lck.*UNLOCK)(); }
-
-    __forceinline void relock(void) {
-	(lck.*UNLOCK)();
+#ifdef THREAD_PAUSE
+// exponential spin backoff with constant-fold optimization
+static __forceinline void spin_backoff(uint &limit, uint spins) {
+    for (uint u = 0; u < limit; ++u)
+	THREAD_PAUSE();
+    if (limit < spins)
+	limit += limit;
+    else
 	THREAD_YIELD();
-	(lck.*LOCK)();
-    }
+}
 
-private:
-    C &lck;
-};
+static __forceinline void spin_release(bool pause = true, bool = false) {
+    if (pause)
+	THREAD_PAUSE();
+    else
+	THREAD_YIELD();
+}
+#else
+static __forceinline void spin_backoff(uint &, uint) { THREAD_YIELD(); }
 
-template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
-class BLISTER FastUnlockerTemplate: nocopy {
-public:
-    explicit __forceinline FastUnlockerTemplate(C &lock): lck(lock) {
-	(lck.*UNLOCK)();
-    }
-    __forceinline ~FastUnlockerTemplate() { (lck.*LOCK)(); }
-
-private:
-    C &lck;
-};
+static __forceinline void spin_release(bool = true, bool yield = false) {
+    if (yield)
+	THREAD_YIELD();
+}
+#endif
 
 /*
  * The DLLibrary class loads shared libraries and dynamically fetches function
@@ -214,10 +163,13 @@ class BLISTER Processor: nocopy {
 public:
     static ullong affinity(void);
     static bool affinity(ullong mask);
-    static uint count(void);
+    static uint count(void) { static const uint n = init(); return n; }
+
+private:
+    static uint init(void);
 };
 
-/* Thread local storage for simple types */
+// Thread local storage for simple types
 template<class C>
 class BLISTER ThreadLocal: nocopy {
 public:
@@ -229,7 +181,7 @@ public:
     // cppcheck-suppress returnDanglingLifetime
     __forceinline C *operator ->(void) const { return &get(); }
     explicit __forceinline operator bool(void) const {
-        return tls_get(key) != nullptr;
+	return tls_get(key) != nullptr;
     }
     explicit __forceinline operator C() const { return (C)tls_get(key); }
 
@@ -240,18 +192,92 @@ protected:
     tlskey_t key;
 };
 
-/* Thread local storage for classes with proper destruction when theads exit */
+// Thread local storage for classes with proper destruction when theads exit
 using ThreadLocalFree = void (*)(void *data);
 
 /*
  * Thread synchronization classes
+ *
  * Condvar: condition variable around a Lock
  * Lock: unique lock
  * RWLock: shared lock
  * SpinLock: fastest unfair spinning lock
  * SpinRWLock: fast spinning shared lock with r->w tryuplock
  * TicketLock: fastest fair spinning lock
+ * UnfairLock: fastest unfair lock
+ *
+ * RAII locking templates
  */
+template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
+class BLISTER FastLockerTemplate: nocopy {
+public:
+    explicit __forceinline FastLockerTemplate(C &lock): lck(lock) {
+	invoke(LOCK, lck);
+    }
+    __forceinline ~FastLockerTemplate() { invoke(UNLOCK, lck); }
+
+    __forceinline void relock(void) {
+	invoke(UNLOCK, lck);
+	THREAD_YIELD();
+	invoke(LOCK, lck);
+    }
+
+private:
+    C &lck;
+};
+
+template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
+class BLISTER FastUnlockerTemplate: nocopy {
+public:
+    explicit __forceinline FastUnlockerTemplate(C &lock): lck(lock) {
+	invoke(UNLOCK, lck);
+    }
+    __forceinline ~FastUnlockerTemplate() { invoke(LOCK, lck); }
+
+private:
+    C &lck;
+};
+
+template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
+    &C::unlock>
+class BLISTER LockerTemplate: nocopy {
+public:
+    explicit __forceinline LockerTemplate(C &lock, bool lockit = true):
+	lck(lock), locked(lockit) {
+	if (LIKELY(lockit))
+	    invoke(LOCK, lck);
+    }
+    __forceinline ~LockerTemplate() { if (LIKELY(locked)) invoke(UNLOCK, lck); }
+
+    explicit __forceinline operator bool(void) const { return locked; }
+
+    __forceinline void lock(void) {
+	if (LIKELY(!locked)) {
+	    locked = true;
+	    invoke(LOCK, lck);
+	}
+    }
+    __forceinline void relock(void) {
+	if (LIKELY(locked)) {
+	    invoke(UNLOCK, lck);
+	    THREAD_YIELD();
+	} else {
+	    locked = true;
+	}
+	invoke(LOCK, lck);
+    }
+    __forceinline void unlock(void) {
+	if (LIKELY(locked)) {
+	    invoke(UNLOCK, lck);
+	    locked = false;
+	}
+    }
+
+private:
+    C &lck;
+    bool locked;
+};
+
 #ifdef __cpp_lib_atomic_flag_test
 class BLISTER atomic_bit: public atomic_flag {
 public:
@@ -271,143 +297,40 @@ public:
 	return load(order);
     }
     __forceinline bool test_and_set(memory_order order = memory_order_acquire) {
-	bool b = false;
-
-	return !compare_exchange_strong(b, true, order);
+	return exchange(true, order);
     }
 };
 #endif
 
-class BLISTER Lock: nocopy {
-public:
-    Lock() = default;
-    ~Lock() = default;
-
-    __forceinline operator mutex &(void) { return mtx; }
-
-    __forceinline void lock(void) { mtx.lock(); }
-    __forceinline bool trylock(void) { return mtx.try_lock(); }
-    __forceinline void unlock(void) { mtx.unlock(); }
-
-protected:
-    alignas(64) mutex mtx;
-};
-
-using Locker = LockerTemplate<Lock>;
+using Lock = mutex;
 using FastLocker = FastLockerTemplate<Lock>;
+using Locker = LockerTemplate<Lock>;
 
-class BLISTER RWLock: nocopy {
-public:
-    RWLock() = default;
-    ~RWLock() = default;
-
-    __forceinline void rlock(void) { mtx.lock_shared(); }
-    __forceinline bool rtrylock(void) { return mtx.try_lock_shared(); }
-    __forceinline void runlock(void) { mtx.unlock_shared(); }
-    __forceinline void wlock(void) { mtx.lock(); }
-    __forceinline bool wtrylock(void) { return mtx.try_lock(); }
-    __forceinline void wunlock(void) { mtx.unlock(); }
-
-private:
-    alignas(64) shared_mutex mtx;
-};
-
-using RLocker = LockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock>;
-using WLocker = LockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock>;
-using FastRLocker = FastLockerTemplate<RWLock, &RWLock::rlock, &RWLock::runlock>;
-using FastWLocker = FastLockerTemplate<RWLock, &RWLock::wlock, &RWLock::wunlock>;
-
-template<class C>
-class BLISTER _Semaphore: nocopy {
-public:
-    explicit _Semaphore(uint init = 0): sem(init) {}
-    ~_Semaphore() = default;
-
-    __forceinline void set(uint cnt = 1) { sem.release(cnt); }
-    __forceinline bool trywait(void) { return sem.try_acquire(); }
-    __forceinline bool wait(ulong msec = INFINITE) {
-	if (msec == INFINITE) {
-	    sem.acquire();
-	    return true;
-	}
-	return sem.try_acquire_for(chrono::milliseconds(msec));
-    }
-
-protected:
-    C sem;
-};
-
-#ifdef __APPLE__
-class BLISTER FastSemaphore: nocopy {
-public:
-    explicit FastSemaphore(uint init = 0): cnt(init) {}
-    ~FastSemaphore() = default;
-
-    __forceinline void set(uint n = 1) {
-	cnt.fetch_add(n, memory_order_release);
-	os_sync_wake_by_address_any(&cnt, sizeof (cnt),
-	    OS_SYNC_WAKE_BY_ADDRESS_NONE);
-    }
-    __forceinline bool trywait(void) {
-	uint32_t c = cnt.load(memory_order_relaxed);
-
-	return c > 0 && cnt.compare_exchange_weak(c, c - 1,
-	    memory_order_acquire, memory_order_relaxed);
-    }
-    __forceinline bool wait(ulong msec = INFINITE) {
-	uint32_t c;
-
-	while (!(c = cnt.load(memory_order_relaxed)) ||
-	    !cnt.compare_exchange_weak(c, c - 1,
-		memory_order_acquire, memory_order_relaxed)) {
-	    if (msec == INFINITE) {
-		os_sync_wait_on_address(&cnt, 0, sizeof (cnt),
-		    OS_SYNC_WAIT_ON_ADDRESS_NONE);
-	    } else {
-		if (!os_sync_wait_on_address_with_timeout(&cnt, 0, sizeof (cnt),
-		    OS_SYNC_WAIT_ON_ADDRESS_NONE, CLOCK_MONOTONIC_RAW,
-		    (uint64_t)msec * 1000000))
-		    return false;
-	    }
-	}
-	return true;
-    }
-
-private:
-    atomic<uint32_t> cnt;
-};
-#else
-typedef _Semaphore<binary_semaphore> FastSemaphore;
-#endif
-typedef _Semaphore<counting_semaphore<>> Semaphore;
+using RWLock = shared_mutex;
+using FastRLocker = FastLockerTemplate<RWLock, &RWLock::lock_shared,
+    &RWLock::unlock_shared>;
+using FastWLocker = FastLockerTemplate<RWLock, &RWLock::lock, &RWLock::unlock>;
+using RLocker = LockerTemplate<RWLock, &RWLock::lock_shared,
+    &RWLock::unlock_shared>;
+using WLocker = LockerTemplate<RWLock, &RWLock::lock, &RWLock::unlock>;
 
 class BLISTER SpinLock: nocopy {
 public:
-    explicit SpinLock(uint lmt = 64): spins(Processor::count() == 1 ? 0 : lmt) {
-    }
+    explicit SpinLock(uint lmt = SPIN_LIMIT): spins(Processor::count() == 1 ?
+	0 : lmt) {}
     __forceinline __no_sanitize_thread void lock(void) {
-	while (UNLIKELY(!trylock())) {
-#ifdef THREAD_PAUSE
-	    uint limit = 1;
-#endif
+	while (UNLIKELY(!try_lock())) {
+	    uint limit = spins > 0;
+
 	    do {
-#ifdef THREAD_PAUSE
-		for (uint u = 0; u < limit; ++u)
-		    THREAD_PAUSE();
-		if (limit < spins)
-		    limit += limit;
-		else
-		    THREAD_YIELD();
-#else
-		THREAD_YIELD();
-#endif
-	    } while (testlock());
+		spin_backoff(limit, spins);
+	    } while (test_lock());
 	}
     }
-    __forceinline bool testlock(void) const {
+    __forceinline bool test_lock(void) const {
 	return lck.test(memory_order_relaxed);
     }
-    __forceinline __no_sanitize_thread bool trylock(void) {
+    __forceinline __no_sanitize_thread bool try_lock(void) {
 	return !lck.test_and_set(memory_order_acquire);
     }
     __forceinline __no_sanitize_thread void unlock(void) {
@@ -425,85 +348,63 @@ using SpinLocker = LockerTemplate<SpinLock>;
 
 class BLISTER SpinRWLock: nocopy {
 public:
-    explicit SpinRWLock(uint lmt = 64): state(0),
+    explicit SpinRWLock(uint lmt = SPIN_LIMIT): state(0),
 	spins(Processor::count() == 1 ? 0 : lmt) {}
 
     __forceinline void downlock(void) { state.store(1, memory_order_release); }
-    __forceinline void rlock(void) {
+    __forceinline void lock(void) {
+	uint_fast32_t expected = 0;
+
+	while (!state.compare_exchange_weak(expected, WRITE_BIT,
+	    memory_order_acquire, memory_order_relaxed)) {
+	    uint limit = spins > 0;
+
+	    do {
+		spin_backoff(limit, spins);
+	    } while (state.load(memory_order_relaxed) != 0);
+	    expected = 0;
+	}
+    }
+    __forceinline void lock_shared(void) {
 	do {
 	    uint_fast32_t expected = state.load(memory_order_relaxed);
 
 	    if (UNLIKELY(expected & WRITE_BIT)) {
-#ifdef THREAD_PAUSE
-		uint limit = 1;
-#endif
+		uint limit = spins > 0;
+
 		do {
-#ifdef THREAD_PAUSE
-		    for (uint u = 0; u < limit; ++u)
-			THREAD_PAUSE();
-		    if (limit < spins)
-			limit += limit;
-		    else
-			THREAD_YIELD();
-#else
-		    THREAD_YIELD();
-#endif
+		    spin_backoff(limit, spins);
 		} while (state.load(memory_order_relaxed) & WRITE_BIT);
 	    } else if (LIKELY(state.compare_exchange_weak(expected, expected +
 		1, memory_order_acquire, memory_order_relaxed))) {
 		return;
 	    } else {
-#ifdef THREAD_PAUSE
-		THREAD_PAUSE();
-#endif
+		spin_release();
 	    }
 	} while (true);
     }
-    __forceinline bool rtrylock(void) {
+    __forceinline bool try_lock(void) {
+	uint_fast32_t expected = 0;
+
+	return state.compare_exchange_strong(expected, WRITE_BIT,
+	    memory_order_acquire, memory_order_relaxed);
+    }
+    __forceinline bool try_lock_shared(void) {
 	uint_fast32_t expected = state.load(memory_order_relaxed);
 
 	return !(expected & WRITE_BIT) && state.compare_exchange_weak(expected,
 	    expected + 1, memory_order_acquire, memory_order_relaxed);
     }
-    __forceinline void runlock(void) {
-	state.fetch_sub(1, memory_order_release);
-    }
-    bool tryuplock(void) {
+    __forceinline bool try_uplock(void) {
 	uint_fast32_t expected = 1;
 
 	return state.compare_exchange_strong(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed);
     }
-    __forceinline void wlock(void) {
-	uint_fast32_t expected = 0;
-
-	while (!state.compare_exchange_weak(expected, WRITE_BIT,
-	    memory_order_acquire, memory_order_relaxed)) {
-#ifdef THREAD_PAUSE
-	    uint limit = 1;
-#endif
-	    do {
-#ifdef THREAD_PAUSE
-		for (uint u = 0; u < limit; ++u)
-		    THREAD_PAUSE();
-		if (limit < spins)
-		    limit += limit;
-		else
-		    THREAD_YIELD();
-#else
-		THREAD_YIELD();
-#endif
-	    } while (state.load(memory_order_relaxed) != 0);
-	    expected = 0;
-	}
+    __forceinline void unlock(void) { state.store(0, memory_order_release); }
+    __forceinline void unlock_shared(void) {
+	state.fetch_sub(1, memory_order_release);
     }
-    __forceinline bool wtrylock() {
-	uint_fast32_t expected = 0;
-
-	return state.compare_exchange_strong(expected, WRITE_BIT,
-	    memory_order_acquire, memory_order_relaxed);
-    }
-    __forceinline void wunlock(void) { state.store(0, memory_order_release); }
 
 private:
     alignas(64) atomic_uint_fast32_t state;
@@ -512,14 +413,14 @@ private:
     static constexpr uint_fast32_t WRITE_BIT = 1U << 31;
 };
 
-using SpinRLocker = LockerTemplate<SpinRWLock, &SpinRWLock::rlock,
-    &SpinRWLock::runlock>;
-using SpinWLocker = LockerTemplate<SpinRWLock, &SpinRWLock::wlock,
-    &SpinRWLock::wunlock>;
-using FastSpinRLocker = FastLockerTemplate<SpinRWLock, &SpinRWLock::rlock,
-    &SpinRWLock::runlock>;
-using FastSpinWLocker = FastLockerTemplate<SpinRWLock, &SpinRWLock::wlock,
-    &SpinRWLock::wunlock>;
+using FastSpinRLocker = FastLockerTemplate<SpinRWLock, &SpinRWLock::lock_shared,
+    &SpinRWLock::unlock_shared>;
+using FastSpinWLocker = FastLockerTemplate<SpinRWLock, &SpinRWLock::lock,
+    &SpinRWLock::unlock>;
+using SpinRLocker = LockerTemplate<SpinRWLock, &SpinRWLock::lock_shared,
+    &SpinRWLock::unlock_shared>;
+using SpinWLocker = LockerTemplate<SpinRWLock, &SpinRWLock::lock,
+    &SpinRWLock::unlock>;
 
 class TicketLock: nocopy {
 public:
@@ -529,17 +430,15 @@ public:
 	uint pos;
 	uint ticket = (uint)next.fetch_add(1, memory_order_relaxed);
 
-	while ((pos = ticket - (uint)current.load(memory_order_acquire)) != 0) {
-#ifdef THREAD_PAUSE
-	    if (LIKELY(pos < yield)) {
-		THREAD_PAUSE();
-	    } else {
-		THREAD_YIELD();
-	    }
-#else
-	    THREAD_YIELD();
-#endif
-	}
+	while ((pos = ticket - (uint)current.load(memory_order_acquire)) != 0)
+	    spin_release(LIKELY(pos < yield), true);
+    }
+    __forceinline bool try_lock() {
+	uint_fast16_t n = next.load(memory_order_relaxed);
+
+	return current.load(memory_order_acquire) == n &&
+	    next.compare_exchange_strong(n, (uint_fast16_t)(n + 1),
+		memory_order_acquire, memory_order_relaxed);
     }
     __forceinline void unlock() {
 	// slight improvement over current.fetch_add(1, memory_order_release);
@@ -556,6 +455,44 @@ private:
 using FastTicketLocker = FastLockerTemplate<TicketLock>;
 using FastTicketUnlocker = FastUnlockerTemplate<TicketLock>;
 using TicketLocker = LockerTemplate<TicketLock>;
+
+class BLISTER UnfairLock: nocopy {
+public:
+    UnfairLock(): state(0) {}
+    ~UnfairLock() = default;
+
+    __forceinline void lock(void) {
+	uint32_t expected = 0;
+
+	if (UNLIKELY(!state.compare_exchange_strong(expected, 1,
+	    memory_order_acquire, memory_order_relaxed)))
+	    lock_contended(expected);
+    }
+    __forceinline bool try_lock(void) {
+	uint32_t expected = 0;
+
+	return state.compare_exchange_strong(expected, 1,
+	    memory_order_acquire, memory_order_relaxed);
+    }
+    __forceinline void unlock(void) {
+	if (UNLIKELY(state.exchange(0, memory_order_release) != 1))
+	    state.notify_one();
+    }
+
+private:
+    void lock_contended(uint32_t expected) {
+	if (expected == 2 || state.exchange(2, memory_order_acquire) != 0) {
+	    do {
+		state.wait(2, memory_order_relaxed);
+	    } while (state.exchange(2, memory_order_acquire) != 0);
+	}
+    }
+
+    alignas(64) atomic<uint32_t> state;
+};
+
+using FastUnfairLocker = FastLockerTemplate<UnfairLock>;
+using UnfairLocker = LockerTemplate<UnfairLock>;
 
 class BLISTER Condvar: nocopy {
 public:
@@ -577,7 +514,7 @@ public:
 	    return true;
 	}
 	ret = cv.wait_for(ulck, chrono::milliseconds(msec)) !=
-            cv_status::timeout;		// NOSONAR
+	    cv_status::timeout;		// NOSONAR
 	ulck.release();
 	return ret;
     }
@@ -585,6 +522,247 @@ public:
 protected:
     Lock &lock;
     condition_variable cv;
+};
+
+template<class C>
+class BLISTER _Semaphore: public C, nocopy {
+public:
+    explicit _Semaphore() : C(0) {}
+    ~_Semaphore() = default;
+
+    using C::acquire;
+    using C::release;
+    using C::try_acquire;
+    using C::try_acquire_for;
+    __forceinline bool try_acquire_for(ulong msec) {
+	if (UNLIKELY(msec == INFINITE)) {
+	    this->acquire();
+	    return true;
+	}
+	return this->try_acquire_for(chrono::milliseconds(msec));
+    }
+};
+
+typedef _Semaphore<binary_semaphore> FastSemaphore;
+typedef _Semaphore<counting_semaphore<>> Semaphore;
+
+/* semaphore with tracking counter */
+class BLISTER CountedSemaphore: nocopy {
+public:
+    explicit CountedSemaphore() = default;
+    ~CountedSemaphore() = default;
+
+    explicit __forceinline operator bool(void) const { return waiting() != 0; }
+    __forceinline uint waiting(void) const {
+	int_fast32_t c = cnt.load(memory_order_acquire);
+
+	return c < 0 ? (uint)-c : 0;
+    }
+
+    void acquire(void) {
+	int_fast32_t c = cnt.fetch_sub(1, memory_order_acq_rel);
+
+	if (LIKELY(c > 0))
+	    return;
+	sema4.acquire();
+    }
+    __forceinline uint broadcast(void) {
+	int_fast32_t c = cnt.load(memory_order_acquire);
+	uint wake = c < 0 ? (uint)-c : 0;
+
+	return wake - release(wake);
+    }
+    uint release(uint count = 1) {
+	int_fast32_t c;
+	uint wake;
+
+	if (UNLIKELY(!count))
+	    return 0;
+	c = cnt.fetch_add((int_fast32_t)count, memory_order_acq_rel);
+	if (LIKELY(c >= 0))
+	    return count;
+	wake = (uint)-c;
+	if (wake > count)
+	    wake = count;
+	sema4.release(wake);
+	return count - wake;
+    }
+    bool try_acquire(void) {
+	int_fast32_t c = cnt.load(memory_order_acquire);
+
+	while (LIKELY(c > 0)) {
+	    if (LIKELY(cnt.compare_exchange_weak(c, c - 1,
+		memory_order_acq_rel, memory_order_acquire)))
+		return true;
+	}
+	return false;
+    }
+    bool try_acquire_for(ulong msec) {
+	int_fast32_t c = cnt.fetch_sub(1, memory_order_acq_rel);
+
+	if (LIKELY(c > 0))
+	    return true;
+	if (LIKELY(sema4.try_acquire_for(msec)))
+	    return true;
+	do {
+	    c = cnt.load(memory_order_acquire);
+	    if (LIKELY(c >= 0))
+		break;
+	} while (!cnt.compare_exchange_weak(c, c + 1, memory_order_acq_rel,
+	    memory_order_acquire));
+	if (LIKELY(c < 0))
+	    return false;
+	sema4.acquire();
+	return true;
+    }
+
+private:
+    atomic_int_fast32_t cnt = 0;
+    Semaphore sema4;
+};
+
+/* LIFO semaphore useful for thread pools */
+class BLISTER LifoSemaphore: nocopy {
+public:
+    class Waiting: nocopy {
+    public:
+	atomic<Waiting *> next;
+	FastSemaphore sema4;
+
+	Waiting(): next(nullptr) {}
+    };
+
+    explicit LifoSemaphore() = default;
+    ~LifoSemaphore() { broadcast(); }
+
+    explicit __forceinline operator bool(void) const {
+	return waiters.load(memory_order_acquire) != 0;
+    }
+    __forceinline uint waiting(void) const {
+	return (uint)waiters.load(memory_order_acquire);
+    }
+
+    __forceinline void acquire(Waiting &w) {
+	Waiting *h;
+
+	waiters.fetch_add(1, memory_order_acq_rel);
+	do {
+	    h = head.load(memory_order_relaxed);
+	    w.next.store(h, memory_order_relaxed);
+	} while (!head.compare_exchange_weak(h, &w, memory_order_release,
+	    memory_order_relaxed));
+	w.sema4.acquire();
+    }
+    __forceinline void acquire(void) {
+	Waiting w;
+
+	acquire(w);
+    }
+    __forceinline uint broadcast(void) { return (uint)-1 - release((uint)-1); }
+    __forceinline uint release(uint count = 1) {
+	uint c;
+	Waiting *h, *w, *ww;
+
+	while (LIKELY(count)) {
+	    h = claim(count, w, c);
+	    if (UNLIKELY(!h))
+		return c;
+	    while (LIKELY(h != w)) {
+		ww = h->next.load(memory_order_acquire);
+		h->sema4.release();
+		h = ww;
+	    }
+	    count = c;
+	}
+	return 0;
+    }
+
+    __forceinline bool try_acquire(void) { return false; }
+    __forceinline bool try_acquire_for(Waiting &w, ulong msec) {
+	Waiting *h;
+
+	waiters.fetch_add(1, memory_order_acq_rel);
+	do {
+	    h = head.load(memory_order_relaxed);
+	    w.next.store(h, memory_order_relaxed);
+	} while (!head.compare_exchange_weak(h, &w, memory_order_release,
+	    memory_order_relaxed));
+	if (UNLIKELY(!w.sema4.try_acquire_for(msec))) {
+	    if (LIKELY(remove(w)))
+		return false;
+	    w.sema4.acquire();
+	}
+	return true;
+    }
+    __forceinline bool try_acquire_for(ulong msec) {
+	Waiting w;
+
+	return try_acquire_for(w, msec);
+    }
+
+private:
+    alignas(64) atomic<Waiting *> head {nullptr};
+    alignas(64) atomic_uint_fast32_t waiters {0};
+
+    __forceinline Waiting *claim(uint count, Waiting *&w, uint &remain) {
+	for (;;) {
+	    Waiting *h = retryhead();
+
+	    if (UNLIKELY(!h)) {
+		remain = count;
+		return nullptr;
+	    } else if (LIKELY(count == 1)) {
+		w = h->next.load(memory_order_acquire);
+		remain = 0;
+	    } else {
+		remain = count;
+		for (w = h; w && remain; w = w->next.load(memory_order_acquire))
+		    --remain;
+	    }
+	    if (LIKELY(head.compare_exchange_weak(h, w, memory_order_release,
+		memory_order_acquire))) {
+		waiters.fetch_sub(count - remain, memory_order_acq_rel);
+		return h;
+	    }
+	}
+    }
+    __forceinline bool remove(Waiting &w) {
+	Waiting *h, *prev, *ww;
+
+	do {
+	    prev = nullptr;
+	    ww = h = head.load(memory_order_acquire);
+	    while (ww && ww != &w) {
+		prev = ww;
+		ww = ww->next.load(memory_order_acquire);
+	    }
+	    if (!ww)
+		return false;
+	    if (prev) {
+		Waiting *expected = &w;
+
+		if (!prev->next.compare_exchange_strong(expected,
+		    w.next.load(memory_order_relaxed), memory_order_release,
+		    memory_order_acquire))
+		    continue;
+	    } else if (!head.compare_exchange_strong(h, w.next.load(
+		memory_order_relaxed), memory_order_release,
+		memory_order_acquire)) {
+		continue;
+	    }
+	    waiters.fetch_sub(1, memory_order_acq_rel);
+	    return true;
+	} while (true);
+    }
+    __forceinline Waiting *retryhead(void) const {
+	for (uint i = 0; ; ++i) {
+	    Waiting *h = head.load(memory_order_acquire);
+
+	    if (LIKELY(h) || LIKELY(!waiters.load(memory_order_acquire)))
+		return h;
+	    spin_release(LIKELY(i < 128), true);
+	}
+    }
 };
 
 #ifdef _WIN32
@@ -692,7 +870,8 @@ inline void msleep(ulong msec) {
 
 class BLISTER SharedSemaphore: nocopy {
 public:
-    explicit SharedSemaphore(const tchar *name = nullptr, uint init = 0): hdl(-1) {
+    explicit SharedSemaphore(const tchar *name = nullptr, uint init = 0):
+	hdl(-1) {
 	open(name, init);
     }
     ~SharedSemaphore() { close(); }
@@ -763,7 +942,7 @@ protected:
 
 #endif
 
-/* Fast reference counter class */
+// Fast reference counter class
 class BLISTER RefCount: nocopy {
 public:
     explicit RefCount(uint init = 1): cnt(init) {}
@@ -778,119 +957,6 @@ private:
     atomic_uint cnt;
 };
 
-/* Last-in-first-out queue useful for thread pools */
-class BLISTER Lifo: nocopy {
-public:
-    class Waiting: nocopy {
-    public:
-	atomic<Waiting *> next;
-	FastSemaphore sema4;
-
-	Waiting(): next(nullptr) {}
-    };
-
-    Lifo(): head(nullptr) {}
-    ~Lifo() { close(); }
-
-    explicit __forceinline operator bool(void) const {
-	return head.load(memory_order_relaxed) != nullptr;
-    }
-    __forceinline uint broadcast(void) {
-	uint ret = 0;
-	Waiting *h, *ww;
-
-	h = head.exchange(nullptr, memory_order_acquire);
-	while (LIKELY(h)) {
-	    ww = h->next.load(memory_order_acquire);
-	    h->sema4.set();
-	    h = ww;
-	    ++ret;
-	}
-	return ret;
-    }
-    void close(void) { broadcast(); }
-    void open(void) { head.store(nullptr, memory_order_relaxed); }
-    __forceinline uint set(uint count = 1) {
-	uint c;
-	Waiting *h, *w, *ww;
-
-	if (LIKELY(count == 1)) {
-	    do {
-		h = head.load(memory_order_acquire);
-		if (UNLIKELY(!h))
-		    return 1;
-		w = h->next.load(memory_order_acquire);
-	    } while (!head.compare_exchange_weak(h, w, memory_order_release,
-		memory_order_relaxed));
-	    h->sema4.set();
-	    return 0;
-	}
-	do {
-	    c = count;
-	    h = head.load(memory_order_acquire);
-	    if (UNLIKELY(!h))
-		return c;
-	    for (w = h; w && c; w = w->next.load(memory_order_acquire))
-		--c;
-	} while (!head.compare_exchange_weak(h, w, memory_order_release,
-	    memory_order_acquire));
-	while (LIKELY(h != w)) {
-	    ww = h->next.load(memory_order_acquire);
-	    h->sema4.set();
-	    h = ww;
-	}
-	return c;
-    }
-    __forceinline bool wait(Waiting &w, ulong msec = INFINITE) {
-	Waiting *h;
-
-	do {
-	    h = head.load(memory_order_relaxed);
-	    w.next.store(h, memory_order_relaxed);
-	} while (!head.compare_exchange_weak(h, &w, memory_order_release,
-	    memory_order_relaxed));
-#ifdef THREAD_PAUSE			// park 1st thread slower than others
-	uint spins = UNLIKELY(h == nullptr) ? 2048 : 128;
-
-	for (uint i = 0; i < spins; ++i) {
-	    if (w.sema4.trywait())
-		return true;
-	    THREAD_PAUSE();
-	}
-#endif
-	if (UNLIKELY(!w.sema4.wait(msec))) {
-	    do {
-		Waiting *prev = nullptr;
-		Waiting *ww;
-
-		ww = h = head.load(memory_order_acquire);
-		while (ww && ww != &w) {
-		    prev = ww;
-		    ww = ww->next.load(memory_order_acquire);
-		}
-		if (!ww)
-		    return true;
-		if (prev) {
-		    Waiting *expected = &w;
-		    if (!prev->next.compare_exchange_strong(expected,
-			w.next.load(memory_order_relaxed),
-			memory_order_release, memory_order_acquire))
-			continue;
-		    return false;
-		} else if (head.compare_exchange_strong(h, w.next.load(
-		    memory_order_relaxed), memory_order_release,
-		    memory_order_acquire)) {
-		    return false;
-		}
-	    } while (true);
-	}
-	return true;
-    }
-
-private:
-    atomic<Waiting *> head;
-};
-
 // Thread routines
 class Thread;
 class ThreadGroup;
@@ -900,7 +966,7 @@ using ThreadControlRoutine = bool (Thread::*)(void);
 
 enum ThreadState { Init, Running, Suspended, Terminated };
 
-/* manage OS native threads */
+// manage OS native threads
 class BLISTER Thread: nocopy {
 public:
     explicit Thread(thread_hdl_t handle, ThreadGroup *tg = nullptr, bool
@@ -963,7 +1029,7 @@ private:
     friend class ThreadGroup;
 };
 
-/* manage a group of one or more, possibly dissimilar threads */
+// manage a group of one or more, possibly dissimilar threads
 using ThreadGroupControlRoutine = void (ThreadGroup::*)(bool);
 
 class BLISTER ThreadGroup: nocopy {

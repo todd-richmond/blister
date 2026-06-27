@@ -63,12 +63,12 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
     }
     stats = cache[idx].load(memory_order_relaxed);
     if (UNLIKELY(!(stats && stats->hash == hash))) {
-	lck.rlock();
+	lck.lock_shared();
 	auto it = tmap.find(hash);
 	if (it == tmap.end()) {
-	    lck.runlock();
+	    lck.unlock_shared();
 	    stats = Stats::newstats(key, klen, hash);
-	    lck.wlock();
+	    lck.lock();
 	    auto result = tmap.try_emplace(hash, stats);
 	    lck.downlock();
 	    if (!result.second) {
@@ -78,7 +78,7 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
 	} else {
 	    stats = it->second;
 	}
-	lck.runlock();
+	lck.unlock_shared();
 	cache[idx].store(stats, memory_order_relaxed);
     }
     stats->cnt.fetch_add(1, memory_order_relaxed);
@@ -90,11 +90,11 @@ void Timing::clear() {
     timingmap old;
     Stats *s, *next;
 
-    lck.wlock();
+    lck.lock();
     for (auto &entry : cache)
 	entry.store(nullptr, memory_order_relaxed);
     old.swap(tmap);
-    lck.wunlock();
+    lck.unlock();
     for (auto &[k, stats] : old)
 	Stats::delstats(stats);
     s = flist.exchange(nullptr, memory_order_relaxed);
@@ -115,7 +115,7 @@ tstring Timing::data(bool sort_key, uint columns) const {
     };
 
     columns = min(columns, TIMINGSLOTS);
-    lck.rlock();
+    lck.lock_shared();
     sorted.reserve(tmap.size());
     for (const auto &[key, stats] : tmap) {
 	sorted.emplace_back(stats);
@@ -126,7 +126,7 @@ tstring Timing::data(bool sort_key, uint columns) const {
 	    }
 	}
     }
-    lck.runlock();
+    lck.unlock_shared();
     if (sort_key) {
 	ranges::sort(sorted, [](const Stats *a, const Stats *b)
 	    { return stringless(a->key, b->key); });
@@ -236,13 +236,13 @@ tstring Timing::data(bool sort_key, uint columns) const {
 void Timing::erase(strhash_t hash) {
     Stats *stats = nullptr;
 
-    lck.wlock();
+    lck.lock();
     auto it = tmap.find(hash);
     if (it != tmap.end()) {
 	stats = it->second;
 	tmap.erase(it);
     }
-    lck.wunlock();
+    lck.unlock();
     if (stats) {
 	Stats *expected = stats, *s;
 	uint idx = hash & (CACHESIZE - 1);
