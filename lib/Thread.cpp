@@ -242,6 +242,8 @@ Thread::~Thread() {
 
 // set state and notify threadgroup
 void Thread::clear(void) {
+    ThreadGroup *g;
+
     thread_cleanup();
     lck.lock();
     if (id != NOID) {
@@ -252,11 +254,12 @@ void Thread::clear(void) {
 #endif
 	id = NOID;
     }
+    g = group;
     state.store(Terminated, memory_order_release);
     hdl = 0;
     cv.broadcast();
     lck.unlock();
-    group->notify(*this);
+    g->notify(*this);
 }
 
 // exit thread cleanly - called by itself

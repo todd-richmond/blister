@@ -77,7 +77,7 @@ static constexpr dspflag_t DSP_SelectAll = DSP_SelectAccept | DSP_SelectRead |
     DSP_SelectWrite | DSP_SelectClose;
 
 Dispatcher::Dispatcher(const Config &config): cfg(config),
-    maxthreads(0), rsize(0), polling(false), shutdown(true), scanning(0),
+    maxthreads(0), polling(false), shutdown(true), scanning(0),
     workers(0), cache(0), due(DispatchTimer::DSP_NEVER_DUE),
 #ifdef DSP_WIN32_ASYNC
     interval(DispatchTimer::DSP_NEVER), wnd(0),
@@ -99,7 +99,6 @@ bool Dispatcher::exec() {
 	DispatchObj::Group *group;
 	DispatchObj *obj = rlist.pop_front();
 
-	rsize.fetch_sub(1, memory_order_relaxed);
 	__builtin_prefetch(obj->next, 0, 1);
 	if (UNLIKELY((flags = obj->flags) & DSP_Freed)) {
 	    olock.unlock();
@@ -135,7 +134,6 @@ bool Dispatcher::exec() {
 		    obj = group->glist.pop_front();
 		    obj->flags = (obj->flags & ~DSP_ReadyGroup) | DSP_Ready;
 		    rlist.push_back(*obj);
-		    rsize.fetch_add(1, memory_order_relaxed);
 		    continue;
 		}
 	    }
@@ -146,7 +144,6 @@ bool Dispatcher::exec() {
 		continue;
 	    } else if (flags & DSP_Ready) {
 		rlist.push_back(*obj);
-		rsize.fetch_add(1, memory_order_relaxed);
 	    }
 	}
     }
@@ -155,30 +152,21 @@ bool Dispatcher::exec() {
 }
 
 int Dispatcher::run() {
-    dspsema4_t::Waiting waiting;
     static uint cpus = Processor::count();
 
     priority(-1);
     while (exec()) {
 	scanning.fetch_sub(1, memory_order_relaxed);
 	if (workers < cpus) {
-#ifdef THREAD_PAUSE			// park 1st thread slower than others
-	    if (scanning.load(memory_order_acquire) == 0) {
-		uint u;
-		for (u = 0; u < 1024; ++u) {
-		    if (waiting.sema4.try_acquire())
-			break;
-		    spin_release();
-		}
-		if (u == 1024)
-		    sema4.acquire(waiting);
-	    } else {
-		sema4.try_acquire_for(waiting, MAX_WAIT_TIME);
-	    }
+#ifdef THREAD_PAUSE                     // enqueue then spin before parking
+	    if (scanning.load(memory_order_acquire) == 0)
+		sema4.acquire(1024);
+	    else
+		sema4.try_acquire_for(MAX_WAIT_TIME);
 #else
-	    sema4.acquire(waiting);
+	    sema4.acquire();
 #endif
-	} else if (!sema4.try_acquire_for(waiting, MAX_WAIT_TIME))
+	} else if (!sema4.try_acquire_for(MAX_WAIT_TIME))
 	    break;
     }
     workers--;
@@ -285,9 +273,12 @@ int Dispatcher::onStart() {
 		    tlock.unlock();
 		    SetTimer(wnd, DSP_TimerID, interval, NULL);
 		}
-	    } else if (dt->due < now + interval || interval < MIN_IDLE_TIMER) {
-		due = dt->due > now ? dt->due : now;
-		interval = (ulong)(dt->due - now);
+	    } else if (dt->due() < now + interval ||
+		interval < MIN_IDLE_TIMER) {
+		msec_t d = dt->due();
+
+		due = d > now ? d : now;
+		interval = (ulong)(d - now);
 		tlock.unlock();
 		SetTimer(wnd, DSP_TimerID, interval, NULL);
 	    } else {
@@ -394,7 +385,9 @@ int Dispatcher::onStart() {
 		due = now + MAX_IDLE_TIMER;
 	    }
 	} else {
-	    msec = dt->due > now ? (uint)(dt->due - now) : 0;
+	    msec_t d = dt->due();
+
+	    msec = d > now ? (uint)(d - now) : 0;
 	    due = now + msec;
 	}
 	tlock.unlock();
@@ -567,8 +560,10 @@ void Dispatcher::cleanup(void) {
 
 	if (!obj)
 	    break;
-	if ((obj->flags & DSP_Grouped) && obj->group->glist)
-	    rlist.push_front(obj->group->glist);
+	if ((obj->flags & DSP_Grouped) && obj->group->glist) {
+	    while (obj->group->glist)
+		rlist.push_front(*obj->group->glist.pop_front());
+	}
 	obj->flags &= ~(DSP_Ready | DSP_ReadyGroup);
 	if (obj->flags & DSP_Freed)
 	    delete obj;
@@ -700,7 +695,6 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		    rlist.push_front(*ds);
 		else
 		    rlist.push_back(*ds);
-		rsize.fetch_add(1, memory_order_relaxed);
 		rcnt++;
 	    }
 	} else {
@@ -715,7 +709,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	}
     }
     olock.unlock();
-    rsz = rsize.load(memory_order_relaxed);
+    rsz = rlist.size();
     // phase 4: batch wake threads
     if (LIKELY(rcnt && maxthreads)) {
 	uint maxwake = (rcnt + 1) / 2;
@@ -745,7 +739,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		    break;
 		rcnt -= done;
 	    }
-	    rsz = rsize.load(memory_order_relaxed);
+	    rsz = rlist.size();
 	    s = scanning.load(memory_order_acquire);
 	}
     } else if (rcnt && polling.load(memory_order_relaxed)) {
@@ -1045,10 +1039,12 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	now = cache.load(memory_order_relaxed);
 	if (UNLIKELY(!now))
 	    now = mticks();
+	msec_t cur = ds.due();
+
 	tmt = now + timeout;
 	slack = timeout >> 6;
-	if (LIKELY(ds.due != DispatchTimer::DSP_NEVER_DUE &&
-	    ds.due + slack >= tmt && ds.due <= tmt + slack)) {
+	if (LIKELY(cur != DispatchTimer::DSP_NEVER_DUE &&
+	    cur + slack >= tmt && cur <= tmt + slack)) {
 	    tmt = 0;
 	} else {
 	    tlock.lock();
@@ -1147,7 +1143,6 @@ void Dispatcher::cancelReady(DispatchObj &obj, bool del) {
 	obj.flags |= DSP_Freed;
 	if (!(obj.flags & DSP_Active)) {
 	    rlist.push_front(obj);
-	    rsize.fetch_add(1, memory_order_relaxed);
 	}
     }
     olock.unlock();
@@ -1158,7 +1153,6 @@ void Dispatcher::removeReady(DispatchObj &obj) {
 	obj.flags &= ~DSP_Ready;
 	if (!(obj.flags & DSP_Active)) {
 	    rlist.pop(obj);
-	    rsize.fetch_sub(1, memory_order_relaxed);
 	}
     } else if (obj.flags & DSP_ReadyGroup) {
 	obj.flags &= ~DSP_ReadyGroup;
@@ -1195,9 +1189,8 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    rlist.push_front(obj);
 	else
 	    rlist.push_back(obj);
-	rsize.fetch_add(1, memory_order_relaxed);
 	olock.unlock();
-	rsz = rsize.load(memory_order_relaxed);
+	rsz = rlist.size();
 	if (LIKELY(maxthreads)) {
 	    uint_fast32_t s = scanning.load(memory_order_acquire);
 
@@ -1215,7 +1208,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 			break;
 		    }
 		}
-		rsz = rsize.load(memory_order_relaxed);
+		rsz = rlist.size();
 		s = scanning.load(memory_order_acquire);
 	    }
 	} else if (polling.load(memory_order_relaxed)) {

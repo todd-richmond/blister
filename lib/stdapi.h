@@ -1534,7 +1534,7 @@ public:
 	const C *cur;
     };
 
-    ObjectList(): back(nullptr), front(nullptr), sz(0) {}
+    ObjectList(): back(nullptr), front(nullptr) {}
 
     __forceinline bool operator !(void) const { return front == nullptr; }
     __forceinline explicit operator bool(void) const { return front != nullptr; }
@@ -1546,14 +1546,12 @@ public:
 	return const_iterator(nullptr);
     }
     __forceinline C *peek(void) const { return front; }
-    __forceinline uint size(void) const { return sz; }
 
-    void erase(void) { back = front = nullptr; sz = 0; }
+    void erase(void) { back = front = nullptr; }
     void free(void) {
 	C *c = front;
 
 	back = front = nullptr;
-	sz = 0;
 	while (c) {
 	    C *next = c->next;
 
@@ -1561,38 +1559,38 @@ public:
 	    c = next;
 	}
     }
-    void pop(C &obj) {
+    bool pop(C &obj) {
 	if (front == &obj) {
 	    if ((front = (C *)obj.next) == nullptr)
 		back = nullptr;
 	    obj.next = nullptr;
-	    --sz;
-	} else {
-	    for (C *p = front; LIKELY(p); p = (C *)p->next) {
-		if (UNLIKELY(p->next == &obj)) {
-		    if ((p->next = obj.next) == nullptr)
-			back = p;
-		    obj.next = nullptr;
-		    --sz;
-		    break;
-		}
+	    return true;
+	}
+	for (C *p = front; LIKELY(p); p = (C *)p->next) {
+	    if (UNLIKELY(p->next == &obj)) {
+		if ((p->next = obj.next) == nullptr)
+		    back = p;
+		obj.next = nullptr;
+		return true;
 	    }
 	}
+	return false;
     }
     C *pop_back(void) {
 	C *obj = back;
 
+	if (UNLIKELY(!obj))
+	    return nullptr;
 	if (front == back) {
 	    front = back = nullptr;
 	} else {
 	    C *p = front;
 
 	    while (LIKELY(p->next != back))
-		p = p->next;
+		p = (C *)p->next;
 	    back = p;
 	    back->next = nullptr;
 	}
-	--sz;
 	return obj;
     }
     __forceinline C *pop_front(void) {
@@ -1602,7 +1600,6 @@ public:
 	    back = nullptr;
 	else
 	    obj->next = nullptr;
-	--sz;
 	return obj;
     }
     __forceinline void push_back(C &obj) {
@@ -1613,7 +1610,6 @@ public:
 	} else {
 	    back = front = &obj;
 	}
-	++sz;
     }
     void push_back(ObjectList &lst) {
 	if (!lst.front)
@@ -1623,15 +1619,12 @@ public:
 	else
 	    front = lst.front;
 	back = lst.back;
-	sz += lst.sz;
 	lst.front = lst.back = nullptr;
-	lst.sz = 0;
     }
     __forceinline void push_front(C &obj) {
 	if ((obj.next = front) == nullptr)
 	    back = &obj;
 	front = &obj;
-	++sz;
     }
     void push_front(ObjectList &lst) {
 	if (lst.back) {
@@ -1641,14 +1634,73 @@ public:
 		back = lst.back;
 	    front = lst.front;
 	    lst.front = lst.back = nullptr;
-	    sz += lst.sz;
-	    lst.sz = 0;
 	}
     }
 
 protected:
     C *back, *front;
-    uint sz;
+};
+
+// default non-atomic size-counter policy for SizedObjectList
+struct ObjectListSize {
+    __forceinline uint get(void) const { return n; }
+    __forceinline void add(uint v) { n += v; }
+    __forceinline void dec(void) { --n; }
+    __forceinline void inc(void) { ++n; }
+    __forceinline void zero(void) { n = 0; }
+
+    uint n = 0;
+};
+
+// ObjectList with size counter
+template <class C, class Size = ObjectListSize>
+class BLISTER SizedObjectList: public ObjectList<C> {
+public:
+    using Base = ObjectList<C>;
+
+    __forceinline uint size(void) const { return sz.get(); }
+
+    void erase(void) { Base::erase(); sz.zero(); }
+    void free(void) { Base::free(); sz.zero(); }
+    __forceinline bool pop(C &obj) {
+	bool removed = Base::pop(obj);
+
+	if (LIKELY(removed))
+	    sz.dec();
+	return removed;
+    }
+    __forceinline C *pop_back(void) {
+	C *obj = Base::pop_back();
+
+	if (LIKELY(obj != nullptr))
+	    sz.dec();
+	return obj;
+    }
+    __forceinline C *pop_front(void) {
+	C *obj = Base::pop_front();
+
+	sz.dec();
+	return obj;
+    }
+    __forceinline void push_back(C &obj) { Base::push_back(obj); sz.inc(); }
+    __forceinline void push_front(C &obj) { Base::push_front(obj); sz.inc(); }
+    void push_back(SizedObjectList &lst) {
+	uint n = lst.size();
+
+	Base::push_back(static_cast<Base &>(lst));
+	sz.add(n);
+	lst.sz.zero();
+    }
+    void push_front(SizedObjectList &lst) {
+	uint n = lst.size();
+
+	Base::push_front(static_cast<Base &>(lst));
+	sz.add(n);
+	lst.sz.zero();
+    }
+
+protected:
+    Size sz;
 };
 
 template <class C>

@@ -148,19 +148,19 @@ public:
 
     DispatchTimer(const DispatchTimer &dt): DispatchTimer((DispatchObj &)dt) {}
     explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
-	DispatchObj(d), to(msec), due(DSP_NEVER_DUE) { init(); }
+	DispatchObj(d), to(msec), tm(DSP_NEVER_DUE) { init(); }
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
-	DispatchObj(d), to(0), due(DSP_NEVER_DUE) { init(); timeout(cb, msec); }
+	DispatchObj(d), to(0), tm(DSP_NEVER_DUE) { init(); timeout(cb, msec); }
     explicit DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
-	DispatchObj(child, parent), to(msec), due(DSP_NEVER_DUE) { init(); }
+	DispatchObj(child, parent), to(msec), tm(DSP_NEVER_DUE) { init(); }
     DispatchTimer(DispatchObj &parent, ulong msec, DispatchObjCB cb):
-	DispatchObj(child, parent), to(0), due(DSP_NEVER_DUE) {
+	DispatchObj(child, parent), to(0), tm(DSP_NEVER_DUE) {
 	init();
 	timeout(cb, msec);
     }
     virtual ~DispatchTimer() { DispatchTimer::cancel(); }
 
-    msec_t expires(void) const { return due; }
+    msec_t expires(void) const { return due(); }
     ulong timeout(void) const { return to; }
 
     void timeout(DispatchObjCB cb, ulong msec = DSP_PREVIOUS);
@@ -170,16 +170,25 @@ public:
 protected:
     struct compare {
 	bool operator()(const DispatchTimer *a, const DispatchTimer *b) const {
-	    return a->due == b->due ? a < b : a->due < b->due;
+	    msec_t ad = a->due();
+	    msec_t bd = b->due();
+
+	    return ad == bd ? a < b : ad < bd;
 	}
     };
 
     ulong to;
 
 private:
+    __forceinline msec_t due(void) const {
+	return tm.load(memory_order_relaxed);
+    }
+    __forceinline void due(msec_t msec) {
+	tm.store(msec, memory_order_relaxed);
+    }
     void init(void);
 
-    msec_t due;
+    atomic<msec_t> tm;
 
     friend class Dispatcher;
 };
@@ -304,6 +313,23 @@ private:
     }
 #endif
 
+    // Lock optimized SizedObjectList counter
+    struct ObjectListAtomicSize {
+	__forceinline void inc(void) {
+	    n.store(n.load(memory_order_relaxed) + 1, memory_order_relaxed);
+	}
+	__forceinline void dec(void) {
+	    n.store(n.load(memory_order_relaxed) - 1, memory_order_relaxed);
+	}
+	__forceinline void add(uint v) {
+	    n.store(n.load(memory_order_relaxed) + v, memory_order_relaxed);
+	}
+	__forceinline void zero(void) { n.store(0, memory_order_relaxed); }
+	__forceinline uint get(void) const { return n.load(memory_order_relaxed); }
+
+	atomic<uint> n {0};
+    };
+
     class BLISTER TimerSet: ::nocopy {
     public:
 	using sorted_timerset = ::set<DispatchTimer *, DispatchTimer::compare>;
@@ -325,7 +351,7 @@ private:
 		(*unsorted.begin())->erase();
 	}
 	void erase(DispatchTimer &dt) {
-	    if (dt.due <= split)
+	    if (dt.due() <= split)
 		sorted.erase(&dt);
 	    unsorted.erase(&dt);
 	}
@@ -333,8 +359,8 @@ private:
 	    uint cnt = 0;
 	    auto it = sorted.begin();
 
-	    while (cnt < maxcnt && it != sorted.end() && (*it)->due <= when) {
-		(*it)->due = DispatchTimer::DSP_NEVER_DUE;
+	    while (cnt < maxcnt && it != sorted.end() && (*it)->due() <= when) {
+		(*it)->due(DispatchTimer::DSP_NEVER_DUE);
 		batch[cnt++] = *it++;
 	    }
 	    sorted.erase(sorted.begin(), it);
@@ -344,25 +370,29 @@ private:
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
 	DispatchTimer *reorder(msec_t when) {
 	    for (DispatchTimer *dt : unsorted) {
-		if (dt->due < when && dt->due > split)
+		msec_t d = dt->due();
+
+		if (d < when && d > split)
 		    sorted.insert(dt);
 	    }
 	    split = when;
 	    return peek();
 	}
 	void set(DispatchTimer &dt, msec_t when) {
-	    if (UNLIKELY(dt.due == when))
+	    msec_t cur = dt.due();
+
+	    if (UNLIKELY(cur == when))
 		return;
-	    if (UNLIKELY(dt.due <= split)) {
+	    if (UNLIKELY(cur <= split)) {
 		if (when <= split) {
 		    sorted_timerset::node_type node = sorted.extract(&dt);
-		    dt.due = when;
+		    dt.due(when);
 		    sorted.insert(std::move(node));
 		    return;
 		}
 		sorted.erase(&dt);
 	    }
-	    dt.due = when;
+	    dt.due(when);
 	    if (when <= split)
 		sorted.insert(&dt);
 	}
@@ -387,7 +417,7 @@ private:
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
     void removeTimer(DispatchTimer &dt) {
-	if (dt.due == DispatchTimer::DSP_NEVER_DUE)
+	if (dt.due() == DispatchTimer::DSP_NEVER_DUE)
 	    return;
 	tlock.lock();
 	timers.set(dt, DispatchTimer::DSP_NEVER_DUE);
@@ -419,8 +449,7 @@ private:
 
     SpinLock olock;
     uint maxthreads;
-    ObjectList<DispatchObj> rlist;
-    atomic<uint> rsize;
+    SizedObjectList<DispatchObj, ObjectListAtomicSize> rlist;
     atomic_bool polling, shutdown;
     alignas(64) atomic_uint_fast32_t scanning, workers;
     SpinLock tlock;
@@ -590,7 +619,7 @@ private:
     Dispatcher &dspr;
     Lock &lck;
     atomic_bool signaled;
-    ObjectList<Waiter> waiters;
+    SizedObjectList<Waiter> waiters;
 };
 
 #endif // Dispatch_h

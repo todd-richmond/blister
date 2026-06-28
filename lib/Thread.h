@@ -303,8 +303,12 @@ public:
 #endif
 
 using Lock = mutex;
-using FastLocker = FastLockerTemplate<Lock>;
-using Locker = LockerTemplate<Lock>;
+using FastLocker = FastLockerTemplate<Lock,
+    static_cast<void (Lock::*)()>(&Lock::lock),
+    static_cast<void (Lock::*)()>(&Lock::unlock)>;
+using Locker = LockerTemplate<Lock,
+    static_cast<void (Lock::*)()>(&Lock::lock),
+    static_cast<void (Lock::*)()>(&Lock::unlock)>;
 
 using RWLock = shared_mutex;
 using FastRLocker = FastLockerTemplate<RWLock, &RWLock::lock_shared,
@@ -353,17 +357,22 @@ public:
 
     __forceinline void downlock(void) { state.store(1, memory_order_release); }
     __forceinline void lock(void) {
-	uint_fast32_t expected = 0;
+	uint_fast32_t expected = state.load(memory_order_relaxed) & READER_MASK;
+	uint limit = spins > 0;
 
-	while (!state.compare_exchange_weak(expected, WRITE_BIT,
+	while (!state.compare_exchange_weak(expected, expected | WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed)) {
-	    uint limit = spins > 0;
-
-	    do {
-		spin_backoff(limit, spins);
-	    } while (state.load(memory_order_relaxed) != 0);
-	    expected = 0;
+	    if (expected & WRITE_BIT) {
+		do {
+		    spin_backoff(limit, spins);
+		} while (state.load(memory_order_relaxed) & WRITE_BIT);
+		limit = spins > 0;
+	    }
+	    expected &= READER_MASK;
 	}
+	limit = spins > 0;
+	while (state.load(memory_order_acquire) & READER_MASK)
+	    spin_backoff(limit, spins);
     }
     __forceinline void lock_shared(void) {
 	do {
@@ -411,6 +420,7 @@ private:
     const uint spins;
 
     static constexpr uint_fast32_t WRITE_BIT = 1U << 31;
+    static constexpr uint_fast32_t READER_MASK = WRITE_BIT - 1;
 };
 
 using FastSpinRLocker = FastLockerTemplate<SpinRWLock, &SpinRWLock::lock_shared,
@@ -427,10 +437,11 @@ public:
     explicit TicketLock(uint lmt = 0): current(0), next(0), yield(lmt ? lmt :
 	Processor::count() / 2) {}
     __forceinline void lock() {
+	uint_fast16_t ticket = next.fetch_add(1, memory_order_relaxed);
 	uint pos;
-	uint ticket = (uint)next.fetch_add(1, memory_order_relaxed);
 
-	while ((pos = ticket - (uint)current.load(memory_order_acquire)) != 0)
+	while ((pos = (uint_fast16_t)(ticket -
+	    current.load(memory_order_acquire))) != 0)
 	    spin_release(LIKELY(pos < yield), true);
     }
     __forceinline bool try_lock() {
@@ -458,7 +469,8 @@ using TicketLocker = LockerTemplate<TicketLock>;
 
 class BLISTER UnfairLock: nocopy {
 public:
-    UnfairLock(): state(0) {}
+    explicit UnfairLock(uint lmt = SPIN_LIMIT): state(0),
+	spins(Processor::count() == 1 ? 0 : lmt) {}
     ~UnfairLock() = default;
 
     __forceinline void lock(void) {
@@ -481,6 +493,13 @@ public:
 
 private:
     void lock_contended(uint32_t expected) {
+	for (uint i = 0; i < spins && expected != 2; ++i) {
+	    spin_release();
+	    expected = 0;
+	    if (state.compare_exchange_weak(expected, 1, memory_order_acquire,
+		memory_order_relaxed))
+		return;
+	}
 	if (expected == 2 || state.exchange(2, memory_order_acquire) != 0) {
 	    do {
 		state.wait(2, memory_order_relaxed);
@@ -489,6 +508,7 @@ private:
     }
 
     alignas(64) atomic<uint32_t> state;
+    const uint spins;
 };
 
 using FastUnfairLocker = FastLockerTemplate<UnfairLock>;
@@ -546,7 +566,7 @@ public:
 typedef _Semaphore<binary_semaphore> FastSemaphore;
 typedef _Semaphore<counting_semaphore<>> Semaphore;
 
-/* semaphore with tracking counter */
+// semaphore with tracking counter
 class BLISTER CountedSemaphore: nocopy {
 public:
     explicit CountedSemaphore() = default;
@@ -621,19 +641,22 @@ private:
     Semaphore sema4;
 };
 
-/* LIFO semaphore useful for thread pools */
+// LIFO semaphore useful for thread pools
 class BLISTER LifoSemaphore: nocopy {
 public:
-    class Waiting: nocopy {
-    public:
-	atomic<Waiting *> next;
-	FastSemaphore sema4;
-
-	Waiting(): next(nullptr) {}
-    };
-
     explicit LifoSemaphore() = default;
-    ~LifoSemaphore() { broadcast(); }
+    ~LifoSemaphore() {
+	Node *n;
+
+	broadcast();
+	n = allnodes.load(memory_order_acquire);
+	while (n) {
+	    Node *a = n->allnext;
+
+	    delete n;
+	    n = a;
+	}
+    }
 
     explicit __forceinline operator bool(void) const {
 	return waiters.load(memory_order_acquire) != 0;
@@ -642,124 +665,198 @@ public:
 	return (uint)waiters.load(memory_order_acquire);
     }
 
-    __forceinline void acquire(Waiting &w) {
-	Waiting *h;
+    void acquire(uint spin = 0) {
+	Node *n = claim();
 
-	waiters.fetch_add(1, memory_order_acq_rel);
-	do {
-	    h = head.load(memory_order_relaxed);
-	    w.next.store(h, memory_order_relaxed);
-	} while (!head.compare_exchange_weak(h, &w, memory_order_release,
-	    memory_order_relaxed));
-	w.sema4.acquire();
-    }
-    __forceinline void acquire(void) {
-	Waiting w;
-
-	acquire(w);
+	n->state.store(PENDING, memory_order_relaxed);
+	pushwait(n);
+	for (uint u = 0; u < spin; ++u) {
+	    if (UNLIKELY(n->sema4.try_acquire())) {
+		recycle(n);
+		return;
+	    }
+	    spin_release();
+	}
+	n->sema4.acquire();
+	recycle(n);
     }
     __forceinline uint broadcast(void) { return (uint)-1 - release((uint)-1); }
-    __forceinline uint release(uint count = 1) {
-	uint c;
-	Waiting *h, *w, *ww;
-
+    uint release(uint count = 1) {
 	while (LIKELY(count)) {
-	    h = claim(count, w, c);
-	    if (UNLIKELY(!h))
-		return c;
-	    while (LIKELY(h != w)) {
-		ww = h->next.load(memory_order_acquire);
-		h->sema4.release();
-		h = ww;
+	    Node *n = popwait();
+	    uint s;
+
+	    if (UNLIKELY(!n))
+		return count;
+	    s = n->state.exchange(TAKEN, memory_order_acq_rel);
+	    if (LIKELY(s == PENDING)) {
+		waiters.fetch_sub(1, memory_order_acq_rel);
+		--count;
+		n->sema4.release();
+	    } else {
+		recycle(n);
 	    }
-	    count = c;
 	}
 	return 0;
     }
 
     __forceinline bool try_acquire(void) { return false; }
-    __forceinline bool try_acquire_for(Waiting &w, ulong msec) {
-	Waiting *h;
+    bool try_acquire_for(ulong msec, uint spin = 0) {
+	Node *n = claim();
+	uint s;
 
-	waiters.fetch_add(1, memory_order_acq_rel);
-	do {
-	    h = head.load(memory_order_relaxed);
-	    w.next.store(h, memory_order_relaxed);
-	} while (!head.compare_exchange_weak(h, &w, memory_order_release,
-	    memory_order_relaxed));
-	if (UNLIKELY(!w.sema4.try_acquire_for(msec))) {
-	    if (LIKELY(remove(w)))
-		return false;
-	    w.sema4.acquire();
+	n->state.store(PENDING, memory_order_relaxed);
+	pushwait(n);
+	for (uint u = 0; u < spin; ++u) {
+	    if (UNLIKELY(n->sema4.try_acquire())) {
+		recycle(n);
+		return true;
+	    }
+	    spin_release();
 	}
+	if (UNLIKELY(msec == INFINITE)) {
+	    n->sema4.acquire();
+	    recycle(n);
+	    return true;
+	}
+	if (LIKELY(n->sema4.try_acquire_for(msec))) {
+	    recycle(n);
+	    return true;
+	}
+	s = PENDING;
+	if (LIKELY(n->state.compare_exchange_strong(s, CANCELLED,
+	    memory_order_acq_rel, memory_order_acquire))) {
+	    waiters.fetch_sub(1, memory_order_acq_rel);
+	    return false;
+	}
+	n->sema4.acquire();
+	recycle(n);
 	return true;
-    }
-    __forceinline bool try_acquire_for(ulong msec) {
-	Waiting w;
-
-	return try_acquire_for(w, msec);
     }
 
 private:
-    alignas(64) atomic<Waiting *> head {nullptr};
-    alignas(64) atomic_uint_fast32_t waiters {0};
+    enum : uint { PENDING, TAKEN, CANCELLED };
 
-    __forceinline Waiting *claim(uint count, Waiting *&w, uint &remain) {
-	for (;;) {
-	    Waiting *h = retryhead();
+    struct Node {
+	atomic<Node *> next {nullptr};
+	atomic<uint> state {TAKEN};
+	FastSemaphore sema4;
+	Node *allnext {nullptr};
+    };
 
-	    if (UNLIKELY(!h)) {
-		remain = count;
-		return nullptr;
-	    } else if (LIKELY(count == 1)) {
-		w = h->next.load(memory_order_acquire);
-		remain = 0;
+    // ABA-safe lock-free Treiber stack head
+    template<class N>
+    class TaggedStack: nocopy {
+    public:
+	TaggedStack() {
+	    if constexpr (WIDE)
+		head.store(Wide {nullptr, 0}, memory_order_relaxed);
+	    else
+		head.store(0, memory_order_relaxed);
+	}
+
+	void push(N *n) {
+	    if constexpr (WIDE) {
+		Wide old = head.load(memory_order_relaxed);
+
+		do {
+		    n->next.store(old.ptr, memory_order_relaxed);
+		} while (!head.compare_exchange_weak(old, Wide {n, old.tag + 1},
+		    memory_order_release, memory_order_relaxed));
 	    } else {
-		remain = count;
-		for (w = h; w && remain; w = w->next.load(memory_order_acquire))
-		    --remain;
-	    }
-	    if (LIKELY(head.compare_exchange_weak(h, w, memory_order_release,
-		memory_order_acquire))) {
-		waiters.fetch_sub(count - remain, memory_order_acq_rel);
-		return h;
+		uint64_t old = head.load(memory_order_relaxed);
+
+		do {
+		    n->next.store(unpack(old), memory_order_relaxed);
+		} while (!head.compare_exchange_weak(old, pack(n, old + ONE),
+		    memory_order_release, memory_order_relaxed));
 	    }
 	}
-    }
-    __forceinline bool remove(Waiting &w) {
-	Waiting *h, *prev, *ww;
+	N *pop(void) {
+	    if constexpr (WIDE) {
+		Wide old = head.load(memory_order_acquire);
 
-	do {
-	    prev = nullptr;
-	    ww = h = head.load(memory_order_acquire);
-	    while (ww && ww != &w) {
-		prev = ww;
-		ww = ww->next.load(memory_order_acquire);
+		while (old.ptr) {
+		    Wide nw {old.ptr->next.load(memory_order_acquire),
+			old.tag + 1};
+
+		    if (head.compare_exchange_weak(old, nw,
+			memory_order_acq_rel, memory_order_acquire))
+			return old.ptr;
+		}
+		return nullptr;
+	    } else {
+		uint64_t old = head.load(memory_order_acquire);
+		N *p;
+
+		while ((p = unpack(old)) != nullptr) {
+		    uint64_t nw = pack(p->next.load(memory_order_acquire),
+			old + ONE);
+
+		    if (head.compare_exchange_weak(old, nw,
+			memory_order_acq_rel, memory_order_acquire))
+			return p;
+		}
+		return nullptr;
 	    }
-	    if (!ww)
-		return false;
-	    if (prev) {
-		Waiting *expected = &w;
+	}
 
-		if (!prev->next.compare_exchange_strong(expected,
-		    w.next.load(memory_order_relaxed), memory_order_release,
-		    memory_order_acquire))
-		    continue;
-	    } else if (!head.compare_exchange_strong(h, w.next.load(
-		memory_order_relaxed), memory_order_release,
-		memory_order_acquire)) {
+    private:
+	struct Wide { N *ptr; uintptr_t tag; };
+
+	static constexpr bool WIDE = atomic<Wide>::is_always_lock_free;
+	static constexpr uint64_t PMASK = 0xFFFFFFFFFFFFULL;
+	static constexpr uint64_t ONE = (uint64_t)1 << 48;
+
+	conditional_t<WIDE, atomic<Wide>, atomic<uint64_t>> head;
+
+	static __forceinline N *unpack(uint64_t v) {
+	    return (N *)(uintptr_t)(v & PMASK);
+	}
+	static __forceinline uint64_t pack(N *p, uint64_t tagged) {
+	    return ((uint64_t)(uintptr_t)p & PMASK) | (tagged & ~PMASK);
+	}
+    };
+
+    alignas(64) TaggedStack<Node> waitstack;
+    alignas(64) TaggedStack<Node> freelist;
+    alignas(64) atomic<Node *> allnodes {nullptr};
+    alignas(64) atomic_uint_fast32_t waiters {0};
+
+    Node *claim(void) {
+	Node *n = freelist.pop();
+
+	if (LIKELY(n != nullptr))
+	    return n;
+	for (;;) {
+	    Node *a;
+
+	    n = new(nothrow) Node();
+	    if (UNLIKELY(!n)) {
+		THREAD_YIELD();
 		continue;
 	    }
-	    waiters.fetch_sub(1, memory_order_acq_rel);
-	    return true;
-	} while (true);
+	    a = allnodes.load(memory_order_relaxed);
+	    do {
+		n->allnext = a;
+	    } while (!allnodes.compare_exchange_weak(a, n, memory_order_release,
+		memory_order_relaxed));
+	    return n;
+	}
     }
-    __forceinline Waiting *retryhead(void) const {
+    __forceinline void recycle(Node *n) { freelist.push(n); }
+    __forceinline void pushwait(Node *n) {
+	waiters.fetch_add(1, memory_order_acq_rel);
+	waitstack.push(n);
+    }
+    Node *popwait(void) {
 	for (uint i = 0; ; ++i) {
-	    Waiting *h = head.load(memory_order_acquire);
+	    Node *n = waitstack.pop();
 
-	    if (LIKELY(h) || LIKELY(!waiters.load(memory_order_acquire)))
-		return h;
+	    if (LIKELY(n != nullptr))
+		return n;
+	    if (LIKELY(!waiters.load(memory_order_acquire)))
+		return nullptr;
 	    spin_release(LIKELY(i < 128), true);
 	}
     }
