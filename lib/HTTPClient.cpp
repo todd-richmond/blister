@@ -23,26 +23,39 @@
 
 static constexpr int StreamSize = 3 * 1460;
 
-// Hex lookup table for fast parsing
+// Hex lookup table for fast parsing (0xFF = invalid)
 static constexpr uchar hex_lut[256] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0,
-    0, 10, 11, 12, 13, 14, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 10, 11, 12, 13, 14, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      0,   1,   2,   3,   4,   5,   6,   7,   8,   9, 255, 255,
+    255, 255, 255, 255, 255,  10,  11,  12,  13,  14,  15, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255,  10,  11,  12,  13,  14,  15, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255
 };
 
 tstring URL::fullpath(void) const {
     tstring s;
-    s.reserve(prot.length() + host.length() + relpath().length() + 20);
+    tstring rp(relpath());
+    s.reserve(prot.length() + host.length() + rp.length() + 20);
 
     s += prot;
     s += T("://");
 
-    if (port && port != 80) {
+    if (port && port != 80 && !(port == 443 && prot == T("https"))) {
 	tchar buf[8];
 
 	buf[0] = ':';
@@ -60,7 +73,7 @@ tstring URL::fullpath(void) const {
     } else {
 	s += host;
     }
-    s += relpath();
+    s += rp;
     return s;
 }
 
@@ -103,7 +116,7 @@ bool URL::set(const tchar *url) {
 	    unescape(host);
 	    port = 0;
 	} else {
-	    port = 80;
+	    port = (prot == T("https")) ? 443 : 80;
 	}
 	p = pp;
     }
@@ -130,11 +143,11 @@ void URL::unescape(tchar *str, bool plus) {
 	    tuchar hex_val1 = hex_lut[*++p];
 	    tuchar hex_val2 = hex_lut[*++p];
 
-	    if (hex_val1 == 0 || hex_val2 == 0) {
+	    if (hex_val1 > 15 || hex_val2 > 15) {
 		// Invalid hex digit
 		*str++ = '%';
 		*str++ = (tchar)*(p - 1);
-		if (hex_val1 != 0)
+		if (hex_val1 <= 15)
 		    *str++ = (tchar)*p;
 		continue;
 	    }
@@ -160,25 +173,22 @@ void URL::unescape(tstring &str, bool plus) {
 
 	    if (j + 2 >= str.size()) {
 		// Invalid % sequence
-		str[i] = p;
-		i++;
+		str[i++] = p;
+		while (++j < str.size())
+		    str[i++] = str[j];
 		break;
 	    }
 
 	    uchar hex_val1 = hex_lut[(uchar)str[++j]];
 	    uchar hex_val2 = hex_lut[(uchar)str[++j]];
 
-	    if (hex_val1 == 0 || hex_val2 == 0) {
+	    if (hex_val1 > 15 || hex_val2 > 15) {
 		// Invalid hex digit
-		str[i] = '%';
-		if (hex_val1 == 0) {
-		    str[++i] = str[j-1];
-		} else {
-		    str[++i] = str[j-1];
-		    str[++i] = str[j];
-		}
-		i++;
-		break;
+		str[i++] = '%';
+		str[i++] = str[j-1];
+		if (hex_val1 <= 15)
+		    str[i++] = str[j];
+		continue;
 	    }
 
 	    hex = (uchar)((hex_val1 << 4) | hex_val2);
@@ -239,6 +249,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     sts = 0;
     s.reserve(128);
     reshdrs.clear();
+    req.reserve(256);
     req = tchartoachar(op);
     req += ' ';
     req += tchartoachar(path);
@@ -275,7 +286,6 @@ loop:
 	if (first && ka && (!sent || rto > (mticks() - start) + 200)) {
 	    dlogd(Log::mod(T("http")), Log::cmd(T("reconnect")),
 		Log::kv(T("addr"), addr.ipstr()));
-	    sstrm.seekp(0, ios::beg);
 	    first = false;
 	    goto loop;
 	} else {
@@ -320,7 +330,7 @@ loop:
 	tstring header_name(p, name_len);
 	tstring header_val(pp, val_len);
 
-	reshdrs.emplace(header_name, header_val);
+	reshdrs.emplace(std::move(header_name), std::move(header_val));
     }
     if (!sstrm)
 	goto done;

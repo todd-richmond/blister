@@ -51,7 +51,7 @@ void SMTPClient::attribute(const tchar *attr, const tchar *val) {
 
     s += T(": ");
     s += val;
-    hdrv.emplace_back(s);
+    hdrv.emplace_back(std::move(s));
 }
 
 bool SMTPClient::auth(const tchar *id, const tchar *pass) {
@@ -70,20 +70,20 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	buf[0] = '\0';
 	memcpy(buf + 1, tchartoachar(id), idlen);
 	memcpy(buf + 1 + idlen, tchartoachar(pass), passlen);
-	base64encode(buf, idlen + passlen, uubuf, uusz);
-	while (isspace(uubuf[uusz - 1]))
+	base64encode(buf, idlen + passlen + 1, uubuf, uusz);
+	while (uusz && isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
 	ret = cmd(T("AUTH PLAIN"), achartotchar(uubuf), 235);
 	delete [] buf;
 	delete [] uubuf;
     } else if (exts.find(T(" LOGIN")) != exts.npos) {
-	base64encode(id, idlen, uubuf, uusz);
-	while (isspace(uubuf[uusz - 1]))
+	base64encode(id, idlen - 1, uubuf, uusz);
+	while (uusz && isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
 	ret = cmd(T("AUTH LOGIN"), achartotchar(uubuf), 334);
 	delete [] uubuf;
-	if (ret && (ret = base64encode(pass, passlen, uubuf, uusz)) == true) {
-	    while (isspace(uubuf[uusz - 1]))
+	if (ret && (ret = base64encode(pass, passlen - 1, uubuf, uusz)) == true) {
+	    while (uusz && isspace(uubuf[uusz - 1]))
 		uubuf[--uusz] = '\0';
 	    ret = cmd(achartotchar(uubuf), nullptr, 235);
 	    delete[] uubuf;
@@ -113,11 +113,11 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 		sstrm.write(rb, 3);
 	    } else {
 		sstrm.write(crlf, 2);
-		}
-	    } else {
+	    }
+	} else {
 	    sstrm.write(as1, (streamsize)s1len);
 	    sstrm.write(crlf, 2);
-	    }
+	}
     }
     do {
 	sts.erase();
@@ -137,8 +137,9 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 		Log::kv(T("reply"), sts.c_str()));
 	    return false;
 	}
-	while (isspace(sts[sts.size() - 1]))
-	    sts.erase(sts.size() - 1);
+	auto trim = sts.find_last_not_of(T(" \t\r\n"));
+	if (trim != sts.npos)
+	    sts.erase(trim + 1);
 	if (!multi.empty())
 	    multi += '\n';
 	multi += sts.substr(4);
@@ -215,7 +216,7 @@ bool SMTPClient::from(const RFC822Addr &addr) {
     parts = 0;
     if (!addr.size())
 	return false;
-    frm =  addr.address(0, true);
+    frm = addr.address(0, true);
     return cmd(T("MAIL FROM:"), addr.address().c_str());
 }
 
@@ -381,6 +382,9 @@ void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
 }
 
 bool SMTPClient::stuff(const void *data, size_t sz) {
+    if (!sz)
+	return sstrm.good();
+
     const char *start = (const char *)data;
     const char *p, *pp;
     const char *end = start + sz - 1;
@@ -1288,10 +1292,9 @@ bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
 
 	sz--;
 	if (add_bits >= 64) {
-	    if (input[0] == '=' && input[1] == '=' && input[2] == '=')
+	    if (input[-1] == '=')
 		break;
-	    else
-		continue;
+	    continue;
 	}
 	out_byte = (out_byte << 6) + add_bits;
 	out_bits += 6;	// -V127
@@ -1590,11 +1593,8 @@ time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {
     }
     tm.tm_min = tm.tm_min - min + adjmin;
     tm.tm_hour = tm.tm_hour - hour + adjhr;
-    if ((t = mktime(&tm)) != (time_t)-1)
-	t = mkgmtime(&tm);
-    return t == (time_t)-1 ? 0 : t;
 
 gmt:
-    t = mktime(&tm);
+    t = mkgmtime(&tm);
     return t == (time_t)-1 ? 0 : t;
 }
