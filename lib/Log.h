@@ -359,7 +359,7 @@ private:
 		    return *this;
 		}
 	    } else if (tlsd.sep && tlsd.strm.size()) {
-		tlsd.strm.write(tlsd.sep);
+		tlsd.strm.put(tlsd.sep);
 	    }
 	    tlsd.strm.write(val);
 	}
@@ -405,9 +405,9 @@ private:
     Log &log(Tlsdata &tlsd, const KV<T> &val) {
 	if (LIKELY(tlsd.clvl != None)) {
 	    if (tlsd.strm.size())
-		tlsd.strm.write((tchar)' ');
+		tlsd.strm.put(T(' '));
 	    tlsd.strm.write(val.key.data(), (streamsize)val.key.size());
-	    tlsd.strm.write((tchar)'=');
+	    tlsd.strm.put(T('='));
 	    tlsd.sep = '=';
 	    log(tlsd, val.val);
 	}
@@ -422,7 +422,7 @@ private:
 	streamsize sz) const {
 	if (LIKELY(sz > 0)) {
 	    if (tlsd.sep && tlsd.strm.size())
-		tlsd.strm.write(tlsd.sep);
+		tlsd.strm.put(tlsd.sep);
 	    strm_write_esc(tlsd.strm, data, sz);
 	    if (data[sz - 1] == '=')
 		tlsd.sep = '=';
@@ -435,7 +435,7 @@ private:
 
 // optimized template specializations
 template<> inline Log &Log::log(Tlsdata &tlsd, const bool &val) {
-    return log(tlsd, val ? 't' : 'f');
+    return log(tlsd, val ? T('t') : T('f'));
 }
 template<> inline Log &Log::log(Tlsdata &tlsd, const tstring &val) {
     return log(tlsd, val.c_str());

@@ -945,7 +945,7 @@ inline uint32_t swar4(const char *s) {
     chunk -= 0x30303030U;
     chunk = chunk * 10 + (chunk >> 8);
     chunk &= 0x00FF00FFU;
-    return (chunk * (100 + 65536)) >> 16;
+    return (chunk * (100 * 65536 + 1)) >> 16;
 }
 
 inline uint32_t swar8(const char *s) {
@@ -989,7 +989,13 @@ __forceinline T atoun(const tchar *str, size_t len) {
     }
     return (T)val;
 #else
-    return atou<T>(str);
+    size_t val = 0;
+    for (size_t i = 0; i < len; ++i) {
+	size_t d = (size_t)(tuchar)str[i] - '0';
+	if (d > 9) break;
+	val = val * 10 + d;
+    }
+    return (T)val;
 #endif
 }
 
@@ -1022,6 +1028,8 @@ auto to_chars(wchar_t *first, wchar_t *last, T value) {
 
     for (char *p = buf; p != char_end && r.ptr != last; ++p)
 	*r.ptr++ = static_cast<wchar_t>(static_cast<uchar>(*p));
+    if (r.ptr == last && char_ec == errc{})
+	r.ec = errc::value_too_large;
     return r;
 }
 
@@ -1047,9 +1055,16 @@ __forceinline int stringcmp(const C *a, const C *b) { return tstrcmp(a, b); }
 template<typename T>
 __forceinline int stringcmp(const T &a, const T &b) {
     if constexpr (is_same_v<T, basic_string<typename T::value_type>>) {
-	return tstrcmp(a.c_str(), b.c_str());
+	return a.compare(b);
     } else {
-	return tstrcmp(a.data(), b.data());
+	size_t asz = a.size(), bsz = b.size();
+	int ret = tstrncmp(a.data(), b.data(), asz < bsz ? asz : bsz);
+
+	if (ret != 0)
+	    return ret;
+	if (asz < bsz)
+	    return -1;
+	return asz > bsz ? 1 : 0;
     }
 }
 
@@ -1061,7 +1076,14 @@ __forceinline int stringicmp(const T &a, const T &b) {
     if constexpr (is_same_v<T, basic_string<typename T::value_type>>) {
 	return tstricmp(a.c_str(), b.c_str());
     } else {
-	return tstricmp(a.data(), b.data());
+	size_t asz = a.size(), bsz = b.size();
+	int ret = tstrnicmp(a.data(), b.data(), asz < bsz ? asz : bsz);
+
+	if (ret != 0)
+	    return ret;
+	if (asz < bsz)
+	    return -1;
+	return asz > bsz ? 1 : 0;
     }
 }
 
@@ -1072,7 +1094,12 @@ __forceinline bool stringeq(const C *a, const C *b) {
 
 template<typename T>
 __forceinline bool stringeq(const T &a, const T &b) {
-    return a == b;
+    if constexpr (is_same_v<T, basic_string<typename T::value_type>>) {
+	return a == b;
+    } else {
+	return a.size() == b.size() && tstrncmp(a.data(), b.data(),
+	    a.size()) == 0;
+    }
 }
 
 template<class C, typename T>
@@ -1132,7 +1159,12 @@ __forceinline bool stringieq(const C *a, const C *b) {
 
 template<typename T>
 __forceinline bool stringieq(const T &a, const T &b) {
-    return stringicmp(a, b) == 0;
+    if constexpr (is_same_v<T, basic_string<typename T::value_type>>) {
+	return a.size() == b.size() && tstricmp(a.c_str(), b.c_str()) == 0;
+    } else {
+	return a.size() == b.size() && tstrnicmp(a.data(), b.data(),
+	    a.size()) == 0;
+    }
 }
 
 template<class C, typename T>
@@ -1160,7 +1192,7 @@ __forceinline bool stringless(const T &a, const T &b) {
 
 template<class C, typename T>
 __forceinline bool stringless(const C *a, const basic_string_view<T> &b) {
-    return tstrncmp(a, b.data(), b.size()) < 0 || (tstrncmp(a, b.data(), b.size()) == 0 && a[b.size()] < '\0');
+	return tstrncmp(a, b.data(), b.size()) < 0;
 }
 
 template<class C, typename T>
@@ -1170,7 +1202,10 @@ __forceinline bool stringless(const C *a, const T &b) {
 
 template<class C, typename T>
 __forceinline bool stringless(const T &a, const C *b) {
-    return stringless(b, a);
+    basic_string_view<C> av(a);
+    int ret = tstrncmp(av.data(), b, av.size());
+
+    return ret < 0 || (ret == 0 && b[av.size()] != '\0');
 }
 
 // string comparison functors
@@ -1255,14 +1290,17 @@ static __forceinline strhash_t rapidmix(strhash_t a, strhash_t b) {
 
     return (strhash_t)r ^ (strhash_t)(r >> 64);
 #else
-    strhash_t lo = (uint32_t)a * (strhash_t)(uint32_t)b;
-    strhash_t hi = (a >> 32) * (b >> 32);
+    strhash_t a_lo = (uint32_t)a, a_hi = a >> 32;
+    strhash_t b_lo = (uint32_t)b, b_hi = b >> 32;
+    strhash_t cross = a_lo * b_hi + a_hi * b_lo;
+    strhash_t lo = a_lo * b_lo + (cross << 32);
+    strhash_t hi = a_hi * b_hi + (cross >> 32);
 
     return lo ^ hi;
 #endif
 }
 
-inline strhash_t rapidhash(const void *data, size_t len) {
+inline strhash_t rapid_hash(const void *data, size_t len) {
     static constexpr strhash_t RAPID_SECRET0 = 0x9e3779b97f4a7c15ULL;
     static constexpr strhash_t RAPID_SECRET1 = 0x6c62272e07bb0142ULL;
     static constexpr strhash_t RAPID_SECRET2 = 0x94d049bb133111ebULL;
@@ -1685,17 +1723,13 @@ public:
     __forceinline void push_back(C &obj) { Base::push_back(obj); sz.inc(); }
     __forceinline void push_front(C &obj) { Base::push_front(obj); sz.inc(); }
     void push_back(SizedObjectList &lst) {
-	uint n = lst.size();
-
 	Base::push_back(static_cast<Base &>(lst));
-	sz.add(n);
+	sz.add(lst.size());
 	lst.sz.zero();
     }
     void push_front(SizedObjectList &lst) {
-	uint n = lst.size();
-
 	Base::push_front(static_cast<Base &>(lst));
-	sz.add(n);
+	sz.add(lst.size());
 	lst.sz.zero();
     }
 

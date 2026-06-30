@@ -62,7 +62,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    if (arg == "-b")
 		hash = bernstein_hash(content.data(), content.size());
 	    else
-		hash = rapidhash(content.data(), content.size());
+		hash = rapid_hash(content.data(), content.size());
 	    tcout << hash << "\n";
 	    return 0;
 	}

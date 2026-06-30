@@ -47,7 +47,7 @@ public:
     // cppcheck-suppress nullPointer
     void str(char *p, streamsize sz) { setbuf(p, sz); }
     streamsize read(void *in, streamsize sz) { return xsgetn((char *)in, sz); }
-    template<class T> streamsize read(T &t) { return read(t, sizeof (t)); }
+    template<class T> streamsize read(T &t) { return read(&t, sizeof (t)); }
     streamsize write(const void *in, streamsize sz) {
 	return xsputn((const char *)in, sz);
     }
@@ -256,12 +256,13 @@ public:
     void reset(void) { if (sb.pcount()) sb.reset(); }
     void write(C c) { sb.write(c); }
     void write(bool b) { sb.write(b ? C('t') : C('f')); }
+    void put(C c) { sb.write(c); }
     void write(const C *s, streamsize n) { sb.write(s, n); }
     template <typename T>
     __forceinline void write(const T &val) {
 	if constexpr (is_integral_v<T> || is_floating_point_v<T>) {
 #ifdef UNICODE
-	    wchar buf[24];
+	    char buf[24];
 	    auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
 
 	    if (LIKELY(ec == errc{})) {
@@ -391,7 +392,9 @@ private:
 
 		setg(begin, np < begin ? begin : np >= last ? last : np, last);
 	    } else {
-		setg(begin, last, last);
+		char *np = last + off;
+
+		setg(begin, np < begin ? begin : np > last ? last : np, last);
 	    }
 	    return gptr() - eback();
 	}
@@ -415,9 +418,7 @@ public:
 private:
     struct null_buffer : public basic_streambuf<tchar> {
         streamsize xsputn(const tchar *, streamsize n) override { return n; }
-#ifndef _WIN32
-	int overflow(int c) override { return c; }
-#endif
+        int overflow(int c) override { return c; }
         pos_type seekoff(off_type, ios_base::seekdir, ios_base::openmode)
 	    override { return -1; }
         pos_type seekpos(pos_type, ios_base::openmode) override { return -1; }
