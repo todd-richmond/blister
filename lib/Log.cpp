@@ -16,6 +16,8 @@
  */
 
 #include "stdapi.h"
+#include <algorithm>
+#include <vector>
 #include <fcntl.h>
 #include <stdarg.h>
 #include <time.h>
@@ -235,56 +237,40 @@ void Log::LogFile::roll(void) {
 	s1.erase(pos);
     }
     if ((dir = topendir(s1.empty() ? T(".") : s1.c_str())) != NULL) {
-	for (;;) {
-	    ulong ext;
-	    ulong oldext = 0;
-	    tstring oldfile;
-	    ulong oldtime = (ulong)-1;
+	vector<pair<ulong, tstring>> entries;
 
-	    files = 0;
-	    while ((ent = treaddir(dir)) != NULL) {
-		if (tstrncmp(ent->d_name, s2.c_str(), s2.size()) != 0 ||
-		    (path == ent->d_name && path != file))
-		    continue;
-		if (s1.empty()) {
-		    s3 = ent->d_name;
-		} else {
-		    s3 = s1;
-		    s3 += sep;
-		    s3 += ent->d_name;
-		}
-		if ((s3 == path && path != file))
-		    continue;
-		++files;
-		if (tstat(s3.c_str(), &sbuf) == 0 && (ulong)sbuf.st_mtime <
-		    oldtime) {
-		    if ((pos = s3.rfind('.')) != s3.npos && pos < s3.size() -
-			1 && isdigit((int)s3[pos + 1])) {
-			ext = tstrtoul(s3.c_str() + pos + 1, NULL, 10);
-			// ensure older logs were not touched
-			if ((ext < oldext && path == file) || (ext > oldext &&
-			    file.size() > 12 && !tstrcmp(file.c_str() - 12,
-			    T("%Y%m%d%H%M%S"))))
-			    continue;
-			oldext = ext;
-		    }
-		    oldfile = s3;
-		    oldtime = (ulong)sbuf.st_mtime;
-		}
-	    }
-	    if (oldtime == (ulong)-1) {
-		break;
-	    } else if ((cnt || sec) && (!sec || oldtime < ((ulong)now - sec)) &&
-		(!cnt || files >= cnt)) {
-		if (tunlink(oldfile.c_str()))
-		    break;
-		--files;
-		trewinddir(dir);
+	while ((ent = treaddir(dir)) != NULL) {
+	    if (tstrncmp(ent->d_name, s2.c_str(), s2.size()) != 0 ||
+		(path == ent->d_name && path != file))
+		continue;
+	    if (s1.empty()) {
+		s3 = ent->d_name;
 	    } else {
-		break;
+		s3 = s1;
+		s3 += sep;
+		s3 += ent->d_name;
 	    }
+	    if ((s3 == path && path != file))
+		continue;
+	    if (tstat(s3.c_str(), &sbuf) == 0)
+		entries.emplace_back((ulong)sbuf.st_mtime, s3);
 	}
 	tclosedir(dir);
+	sort(entries.begin(), entries.end());
+	files = (uint)entries.size();
+	if (cnt || sec) {
+	    for (auto it = entries.begin(); it != entries.end(); ) {
+		if ((!sec || it->first < ((ulong)now - sec)) &&
+		    (!cnt || files >= cnt)) {
+		    if (tunlink(it->second.c_str()))
+			break;
+		    --files;
+		    it = entries.erase(it);
+		} else {
+		    break;
+		}
+	    }
+	}
     }
     if (cnt && path == file) {
 	tchar buf[32];
@@ -653,7 +639,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	    ss += ' ';
 	    if (_type == KeyVal)
 		ss += "nm=";
-	    if ((pos = mailfrom.find_first_of('@')) == ss.npos)
+	    if ((pos = mailfrom.find_first_of('@')) == mailfrom.npos)
 		ss += tstringtoastring(mailfrom);
 	    else
 		ss += tstringtoastring(mailfrom.substr(0, pos));
@@ -676,7 +662,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	    }
 	    smtp.from(RFC822Addr(ss));
             smtp.to(RFC822Addr(mailto));
-	    smtp.subject(strbuf.substr(tmlen, tmlen + 69).c_str());
+	    smtp.subject(strbuf.substr(tmlen, 69).c_str());
 	    smtp.data(false, strbuf.c_str());
 	    smtp.enddata();
 	    smtp.quit();
@@ -897,7 +883,8 @@ Log::Level Log::str2enum(const tchar *l) {
 	if (!sv.empty() && sv.back() == ' ')
 	    sv.remove_suffix(1);
 	if ((!tstrnicmp(l, sv.data(), sv.size()) && l[sv.size()] == '\0') ||
-	    !tstrnicmp(l, LevelStr2[u].data(), LevelStr2[u].size()))
+	    (!tstrnicmp(l, LevelStr2[u].data(), LevelStr2[u].size()) &&
+	     l[LevelStr2[u].size()] == '\0'))
 	    return (Level)u;
     }
     return None;
