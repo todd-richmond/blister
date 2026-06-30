@@ -30,7 +30,7 @@ using lruhash_t = uint64_t;
 class BLISTER LRUCacheEntry {
 public:
     LRUCacheEntry(const void *d, ulong s): data(nullptr), sz(0),
-	hash(rapidhash(d, s)), msec(0) {}
+	hash(rapid_hash(d, s)), msec(0) {}
     LRUCacheEntry(const LRUCacheEntry &ce): data(ce.data), sz(ce.sz),
 	hash(ce.hash), msec(ce.msec) {}
 
@@ -54,8 +54,8 @@ public:
     using lru_kv = pair<lruhash_t, C>;
     using lru_list = list<lru_kv>;
     using lru_map = unordered_map<lruhash_t, typename lru_list::iterator>;
-    static constexpr int LRUCACHE_SIZE = 10 * 1024 * 1024;
-    static constexpr int LRUCACHE_TIME = 5 * 60 * 1000;
+    static constexpr ulong LRUCACHE_SIZE = 10 * 1024 * 1024;
+    static constexpr msec_t LRUCACHE_TIME = 5 * 60 * 1000;
 
     explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME):
 	cursz(0), maxsz(sz), maxtm(tm), last_purge(0) {

@@ -177,13 +177,16 @@ tstring Timing::data(bool sort_key, uint columns) const {
 		tsprintf(cbuf, T("%5lu"), (ulong)scnt);
 	    if (tot) {
 		tchar abuf[16], sbuf[16];
+		constexpr size_t bufsz = sizeof (buf) / sizeof (buf[0]);
 
-		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key + (klen < sizeof
-		    (buf) - 19 ? 0 : klen - sizeof (buf) + 19), format(tot,
+		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key + (klen < bufsz
+		    - 19 ? 0 : klen - bufsz + 19), format(tot,
 		    sbuf), cbuf, format(tot / scnt, abuf));
 	    } else {
-		tsprintf(buf, T("%-35s%6s"), stats->key + (klen < sizeof (buf) -
-		    7 ? 0 : klen - sizeof (buf) + 7), cbuf);
+		constexpr size_t bufsz = sizeof (buf) / sizeof (buf[0]);
+
+		tsprintf(buf, T("%-35s%6s"), stats->key + (klen < bufsz -
+		    7 ? 0 : klen - bufsz + 7), cbuf);
 	    }
 	} else {
 	    bool quote = false;
@@ -226,8 +229,9 @@ tstring Timing::data(bool sort_key, uint columns) const {
 		s += buf;
 	    }
 	}
-	while (!s.empty() && s.back() == ' ')
-	    s.pop_back();
+	auto trim = s.find_last_not_of(' ');
+	if (trim != s.npos)
+	    s.erase(trim + 1);
 	s += (tchar)'\n';
     }
     return s;
@@ -271,9 +275,9 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
     else if (t < 100000000000LLU)
 	    tsprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
     else if (t < 1000000000000LLU)
-	tsprintf(buf, T("%llum"), t / 1000000000LLU);
+	    tsprintf(buf, T("%llum"), t / 1000000000LLU);
     else
-	tsprintf(buf, T("%llug"), t / 1000000000000LLU);
+	    tsprintf(buf, T("%llug"), t / 1000000000000LLU);
     return buf;
 }
 
@@ -288,23 +292,27 @@ void Timing::record(void) {
     const size_t entries = tlsd.entries.size() - 1;
     const auto &entry = tlsd.entries.back();
     const timing_t diff = now() - entry.start;
-    size_t len;
 
     if (!entries) {
 	add(entry.caller, 0, entry.hash, diff);
 	tlsd.entries.pop_back();
 	return;
     }
-    len = tstrlen(entry.caller) + entries * 2;
-    for (size_t i = 0; i < entries; ++i)
-	len += tstrlen(tlsd.entries[i].caller);
+    size_t callerlen = tstrlen(entry.caller);
+    size_t lbuf[16];
+    size_t len = callerlen + entries * 2;
+    vector<size_t> lvec;
+    size_t *lens = entries <= 16 ? lbuf : (lvec.resize(entries), lvec.data());
     tstring s;
+
+    for (size_t i = 0; i < entries; ++i)
+	len += (lens[i] = tstrlen(tlsd.entries[i].caller));
     s.reserve(len);
     for (size_t i = 0; i < entries; ++i) {
-	s += tlsd.entries[i].caller;
+	s.append(tlsd.entries[i].caller, lens[i]);
 	s += T("->");
     }
-    s += entry.caller;
+    s.append(entry.caller, callerlen);
     add(s, diff);
     add(entry.caller, 0, entry.hash, diff);
     tlsd.entries.pop_back();
