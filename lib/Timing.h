@@ -126,7 +126,7 @@ public:
     __forceinline timing_t record(const tstring &key, timing_t begin) {
 	timing_t n = now();
 
-	add(key.c_str(), 0, stringhash(key), n - begin);
+	add(key.c_str(), (uint)key.length(), stringhash(key), n - begin);
 	return n;
     }
     void restart(void);
@@ -142,9 +142,9 @@ public:
 
 private:
     struct BLISTER Stats: nocopy {
-	alignas(64) atomic_uint_fast32_t cnt{};
+	alignas(64) atomic_uint_fast32_t cnt{0};
 	atomic_uint_fast32_t cnts[TIMINGSLOTS]{};
-	atomic_uint_fast64_t tot{};
+	atomic_uint_fast64_t tot{0};
 	Stats *flist = nullptr;
 	size_t hash = 0;
 	uint klen = 0;

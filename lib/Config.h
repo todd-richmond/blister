@@ -220,7 +220,7 @@ public:
     template<typename T>
     Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
 	tchar buf[64];
-	auto [ptr, ec] = to_chars(buf, buf + sizeof (buf), val);
+	auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
 	WLocker lkr(lck);
 
 	*ptr = '\0';

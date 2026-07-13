@@ -48,11 +48,11 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
 	    break;
 	while (*p == '-')
 	    ++p;
-	if (!tstrcmp(p, T("check")))
+	if (!tstrcmp(p, T("check")) && ac + 1 < argc)
 	    interval = atoi<ulong>(argv[++ac]);
-	else if (!tstrcmp(p, T("maxmem")))
+	else if (!tstrcmp(p, T("maxmem")) && ac + 1 < argc)
 	    maxmem = atoi<ulong>(argv[++ac]);
-	else if (!tstrcmp(p, T("name")))
+	else if (!tstrcmp(p, T("name")) && ac + 1 < argc)
 	    name = argv[++ac];
 	else if (tstrcmp(p, T("console")) && tstrcmp(p, T("daemon")))
 	    ++ac;
@@ -60,11 +60,11 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
     if (ac >= argc) {
 	const tchar *prog = tstrrchr(argv[0], '/');
 
-	if (!prog && (prog = tstrrchr(argv[0], '\\')) == NULL)
+	if (!prog && (prog = tstrrchr(argv[0], '\\')) == nullptr)
 	    prog = argv[0];
 	else
 	    prog++;
-	cout << "usage:\t" << prog << endl <<
+	tcout << T("usage:\t") << prog << endl <<
 	    T("\tstart [--check seconds] [--maxmem kb] [--name str] cmd ...") <<
 	    endl <<
 	    T("\tcontinue|exit|pause|refresh|status|stop [--name str] cmd") <<
@@ -122,7 +122,8 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     } else if (cpid > 0) {
 	int sts;
 
-	waitpid(cpid, &sts, 0);
+	while (waitpid(cpid, &sts, 0) == -1 && errno == EINTR)
+	    ;
 	return WEXITSTATUS(sts);
     }
 #endif

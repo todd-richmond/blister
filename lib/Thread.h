@@ -297,6 +297,7 @@ public:
 	return load(order);
     }
     __forceinline bool test_and_set(memory_order order = memory_order_acquire) {
+	// cppcheck-suppress knownConditionTrueFalse
 	return exchange(true, order);
     }
 };
@@ -323,6 +324,7 @@ public:
     explicit SpinLock(uint lmt = SPIN_LIMIT): spins(Processor::count() == 1 ?
 	0 : lmt) {}
     __forceinline __no_sanitize_thread void lock(void) {
+	// cppcheck-suppress knownConditionTrueFalse
 	while (UNLIKELY(!try_lock())) {
 	    uint limit = spins > 0;
 
@@ -335,6 +337,7 @@ public:
 	return lck.test(memory_order_relaxed);
     }
     __forceinline __no_sanitize_thread bool try_lock(void) {
+	// cppcheck-suppress knownConditionTrueFalse
 	return !lck.test_and_set(memory_order_acquire);
     }
     __forceinline __no_sanitize_thread void unlock(void) {
@@ -1119,6 +1122,7 @@ private:
     static ThreadLocal<ThreadLocalMap *> flocal;
 
     void clear(void);
+    void setState(ThreadState s) { state.store(s, memory_order_release); }
     void thread_cleanup(void);
     static int init(void *thisp);
     static THREAD_FUNC thread_init(void *thisp);
@@ -1176,6 +1180,7 @@ private:
     static set<ThreadGroup *> groups;
     static atomic_ulong next_id;
 
+    void setState(ThreadState s) { state.store(s, memory_order_release); }
     static int init(void *thisp);
     friend class Thread;
 };

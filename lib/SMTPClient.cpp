@@ -279,7 +279,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     uint64_t mid = nextmid++;
     time_t now = seconds();
     pid_t pid = getpid();
-    tm tmbuf;
+    tm tmbuf{};
 
     mime = m;
     if (!cmd(T("DATA"), nullptr, 354))
@@ -1405,7 +1405,7 @@ time_t mkgmtime(const tm *tmp) {
 	int dir;
 	const tm *newtm = gmtime_r(&t, &tmbuf);
 
-	if (newtm == nullptr)
+	if (newtm == nullptr)	// cppcheck-suppress knownConditionTrueFalse
 	    return 0;
 	dir = tmcomp(newtm, &orgtm);
 	if (dir != 0) {

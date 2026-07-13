@@ -39,8 +39,8 @@ public:
     class EchoClientSocket: public DispatchClientSocket {
     public:
 	EchoClientSocket(EchoTest &es, const Sockaddr &a, ulong t, ulong w):
-	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0), tmt(t),
-	    wait(w) {}
+	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0), ops(0),
+	    tmt(t), wait(w), usecs(0) {}
 
 	void start(ulong msec) { timeout(start, msec); }
 
@@ -48,8 +48,11 @@ public:
 	const Sockaddr &sa;
 	timing_t begin;
 	uint in, out;
+	uint ops;
 	ulong tmt, wait;
+	usec_t usecs;
 
+	void flush(void);
 	void onConnect(void) override;
 
 	DSP_DECLARE(EchoClientSocket, input);
@@ -108,11 +111,18 @@ static uint dsz;
 static EchoTest *etp;
 static atomic<uint> errs, ops;
 static atomic loops(MAXLLONG);
-static volatile bool qflag;
-static atomic<usec_t> usecs;
+static volatile sig_atomic_t qflag;
+alignas(64) static atomic<usec_t> usecs;
 
 static inline bool loop_exit(void) {
     return loops.fetch_sub(1, memory_order_relaxed) <= 0 || qflag;
+}
+
+void EchoTest::EchoClientSocket::flush(void) {
+    ::ops.fetch_add(ops, memory_order_relaxed);
+    ::usecs.fetch_add(usecs, memory_order_relaxed);
+    ops = 0;
+    usecs = 0;
 }
 
 void EchoTest::EchoClientSocket::onConnect(void) {
@@ -154,12 +164,13 @@ void EchoTest::EchoClientSocket::input() {
 	if (loop_exit()) {
 	    erase();
 	} else {
-	    ops.fetch_add(1, memory_order_relaxed);
-	    usecs.fetch_add(usec, memory_order_relaxed);
+	    if (++ops >= 32)
+		flush();
+	    usecs += usec;
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read="), len);
 	    if (wait) {
-		static thread_local mt19937 rng(random_device{}());
+		static thread_local mt19937 rng(random_device {}());
 
 		timeout(repeat, wait + (wait < 2000 ? 0 :
 		    uniform_int_distribution<uint>(0, 49)(rng)));
@@ -180,7 +191,7 @@ void EchoTest::EchoClientSocket::input() {
 void EchoTest::EchoClientSocket::output() {
     uint len;
 
-    if (loops.load(memory_order_relaxed) <= 0 || qflag) {
+    if ((loops.load(memory_order_relaxed) <= 0 || qflag) && out == 0) {
 	write("", 1);
 	erase();
     } else if (error() || ((len = (uint)write(dbuf + out, dsz - out)) ==
@@ -211,15 +222,14 @@ void EchoTest::EchoClientSocket::repeat() {
 }
 
 void EchoTest::EchoClientSocket::start() {
+    flush();
     in = out = 0;
     close();
     dlogd(T("connecting"));
     connect(sa, tmt);
 }
 
-#ifndef __clang__
-#pragma GCC diagnostic ignored "-Wstack-usage="
-#endif
+WARN_DISABLE("-Wstack-usage=")
 void EchoTest::EchoServerSocket::input() {
     char tmp[MAXREAD];
 
@@ -316,24 +326,24 @@ int tmain(int argc, const tchar * const argv[]) {
     for (i = 1; i < argc; i++) {
 	if (!tstricmp(argv[i], T("-c"))) {
 	    server = false;
-	} else if (!tstricmp(argv[i], T("-d"))) {
-	    delay = tstrtoul(argv[++i], NULL, 10);
-	} else if (!tstricmp(argv[i], T("-e"))) {
-	    sockets = (uint)tstrtoul(argv[++i], NULL, 10);
-	} else if (!tstricmp(argv[i], T("-h"))) {
+	} else if (!tstricmp(argv[i], T("-d")) && i + 1 < argc) {
+	    delay = tstrtoul(argv[++i], nullptr, 10);
+	} else if (!tstricmp(argv[i], T("-e")) && i + 1 < argc) {
+	    sockets = (uint)tstrtoul(argv[++i], nullptr, 10);
+	} else if (!tstricmp(argv[i], T("-h")) && i + 1 < argc) {
 	    host = argv[++i];
-	} else if (!tstricmp(argv[i], T("-l"))) {
+	} else if (!tstricmp(argv[i], T("-l")) && i + 1 < argc) {
 	    loops = atoi<llong>(argv[++i]);
-	} else if (!tstricmp(argv[i], T("-p"))) {
-	    threads = (uint)tstrtoul(argv[++i], NULL, 10);
+	} else if (!tstricmp(argv[i], T("-p")) && i + 1 < argc) {
+	    threads = (uint)tstrtoul(argv[++i], nullptr, 10);
 	} else if (!tstricmp(argv[i], T("-s"))) {
 	    client = false;
-	} else if (!tstricmp(argv[i], T("-t"))) {
-	    tmt = tstrtoul(argv[++i], NULL, 10);
+	} else if (!tstricmp(argv[i], T("-t")) && i + 1 < argc) {
+	    tmt = tstrtoul(argv[++i], nullptr, 10);
 	} else if (!tstricmp(argv[i], T("-v"))) {
 	    dlog.level(dlog.level() >= Log::Debug ? Log::Trace : Log::Debug);
-	} else if (!tstricmp(argv[i], T("-w"))) {
-	    wait = tstrtoul(argv[++i], NULL, 10);
+	} else if (!tstricmp(argv[i], T("-w")) && i + 1 < argc) {
+	    wait = tstrtoul(argv[++i], nullptr, 10);
 	} else if (*argv[i] != '-') {
 	    path = argv[i];
 	} else {
@@ -362,13 +372,20 @@ int tmain(int argc, const tchar * const argv[]) {
 	    memcpy(dbuf, path, dsz);
 	}
     } else {
-	(void)fstat(fd, &sbuf);
+	if (fstat(fd, &sbuf) == -1) {
+	    close(fd);
+	    tcerr << T("echotest: unable to stat ") << path << endl;
+	    return 1;
+	}
 	dsz = (uint)sbuf.st_size;
 	dbuf = new char[dsz];
 	if ((dsz = (uint)read(fd, dbuf, dsz)) == (uint)-1) {
 	    delete [] dbuf;
 	    dbuf = nullptr;
 	    dsz = 0;
+	    close(fd);
+	    tcerr << T("echotest: unable to read ") << path << endl;
+	    return 1;
 	}
 	close(fd);
     }
@@ -390,7 +407,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	setrlimit(RLIMIT_NOFILE, &rl);
     }
     sig.sa_handler = SIG_IGN;
-    sigaction(SIGPIPE, &sig, NULL);
+    sigaction(SIGPIPE, &sig, nullptr);
 #endif
     if (!et.start(threads, 32 * 1024)) {
 	tcerr << T("echo: unable to start ") << host << endl;

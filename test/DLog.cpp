@@ -29,7 +29,7 @@
 static void log(Log::Level lvl, const tchar *str) {
     const tchar *p;
 
-    if ((p = tstrchr(str, ' ')) != NULL || (p = tstrchr(str, '\t')) != NULL) {
+    if ((p = tstrchr(str, ' ')) != nullptr || (p = tstrchr(str, '\t')) != nullptr) {
 	Log::Level l;
 	tstring_view sv(str, (tstring_view::size_type)(p - str));
 
@@ -68,20 +68,20 @@ int tmain(int argc, tchar *argv[]) {
 		(alvl = Log::str2enum(argv[++i])) == Log::None)
 		break;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		cnt = tstrtoul(argv[++i], NULL, 10);
+		cnt = tstrtoul(argv[++i], nullptr, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		sz = tstrtoul(argv[++i], NULL, 10);
+		sz = tstrtoul(argv[++i], nullptr, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		tm = tstrtoul(argv[++i], NULL, 10);
+		tm = tstrtoul(argv[++i], nullptr, 10);
 	    dlog.alertfile(alvl, file, (uint)cnt, sz, tm);
 	} else if (!tstricmp(argv[i], T("-b")) || !tstricmp(argv[i],
 	    T("--buffer"))) {
 	    ulong msec = 1000, sz = 32UL * 1024;
 
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		sz = tstrtoul(argv[++i], NULL, 10);
+		sz = tstrtoul(argv[++i], nullptr, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		msec = tstrtoul(argv[++i], NULL, 10);
+		msec = tstrtoul(argv[++i], nullptr, 10);
 	    dlog.setmp(false);
 	    dlog.buffer((uint)sz, msec);
 	} else if (!tstricmp(argv[i], T("-c")) || !tstricmp(argv[i],
@@ -115,11 +115,11 @@ int tmain(int argc, tchar *argv[]) {
 		Log::str2enum(argv[++i])) == Log::None)
 		break;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		cnt = tstrtoul(argv[++i], NULL, 10);
+		cnt = tstrtoul(argv[++i], nullptr, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		sz = tstrtoul(argv[++i], NULL, 10);
+		sz = tstrtoul(argv[++i], nullptr, 10);
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		tm = tstrtoul(argv[++i], NULL, 10);
+		tm = tstrtoul(argv[++i], nullptr, 10);
 	    dlog.file(flvl, file, (uint)cnt, sz, tm);
 	} else if (!tstricmp(argv[i], T("-i")) || !tstricmp(argv[i],
 	    T("--input"))) {
@@ -136,7 +136,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("--keepalive"))) {
 	    ka = 1000;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		ka = tstrtoul(argv[++i], NULL, 10);
+		ka = tstrtoul(argv[++i], nullptr, 10);
 	} else if (!tstricmp(argv[i], T("-l")) || !tstricmp(argv[i],
 	    T("--level"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
@@ -193,7 +193,7 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		host = argv[++i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		fac = (uint)tstrtoul(argv[++i], NULL, 10);
+		fac = (uint)tstrtoul(argv[++i], nullptr, 10);
 	    dlog.syslog(true);
 	    dlog.syslog(slvl, host, fac);
 	} else if (!tstricmp(argv[i], T("-t")) || !tstricmp(argv[i],
@@ -213,8 +213,10 @@ int tmain(int argc, tchar *argv[]) {
 	    dlog.setmp(false);
 	} else if (!tstricmp(argv[i], T("-w")) || !tstricmp(argv[i],
 	    T("--write"))) {
-	    dlog.log(lvl, argv[++i]);
-	    out = true;
+	    if (++i < argc) {
+		dlog.log(lvl, argv[i]);
+		out = true;
+	    }
 	} else if (argv[i][0] != '-') {
 	    dlog.log(lvl, argv[i]);
 	    out = true;
@@ -225,7 +227,7 @@ int tmain(int argc, tchar *argv[]) {
     if (i < argc) {
 	tcerr << T("Usage: dlog\n")
 	    T("\t[-a|--alert file [level [count [size [time]]]]]\n")
-	    T("\t[-b|--buffer [msec [size]]]\n")
+	    T("\t[-b|--buffer [size [msec]]]\n")
 	    T("\t[-c|--config cfgfile [prefix]]\n")
 	    T("\t[-d|--date strftime]\n")
 	    T("\t[-f|--file file [level [count [size [time]]]]]\n")

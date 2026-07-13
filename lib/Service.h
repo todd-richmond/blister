@@ -225,7 +225,7 @@ protected:
 
     bool setids(void);
 
-    bool check(const string &err) { (void)err; return true; }
+    virtual bool check(const string &err) { (void)err; return true; }
     int onStart(int argc, const tchar * const *argv) override;
     void onAbort(void) override;
     void onPause(void) override;

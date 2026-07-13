@@ -238,7 +238,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     const char *p, *pp;
     const tchar *resp;
     bool ret = false;
-    string req, s, ss, sss;
+    string req, s;
     bool sent;
     msec_t start;
     static constexpr tchar connection[] = T("Connection");

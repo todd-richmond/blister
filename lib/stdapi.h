@@ -821,6 +821,7 @@ EXTERNC_
 #include <chrono>
 #include <functional>
 #include <iostream>
+#include <new>
 #include <string>
 #include <string_view>
 

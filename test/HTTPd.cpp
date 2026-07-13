@@ -26,11 +26,13 @@ public:
     static void pause(bool p) { paused = p; }
 
 protected:
-    static bool paused;
+    static atomic<bool> paused;
 
     void exec(void) override {
-	if (paused)
+	if (paused) {
 	    error(503);
+	    return;
+	}
 	HTTPServerSocket::exec();
     }
 };
@@ -72,8 +74,8 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
 	dspr.stop();
 	dlog << Log::Err << HTTPServerSocket::section() << " socket failed" <<
 	    endlog;
-        dspr.waitForMain();
-        return -1;
+	dspr.waitForMain();
+	return -1;
     }
     setids();
     running();
@@ -82,7 +84,7 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     return 0;	//-V773
 }
 
-bool HTTPDaemonSocket::paused = false;
+atomic<bool> HTTPDaemonSocket::paused = false;
 
 int tmain(int argc, const tchar * const argv[]) {
     HTTPDaemon hd(T("httpd"), T("Test HTTP Server"));

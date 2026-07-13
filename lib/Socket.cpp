@@ -757,7 +757,7 @@ int Socket::write(const void *buf, uint sz) const {
 	    (SOCK_SIZE_T)sz, 0)))
 	    break;
     } while (interrupted());
-    return LIKELY(out > 0) ? out : (out <= 0 && blocked() ? 0 : out);
+    return UNLIKELY(out < 0 && blocked()) ? 0 : out;
 }
 
 int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
@@ -770,7 +770,7 @@ int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
 	    (SOCK_SIZE_T)sz, 0, sa, sa.size())))
 	    break;
     } while (interrupted());
-    return LIKELY(out > 0) ? out : (out <= 0 && blocked() ? 0 : out);
+    return UNLIKELY(out < 0 && blocked()) ? 0 : out;
 }
 
 long Socket::writev(const iovec *iov, int count) const {

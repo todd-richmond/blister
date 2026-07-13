@@ -56,7 +56,7 @@ public:
     }
 
     virtual int doallocate(void) {
-	if (!buf) {
+	if (!buf && bufsz) {
 	    buf = new char[(size_t)bufsz];
 	    alloced = true;
 	    setp(buf, buf + bufsz);
@@ -262,15 +262,17 @@ public:
     __forceinline void write(const T &val) {
 	if constexpr (is_integral_v<T> || is_floating_point_v<T>) {
 #ifdef UNICODE
-	    char buf[24];
+	    char buf[40];
 	    auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
 
 	    if (LIKELY(ec == errc{})) {
-		wchar wbuf[24];
+		wchar wbuf[40];
 
 		for (auto *s = buf, *d = wbuf; s < end;)
 		    *d++ = (wchar)*s++;
 		write(wbuf, end - buf);
+	    } else {
+		*this << val;
 	    }
 #else
 	    if constexpr (is_integral_v<T>) {
@@ -301,11 +303,13 @@ public:
 			*--p = '-';
 		write(p, buf + sizeof (buf) - p);
 	    } else {
-		char buf[24];
+		char buf[40];
 		auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
 
 		if (LIKELY(ec == errc{}))
 		    write(buf, end - buf);
+		else
+		    *this << val;
 	    }
 #endif
 	} else if constexpr (is_enum_v<T>) {

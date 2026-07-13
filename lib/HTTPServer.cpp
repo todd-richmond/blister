@@ -75,7 +75,7 @@ void HTTPServerSocket::readhdrs() {
     if (room <= 1) {
 	char *old = data;
 
-	sz += 1000;
+	sz = sz < 1000 ? 1000 : sz * 2;
 	room = (uint)(sz - datasz);
 	data = new char[sz];
 	memcpy(data, old, datasz);
@@ -354,20 +354,20 @@ void HTTPServerSocket::parse(void) {
 	postchunking = true;
 	chunktrailer = false;
 	chunkin = 0;
-	postsz = (uint)-1;
+	postsz = (ulong)-1;
     } else {
 	postchunking = false;
 	val = attr("content-length");
 	if (val) {
 	    unsigned long long clval = strtoull(val, NULL, 10);
 
-	    if (clval >= (unsigned long long)(uint)(-1)) {
+	    if (clval >= (unsigned long long)(ulong)(-1)) {
 		error(413, true);
 		return;
 	    }
-	    postsz = (uint)clval;
+	    postsz = (ulong)clval;
 	} else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT")) {
-	    postsz = (uint)-1;
+	    postsz = (ulong)-1;
 	} else {
 	    postsz = 0;
 	}
@@ -455,8 +455,7 @@ void HTTPServerSocket::keepalive(void) {
 	}
     }
     if (ka) {
-	hdrs.write(p, (streamsize)strlen(p));
-	hdrs.write(": keep-alive\r\n", 15);
+	hdrs.write("Connection: keep-alive\r\n", 24);
     }
 }
 
@@ -571,8 +570,8 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 	}
 	CloseHandle(hdl);
 #else
-	if ((fmap = new char[len]) == nullptr || (ulong)::read(fd, fmap, len) !=
-	    len) {
+	if ((fmap = new (nothrow) char[len]) == nullptr || (ulong)::read(fd,
+	    fmap, len) != len) {
 	    error(404);
 	    return;
 	}
@@ -618,7 +617,7 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     }
     _status = sts;
     if (close) {
-	hdrs.write("Connection: close\r\n", 20);
+	hdrs.write("Connection: close\r\n", 19);
 	ka = false;
     } else {
 	keepalive();
@@ -653,9 +652,9 @@ void HTTPServerSocket::error(uint sts, bool close) {
 	"Expectation Failed"
     };
     static constexpr const char *err5xx[] = {
-	"Bad Request", "Unauthorized", "Payment required", "Forbidden",
 	"Internal Server Error", "Not Implemented", "Bad Gateway",
-	"Service Unavailable", "Gateway Timeout", "Version Not Supported"
+	"Service Unavailable", "Gateway Timeout",
+	"HTTP Version Not Supported"
     };
     if (sts >= 200 && sts < 200 + (sizeof (err2xx) / sizeof (char *)))
 	p = err2xx[sts - 200];
@@ -738,7 +737,7 @@ void HTTPServerSocket::get(bool head) {
 	sts = 304;
     else if ((val = attr("if-unmodified-since")) != nullptr &&
 	parse_date(achartotchar(val)) < statbuf.st_mtime)
-	sts = 304;
+	sts = 412;
     if (val != nullptr && (val = strchr(val, ';')) != nullptr &&
 	!strnicmp(val + 1, "length=", 7) &&
 	strtoul(val + 8, NULL, 10) != (ulong)statbuf.st_size)

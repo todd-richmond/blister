@@ -21,7 +21,6 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
-#include <new>
 #include "Config.h"
 #include "Log.h"
 #include "Socket.h"
@@ -511,7 +510,7 @@ public:
 
 protected:
     void onAccept(Socket &sock) override {
-	C *c = new(std::nothrow) C(static_cast<D &>(dspr), sock);
+	C *c = new(nothrow) C(static_cast<D &>(dspr), sock);
 
 	if (c == nullptr) {
 	    sock.close();

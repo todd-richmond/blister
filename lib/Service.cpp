@@ -402,7 +402,7 @@ bool Service::install(const tchar *file, const tchar *desc, const tchar * const
 	splitpath(file, NULL, root, prog);
 	prog[0] = (tchar)totupper(prog[0]);
 	for (i = 1; i < prog.size(); i++)
-	    prog[0] = (tchar)totlower(prog[0]);
+	    prog[i] = (tchar)totlower(prog[i]);
 	desc = prog.c_str();
     }
     if (depend) {
@@ -709,8 +709,8 @@ Service::Timer::Timer(ulong msec): timer(0) {
 	msec = dmsec;
     ZERO(its);
     its.it_value.tv_sec = (time_t)msec / 1000;
-    *(ulong *)&its.it_value.tv_nsec = (msec % 1000) * 1000000;
-    if (timer_settime(timer, 0, &its, NULL)) {
+    its.it_value.tv_nsec = (long)((msec % 1000) * 1000000);
+    if (timer_settime(timer, 0, &its, nullptr)) {
 	timer_delete(timer);
 	timer = 0;
     }
@@ -777,7 +777,7 @@ void Service::abort_handler(void) {
 	aborting = true;
 	ZERO(sa);
 	sa.sa_handler = abort_handler;
-	sigaction(SIGALRM, &sa, NULL);
+	sigaction(SIGALRM, &sa, nullptr);
 	alarm(5);
 	dlog.crit(Log::mod(service->name), Log::cmd(T("abort")),
 	    Log::error(T("timeout")));
@@ -809,7 +809,7 @@ void Service::signal_handler(int sig, siginfo_t *si, void *) {
 	ZERO(its);
 	its.it_value.tv_sec = (time_t)(Timer::dmsec / 1000U);
 	its.it_value.tv_nsec = (long)((Timer::dmsec % 1000U) * 1000000U);
-	timer_settime(timer, 0, &its, NULL);
+	timer_settime(timer, 0, &its, nullptr);
     }
 #endif
     switch (sig) {			// NOLINT
@@ -896,28 +896,28 @@ void Service::setsignal(bool abrt) {
 
     ZERO(sa);
     sa.sa_handler = null_handler;
-    sigaction(SIGHUP, &sa, NULL);
+    sigaction(SIGHUP, &sa, nullptr);
     sa.sa_handler = SIG_IGN;
-    sigaction(SIGPIPE, &sa, NULL);
+    sigaction(SIGPIPE, &sa, nullptr);
     sa.sa_handler = SIG_DFL;
-    sigaction(SIGQUIT, &sa, NULL);
+    sigaction(SIGQUIT, &sa, nullptr);
     init_sigset(sigs);
-    sigprocmask(SIG_UNBLOCK, &sigs, NULL);
-    pthread_sigmask(SIG_BLOCK, &sigs, NULL);
+    sigprocmask(SIG_UNBLOCK, &sigs, nullptr);
+    pthread_sigmask(SIG_BLOCK, &sigs, nullptr);
     if (abrt) {
 	sa.sa_flags = SA_SIGINFO;
 	sa.sa_mask = sigs;
 	sa.sa_sigaction = signal_handler;
 
-	sigaction(SIGABRT, &sa, NULL);
-	sigaction(SIGBUS, &sa, NULL);
-	sigaction(SIGFPE, &sa, NULL);
-	sigaction(SIGILL, &sa, NULL);
-	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGABRT, &sa, nullptr);
+	sigaction(SIGBUS, &sa, nullptr);
+	sigaction(SIGFPE, &sa, nullptr);
+	sigaction(SIGILL, &sa, nullptr);
+	sigaction(SIGSEGV, &sa, nullptr);
 #ifdef SIGSTKFLT
-	sigaction(SIGSTKFLT, &sa, NULL);
+	sigaction(SIGSTKFLT, &sa, nullptr);
 #endif
-	sigaction(SIGTRAP, &sa, NULL);
+	sigaction(SIGTRAP, &sa, nullptr);
     }
 }
 
@@ -927,11 +927,11 @@ void Service::unsetsignal() {
 
     ZERO(sa);
     sa.sa_handler = SIG_DFL;
-    sigaction(SIGHUP, &sa, NULL);
-    sigaction(SIGPIPE, &sa, NULL);
-    sigaction(SIGQUIT, &sa, NULL);
+    sigaction(SIGHUP, &sa, nullptr);
+    sigaction(SIGPIPE, &sa, nullptr);
+    sigaction(SIGQUIT, &sa, nullptr);
     init_sigset(sigs);
-    pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
+    pthread_sigmask(SIG_UNBLOCK, &sigs, nullptr);
 }
 
 
@@ -1018,7 +1018,7 @@ int Service::ctrl_handler(void *) {
 	if (pid != getpid() || si.si_code == SI_QUEUE) {
 	    dlog.info(Log::mod(service->name), Log::kv(T("sig"), str),
 		Log::kv(T("uid"), uid), Log::kv(T("pid"), pid));
-	    signal_handler(sig, &si, NULL);
+	    signal_handler(sig, &si, nullptr);
 	}
     }
     sigpid = 0;
@@ -1069,7 +1069,7 @@ int Service::run(int argc, const tchar * const *argv) {
 	kill(sigpid, SIGINT);
     ZERO(sa);
     sa.sa_handler = abort_handler;
-    sigaction(SIGALRM, &sa, NULL);
+    sigaction(SIGALRM, &sa, nullptr);
     alarm(5);
     service->sigthread.wait();
     dlog.stop();
@@ -1115,7 +1115,7 @@ int Service::start(int argc, const tchar * const *argv) {
     }
     ZERO(sa);
     sa.sa_handler = null_handler;
-    sigaction(SIGALRM, &sa, NULL);
+    sigaction(SIGALRM, &sa, nullptr);
     loop = 60;
     for (uint u = 0; u < loop; u++) {
 	if ((sts = status()) == Running || sts == Pausing ||
@@ -1218,7 +1218,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];
 
-	if (!tgetcwd(buf, size(buf))) {
+	if (tgetcwd(buf, size(buf))) {
 	    path = buf;
 	    path += '/';
 	    path += argv[0];
@@ -1267,7 +1267,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	    break;
 	}
     }
-    av[ac] = NULL;
+    av[ac] = nullptr;
     splitpath(argv[0], name.c_str(), installdir, prog);
     if (name.empty())
 	name = prog;	//  -V820
@@ -1396,7 +1396,7 @@ int Service::onStart(int argc, const tchar * const *argv) {
 }
 
 void Service::onTimer(ulong timer) {
-    dlog.debug(Log::mod(name), Log::cmd("timer"), Log::kv(T("id"), timer));
+    dlog.debug(Log::mod(name), Log::cmd(T("timer")), Log::kv(T("id"), timer));
 }
 
 const tchar *Service::status(Status s) {
@@ -1458,9 +1458,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     bool buffer;
     int ret = 0;
     struct stat sbuf, sfile;
-    time_t start;
 
-    start = seconds();
     srvcpath = path;
     cfg.prefix(name.c_str());
     stStatus = Starting;
@@ -1482,7 +1480,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    lckfd = -1;
 	}
     } while (lckfd == -1);
-    sprintf(buf, "%ld", (long)getpid());
+    snprintf(buf, sizeof(buf), "%ld", (long)getpid());
     if (ftruncate(lckfd, 0) || write(lckfd, buf, (uint)strlen(buf)) < 1)
 	return 2;
     for (int i = 1; i < argc; i++) {
@@ -1564,17 +1562,18 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	ZERO(sa);
 	sa.sa_flags = SA_SIGINFO;
 	sa.sa_sigaction = watch_handler;
-	sigaction(SIGABRT, &sa, NULL);
-	sigaction(SIGCONT, &sa, NULL);
-	sigaction(SIGHUP, &sa, NULL);
-	sigaction(SIGINT, &sa, NULL);
-	sigaction(SIGTERM, &sa, NULL);
-	sigaction(SIGTSTP, &sa, NULL);
-	sigaction(SIGUSR1, &sa, NULL);
-	sigaction(SIGUSR2, &sa, NULL);
+	sigaction(SIGABRT, &sa, nullptr);
+	sigaction(SIGCONT, &sa, nullptr);
+	sigaction(SIGHUP, &sa, nullptr);
+	sigaction(SIGINT, &sa, nullptr);
+	sigaction(SIGTERM, &sa, nullptr);
+	sigaction(SIGTSTP, &sa, nullptr);
+	sigaction(SIGUSR1, &sa, nullptr);
+	sigaction(SIGUSR2, &sa, nullptr);
 	dlog.stop();
 	do {
-	    start = seconds();
+	    time_t start = seconds();
+
 	    watchpid = getpid();
 	    child = fork();
 	    if (child == -1) {
@@ -1587,12 +1586,12 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 
 		ZERO(sa);
 		sa.sa_handler = null_handler;
-		sigaction(SIGALRM, &sa, NULL);
+		sigaction(SIGALRM, &sa, nullptr);
 		sigemptyset(&sigs);
 		sigaddset(&sigs, SIGALRM);
-		pthread_sigmask(SIG_UNBLOCK, &sigs, NULL);
+		pthread_sigmask(SIG_UNBLOCK, &sigs, nullptr);
 		first = false;
-		sprintf(buf, "%lu\n%lu", (ulong)getpid(), (ulong)child);
+		snprintf(buf, sizeof (buf), "%lu\n%lu", (ulong)getpid(), (ulong)child);
 		if (lseek(lckfd, 0, SEEK_SET) || write(lckfd, buf, strlen(
 		    buf)) < 1) {
 		    dlog.warn(Log::mod(name), Log::cmd(T("watch")),
@@ -1693,7 +1692,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 #endif
     } else {
 	ret = Service::onStart(argc, argv);
-	sprintf(buf, "%lu", (ulong)sigpid);
+	snprintf(buf, sizeof(buf), "%lu", (ulong)sigpid);
 	if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) < 0 || write(lckfd,
 	    buf, (uint)strlen(buf)) < 1)
 	    ret = 0;

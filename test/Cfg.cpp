@@ -44,8 +44,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    !tstrcmp(argv[i], T("--file"))) {
 	    if (i + 1 == argc)
 		break;
-	    else
-		file = argv[++i];
+	    file = argv[++i];
 	} else if (!tstrcmp(argv[i], T("-i")) ||
 	    !tstrcmp(argv[i], T("--integer"))) {
 	    integer = true;

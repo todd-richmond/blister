@@ -130,7 +130,7 @@ void Log::LogFile::lock() {
     if (fd == -1)
 	reopen();
     if (fd >= 0 && (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, mp ? 0 : 1) ||
-	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1)) {
+	(mp && (len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1))) {
 	tcerr << T("unable to lock log ") << path << T(": ") <<
 	    tstrerror(errno) << endl;
 	close();
@@ -156,12 +156,15 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 	}
     } else {
 	uint charsz = (uint)(chars * sizeof (tchar));
-	uint out = (uint)write(fd, buf, charsz);
+	ssize_t out = write(fd, buf, charsz);
 
-	if (out != charsz && out != 0 && !ftruncate(fd, (off_t)len))
-	    ;
-	else if (file[0] != '>')
-	    len += (ulong)charsz;
+	if (out == (ssize_t)charsz) {
+	    if (file[0] != '>')
+		len += (ulong)charsz;
+	} else if (out > 0) {
+	    // partial write - restore previous file length
+	    (void)ftruncate(fd, (off_t)len);
+	}
     }
 }
 
@@ -522,7 +525,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
 	    int diff;
 	    tchar gmtoff[16];
-	    struct tm tmbuf2;
+	    struct tm tmbuf2{};
 	    const struct tm *tm2;
 
 	    memcpy(&tmbuf, tm, sizeof (tmbuf));
@@ -629,7 +632,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	string ss;
 	string::size_type pos;
 	char buf[64], cbuf[32];
-	uint u = (syslogfac << 3) | (uint)(clvl - (clvl < Debug ? 1 : 2));
+	uint u = (syslogfac << 3) | (uint)(clvl - (clvl <= Debug ? 1 : 2));
 
 	sprintf(buf, "<%u>%.15s.%06u ", u, ctime_r(&now_sec, cbuf) + 4,
 	    (uint)now_usec);

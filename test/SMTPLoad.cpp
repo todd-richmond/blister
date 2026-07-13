@@ -18,8 +18,6 @@
 #include "stdapi.h"
 #ifdef _WIN32
 #include <conio.h>
-#else
-#include <dirent.h>
 #endif
 #include <ctype.h>
 #include <fcntl.h>
@@ -27,8 +25,9 @@
 #include <math.h>
 #include <signal.h>
 #include <time.h>
-#include <sys/stat.h>
+#include <filesystem>
 #include <fstream>
+#include <memory>
 #include <random>
 #include <unordered_map>
 #include "Log.h"
@@ -43,7 +42,7 @@ class SMTPLoad: public Thread {
 public:
     SMTPLoad(): id(threads++) {}
 
-    static bool init(const tchar *host, uint maxthread, ulong maxuser,
+    [[nodiscard]] static bool init(const tchar *host, uint maxthread, ulong maxuser,
 	bool randuser, uint timeout, long loops, const tchar *file,
 	const tchar *bodyfile, ulong cachesz, bool all, int fcnt);
     static void print(tostream &os, usec_t last);
@@ -102,23 +101,25 @@ private:
     static atomic_long remain;
     static uint threads;
     static attrmap vars;
-    static uint bodycnt;
-    static ulong *bodysz;
+    struct BodyFile {
+	tstring path;
+	ulong size = 0;
+	char *cache = nullptr;
+    };
     static ulong bodycachesz;
-    static tchar **body;
-    static char **bodycache;
+    static vector<BodyFile> bodies;
     static bool allfiles;
     static int filecnt;
     static uint nextfile;
     static uint startfile;
     static atomic<ulong> usec, tusec, count, tcount;
-    static vector<LoadCmd *> cmds;
+    static vector<unique_ptr<LoadCmd>> cmds;
 
     int onStart(void) override;
-    static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
+    [[nodiscard]] static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
     static const tchar *format(ulong u);
     static const tchar *format(float f);
-    static char *load(uint idx, usec_t &iousec);
+    [[nodiscard]] static char *load(uint idx, usec_t &iousec);
     static void add(const tchar *file);
     static uint next(void);
 };
@@ -133,18 +134,15 @@ bool SMTPLoad::ruser;
 atomic_long SMTPLoad::remain;
 uint SMTPLoad::to;
 attrmap SMTPLoad::vars;
-uint SMTPLoad::bodycnt;
-ulong *SMTPLoad::bodysz;
-tchar **SMTPLoad::body;
-char **SMTPLoad::bodycache;
 ulong SMTPLoad::bodycachesz;
+vector<SMTPLoad::BodyFile> SMTPLoad::bodies;
 bool SMTPLoad::allfiles;
 int SMTPLoad::filecnt;
 uint SMTPLoad::nextfile;
 uint SMTPLoad::startfile = 0;
 atomic<ulong> SMTPLoad::usec, SMTPLoad::tusec;
 atomic<ulong> SMTPLoad::count, SMTPLoad::tcount;
-vector<SMTPLoad::LoadCmd *> SMTPLoad::cmds;
+vector<unique_ptr<SMTPLoad::LoadCmd>> SMTPLoad::cmds;
 
 bool SMTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
     tchar *p;
@@ -189,7 +187,6 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     const tchar *cmt, *cmd, *arg = nullptr, *status = nullptr;
     tchar *p;
     tifstream is(file);
-    LoadCmd *lcmd;
     int len;
     uint line = 0;
     Locker lkr(lock);
@@ -207,45 +204,33 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	return false;
     }
     if (bodyfile) {
-	struct stat sbuf;
-	DIR *dir;
+	namespace fs = std::filesystem;
+	fs::path bpath(bodyfile);
 
-	if ((dir = opendir(tchartoachar(bodyfile))) != NULL) {
-	    const struct dirent *ent;
-
-	    while (readdir(dir) != NULL)
-		bodycnt++;
-	    rewinddir(dir);
-	    while ((ent = readdir(dir)) != NULL) {
-		tstring s(bodyfile);
-
-		if (ent->d_name[0] == '.')
-		    continue;
-		s += '/';
-		s += achartotstring(ent->d_name);
-		add(s.c_str());
-	    }
-	    closedir(dir);
-	} else if (stat(tchartoachar(bodyfile), &sbuf) != -1 && sbuf.st_mode &
-	    S_IFREG) {
-	    bodycnt = 1;
+	if (fs::is_directory(bpath)) {
+	    for (const auto &entry : fs::directory_iterator(bpath))
+		if (entry.path().filename().native()[0] != '.')
+		    add(entry.path().c_str());
+	} else if (fs::is_regular_file(bpath)) {
 	    add(bodyfile);
 	} else {
 	    tcerr << T("invalid body file: ") << bodyfile << endl;
 	    return false;
 	}
     }
-    if (allfiles && bodycnt > 0) {
-	lock.lock();
-	if (filecnt > 0 && (uint)filecnt < bodycnt)
-	    bodycnt = (uint)filecnt;
-	else if (filecnt < 0 && uint(-1 * filecnt) < bodycnt)
-	    startfile = bodycnt - uint(-1 * filecnt);
+    if (allfiles && !bodies.empty()) {
+	if (filecnt > 0 && (uint)filecnt < (uint)bodies.size())
+	    bodies.resize((size_t)filecnt);
+	else if (filecnt < 0 && (uint)(-filecnt) < (uint)bodies.size())
+	    startfile = (uint)bodies.size() - (uint)(-filecnt);
 	nextfile = startfile;
-	remain = remain * (bodycnt - startfile);
-	lock.unlock();
+	remain = remain * (long)(bodies.size() - startfile);
     }
     vars[T("host")] = host ? host : default_host;
+    if (!addr.set(host ? host : default_host)) {
+	tcerr << T("invalid host: ") << vars[T("host")] << endl;
+	return false;
+    }
     while (is.getline(buf, (streamsize)std::size(buf))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
@@ -306,41 +291,43 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	    arg = nullptr;
 	else
 	    arg++;
-	if (!arg && !bodycnt &&
+	if (!arg && bodies.empty() &&
 	    (!tstricmp(cmd, T("body")) || !tstricmp(cmd, T("data")))) {
 	    tcerr << T("missing text for ") << cmd << endl;
 	    return false;
 	}
-	if (!addr.set(host)) {
-	    tcerr << T("invalid host: line ") << line << endl;
-	    return false;
-	}
-	lcmd = new LoadCmd(cmt, cmd, arg, status);
+	auto lcmd = make_unique<LoadCmd>(cmt, cmd, arg, status);
 	lcmd->addr = addr;
-	cmds.push_back(lcmd);
+	cmds.push_back(std::move(lcmd));
     }
     return true;
 }
 
 char *SMTPLoad::load(uint idx, usec_t &iousec) {
     int fd;
-    char *ret = nullptr;
-    const tchar *file = body[idx];
-    ulong filelen = bodysz[idx];
+    char *ret;
+    const tchar *file = bodies[idx].path.c_str();
+    ulong filelen = bodies[idx].size;
 
-    if (bodycache[idx]) {
+    lock.lock();
+    ret = bodies[idx].cache;
+    lock.unlock();
+    if (ret) {
 	iousec = 0;
-	return bodycache[idx];
+	return ret;
     }
+    ret = nullptr;
     iousec = uticks();
     if ((fd = open(tchartoachar(file), O_RDONLY|O_BINARY|O_SEQUENTIAL)) != -1) {
 	ret = new char[(size_t)filelen + 1];
 	if (::read(fd, ret, filelen) == (int)filelen) {
 	    ret[filelen] = '\0';
-	    if (filelen <= bodycachesz) {
-		bodycache[idx] = ret;
+	    lock.lock();
+	    if (!bodies[idx].cache && filelen <= bodycachesz) {
+		bodies[idx].cache = ret;
 		bodycachesz -= filelen;
 	    }
+	    lock.unlock();
 	} else {
 	    delete [] ret;
 	    ret = nullptr;
@@ -354,24 +341,13 @@ char *SMTPLoad::load(uint idx, usec_t &iousec) {
 }
 
 void SMTPLoad::add(const tchar *file) {
-    struct stat sbuf;
-
-    if (!body) {
-	body = new tchar *[bodycnt];
-	bodycache = new char *[bodycnt];
-	bodysz = new ulong[bodycnt];
-	bodycnt = 0;
-    }
-    ZERO(sbuf);
-    if (access(tchartoachar(file), R_OK) || stat(tchartoachar(file), &sbuf)) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    auto sz = fs::file_size(fs::path(file), ec);
+    if (ec)
 	tcerr << T("invalid body file: ") << file << endl;
-    } else {
-	body[bodycnt] = new tchar[tstrlen(file) + 1];
-	tstrcpy(body[bodycnt], file);
-	bodycache[bodycnt] = nullptr;
-	bodysz[bodycnt] = (ulong)sbuf.st_size;
-	bodycnt++;
-    }
+    else
+	bodies.push_back({.path = tstring(file), .size = (ulong)sz});
 }
 
 uint SMTPLoad::next(void) {
@@ -379,7 +355,7 @@ uint SMTPLoad::next(void) {
 
     lock.lock();
     ret = nextfile++;
-    if (nextfile >= bodycnt)
+    if (nextfile >= (uint)bodies.size())
 	nextfile = startfile;
     lock.unlock();
     return ret;
@@ -402,12 +378,8 @@ int SMTPLoad::onStart(void) {
 	ulong tmpid = ruser ? dist(rng) << 14 ^ dist(rng) : id;
 	long tmp;
 
-	lock.lock();
-	tmp = remain;
-	if (remain > 0)
-	    remain--;
-	lock.unlock();
-	if (!tmp)
+	tmp = remain.fetch_sub(1, memory_order_relaxed);
+	if (tmp <= 0)
 	    break;
 	id = tmpid ? tmpid % (muser ? muser : id) : 0;	// NOLINT
 	tsprintf(data, T("%lu"), id);
@@ -424,10 +396,10 @@ int SMTPLoad::onStart(void) {
 	lvars[T("pass")] = data;
 	start = last = uticks();
 	io = 0;
-	for (auto *cmd : cmds) {
+	for (const auto &cmd : cmds) {
 	    if (qflag)
 		break;
-
+	    ret = false;
 	    if (!tstricmp(cmd->cmd.c_str(), T("sleep"))) {
 		ulong len;
 
@@ -444,10 +416,9 @@ int SMTPLoad::onStart(void) {
 		last = uticks();
 		io = 0;
 		continue;
-	    } else if (cmd->arg.length() < sizeof (data)) {
+	    } else if (cmd->arg.length() < std::size(buf)) {
 		tstrcpy(buf, cmd->arg.c_str());
-		expand(buf, sizeof (buf), lvars);
-		ret = true;
+		ret = expand(buf, sizeof (buf), lvars);
 	    }
 	    if (!ret) {
 		// continue
@@ -490,26 +461,26 @@ int SMTPLoad::onStart(void) {
 		sc.subject(buf);
 		ret = true;
 	    } else if (cmd->cmd == T("body")) {
-		if (buf[0] || !body) {
+		if (buf[0] || bodies.empty()) {
 		    ret = sc.data(false, buf) && sc.enddata();
 		} else {
-		    uint u = allfiles ? next() : ((uint)dist(rng) % bodycnt);
+		    uint u = allfiles ? next() : ((uint)dist(rng) % (uint)bodies.size());
 		    char *d = load(u, io);
 
 		    if (d) {
 			ret = sc.data(false, achartotchar(d)) &&
 			    sc.enddata();
-			if (d != bodycache[u])
+			if (d != bodies[u].cache)
 			    delete [] d;
 		    }
 		}
 	    } else if (cmd->cmd == T("data")) {
-		uint u = allfiles ? next() : ((uint)dist(rng) % bodycnt);
+		uint u = allfiles ? next() : ((uint)dist(rng) % (uint)bodies.size());
 		char *d = load(u, io);
 
 		if (d) {
-		    ret = sc.data(d, bodysz[u]) && sc.enddata();
-		    if (d != bodycache[u])
+		    ret = sc.data(d, bodies[u].size) && sc.enddata();
+		    if (d != bodies[u].cache)
 			delete [] d;
 		}
 	    } else if (cmd->cmd == T("vrfy")) {
@@ -544,11 +515,9 @@ int SMTPLoad::onStart(void) {
 	sc.close();
 	end = uticks();
 	diff = (ulong)(end - start);
-	lock.lock();
 	tusec += diff - smsec * 1000;
 	++count;
 	++tcount;
-	lock.unlock();
 	dlog << Log::Info << T("cmd=all duration=") << (diff / 1000) << endlog;
     }
     lock.lock();
@@ -587,7 +556,7 @@ void SMTPLoad::print(tostream &os, usec_t last) {
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
     lock.lock();
-    for (const auto *cmd : cmds) {
+    for (const auto &cmd : cmds) {
 	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
 	    continue;
 	ops += cmd->count;
@@ -628,7 +597,7 @@ void SMTPLoad::print(tostream &os, usec_t last) {
 }
 
 void SMTPLoad::reset(bool all) {
-    for (auto *cmd : cmds) {
+    for (auto &cmd : cmds) {
 	cmd->count = 0;
 	cmd->err = 0;
 	cmd->usec = cmd->minusec = cmd->maxusec = 0;
@@ -647,15 +616,9 @@ void SMTPLoad::reset(bool all) {
 }
 
 void SMTPLoad::uninit(void) {
-    for (uint u = 0; u < bodycnt; u++) {
-	delete [] body[u];
-	delete [] bodycache[u];
-    }
-    delete [] body;
-    delete [] bodycache;
-    delete [] bodysz;
-    for (auto *p : cmds)
-	delete p;
+    for (const auto &b : bodies)
+	delete [] b.cache;
+    bodies.clear();
     cmds.clear();
 }
 

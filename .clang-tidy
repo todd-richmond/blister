@@ -4,6 +4,7 @@ HeaderFilterRegex: '.*'
 FormatStyle:     none
 Checks: >
   *,
+  -abseil-*,
   -altera-*,
   -android-*,
   -boost-*,
@@ -137,6 +138,7 @@ Checks: >
   -modernize-use-designated-initializers,
   -modernize-loop-convert,
   -modernize-macro-to-enum,
+  -modernize-pass-by-value,
   -modernize-redundant-void-arg,
   -modernize-type-traits,
   -modernize-use-auto,

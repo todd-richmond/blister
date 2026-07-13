@@ -37,6 +37,7 @@ Timing::Stats *Timing::Stats::newstats(const tchar *k, uint klen, strhash_t h) {
 	klen = (uint)tstrlen(k);
     s = (Stats *)new char[offsetof(Stats, key) + ((size_t)klen + 1) *
 	sizeof (tchar)];
+    memset(s, 0, offsetof(Stats, key));
     s->hash = h;
     s->klen = klen;
     memcpy(s->key, k, ((size_t)klen + 1) * sizeof (tchar));
@@ -61,7 +62,7 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
 	if (diff < limits[slot])
 	    break;
     }
-    stats = cache[idx].load(memory_order_relaxed);
+    stats = cache[idx].load(memory_order_acquire);
     if (UNLIKELY(!(stats && stats->hash == hash))) {
 	lck.lock_shared();
 	auto it = tmap.find(hash);
@@ -79,7 +80,7 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
 	    stats = it->second;
 	}
 	lck.unlock_shared();
-	cache[idx].store(stats, memory_order_relaxed);
+	cache[idx].store(stats, memory_order_release);
     }
     stats->cnt.fetch_add(1, memory_order_relaxed);
     stats->cnts[slot].fetch_add(1, memory_order_relaxed);
@@ -97,7 +98,7 @@ void Timing::clear() {
     lck.unlock();
     for (auto &[k, stats] : old)
 	Stats::delstats(stats);
-    s = flist.exchange(nullptr, memory_order_relaxed);
+    s = flist.exchange(nullptr, memory_order_acquire);
     while (s) {
 	next = s->flist;
 	Stats::delstats(s);

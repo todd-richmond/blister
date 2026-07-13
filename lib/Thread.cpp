@@ -255,7 +255,7 @@ void Thread::clear(void) {
 	id = NOID;
     }
     g = group;
-    state.store(Terminated, memory_order_release);
+    setState(Terminated);
     hdl = 0;
     cv.broadcast();
     lck.unlock();
@@ -269,7 +269,7 @@ void Thread::end(int status) {
 #ifdef _WIN32
     _endthreadex(status);
 #else
-    pthread_exit(&status);
+    pthread_exit(nullptr);
 #endif
 }
 
@@ -309,7 +309,7 @@ bool Thread::priority(int pri) {	// NOLINT
 	pri = -20;
     else if (pri > 20)
 	pri = 20;
-    sched.sched_priority = (int)(mn + (mx * 1.0 - mn) / 41 * (pri + 20));
+    sched.sched_priority = mn + (mx - mn) * (pri + 20) / 41;
     return pthread_setschedparam(hdl, policy, &sched) == 0;
 #endif
 }
@@ -332,7 +332,7 @@ THREAD_FUNC Thread::thread_init(void *arg) {
     thread->lck.lock();
     thread->id = THREAD_ID();
     srand((uint)((ulong)uticks() ^ (ulong)(usec_t)thread->id));	// NOSONAR
-    thread->state = Running;
+    thread->setState(Running);
     thread->cv.set();
     thread->lck.unlock();
     thread->retval = (thread->main)(thread->argument);
@@ -353,12 +353,12 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     argument = arg;
     autoterm = aterm;
     main = func;
-    if (state != Terminated && state != Init)
+    if (getState() != Terminated && getState() != Init)
 	return false;
     else if (suspend)
-	state = Suspended;
+	setState(Suspended);
     else
-	state = Running;
+	setState(Running);
 #ifdef _WIN32
     hdl = (HANDLE)_beginthreadex(NULL, stacksz, thread_init, this, 0,
 	(uint *)&id);
@@ -385,7 +385,7 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
 	    msleep(100);		    // wait for thread to sleep
 	return true;
     } else {
-	state = Init;
+	setState(Init);
 	return false;
     }
 }
@@ -393,9 +393,9 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
 bool Thread::stop(void) {
     Locker lkr(lck);
 
-    if (state != Terminated) {
+    if (getState() != Terminated) {
 	onStop();
-	state = Terminated;
+	setState(Terminated);
     }
     return true;
 }
@@ -405,7 +405,7 @@ bool Thread::terminate(void) {
     bool ret = false;
     Locker lkr(lck);
 
-    if (state == Running || state == Suspended) {
+    if (getState() == Running || getState() == Suspended) {
 #ifdef _WIN32
 #pragma warning(disable: 6258)
 	if (hdl && hdl != GetCurrentThread())
@@ -415,11 +415,23 @@ bool Thread::terminate(void) {
 #endif
 	if (ret) {
 	    retval = -2;
-	    state.store(Terminated, memory_order_release);
+	    thread_cleanup();
+	    if (id != NOID) {
+#ifdef _WIN32
+		CloseHandle(hdl);
+#else
+		pthread_detach(hdl);
+#endif
+		id = NOID;
+	    }
+	    ThreadGroup *g = group;
+	    setState(Terminated);
+	    hdl = 0;
+	    cv.broadcast();
 	    lkr.unlock();
-	    clear();
+	    g->notify(*this);
 	}
-    } else if (state == Terminated) {
+    } else if (getState() == Terminated) {
 	ret = true;
     }
     return ret;
@@ -429,9 +441,9 @@ bool Thread::terminate(void) {
 bool Thread::wait(ulong timeout) {
     Locker lkr(lck);
 
-    if (state == Init) {
+    if (getState() == Init) {
 	return true;
-    } else if (state == Terminated) {
+    } else if (getState() == Terminated) {
 	return hdl ? cv.wait() : true;
     } else if (id == NOID) {
 	lkr.unlock();
@@ -468,14 +480,14 @@ ThreadGroup::~ThreadGroup() {
 ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
     if (!tg) {
 	grouplck.lock();
-	for (auto group : groups) {
+	for (auto *const group : groups) {
 	    tg = group;
 	    if (THREAD_ISSELF(tg->master.id)) {
 		break;
 	    } else {
 		tg->cvlck.lock();
 		auto found = false;
-		for (auto t : tg->threads) {
+		for (auto *const t : tg->threads) {
 		    if (THREAD_ISSELF(t->id)) {
 			found = true;
 			break;
@@ -504,7 +516,7 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
     Locker lck(cvlck);
 
-    state = ts;
+    setState(ts);
     for (auto *thread : threads) {
 	if (!THREAD_ISSELF(thread->id))
 	    (thread->*func)();
@@ -547,9 +559,9 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
     Locker lkr(cvlck);
 
     do {
-	bool running = false;
 	Thread *batch[64];
 	uint count = 0;
+	bool running = false;
 
 	for (auto it = threads.begin(); it != threads.end(); ) {
 	    Thread *thread = *it;
@@ -567,7 +579,6 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 		++it;
 	    }
 	}
-
 	if (count > 0) {
 	    lkr.unlock();
 	    for (uint i = 0; i < count; i++) {
@@ -581,7 +592,6 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 		return batch[0];
 	    }
 	}
-
 	if (!running || !msec) {
 	    break;
 	} else if (msec == INFINITE) {

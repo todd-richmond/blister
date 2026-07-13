@@ -47,8 +47,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    if (tstrcmp(argv[i], T("-")) != 0) {
 		ifs.open(tchartoachar(argv[i]));
 		if (!ifs.good()) {
-		    tcerr<< T("unable to open ") << argv[i] << endl;
-		    break;
+		    tcerr << T("unable to open ") << argv[i] << endl;
+		    return 1;
 		}
 	    }
 	} else if (!tstricmp(argv[i], T("-m")) || !tstricmp(argv[i],
@@ -88,15 +88,16 @@ int tmain(int argc, const tchar * const argv[]) {
 	while (getline(ifs.is_open() ? ifs : tcin, s)) {
 	    if (!s.empty()) {
 		const tchar *p = s.c_str(), *pp;
-		tstring key;
 
 		while (istspace(*p))
 		    p++;
 		pp = p;
-		while (*pp != '=' && !istspace(*pp))
+		while (*pp && *pp != '=' && !istspace(*pp))
 		    pp++;
-		key.assign(p, (tstring::size_type)(pp - p));
-		timing(key.c_str(), (usec_t)atoi<ulong>(pp) * mult);
+		tstring_view key(p, (tstring_view::size_type)(pp - p));
+		while (*pp == '=' || istspace(*pp))
+		    pp++;
+		timing(tstring(key).c_str(), (usec_t)atoi<ulong>(pp) * mult);
 	    }
 	}
     }

@@ -42,7 +42,7 @@ wstring _achartowstring(const char *s, size_t len) {
     else if ((sz = MultiByteToWideChar(CP_UTF8, 0, s, (int)len, NULL, 0)) == 0)
 	return L"";
 
-    vector<wchar> buf((uint)sz);
+    vector<wchar> buf((size_t)sz);
 
     MultiByteToWideChar(CP_UTF8, 0, s, (int)len, buf.data(), sz);
     return wstring(buf.data(), (size_t)sz - 1);
@@ -61,7 +61,7 @@ string _wchartoastring(const wchar *s, size_t len) {
 	NULL)) == 0)
 	return "";
 
-    vector<char> buf((uint)sz);
+    vector<char> buf((size_t)sz);
 
     WideCharToMultiByte(CP_UTF8, 0, s, (int)len, buf.data(), sz, NULL, NULL);
     return string(buf.data(), (size_t)sz - 1);

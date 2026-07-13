@@ -166,8 +166,9 @@ int Dispatcher::run() {
 #else
 	    sema4.acquire();
 #endif
-	} else if (!sema4.try_acquire_for(MAX_WAIT_TIME))
+	} else if (!sema4.try_acquire_for(MAX_WAIT_TIME)) {
 	    break;
+	}
     }
     workers--;
     return 0;
@@ -1065,7 +1066,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     if (UNLIKELY(WSAAsyncSelect(ds.fd(), wnd, socketmsg, sockevts[(int)m]))) {
 	removeTimer(ds);
 	olock.lock();
-	ds->flags &= ~DSP_Scheduled;
+	ds.flags &= ~DSP_Scheduled;
 	ds.msg = DispatchClose;
 	ready(ds);
     }
