@@ -156,11 +156,11 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 	}
     } else {
 	uint charsz = (uint)(chars * sizeof (tchar));
-	ssize_t out = write(fd, buf, charsz);
+	long out = (long)write(fd, buf, charsz);
 
-	if (out == (ssize_t)charsz) {
+	if (out == (long)charsz) {
 	    if (file[0] != '>')
-		len += (ulong)charsz;
+		len += charsz;
 	} else if (out > 0) {
 	    // partial write - restore previous file length
 	    (void)ftruncate(fd, (off_t)len);
@@ -169,6 +169,7 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 }
 
 bool Log::LogFile::reopen(void) {
+    bool newfile;
     struct stat sbuf;
 
     close();
@@ -183,7 +184,16 @@ bool Log::LogFile::reopen(void) {
     posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
     lock();
-    if (!len && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
+    newfile = fd >= 0 && len == 0;
+#ifdef _UNICODE
+    if (newfile) {
+	static const char bom[] = { '\xFF', '\xFE' };
+
+	if (::write(fd, bom, sizeof(bom)) == sizeof(bom))
+	    len = sizeof (bom);
+    }
+#endif
+    if (newfile && path != file && !fstat(fd, &sbuf) && sbuf.st_nlink == 1) {
 	tchar buf[PATH_MAX];
 	time_t now = ::time(NULL);
 

@@ -291,6 +291,10 @@ bool Config::parse(tistream &is) {
 
     if (!is)
 	return false;
+#ifdef _UNICODE
+    if (is.peek() == L'\xFEFF')
+	is.get();
+#endif
     while (getline(is, line)) {
 	size_t len = line.size();
 
@@ -587,12 +591,16 @@ bool ConfigFile::read(const tchar *file, const tchar *_pre, bool app) {
 bool ConfigFile::write(const tchar *file, bool inistyle) const {
     if (file) {
 	tofstream os(tchartoachar(file));
-
+#ifdef _UNICODE
+	os.put(L'\xFEFF');
+#endif
 	return write(os, inistyle);
     } else {
 	tstring tmp(path + T(".tmp"));
 	tofstream os(tstringtoachar(tmp));
-
+#ifdef _UNICODE
+	os.put(L'\xFEFF');
+#endif
 	if (!write(os, inistyle)) {
 	    os.close();
 	    unlink(tstringtoachar(tmp));
