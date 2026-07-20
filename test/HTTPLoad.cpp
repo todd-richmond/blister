@@ -212,7 +212,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	if (fs::is_directory(bpath)) {
 	    for (const auto &entry : fs::directory_iterator(bpath))
 		if (entry.path().filename().native()[0] != '.')
-		    add(entry.path().c_str());
+		    add(astringtowchar(entry.path().string()));
 	} else if (fs::is_regular_file(bpath)) {
 	    add(bodyfile);
 	} else {

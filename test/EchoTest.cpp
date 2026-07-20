@@ -229,7 +229,6 @@ void EchoTest::EchoClientSocket::start() {
     connect(sa, tmt);
 }
 
-WARN_DISABLE("-Wstack-usage=")
 void EchoTest::EchoServerSocket::input() {
     char tmp[MAXREAD];
 

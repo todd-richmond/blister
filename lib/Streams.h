@@ -267,8 +267,9 @@ public:
 
 	    if (LIKELY(ec == errc{})) {
 		wchar wbuf[40];
+		wchar *d = wbuf;
 
-		for (auto *s = buf, *d = wbuf; s < end;)
+		for (const char *s = buf; s < end;)
 		    *d++ = (wchar)*s++;
 		write(wbuf, end - buf);
 	    } else {
@@ -422,7 +423,7 @@ public:
 private:
     struct null_buffer : public basic_streambuf<tchar> {
         streamsize xsputn(const tchar *, streamsize n) override { return n; }
-        int overflow(int c) override { return c; }
+        int overflow(int c) { return c; }
         pos_type seekoff(off_type, ios_base::seekdir, ios_base::openmode)
 	    override { return -1; }
         pos_type seekpos(pos_type, ios_base::openmode) override { return -1; }

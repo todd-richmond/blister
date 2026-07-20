@@ -326,9 +326,8 @@ loop:
 	    val_end = pp + strlen(pp);
 	val_len = (size_t)(val_end - pp);
 
-	// Create strings directly without intermediate substr
-	tstring header_name(p, name_len);
-	tstring header_val(pp, val_len);
+	tstring header_name(achartotchar(p), name_len);
+	tstring header_val(achartotchar(pp), val_len);
 
 	reshdrs.emplace(std::move(header_name), std::move(header_val));
     }
