@@ -266,7 +266,7 @@ public:
 	    auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
 
 	    if (LIKELY(ec == errc{})) {
-		wchar wbuf[40];
+		wchar wbuf[40]{};
 		wchar *d = wbuf;
 
 		for (const char *s = buf; s < end;)
@@ -418,19 +418,23 @@ private:
  */
 class BLISTER nullstream: public basic_ostream<tchar> {
 public:
-    nullstream() : basic_ostream<tchar>(&null_buf) {}
+    nullstream(): basic_ostream<tchar>(&nb) {}
 
 private:
-    struct null_buffer : public basic_streambuf<tchar> {
+    struct null_buffer: public basic_streambuf<tchar> {
         streamsize xsputn(const tchar *, streamsize n) override { return n; }
+#ifdef _WIN32
         int overflow(int c) { return c; }
+#else
+        int overflow(int c) override { return c; }
+#endif
         pos_type seekoff(off_type, ios_base::seekdir, ios_base::openmode)
 	    override { return -1; }
         pos_type seekpos(pos_type, ios_base::openmode) override { return -1; }
         int sync() override { return 0; }
     };
 
-    null_buffer null_buf;
+    null_buffer nb;
 };
 
 
