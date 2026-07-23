@@ -570,8 +570,11 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 	}
 	CloseHandle(hdl);
 #else
-	if ((fmap = new (nothrow) char[len]) == nullptr || (ulong)::read(fd,
-	    fmap, len) != len) {
+	// gcc false positive due to array new overflow check codegen (PR100696)
+	WARN_PUSH_DISABLE(-Wduplicated-branches)
+	fmap = new (nothrow) char[len];
+	WARN_POP()
+	if (fmap == nullptr || (ulong)::read(fd, fmap, len) != len) {
 	    error(404);
 	    return;
 	}

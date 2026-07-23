@@ -150,6 +150,7 @@ private:
 	uint klen = 0;
 	tchar key[];
 
+	Stats(strhash_t h, uint k) : hash(h), klen(k) {}
 	static Stats *newstats(const tchar *k, uint klen, strhash_t h);
 	static void delstats(Stats *s) { delete [] (char *)s; }
     };

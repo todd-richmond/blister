@@ -443,7 +443,7 @@ public:
 	uint_fast16_t ticket = next.fetch_add(1, memory_order_relaxed);
 	uint pos;
 
-	while ((pos = (uint_fast16_t)(ticket -
+	while ((pos = (uint)(uint_fast16_t)(ticket -
 	    current.load(memory_order_acquire))) != 0)
 	    spin_release(LIKELY(pos < yield), true);
     }

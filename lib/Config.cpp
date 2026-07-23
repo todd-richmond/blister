@@ -295,6 +295,7 @@ bool Config::parse(tistream &is) {
     if (is.peek() == L'\xFEFF')
 	is.get();
 #endif
+    line.reserve(240);
     while (getline(is, line)) {
 	size_t len = line.size();
 

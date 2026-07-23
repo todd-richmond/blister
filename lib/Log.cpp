@@ -163,7 +163,9 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 		len += charsz;
 	} else if (out > 0) {
 	    // partial write - restore previous file length
-	    (void)ftruncate(fd, (off_t)len);
+	    if (ftruncate(fd, (off_t)len)) {
+		;
+	    }
 	}
     }
 }
