@@ -30,21 +30,20 @@ static Timing &_dtiming(void) {
 
 Timing &dtiming(_dtiming());
 
-Timing::Stats *Timing::Stats::newstats(const tchar *k, uint klen, strhash_t h) {
+Timing::Stats *Timing::Stats::newstats(const tchar *k, uint klen, strhash_t
+    h) {
     Stats *s;
 
     if (!klen)
 	klen = (uint)tstrlen(k);
-    s = (Stats *)new char[offsetof(Stats, key) + ((size_t)klen + 1) *
-	sizeof (tchar)];
+    s = (Stats *)operator new(offsetof(Stats, key) + ((size_t)klen + 1) *
+	sizeof (tchar), align_val_t(alignof(Stats)));
     new (s) Stats(h, klen);
     memcpy(s->key, k, ((size_t)klen + 1) * sizeof (tchar));
     return s;
 }
 
 Timing::~Timing() {
-    // 1st call moves to free list and 2nd deletes
-    clear();
     clear();
 }
 

@@ -339,6 +339,9 @@ private:
 
     void endlog(Tlsdata &tlsd);
     void _flush(void);
+    void _mail(Level l, const tchar *to, const tchar *from, const tchar
+	*host);
+    void _syslog(Level l, const tchar *host, uint fac);
     template <typename T>
     Log &log(Tlsdata &tlsd, const T &val) {
 	if (LIKELY(tlsd.clvl != None)) {

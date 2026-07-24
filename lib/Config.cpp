@@ -41,13 +41,13 @@ void Config::clear_locked(void) {
 }
 
 void Config::clear(void) {
-    WLocker lkr(lck);
+    SpinWLocker lkr(lck);
 
     clear_locked();
 }
 
 void Config::erase(const tchar *key, const tchar *sect) {
-    WLocker lkr(lck);
+    SpinWLocker lkr(lck);
 
     if (sect && *sect) {
 	size_t klen = tstrlen(key);
@@ -77,7 +77,7 @@ void Config::erase(const tchar *key, const tchar *sect) {
 bool Config::expandkv(const KV *kv, tstring &val) const {
     tstring::size_type epos, spos, search = 0;
 
-    val = kv->val;
+    val.assign(kv->val, kv->vlen);
     while ((spos = val.find('$', search)) != val.npos) {
 	tchar open;
 
@@ -108,19 +108,19 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	repl = it->second->val;
 	repllen = it->second->vlen;
 	val.replace(spos, epos - spos + 1, repl, repllen);
-	search = spos + repllen;
+	search = spos;
     }
     return !val.empty();
 }
 
 tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
     const {
-    RLocker lkr(lck);
+    SpinRLocker lkr(lck);
     const KV *kv = getkv(key, sect);
 
     if (LIKELY(kv)) {
 	if (LIKELY(!kv->expand))
-	    return kv->val;
+	    return tstring(kv->val, kv->vlen);
 	tstring s;
 	if (expandkv(kv, s))
 	    return s;
@@ -129,7 +129,7 @@ tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
 }
 
 bool Config::get(const tchar *key, bool def, const tchar *sect) const {
-    RLocker lkr(lck);
+    SpinRLocker lkr(lck);
     const KV *kv = getkv(key, sect);
 
     if (LIKELY(kv)) {
@@ -149,12 +149,12 @@ bool Config::get(const tchar *key, bool def, const tchar *sect) const {
 
 tstring Config::get(tstring_view key, const tchar *def, const tchar *sect)
     const {
-    RLocker lkr(lck);
+    SpinRLocker lkr(lck);
     const KV *kv = getkv(key, sect);
 
     if (LIKELY(kv)) {
 	if (LIKELY(!kv->expand))
-	    return kv->val;
+	    return tstring(kv->val, kv->vlen);
 	tstring s;
 	if (expandkv(kv, s))
 	    return s;
@@ -163,7 +163,7 @@ tstring Config::get(tstring_view key, const tchar *def, const tchar *sect)
 }
 
 bool Config::get(tstring_view key, bool def, const tchar *sect) const {
-    RLocker lkr(lck);
+    SpinRLocker lkr(lck);
     const KV *kv = getkv(key, sect);
 
     if (LIKELY(kv)) {
@@ -403,7 +403,7 @@ bool Config::parse(tistream &is) {
 }
 
 bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
-    WLocker lkr(lck);
+    SpinWLocker lkr(lck);
 
     if (!is)
 	return false;
@@ -516,7 +516,7 @@ void Config::trim(tstring_view &s) {
 
 bool Config::write(tostream &os, bool inistyle) const {
     ulong cnt = 0;
-    RLocker lkr(lck);
+    SpinRLocker lkr(lck);
     vector<pair<const tchar *, const KV *>> keys;
     tstring sect;
 

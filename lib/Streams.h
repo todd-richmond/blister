@@ -55,16 +55,6 @@ public:
 	return write(&t, sizeof (t));
     }
 
-    virtual int doallocate(void) {
-	if (!buf && bufsz) {
-	    buf = new char[(size_t)bufsz];
-	    alloced = true;
-	    setp(buf, buf + bufsz);
-	    setg(buf, buf, buf);
-	}
-	return 0;
-    }
-
     void reset(void) {
 	if (buf) {
 	    setg(buf, buf, buf);
@@ -260,13 +250,40 @@ public:
     void write(const C *s, streamsize n) { sb.write(s, n); }
     template <typename T>
     __forceinline void write(const T &val) {
-	if constexpr (is_integral_v<T> || is_floating_point_v<T>) {
+	if constexpr (is_integral_v<T>) {
+	    C buf[24];
+	    C *p = buf + sizeof (buf) / sizeof (C);
+	    auto uval = static_cast<make_unsigned_t<T>>(val);
+
+	    if constexpr (is_signed_v<T>)
+		if (val < 0)
+		    uval = 0 - uval;
+	    while (uval >= 100) {
+		auto const idx = (uval % 100) * 2;
+
+		uval /= 100;
+		*--p = (C)digit_pairs[idx + 1];
+		*--p = (C)digit_pairs[idx];
+	    }
+	    if (uval >= 10) {
+		auto const idx = uval * 2;
+
+		*--p = (C)digit_pairs[idx + 1];
+		*--p = (C)digit_pairs[idx];
+	    } else {
+		*--p = (C)('0' + uval);
+	    }
+	    if constexpr (is_signed_v<T>)
+		if (val < 0)
+		    *--p = (C)'-';
+	    write(p, buf + sizeof (buf) / sizeof (C) - p);
+	} else if constexpr (is_floating_point_v<T>) {
 #ifdef UNICODE
 	    char buf[40];
 	    auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
 
 	    if (LIKELY(ec == errc{})) {
-		wchar wbuf[40]{};
+		wchar wbuf[40];
 		wchar *d = wbuf;
 
 		for (const char *s = buf; s < end;)
@@ -276,42 +293,13 @@ public:
 		*this << val;
 	    }
 #else
-	    if constexpr (is_integral_v<T>) {
-		char buf[24];
-		char *p = buf + sizeof (buf);
-		auto uval = static_cast<make_unsigned_t<T>>(val);
+	    char buf[40];
+	    auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
 
-		if constexpr (is_signed_v<T>)
-		    if (val < 0)
-			uval = 0 - uval;
-		while (uval >= 100) {
-		    auto const idx = (uval % 100) * 2;
-
-		    uval /= 100;
-		    *--p = digit_pairs[idx + 1];
-		    *--p = digit_pairs[idx];
-		}
-		if (uval >= 10) {
-		    auto const idx = uval * 2;
-
-		    *--p = digit_pairs[idx + 1];
-		    *--p = digit_pairs[idx];
-		} else {
-		    *--p = (char)('0' + uval);
-		}
-		if constexpr (is_signed_v<T>)
-		    if (val < 0)
-			*--p = '-';
-		write(p, buf + sizeof (buf) - p);
-	    } else {
-		char buf[40];
-		auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
-
-		if (LIKELY(ec == errc{}))
-		    write(buf, end - buf);
-		else
-		    *this << val;
-	    }
+	    if (LIKELY(ec == errc{}))
+		write(buf, end - buf);
+	    else
+		*this << val;
 #endif
 	} else if constexpr (is_enum_v<T>) {
 	    write(static_cast<underlying_type_t<T>>(val));
@@ -423,11 +411,7 @@ public:
 private:
     struct null_buffer: public basic_streambuf<tchar> {
         streamsize xsputn(const tchar *, streamsize n) override { return n; }
-#ifdef _WIN32
-        int overflow(int c) { return c; }
-#else
-        int overflow(int c) override { return c; }
-#endif
+        int_type overflow(int_type c) override { return c; }
         pos_type seekoff(off_type, ios_base::seekdir, ios_base::openmode)
 	    override { return -1; }
         pos_type seekpos(pos_type, ios_base::openmode) override { return -1; }

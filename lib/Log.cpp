@@ -634,6 +634,15 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (mp)
 	    ffd.unlock();
     }
+
+    bool mailit = mailenable && clvl <= maillvl && !mailto.empty();
+    tstring mfrom, mhost, mto;
+
+    if (mailit) {
+	mfrom = mailfrom;
+	mhost = mailhost;
+	mto = mailto;
+    }
     lck.unlock();
     strbuf.erase(strbuf.size() - 1);
     tlsd.clvl = None;
@@ -664,11 +673,11 @@ void Log::endlog(Tlsdata &tlsd) {
 	ss += tstringtoastring(strbuf.substr(tmlen));
 	syslogsock.write(ss.data(), (uint)ss.size(), syslogaddr);
     }
-    if (mailenable && clvl <= maillvl && !mailto.empty()) {
+    if (mailit) {
 	SMTPClient smtp;
 
-	if (smtp.connect(mailhost.c_str())) {
-	    tstring ss(mailfrom);
+	if (smtp.connect(mhost.c_str())) {
+	    tstring ss(mfrom);
 
 	    smtp.helo();
 	    if (ss.find_first_of('@') == ss.npos) {
@@ -676,7 +685,7 @@ void Log::endlog(Tlsdata &tlsd) {
 		ss += Sockaddr::hostname();
 	    }
 	    smtp.from(RFC822Addr(ss));
-            smtp.to(RFC822Addr(mailto));
+	    smtp.to(RFC822Addr(mto));
 	    smtp.subject(strbuf.substr(tmlen, 69).c_str());
 	    smtp.data(false, strbuf.c_str());
 	    smtp.enddata();
@@ -732,7 +741,15 @@ void Log::logv(int il, ...) {
     endlog(tlsd);
 }
 
-void Log::mail(Level l, const tchar *to, const tchar *from, const tchar *host) {
+void Log::mail(Level l, const tchar *to, const tchar *from, const tchar
+    *host) {
+    Locker lkr(lck);
+
+    _mail(l, to, from, host);
+}
+
+void Log::_mail(Level l, const tchar *to, const tchar *from, const tchar
+    *host) {
     maillvl = l;
     if (to) {
 	mailfrom = from;
@@ -791,7 +808,7 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 		case '\t': esc2('t'); break;
 		case '\v': esc2('v'); break;
 		default:
-		    if (LIKELY(c >= ' ')) {
+		    if (LIKELY(c >= ' ' && c != '\x7f')) {
 			buf[bsz++] = (tchar)c;
 			if (bsz == (streamsize)sizeof (buf))
 			    flush();
@@ -831,7 +848,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
     else
 	hostname = s.substr(0, pos);
     mailenable = cfg.get(T("mail.enable"), false, sect);
-    mail(str2enum(cfg.get(T("mail.level"), T("err"), sect).c_str()),
+    _mail(str2enum(cfg.get(T("mail.level"), T("err"), sect).c_str()),
 	cfg.get(T("mail.to"), T("logger"), sect).c_str(),
 	cfg.get(T("mail.from"), T("<>"), sect).c_str(),
 	cfg.get(T("mail.host"), T("mail:25"), sect).c_str());
@@ -841,7 +858,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
 	    src.erase(0, pos + 1);
     }
     syslogenable = cfg.get(T("syslog.enable"), false, sect);
-    syslog(str2enum(cfg.get(T("syslog.level"), T("err"), sect).c_str()),
+    _syslog(str2enum(cfg.get(T("syslog.level"), T("err"), sect).c_str()),
 	cfg.get(T("syslog.host"), T("localhost"), sect).c_str(),
 	cfg.get(T("syslog.facility"), 1U, sect));
     format(cfg.get(T("format"), T("[%Y-%m-%d %H:%M:%S.%# %z]"), sect).c_str());
@@ -899,13 +916,19 @@ Log::Level Log::str2enum(const tchar *l) {
 	    sv.remove_suffix(1);
 	if ((!tstrnicmp(l, sv.data(), sv.size()) && l[sv.size()] == '\0') ||
 	    (!tstrnicmp(l, LevelStr2[u].data(), LevelStr2[u].size()) &&
-	     l[LevelStr2[u].size()] == '\0'))
+	    l[LevelStr2[u].size()] == '\0'))
 	    return (Level)u;
     }
     return None;
 }
 
 void Log::syslog(Level l, const tchar *host, uint fac) {
+    Locker lkr(lck);
+
+    _syslog(l, host, fac);
+}
+
+void Log::_syslog(Level l, const tchar *host, uint fac) {
     sysloglvl = l;
     if (!host)
 	return;

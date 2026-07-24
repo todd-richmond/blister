@@ -238,8 +238,7 @@ private:
     C &lck;
 };
 
-template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() =
-    &C::unlock>
+template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock>
 class BLISTER LockerTemplate: nocopy {
 public:
     explicit __forceinline LockerTemplate(C &lock, bool lockit = true):
@@ -253,18 +252,17 @@ public:
 
     __forceinline void lock(void) {
 	if (LIKELY(!locked)) {
-	    locked = true;
 	    invoke(LOCK, lck);
+	    locked = true;
 	}
     }
     __forceinline void relock(void) {
 	if (LIKELY(locked)) {
 	    invoke(UNLOCK, lck);
 	    THREAD_YIELD();
-	} else {
-	    locked = true;
 	}
 	invoke(LOCK, lck);
+	locked = true;
     }
     __forceinline void unlock(void) {
 	if (LIKELY(locked)) {
@@ -391,7 +389,7 @@ public:
 		1, memory_order_acquire, memory_order_relaxed))) {
 		return;
 	    } else {
-		spin_release();
+		spin_release(true, true);
 	    }
 	} while (true);
     }
@@ -404,7 +402,7 @@ public:
     __forceinline bool try_lock_shared(void) {
 	uint_fast32_t expected = state.load(memory_order_relaxed);
 
-	return !(expected & WRITE_BIT) && state.compare_exchange_weak(expected,
+	return !(expected & WRITE_BIT) && state.compare_exchange_strong(expected,
 	    expected + 1, memory_order_acquire, memory_order_relaxed);
     }
     __forceinline bool try_uplock(void) {
@@ -883,7 +881,8 @@ public:
 	hdl = nullptr;
 	return h ? CloseHandle(h) != 0 : true;
     }
-    bool open(bool manual = false, bool set = false, const tchar *name = nullptr) {
+    bool open(bool manual = false, bool set = false, const tchar *name =
+	nullptr) {
 	close();
 	return (hdl = CreateEvent(NULL, manual, set, name)) != nullptr;
     }
@@ -987,7 +986,7 @@ public:
 	hdl = -1;
 	return h == -1 || semctl(h, 0, IPC_RMID) == 0;
     }
-    bool open(const tchar *name = nullptr, uint init = 0, bool exclusive = false);
+    bool open(const tchar *name = nullptr, uint init = 0, bool excl= false);
     __forceinline bool set(uint cnt = 1) {		// NOSONAR
 	sembuf op;
 
@@ -1050,8 +1049,15 @@ public:
     explicit __forceinline operator bool(void) const { return referenced(); }
     __forceinline bool referenced(void) const { return cnt != 0; }
 
-    __forceinline void reference(void) { ++cnt; }
-    __forceinline bool release(void) { return --cnt == 0; }
+    __forceinline void reference(void) {
+	cnt.fetch_add(1, memory_order_relaxed);
+    }
+    __forceinline bool release(void) {
+	if (cnt.fetch_sub(1, memory_order_release) != 1)
+	    return false;
+	atomic_thread_fence(memory_order_acquire);
+	return true;
+    }
 
 private:
     atomic_uint cnt;
@@ -1140,7 +1146,9 @@ public:
 
     static ThreadGroup MainThreadGroup;
 
-    ThreadState getState(void) const { return state; }
+    ThreadState getState(void) const {
+	return state.load(memory_order_acquire);
+    }
     thread_id_t getId(void) const { return id; }
     const Thread &getMainThread(void) const { return master; }
     size_t size(void) const { return threads.size(); }
@@ -1207,6 +1215,7 @@ public:
 	return *c;
     }
     __forceinline void set(C *c) const { tls_set(key, c); }
+
 protected:
     tlskey_t key;
 

@@ -963,9 +963,17 @@ inline uint32_t swar8(const char *s) {
 
 template<typename T>
 __forceinline T atoun(const tchar *str, size_t len) {
-#ifndef UNICODE
     size_t val = 0;
+#ifdef UNICODE
+    for (size_t i = 0; i < len; ++i) {
+	size_t d = (size_t)(tuchar)str[i] - '0';
 
+	if (d > 9)
+	    break;
+	val = val * 10 + d;
+    }
+    return (T)val;
+#else
     if (len >= 8) {
 	val = swar8(str);
 	str += 8;
@@ -987,14 +995,6 @@ __forceinline T atoun(const tchar *str, size_t len) {
     case 2: val = val * 100 + (size_t)(str[0] - '0') * 10 +
 	(size_t)(str[1] - '0'); break;
     case 1: val = val * 10 + (size_t)(str[0] - '0'); break;
-    }
-    return (T)val;
-#else
-    size_t val = 0;
-    for (size_t i = 0; i < len; ++i) {
-	size_t d = (size_t)(tuchar)str[i] - '0';
-	if (d > 9) break;
-	val = val * 10 + d;
     }
     return (T)val;
 #endif

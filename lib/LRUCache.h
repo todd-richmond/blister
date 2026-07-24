@@ -18,6 +18,7 @@
 #define LRUCache_h
 
 #include <list>
+#include <memory>
 #include <type_traits>
 #include <unordered_map>
 #include "Thread.h"
@@ -31,8 +32,7 @@ class BLISTER LRUCacheEntry {
 public:
     LRUCacheEntry(const void *d, ulong s): data(nullptr), sz(0),
 	hash(rapid_hash(d, s)), msec(0) {}
-    LRUCacheEntry(const LRUCacheEntry &ce): data(ce.data), sz(ce.sz),
-	hash(ce.hash), msec(ce.msec) {}
+    LRUCacheEntry(const LRUCacheEntry &ce) = default;
 
     __forceinline operator bool() const { return data != nullptr; }
     __forceinline operator lruhash_t() const { return hash; }
@@ -40,7 +40,7 @@ public:
 
     __forceinline void touch(msec_t now) { msec = now; }
 
-    const void *data;
+    shared_ptr<const void> data;
     ulong sz;
 
 private:
@@ -54,8 +54,8 @@ public:
     using lru_kv = pair<lruhash_t, C>;
     using lru_list = list<lru_kv>;
     using lru_map = unordered_map<lruhash_t, typename lru_list::iterator>;
-    static constexpr ulong LRUCACHE_SIZE = 10 * 1024 * 1024;
-    static constexpr msec_t LRUCACHE_TIME = 5 * 60 * 1000;
+    static constexpr ulong LRUCACHE_SIZE = 10UL * 1024 * 1024;
+    static constexpr msec_t LRUCACHE_TIME = 5UL * 60 * 1000;
 
     explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME):
 	cursz(0), maxsz(sz), maxtm(tm), last_purge(0) {
@@ -66,22 +66,19 @@ public:
 
     void clear(void) {
 	lru_list freed;
+	FastSpinLocker lkr(lock);
 
-	lock.lock();
 	swap(freed, cache_list);
 	cache_map.clear();
 	cursz = 0;
 	last_purge = 0;
-	lock.unlock();
-	for (auto &kv : freed)
-	    delete [] (char *)kv.second.data;
     }
     const C get(const void *data, ulong sz) {
 	C entry(data, sz);
 	lru_list freed;
 	msec_t now = LIKELY(maxtm) ? mticks() : 0;
+	FastSpinLocker lkr(lock);
 
-	lock.lock();
 	if (LIKELY(maxtm) && now - last_purge > maxtm / 2) {
 	    purge(0, now, freed);
 	    last_purge = now;
@@ -92,15 +89,8 @@ public:
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
 	    if (LIKELY(maxtm))
 		it->second->second.touch(now);
-	    C result = it->second->second;
-	    lock.unlock();
-	    for (auto &kv : freed)
-		delete [] (char *)kv.second.data;
-	    return result;
+	    return it->second->second;
 	}
-	lock.unlock();
-	for (auto &kv : freed)
-	    delete [] (char *)kv.second.data;
 	return entry;
     }
     bool put(C &entry, const void *data, ulong sz) {
@@ -112,49 +102,48 @@ public:
 
 	msec_t now = maxtm ? mticks() : 0;
 	lru_list freed;
-	const void *old_data = nullptr;
-
-	lock.lock();
+	shared_ptr<const void> old_data;
+	shared_ptr<const void> newdata(data, [](const void *p) {
+	    delete [] (const char *)p;
+	});
+	FastSpinLocker lkr(lock);
 	auto it = cache_map.find(entry);
+
 	if (it != cache_map.end()) {
+	    ulong old_sz = it->second->second.sz;
+
 	    old_data = it->second->second.data;
-	    cursz -= it->second->second.sz;
-	    entry.data = data;
+	    entry.data = newdata;
 	    entry.sz = sz;
 	    entry.touch(now);
 	    it->second->second = entry;
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
+	    cursz -= old_sz;
+	    purge(sz, now, freed);
 	    cursz += sz;
 	} else {
 	    purge(sz, now, freed);
-	    entry.data = data;
+	    entry.data = newdata;
 	    entry.sz = sz;
 	    entry.touch(now);
 	    cursz += sz;
 	    cache_list.emplace_front(lruhash_t(entry), entry);
 	    cache_map[entry] = cache_list.begin();
 	}
-	lock.unlock();
-	delete [] (char *)old_data;
-	for (auto &kv : freed)
-	    delete [] (char *)kv.second.data;
 	return true;
     }
     void resize(ulong sz, msec_t tm = 0) {
 	lru_list freed;
+	FastSpinLocker lkr(lock);
 
-	lock.lock();
 	maxtm = tm;
 	if (sz < maxsz)
 	    purge(maxsz - sz, maxtm ? mticks() : 0, freed);
 	maxsz = sz;
-	lock.unlock();
-	for (auto &kv : freed)
-	    delete [] (char *)kv.second.data;
     }
 
 private:
-    Lock lock;
+    SpinLock lock;
     lru_list cache_list;
     lru_map cache_map;
     ulong cursz, maxsz;
@@ -167,7 +156,8 @@ private:
 		if (LIKELY(now - back_entry.second.touch() > maxtm)) {
 		    cursz -= back_entry.second.sz;
 		    cache_map.erase(back_entry.first);
-		    freed.splice(freed.end(), cache_list, prev(cache_list.end()));
+		    freed.splice(freed.end(), cache_list,
+			prev(cache_list.end()));
 		} else {
 		    break;
 		}
@@ -175,6 +165,7 @@ private:
 	}
 	while (UNLIKELY(cursz + sz > maxsz) && !cache_list.empty()) {
 	    auto &back_entry = cache_list.back();
+
 	    cursz -= back_entry.second.sz;
 	    cache_map.erase(back_entry.first);
 	    freed.splice(freed.end(), cache_list, prev(cache_list.end()));
