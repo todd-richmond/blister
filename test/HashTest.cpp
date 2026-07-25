@@ -10,27 +10,27 @@
 #include <vector>
 #include <string>
 
-vector<char> read_file_content(const tstring& filename) {
-    ifstream file(filename, ios::binary | ios::ate);
+vector<tchar> read_file_content(const tstring& filename) {
+    tifstream file(filename.c_str(), ios::binary | ios::ate);
 
     if (!file.is_open()) {
-	tcout << "ERROR: no such file\n";
+	tcout << T("ERROR: no such file\n");
 	exit(2);
     }
 
     streamsize size = file.tellg();
     file.seekg(0, ios::beg);
 
-    vector<char> buffer(static_cast<size_t>(size));
+    vector<tchar> buffer(static_cast<size_t>(size));
     if (!file.read(buffer.data(), size))
 	return {};
     return buffer;
 }
 
-vector<char> read_stdin_content() {
-    vector<char> buffer;
+vector<tchar> read_stdin_content() {
+    vector<tchar> buffer;
     constexpr size_t block_size = 8192;
-    char block[block_size];
+    tchar block[block_size];
 
     while (tcin.read(block, block_size))
 	buffer.insert(buffer.end(), block, block + tcin.gcount());
@@ -43,11 +43,11 @@ int tmain(int argc, const tchar * const argv[]) {
     if (argc >= 2) {
 	tstring arg = argv[1];
 
-	if (arg == "-b" || arg == "-r") {
+	if (arg == T("-b") || arg == T("-r")) {
 	    tstring filename;
 	    if (argc >= 3)
 		filename = argv[2];
-	    vector<char> content;
+	    vector<tchar> content;
 	    if (filename.empty()) {
 		content = read_stdin_content();
 	    } else {
@@ -59,11 +59,11 @@ int tmain(int argc, const tchar * const argv[]) {
 	    if (content.empty())
 		return 1;
 	    strhash_t hash;
-	    if (arg == "-b")
+	    if (arg == T("-b"))
 		hash = bernstein_hash(content.data(), content.size());
 	    else
-		hash = rapid_hash(content.data(), content.size());
-	    tcout << hash << "\n";
+		hash = rapid_hash(content.data(), content.size() * sizeof (tchar));
+	    tcout << hash << T("\n");
 	    return 0;
 	}
     }
@@ -72,12 +72,12 @@ int tmain(int argc, const tchar * const argv[]) {
     int failures = 0;
     int tests = 0;
 
-#define fail(msg) do { tcout << msg << "\n"; failures++; } while(0)
+#define fail(msg) do { tcout << msg << T("\n"); failures++; } while(0)
 
-    tcout << "Testing hash and string functors...\n";
+    tcout << T("Testing hash and string functors...\n");
     // Test strhash functor
     {
-	tcout << "Testing strhash functor...\n";
+	tcout << T("Testing strhash functor...\n");
 	// tchar* key (use mutable array for pointer test)
 	static tchar key_array[] = T("key");
 	tchar* key_ptr = key_array;
@@ -105,7 +105,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     // Test strihash functor
     {
-	tcout << "Testing strihash functor...\n";
+	tcout << T("Testing strihash functor...\n");
 	static tchar key_array[] = T("key");
 	tchar* key_ptr = key_array;
 	unordered_map<tchar*, tstring, strihash> map_ptr;
@@ -137,7 +137,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     // Test striasciihash functor
     {
-	tcout << "Testing striasciihash functor...\n";
+	tcout << T("Testing striasciihash functor...\n");
 	static tchar key_array[] = T("key");
 	tchar* key_ptr = key_array;
 	unordered_map<tchar*, tstring, striasciihash> map_ptr;
@@ -172,7 +172,7 @@ int tmain(int argc, const tchar * const argv[]) {
     // made stringhash/stringihash/striasciihash fail to compile at all when
     // called directly with a string literal
     {
-	tcout << "Testing compile-time hashing of string literals...\n";
+	tcout << T("Testing compile-time hashing of string literals...\n");
 	constexpr strhash sh;
 	constexpr strihash sih;
 	constexpr striasciihash sah;
@@ -189,7 +189,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     // Test streq functor
     {
-	tcout << "Testing streq functor...\n";
+	tcout << T("Testing streq functor...\n");
 	unordered_map<tstring, tstring, strhash, streq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
@@ -204,7 +204,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     // Test strieq functor
     {
-	tcout << "Testing strieq functor...\n";
+	tcout << T("Testing strieq functor...\n");
 	unordered_map<tstring, tstring, strihash, strieq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
@@ -219,7 +219,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     // Test strless functor with std::map
     {
-	tcout << "Testing strless functor...\n";
+	tcout << T("Testing strless functor...\n");
 	map<tstring, tstring, strless> map_string;
 	map_string[T("zebra")] = T("last");
 	map_string[T("apple")] = T("first");
@@ -247,7 +247,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     // Test striless functor with std::map
     {
-	tcout << "Testing striless functor...\n";
+	tcout << T("Testing striless functor...\n");
 	map<tstring, tstring, striless> map_string;
 	map_string[T("Zebra")] = T("last");
 	map_string[T("Apple")] = T("first");
@@ -289,7 +289,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     // Test different string literal lengths
     {
-	tcout << "Testing different string literal lengths...\n";
+	tcout << T("Testing different string literal lengths...\n");
 	unordered_map<const tchar*, int, strhash> map_lengths;
 	map_lengths[T("a")] = 1;
 	map_lengths[T("abcde")] = 5;
@@ -302,7 +302,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     // Test hash consistency with string literals through unordered_map usage
     {
-	tcout << "Testing hash consistency with string literals...\n";
+	tcout << T("Testing hash consistency with string literals...\n");
 	// Test that the same string literal produces the same hash
 	unordered_map<const tchar*, int, strhash> hash_consistency;
 	hash_consistency[T("same")] = 1;
@@ -336,7 +336,7 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     // Test heterogeneous lookups with transparent function objects
     {
-	tcout << "Testing heterogeneous lookups...\n";
+	tcout << T("Testing heterogeneous lookups...\n");
 	unordered_map<tstring, tstring, strhash, streq> map_hetero;
 	map_hetero[T("key")] = T("value");
 	// Test heterogeneous lookup with const char* key
@@ -408,11 +408,11 @@ int tmain(int argc, const tchar * const argv[]) {
 	    map_iordered_hetero.end())
 	    fail(T("FAIL: Negative case-insensitive heterogeneous lookup with ordered map"));
     }
-    tcout << "Test Results: " << (tests - failures) << "/" << tests <<
-	" tests passed\n";
+    tcout << T("Test Results: ") << (tests - failures) << T("/") << tests <<
+	T(" tests passed\n");
     if (failures > 0)
-	tcout << "Failed tests: " << failures << "\n";
+	tcout << T("Failed tests: ") << failures << T("\n");
     else
-	tcout << "All hash and string functor tests completed successfully!\n";
+	tcout << T("All hash and string functor tests completed successfully!\n");
     return failures;
 }

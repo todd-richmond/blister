@@ -32,6 +32,9 @@ const int DELAY = 20;
 const int TIMEOUT = 10 * 1000;
 const int MAXREAD = 8 * 1024;
 
+static char *dbuf;
+static uint dsz;
+
 class EchoTest: public Dispatcher {
 public:
     using Dispatcher::Dispatcher;
@@ -40,7 +43,8 @@ public:
     public:
 	EchoClientSocket(EchoTest &es, const Sockaddr &a, ulong t, ulong w):
 	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0), ops(0),
-	    tmt(t), wait(w), usecs(0) {}
+	    rbuf(new char[dsz]), tmt(t), wait(w), usecs(0) {}
+	~EchoClientSocket() override { delete [] rbuf; }
 
 	void start(ulong msec) { timeout(start, msec); }
 
@@ -49,6 +53,7 @@ public:
 	timing_t begin;
 	uint in, out;
 	uint ops;
+	char *rbuf;
 	ulong tmt, wait;
 	usec_t usecs;
 
@@ -64,8 +69,8 @@ public:
     class EchoServerSocket: public DispatchServerSocket {
     public:
 	EchoServerSocket(Dispatcher &d, const Socket &sock):
-	    DispatchServerSocket(d, sock), buf(nullptr), bufsz(0), in(0), out(0),
-	    tmt(TIMEOUT) {}
+	    DispatchServerSocket(d, sock), buf(nullptr), bufsz(0), in(0),
+	    out(0), tmt(TIMEOUT) {}
 	EchoServerSocket(const EchoServerSocket &) = delete;
 	virtual ~EchoServerSocket() { delete [] buf; }
 
@@ -106,8 +111,6 @@ public:
 	ulong wait);
 };
 
-static char *dbuf;
-static uint dsz;
 static EchoTest *etp;
 static atomic<uint> errs, ops;
 static atomic loops(MAXLLONG);
@@ -148,7 +151,8 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 void EchoTest::EchoClientSocket::input() {
     uint len;
 
-    if (error() || ((len = (uint)read(dbuf + in, dsz - in)) == (uint)-1)) {
+    if (UNLIKELY(error() || ((len = (uint)read(rbuf + in, dsz - in)) ==
+	(uint)-1))) {
 	if (loop_exit()) {
 	    erase();
 	} else {
@@ -158,10 +162,10 @@ void EchoTest::EchoClientSocket::input() {
 		T("close"));
 	    timeout(start, wait);
 	}
-    } else if ((in += len) == dsz) {
+    } else if (LIKELY((in += len) == dsz)) {
 	timing_t usec = Timing::now() - begin;
 
-	if (loop_exit()) {
+	if (UNLIKELY(loop_exit())) {
 	    erase();
 	} else {
 	    if (++ops >= 32)
@@ -180,7 +184,7 @@ void EchoTest::EchoClientSocket::input() {
 		ready(output);
 	    }
 	}
-    } else if (loops.load(memory_order_relaxed) <= 0 || qflag) {
+    } else if (UNLIKELY(loops.load(memory_order_relaxed) <= 0 || qflag)) {
 	erase();
     } else {
 	dlogd(T("client partial read="), len);
@@ -191,11 +195,12 @@ void EchoTest::EchoClientSocket::input() {
 void EchoTest::EchoClientSocket::output() {
     uint len;
 
-    if ((loops.load(memory_order_relaxed) <= 0 || qflag) && out == 0) {
+    if (UNLIKELY((loops.load(memory_order_relaxed) <= 0 || qflag) &&
+	out == 0)) {
 	write("", 1);
 	erase();
-    } else if (error() || ((len = (uint)write(dbuf + out, dsz - out)) ==
-	(uint)-1)) {
+    } else if (UNLIKELY(error() || ((len = (uint)write(dbuf + out, dsz -
+	out)) == (uint)-1))) {
 	if (loop_exit()) {
 	    erase();
 	} else {
@@ -205,7 +210,7 @@ void EchoTest::EchoClientSocket::output() {
 		T("close"));
 	    timeout(start, wait);
 	}
-    } else if ((out += len) == dsz) {
+    } else if (LIKELY((out += len) == dsz)) {
 	in = 0;
 	dlogt(T("client write="), len);
 	readable(input, tmt);
@@ -232,19 +237,20 @@ void EchoTest::EchoClientSocket::start() {
 void EchoTest::EchoServerSocket::input() {
     char tmp[MAXREAD];
 
-    if (error() || ((in = (uint)read(tmp, sizeof (tmp))) == (uint)-1)) {
+    if (UNLIKELY(error() || ((in = (uint)read(tmp, sizeof (tmp))) ==
+	(uint)-1))) {
 	if (loops.load() > 0 && !qflag)
 	    dloge(T("server read="), msg == DispatchTimeout ? T("timeout") :
 		T("close"));
 	erase();
-    } else if (in == 0) {
+    } else if (UNLIKELY(in == 0)) {
 	readable(input);
-    } else if (in == 1 && tmp[0] == '\0') {
+    } else if (UNLIKELY(in == 1 && tmp[0] == '\0')) {
 	erase();
-    } else if ((out = (uint)write(tmp, in)) == (uint)-1) {
+    } else if (UNLIKELY((out = (uint)write(tmp, in)) == (uint)-1)) {
 	dloge(T("server write="), errstr());
 	erase();
-    } else if (in == out) {
+    } else if (LIKELY(in == out)) {
 	dlogt(T("server write="), out);
 	readable(input);
     } else {
@@ -264,14 +270,15 @@ void EchoTest::EchoServerSocket::input() {
 void EchoTest::EchoServerSocket::output() {
     uint len;
 
-    if (error() || ((len = (uint)write(buf + out, in - out)) == (uint)-1)) {
+    if (UNLIKELY(error() || ((len = (uint)write(buf + out, in - out)) ==
+	(uint)-1))) {
 	dloge(T("server write="), msg == DispatchTimeout ? T("timeout") :
 	    T("close"));
 	erase();
 	return;
     }
     out += len;
-    if (out == in) {
+    if (LIKELY(out == in)) {
 	dlogt(T("server write="), len);
 	readable(input);
     } else {
