@@ -33,7 +33,7 @@
 #include "Log.h"
 #include "SMTPClient.h"
 
-using attrmap = unordered_map<tstring, tstring, strhash<tchar>, streq>;
+using attrmap = unordered_map<tstring, tstring, strhash, streq>;
 
 static constexpr const tchar *default_host = T("localhost:25");
 static atomic_bool qflag = false, rflag = false;

@@ -24,7 +24,7 @@
 
 class BLISTER HTTPServerSocket: public DispatchServerSocket {
 public:
-    using attrmap = unordered_map<const char *, const char *, strihash<char>,
+    using attrmap = unordered_map<const char *, const char *, strihash,
 	strieq>;
 
     HTTPServerSocket(Dispatcher &dspr, Socket &sock);

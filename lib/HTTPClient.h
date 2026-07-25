@@ -45,7 +45,7 @@ public:
 
 class BLISTER HTTPClient: nocopy {
 public:
-    using attrmap = unordered_multimap<tstring, tstring, strihash<tchar>,
+    using attrmap = unordered_multimap<tstring, tstring, strihash,
 	strieq>;
 
     HTTPClient();

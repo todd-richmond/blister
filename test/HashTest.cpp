@@ -81,23 +81,23 @@ int tmain(int argc, const tchar * const argv[]) {
 	// tchar* key (use mutable array for pointer test)
 	static tchar key_array[] = T("key");
 	tchar* key_ptr = key_array;
-	unordered_map<tchar*, tstring, strhash<tchar>> map_ptr;
+	unordered_map<tchar*, tstring, strhash> map_ptr;
 	map_ptr[key_ptr] = T("value");
 	tests++;
 	if (map_ptr[key_ptr] != T("value"))
 	    fail(T("FAIL: tchar* map test"));
-	unordered_map<tstring, tstring, strhash<tchar>, streq> map_string;
+	unordered_map<tstring, tstring, strhash, streq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
 	if (map_string[T("key")] != T("value"))
 	    fail(T("FAIL: tstring map test"));
-	unordered_map<tstring_view, tstring, strhash<tchar>> map_view;
+	unordered_map<tstring_view, tstring, strhash> map_view;
 	tstring key_str = T("key");
 	map_view[tstring_view(key_str)] = T("value");
 	tests++;
 	if (map_view[tstring_view(key_str)] != T("value"))
 	    fail(T("FAIL: tstring_view map test"));
-	unordered_map<const tchar*, tstring, strhash<tchar>> map_literal;
+	unordered_map<const tchar*, tstring, strhash> map_literal;
 	map_literal[T("literal_key")] = T("literal_value");
 	tests++;
 	if (map_literal[T("literal_key")] != T("literal_value"))
@@ -108,24 +108,24 @@ int tmain(int argc, const tchar * const argv[]) {
 	tcout << "Testing strihash functor...\n";
 	static tchar key_array[] = T("key");
 	tchar* key_ptr = key_array;
-	unordered_map<tchar*, tstring, strihash<tchar>> map_ptr;
+	unordered_map<tchar*, tstring, strihash> map_ptr;
 	map_ptr[key_ptr] = T("value");
 	tests++;
 	if (map_ptr[key_ptr] != T("value"))
 	    fail(T("FAIL: tchar* map test"));
-	unordered_map<tstring, tstring, strihash<tchar>, streq> map_string;
+	unordered_map<tstring, tstring, strihash, streq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
 	if (map_string[T("key")] != T("value"))
 	    fail(T("FAIL: tstring map test"));
-	unordered_map<tstring_view, tstring, strihash<tchar>> map_view;
+	unordered_map<tstring_view, tstring, strihash> map_view;
 	tstring key_str = T("key");
 	map_view[tstring_view(key_str)] = T("value");
 	tests++;
 	if (map_view[tstring_view(key_str)] != T("value"))
 	    fail(T("FAIL: tstring_view map test"));
 	// string literal keys with case-insensitive equality
-	unordered_map<const tchar*, tstring, strihash<tchar>, strieq>
+	unordered_map<const tchar*, tstring, strihash, strieq>
 	    map_iliteral;
 	map_iliteral[T("ILITERAL_KEY")] = T("iliteral_value");
 	tests++;
@@ -140,24 +140,24 @@ int tmain(int argc, const tchar * const argv[]) {
 	tcout << "Testing striasciihash functor...\n";
 	static tchar key_array[] = T("key");
 	tchar* key_ptr = key_array;
-	unordered_map<tchar*, tstring, striasciihash<tchar>> map_ptr;
+	unordered_map<tchar*, tstring, striasciihash> map_ptr;
 	map_ptr[key_ptr] = T("value");
 	tests++;
 	if (map_ptr[key_ptr] != T("value"))
 	    fail(T("FAIL: tchar* map test"));
-	unordered_map<tstring, tstring, striasciihash<tchar>, streq> map_string;
+	unordered_map<tstring, tstring, striasciihash, streq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
 	if (map_string[T("key")] != T("value"))
 	    fail(T("FAIL: tstring map test"));
-	unordered_map<tstring_view, tstring, striasciihash<tchar>> map_view;
+	unordered_map<tstring_view, tstring, striasciihash> map_view;
 	tstring key_str = T("key");
 	map_view[tstring_view(key_str)] = T("value");
 	tests++;
 	if (map_view[tstring_view(key_str)] != T("value"))
 	    fail(T("FAIL: tstring_view map test"));
 	// string literal keys with ASCII case-insensitive equality
-	unordered_map<const tchar*, tstring, striasciihash<tchar>, strieq>
+	unordered_map<const tchar*, tstring, striasciihash, strieq>
 	map_asciiliteral;
 	map_asciiliteral[T("ASCIILITERAL_KEY")] = T("asciiliteral_value");
 	tests++;
@@ -167,15 +167,35 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (map_asciiliteral[T("asciiliteral_key")] != T("asciiliteral_value"))
 	    fail(T("FAIL: ASCII case-insensitive literal map (lowercase) test"));
     }
+    // Test compile-time (constexpr) hashing of string literals -- regression
+    // test for the bernstein_hash overload ambiguity fix, which previously
+    // made stringhash/stringihash/striasciihash fail to compile at all when
+    // called directly with a string literal
+    {
+	tcout << "Testing compile-time hashing of string literals...\n";
+	constexpr strhash sh;
+	constexpr strihash sih;
+	constexpr striasciihash sah;
+
+	static_assert(sh(T("abc")) == sh(T("abc")),
+	    "strhash must be constexpr-evaluable for string literals");
+	static_assert(sih(T("ABC")) == sih(T("abc")),
+	    "strihash must be constexpr-evaluable and case-insensitive");
+	static_assert(sah(T("ABC")) == sah(T("abc")),
+	    "striasciihash must be constexpr-evaluable and case-insensitive");
+	static_assert(sh(T("abc")) != sh(T("abcd")),
+	    "strhash must distinguish different-length literals at compile time");
+	tests++;
+    }
     // Test streq functor
     {
 	tcout << "Testing streq functor...\n";
-	unordered_map<tstring, tstring, strhash<tchar>, streq> map_string;
+	unordered_map<tstring, tstring, strhash, streq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
 	if (map_string[T("key")] != T("value"))
 	    fail(T("FAIL: tstring map test"));
-	unordered_map<tstring_view, tstring, strhash<tchar>, streq> map_view;
+	unordered_map<tstring_view, tstring, strhash, streq> map_view;
 	tstring key_str = T("key");
 	map_view[tstring_view(key_str)] = T("value");
 	tests++;
@@ -185,12 +205,12 @@ int tmain(int argc, const tchar * const argv[]) {
     // Test strieq functor
     {
 	tcout << "Testing strieq functor...\n";
-	unordered_map<tstring, tstring, strihash<tchar>, strieq> map_string;
+	unordered_map<tstring, tstring, strihash, strieq> map_string;
 	map_string[T("key")] = T("value");
 	tests++;
 	if (map_string[T("key")] != T("value"))
 	    fail(T("FAIL: tstring map test"));
-	unordered_map<tstring_view, tstring, strihash<tchar>, strieq> map_view;
+	unordered_map<tstring_view, tstring, strihash, strieq> map_view;
 	tstring key_str = T("key");
 	map_view[tstring_view(key_str)] = T("value");
 	tests++;
@@ -252,11 +272,25 @@ int tmain(int argc, const tchar * const argv[]) {
 	auto it4 = next(it3);
 	if (it4->first != T("Zebra") || it4->second != T("last"))
 	    fail(T("FAIL: striless string_view map second item test"));
+	// Prefix ordering edge case (case-insensitive): a string that is a
+	// case-insensitive prefix of another must sort first, regardless of
+	// case -- regression test for stringicmp's length tiebreak
+	map<tstring, tstring, striless> map_prefix;
+	map_prefix[T("abcd")] = T("longer");
+	map_prefix[T("ABC")] = T("shorter");
+	tests++;
+	auto itp1 = map_prefix.begin();
+	if (itp1->first != T("ABC") || itp1->second != T("shorter"))
+	    fail(T("FAIL: striless prefix ordering first item test"));
+	tests++;
+	auto itp2 = next(itp1);
+	if (itp2->first != T("abcd") || itp2->second != T("longer"))
+	    fail(T("FAIL: striless prefix ordering second item test"));
     }
     // Test different string literal lengths
     {
 	tcout << "Testing different string literal lengths...\n";
-	unordered_map<const tchar*, int, strhash<tchar>> map_lengths;
+	unordered_map<const tchar*, int, strhash> map_lengths;
 	map_lengths[T("a")] = 1;
 	map_lengths[T("abcde")] = 5;
 	tests++;
@@ -270,14 +304,14 @@ int tmain(int argc, const tchar * const argv[]) {
     {
 	tcout << "Testing hash consistency with string literals...\n";
 	// Test that the same string literal produces the same hash
-	unordered_map<const tchar*, int, strhash<tchar>> hash_consistency;
+	unordered_map<const tchar*, int, strhash> hash_consistency;
 	hash_consistency[T("same")] = 1;
 	hash_consistency[T("same")] = 2;  // Should overwrite, proving same hash
 	tests++;
 	if (hash_consistency[T("same")] != 2) // cppcheck-suppress knownConditionTrueFalse
 	    fail(T("FAIL: Hash consistency test"));
 	// Test case-insensitive hash consistency
-	unordered_map<const tchar*, int, strihash<tchar>, strieq> ihash_consistency;
+	unordered_map<const tchar*, int, strihash, strieq> ihash_consistency;
 	ihash_consistency[T("CASE")] = 1;
 	ihash_consistency[T("case")] = 2;	// Should overwrite, proving
 						// case-insensitive hash
@@ -288,7 +322,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (ihash_consistency[T("case")] != 2)
 	    fail(T("FAIL: Case-insensitive hash consistency (lowercase) test"));
 	// Test ASCII case-insensitive hash consistency
-	unordered_map<const tchar*, int, striasciihash<tchar>, strieq>
+	unordered_map<const tchar*, int, striasciihash, strieq>
 	ahash_consistency;
 	ahash_consistency[T("ASCII")] = 1;
 	 // Should overwrite, proving ASCII case-insensitive hash
@@ -303,7 +337,7 @@ int tmain(int argc, const tchar * const argv[]) {
     // Test heterogeneous lookups with transparent function objects
     {
 	tcout << "Testing heterogeneous lookups...\n";
-	unordered_map<tstring, tstring, strhash<tchar>, streq> map_hetero;
+	unordered_map<tstring, tstring, strhash, streq> map_hetero;
 	map_hetero[T("key")] = T("value");
 	// Test heterogeneous lookup with const char* key
 	tests++;
@@ -316,13 +350,28 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (auto it2 = map_hetero.find(sv_key); it2 == map_hetero.end() ||
 	    it2->second != T("value"))
 	    fail(T("FAIL: Heterogeneous lookup with string_view"));
+	// Negative heterogeneous lookup: key not present
+	tests++;
+	if (map_hetero.find(tstring_view(T("nokey"))) != map_hetero.end())
+	    fail(T("FAIL: Negative heterogeneous lookup with string_view"));
 	// Test case-insensitive heterogeneous lookup
-	unordered_map<tstring, tstring, strihash<tchar>, strieq> map_case_hetero;
+	unordered_map<tstring, tstring, strihash, strieq> map_case_hetero;
 	map_case_hetero[T("KEY")] = T("value");
 	tests++;
 	auto it3 = map_case_hetero.find(T("key"));  // Different case
 	if (it3 == map_case_hetero.end() || it3->second != T("value"))
 	    fail(T("FAIL: Case-insensitive heterogeneous lookup"));
+	// Case-insensitive heterogeneous lookup with string_view (neither
+	// side a pointer) -- regression test for the stringieq generic
+	// fallback, which previously failed to compile for this combination
+	tests++;
+	if (auto it3v = map_case_hetero.find(tstring_view(T("key"))); it3v ==
+	    map_case_hetero.end() || it3v->second != T("value"))
+	    fail(T("FAIL: Case-insensitive heterogeneous lookup with string_view"));
+	tests++;
+	if (map_case_hetero.find(tstring_view(T("nokey"))) !=
+	    map_case_hetero.end())
+	    fail(T("FAIL: Negative case-insensitive heterogeneous lookup with string_view"));
 	// Test heterogeneous lookup with map (ordered container)
 	map<tstring, tstring, strless> map_ordered_hetero;
 	map_ordered_hetero[T("key")] = T("value");
@@ -330,6 +379,34 @@ int tmain(int argc, const tchar * const argv[]) {
 	auto it4 = map_ordered_hetero.find(T("key"));
 	if (it4 == map_ordered_hetero.end() || it4->second != T("value"))
 	    fail(T("FAIL: Heterogeneous lookup with ordered map"));
+	// Heterogeneous lookup with string_view (neither side a pointer) --
+	// regression test for the stringless generic fallback, which
+	// previously failed to compile for this combination
+	tests++;
+	if (auto it4v = map_ordered_hetero.find(tstring_view(T("key")));
+	    it4v == map_ordered_hetero.end() || it4v->second != T("value"))
+	    fail(T("FAIL: Heterogeneous lookup with ordered map (string_view)"));
+	tests++;
+	if (map_ordered_hetero.find(tstring_view(T("nokey"))) !=
+	    map_ordered_hetero.end())
+	    fail(T("FAIL: Negative heterogeneous lookup with ordered map"));
+	// Case-insensitive ordered map heterogeneous lookup (striless) --
+	// regression test: striless was completely broken for ANY
+	// heterogeneous lookup before the stringicmp overload fix
+	map<tstring, tstring, striless> map_iordered_hetero;
+	map_iordered_hetero[T("Key")] = T("value");
+	tests++;
+	auto it5 = map_iordered_hetero.find(T("KEY"));
+	if (it5 == map_iordered_hetero.end() || it5->second != T("value"))
+	    fail(T("FAIL: Case-insensitive heterogeneous lookup with ordered map"));
+	tests++;
+	if (auto it5v = map_iordered_hetero.find(tstring_view(T("key")));
+	    it5v == map_iordered_hetero.end() || it5v->second != T("value"))
+	    fail(T("FAIL: Case-insensitive heterogeneous lookup with ordered map (string_view)"));
+	tests++;
+	if (map_iordered_hetero.find(tstring_view(T("nokey"))) !=
+	    map_iordered_hetero.end())
+	    fail(T("FAIL: Negative case-insensitive heterogeneous lookup with ordered map"));
     }
     tcout << "Test Results: " << (tests - failures) << "/" << tests <<
 	" tests passed\n";

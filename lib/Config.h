@@ -282,7 +282,7 @@ private:
 	}
     };
 
-    using kvmap = unordered_map<const tchar *, KV *, strhash<tchar>, streq>;
+    using kvmap = unordered_map<const tchar *, KV *, strhash, streq>;
 
     kvmap amap;
     mutable SpinRWLock lck;

@@ -33,7 +33,7 @@
 #include "HTTPClient.h"
 #include "Log.h"
 
-using attrmap = unordered_map<tstring, tstring, strhash<tchar>, streq>;
+using attrmap = unordered_map<tstring, tstring, strhash, streq>;
 
 static atomic_bool qflag = false, rflag = false;
 
