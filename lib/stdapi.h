@@ -1155,18 +1155,18 @@ __forceinline bool stringeq(const T1 &a, const T2 &b) {
     } else if constexpr (is_pointer_v<T1> && is_pointer_v<T2>) {
 	return !tstrcmp(a, b);
     } else if constexpr (is_pointer_v<T1>) {
-	using ctype = remove_pointer_t<T1>;
-	if constexpr (is_convertible_v<T2, basic_string_view<ctype>>) {
-	    basic_string_view<ctype> bv(b);
+	using C = remove_pointer_t<T1>;
+	if constexpr (is_convertible_v<T2, basic_string_view<C>>) {
+	    basic_string_view<C> bv(b);
 
 	    return !tstrncmp(a, bv.data(), bv.size()) && a[bv.size()] == '\0';
 	} else {
 	    return !tstrcmp(a, tstring(b).c_str());
 	}
     } else if constexpr (is_pointer_v<T2>) {
-	using ctype = remove_pointer_t<T2>;
-	if constexpr (is_convertible_v<T1, basic_string_view<ctype>>) {
-	    basic_string_view<ctype> av(a);
+	using C = remove_pointer_t<T2>;
+	if constexpr (is_convertible_v<T1, basic_string_view<C>>) {
+	    basic_string_view<C> av(a);
 
 	    return !tstrncmp(av.data(), b, av.size()) && b[av.size()] == '\0';
 	} else {
@@ -1654,8 +1654,6 @@ public:
     C *pop_back(void) {
 	C *obj = back;
 
-	if (UNLIKELY(!obj))
-	    return nullptr;
 	if (front == back) {
 	    front = back = nullptr;
 	} else {
@@ -1747,8 +1745,7 @@ public:
     __forceinline C *pop_back(void) {
 	C *obj = Base::pop_back();
 
-	if (LIKELY(obj != nullptr))
-	    sz.dec();
+	sz.dec();
 	return obj;
     }
     __forceinline C *pop_front(void) {
@@ -1777,6 +1774,7 @@ protected:
 template <class C>
 struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C>>::Node {
     __forceinline explicit ObjectListNode(const C &c): val(c) {}
+    __forceinline explicit ObjectListNode(C &&c): val(move(c)) {}
 
     C val;
 };

@@ -99,7 +99,7 @@ bool Dispatcher::exec() {
 	DispatchObj::Group *group;
 	DispatchObj *obj = rlist.pop_front();
 
-	__builtin_prefetch(obj->next, 0, 1);
+	__builtin_prefetch(rlist.peek(), 0, 1);
 	if (UNLIKELY((flags = obj->flags) & DSP_Freed)) {
 	    olock.unlock();
 	    delete obj;
