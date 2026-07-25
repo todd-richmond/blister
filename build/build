@@ -4,10 +4,22 @@ CMAKE=$(which cmake 2> /dev/null)
 
 if [ "$1" = "-?" -o "$1" = "-h" ]; then
     echo "usage:  $0
-	[Debug|MinSizeRel|Release|RelWithDebInfo [cmake_args ...]]
+	[check] [tsan] [Debug|MinSizeRel|Release|RelWithDebInfo [cmake_args ...]]
 	[automake [configure_args ...]]"
     exit 1
 fi
+CHECK_ARGS=
+while true; do
+    if [ "$1" = "check" ]; then
+	CHECK_ARGS="$CHECK_ARGS -DCHECK_ALL=ON"
+	shift
+    elif [ "$1" = "tsan" ]; then
+	CHECK_ARGS="$CHECK_ARGS -DCHECK_TSAN=ON"
+	shift
+    else
+	break
+    fi
+done
 [ "$1" == "automake" ] && shift && unset CMAKE
 if [ -z "$CMAKE" ]; then
     LIBTOOLIZE=$(which libtoolize 2> /dev/null)
@@ -25,7 +37,7 @@ else
     [ -n "$1" ] && CMAKE_BUILD_TYPE=$1 && shift
     set -x
     [ -f Makefile ] && make distclean > /dev/null 2>&1
-    $CMAKE -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $@ . || exit 1
+    $CMAKE -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $CHECK_ARGS $@ . || exit 1
 fi
 make -j8
 

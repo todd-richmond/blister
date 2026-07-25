@@ -1465,7 +1465,12 @@ template<typename C>
 constexpr auto ascii_fold = [](C c) {
     return c | (C)((c - 'A') <= (C)('Z' - 'A') ? 0x20 : 0);
 };
-constexpr auto unicode_fold = [](wchar c) { return towupper((ushort)c); };
+constexpr auto unicode_fold = [](wchar c) -> wchar {
+    // towupper() is not constexpr so fold the ASCII subrange
+    if (is_constant_evaluated())
+	return c >= L'a' && c <= L'z' ? (wchar)(c - (L'a' - L'A')) : c;
+    return (wchar)towupper((ushort)c);
+};
 
 template<typename C, size_t N>
 constexpr strhash_t stringiasciihash(const C (&s)[N]) {
@@ -1489,37 +1494,33 @@ __forceinline strhash_t stringiasciihash(const T &s) {
 
 template<typename C, size_t N>
 constexpr strhash_t stringihash(const C (&s)[N]) {
-    if constexpr (is_same_v<C, wchar>) {
+    if constexpr (is_same_v<C, wchar>)
 	return bernstein_hash<C, N>(s, unicode_fold);
-    } else {
+    else
 	return bernstein_hash<C, N>(s, ascii_fold<C>);
-    }
 }
 
 template<typename T>
 __forceinline strhash_t stringihash(const T &s) {
     if constexpr (is_class_v<T> && requires { typename T::value_type;
 	s.c_str(); s.size(); }) {
-	if constexpr (is_same_v<typename T::value_type, wchar>) {
+	if constexpr (is_same_v<typename T::value_type, wchar>)
 	    return bernstein_hash(s.c_str(), s.size(), unicode_fold);
-	} else {
+	else
 	    return bernstein_hash(s.c_str(), s.size(), ascii_fold<typename
 		T::value_type>);
-	}
     } else if constexpr (requires { s.data(); s.size(); }) {
-	if constexpr (is_same_v<typename T::value_type, wchar>) {
+	if constexpr (is_same_v<typename T::value_type, wchar>)
 	    return bernstein_hash(s.data(), s.size(), unicode_fold);
-	} else {
+	else
 	    return bernstein_hash(s.data(), s.size(), ascii_fold<typename
 		T::value_type>);
-	}
     } else {
 	using C = remove_pointer_t<remove_cv_t<T>>;
-	if constexpr (is_same_v<C, wchar>) {
+	if constexpr (is_same_v<C, wchar>)
 	    return bernstein_hash(s, unicode_fold);
-	} else {
+	else
 	    return bernstein_hash(s, ascii_fold<C>);
-	}
     }
 }
 
