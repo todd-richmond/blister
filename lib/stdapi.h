@@ -974,11 +974,11 @@ __forceinline T atoun(const tchar *str, size_t len) {
     }
     return (T)val;
 #else
-    if (len >= 8) {
+    if (UNLIKELY(len >= 8)) {
 	val = swar8(str);
 	str += 8;
 	len -= 8;
-	if (len >= 8) {
+	if (UNLIKELY(len >= 8)) {
 	    val = val * 100000000ULL + swar8(str);
 	    str += 8;
 	    len -= 8;
@@ -1037,6 +1037,7 @@ auto to_chars(wchar_t *first, wchar_t *last, T value) {
 template<typename T>
 __forceinline tchar *to_str(tchar *buf, tchar *last, T val) {
     auto [end, ec] = to_chars(buf, last, val);
+
     if (end < last) {
 	*end = '\0';
 	return end;
@@ -1051,7 +1052,12 @@ static inline time_t seconds(void) {
 
 // string comparison functions
 template<class C>
-__forceinline int stringcmp(const C *a, const C *b) { return tstrcmp(a, b); }
+__forceinline int stringcmp(const C *a, const C *b) {
+    if constexpr (is_same_v<C, wchar>)
+	return wcscmp(a, b);
+    else
+	return strcmp(a, b);
+}
 
 template<typename T>
 __forceinline int stringcmp(const T &a, const T &b) {
@@ -1070,7 +1076,12 @@ __forceinline int stringcmp(const T &a, const T &b) {
 }
 
 template<class C>
-__forceinline int stringicmp(const C *a, const C *b) { return tstricmp(a, b); }
+__forceinline int stringicmp(const C *a, const C *b) {
+    if constexpr (is_same_v<C, wchar>)
+	return wcsicmp(a, b);
+    else
+	return stricmp(a, b);
+}
 
 template<typename T>
 __forceinline int stringicmp(const T &a, const T &b) {
@@ -1123,16 +1134,18 @@ __forceinline int stringicmp(const T1 &a, const T2 &b) {
 
 template<class C>
 __forceinline bool stringeq(const C *a, const C *b) {
-    return *a == *b && !tstrcmp(a, b);
+    if constexpr (is_same_v<C, wchar>)
+	return *a == *b && !wcscmp(a, b);
+    else
+	return *a == *b && !strcmp(a, b);
 }
 
 template<typename T>
 __forceinline bool stringeq(const T &a, const T &b) {
-    if constexpr (is_same_v<T, basic_string<typename T::value_type>>) {
+    if constexpr (is_same_v<T, basic_string<typename T::value_type>>)
 	return a == b;
-    } else {
+    else
 	return a.size() == b.size() && !tstrncmp(a.data(), b.data(), a.size());
-    }
 }
 
 template<class C, typename T>
@@ -1210,26 +1223,26 @@ __forceinline bool stringieq(const T &a, const C *b) { return stringieq(b, a); }
 template<typename T1, typename T2>
 __forceinline bool stringieq(const T1 &a, const T2 &b) {
     if constexpr (requires { typename T1::value_type; a.data(); a.size(); } &&
-	requires { typename T2::value_type; b.data(); b.size(); }) {
+	requires { typename T2::value_type; b.data(); b.size(); })
 	return a.size() == b.size() && !tstrnicmp(a.data(), b.data(), a.size());
-    } else {
+    else
 	return stringieq(tstring(a), tstring(b));
-    }
 }
 
 template<class C>
 __forceinline bool stringless(const C *a, const C *b) {
-    return tstrcmp(a, b) < 0;
+    if constexpr (is_same_v<C, wchar>)
+	return wcscmp(a, b) < 0;
+    else
+	return strcmp(a, b) < 0;
 }
 
 template<typename T>
-__forceinline bool stringless(const T &a, const T &b) {
-    return a < b;
-}
+__forceinline bool stringless(const T &a, const T &b) { return a < b; }
 
 template<class C, typename T>
 __forceinline bool stringless(const C *a, const basic_string_view<T> &b) {
-	return tstrncmp(a, b.data(), b.size()) < 0;
+    return tstrncmp(a, b.data(), b.size()) < 0;
 }
 
 template<class C, typename T>
@@ -1264,17 +1277,13 @@ __forceinline bool stringless(const T1 &a, const T2 &b) {
 struct streq {
     using is_transparent = void;
     template<typename T1, typename T2>
-    bool operator ()(const T1 &a, const T2 &b) const {
-	return stringeq(a, b);
-    }
+    bool operator ()(const T1 &a, const T2 &b) const { return stringeq(a, b); }
 };
 
 struct strieq {
     using is_transparent = void;
     template<typename T1, typename T2>
-    bool operator ()(const T1 &a, const T2 &b) const {
-	return stringieq(a, b);
-    }
+    bool operator ()(const T1 &a, const T2 &b) const { return stringieq(a, b); }
 };
 
 struct strless {
