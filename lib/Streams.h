@@ -288,6 +288,7 @@ public:
 
 		for (const char *s = buf; s < end;)
 		    *d++ = (wchar)*s++;
+		// cppcheck-suppress uninitvar
 		write(wbuf, end - buf);
 	    } else {
 		*this << val;
