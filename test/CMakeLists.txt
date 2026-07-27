@@ -32,7 +32,7 @@ target_link_libraries(hashtest blister)
 add_test(NAME HashFunctors
     COMMAND bash -c "${CMAKE_COMMAND} --build . --target hashtest && ${CMAKE_CURRENT_BINARY_DIR}/hashtest")
 
-if(COMPILE_PCH AND NOT CMAKE_VERSION VERSION_LESS 3.16)
+if(COMPILE_PCH)
     target_precompile_headers(cfg PRIVATE [["stdapi.h"]])
     target_precompile_headers(daemonize REUSE_FROM cfg)
     target_precompile_headers(dlog REUSE_FROM cfg)

@@ -65,7 +65,13 @@
 #define DLL_IMPORT		__attribute__((visibility("default")))
 #define DLL_LOCAL		__attribute__((visibility("hidden")))
 #define PRAGMA_STR(s)		_Pragma (#s)
+#ifdef __clang__
+#define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored \
+    "-Wunknown-warning-option") \
+				PRAGMA_STR(GCC diagnostic ignored #w)
+#else
 #define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored #w)
+#endif
 #define WARN_ENABLE(w)		PRAGMA_STR(GCC diagnostic warning #w)
 #define WARN_POP()		PRAGMA_STR(GCC pop_options)
 #define WARN_PUSH()		PRAGMA_STR(GCC push_options)

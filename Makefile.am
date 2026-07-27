@@ -10,5 +10,6 @@ EXTRA_DIST=.cproject .project LICENSE NOTICE \
 
 SUBDIRS = lib test
 
+.PHONY: cppcheck
 cppcheck:
 	cppcheck --enable=warning,style,performance,portability,information,missingInclude --force --inline-suppr -j 4 -q --template="{file}:{line} {severity}={id} {message}" --suppress=preprocessorErrorDirective --suppress=ConfigurationNotChecked -I lib lib test
