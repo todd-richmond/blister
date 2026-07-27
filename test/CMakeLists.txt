@@ -29,6 +29,15 @@ add_executable(hashtest HashTest.cpp)
 set_target_properties(hashtest PROPERTIES EXCLUDE_FROM_ALL TRUE)
 target_link_libraries(hashtest blister)
 
+if(LIBUV_INCLUDE_DIR AND LIBUV_LIBRARY)
+    add_executable(uvechotest UVEchoTest.cpp)
+    target_include_directories(uvechotest PRIVATE ${LIBUV_INCLUDE_DIR})
+    target_link_libraries(uvechotest blister ${LIBUV_LIBRARY})
+    if(COMPILE_PCH)
+	target_precompile_headers(uvechotest REUSE_FROM cfg)
+    endif()
+endif()
+
 add_test(NAME HashFunctors
     COMMAND bash -c "${CMAKE_COMMAND} --build . --target hashtest && ${CMAKE_CURRENT_BINARY_DIR}/hashtest")
 

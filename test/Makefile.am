@@ -18,3 +18,10 @@ hashtest_SOURCES = HashTest.cpp
 httpd_SOURCES = HTTPd.cpp
 httpload_SOURCES = HTTPLoad.cpp
 smtpload_SOURCES = SMTPLoad.cpp
+
+if HAVE_LIBUV
+noinst_PROGRAMS += uvechotest
+uvechotest_SOURCES = UVEchoTest.cpp
+uvechotest_CPPFLAGS = $(AM_CPPFLAGS) $(LIBUV_CFLAGS)
+uvechotest_LDADD = $(top_builddir)/lib/libblister.la $(LIBUV_LIBS)
+endif

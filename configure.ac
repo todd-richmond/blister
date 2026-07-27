@@ -65,6 +65,21 @@ AC_CHECK_LIB([rt], [clock_gettime])
 AC_CHECK_LIB([socket], [socket])
 AC_SEARCH_LIBS([gethostbyname], [nsl])
 
+# uvechotest is an optional libuv-based analog of echotest; shell out to
+# pkg-config directly rather than using PKG_CHECK_MODULES since pkg.m4 is
+# not reliably on aclocal's search path across environments
+AC_PATH_PROG([PKGCONFIG], [pkg-config])
+LIBUV_CFLAGS=
+LIBUV_LIBS=
+AS_IF([test -n "$PKGCONFIG" && "$PKGCONFIG" --exists libuv 2>/dev/null],
+    [have_libuv=yes
+     LIBUV_CFLAGS=`"$PKGCONFIG" --cflags libuv`
+     LIBUV_LIBS=`"$PKGCONFIG" --libs libuv`],
+    [have_libuv=no])
+AM_CONDITIONAL([HAVE_LIBUV], [test "$have_libuv" = yes])
+AC_SUBST([LIBUV_CFLAGS])
+AC_SUBST([LIBUV_LIBS])
+
 # The remaining flag logic mirrors CMakeLists.txt's per-compiler,
 # per-version selection so both build systems compile with the same
 # options. ($compiler_clang was already determined above, ahead of LT_INIT.)

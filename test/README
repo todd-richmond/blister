@@ -22,3 +22,9 @@ a file or directory
 
 smtpload - scriptable, multi-threaded SMTP load test with statistics reporting.
 Supports random RCPT TO addresses and DATA from a file or directory
+
+uvechotest - libuv-based echo server and client with the same command line
+options as echotest, for comparing libuv's one-loop-per-thread model against
+Dispatch's shared-reactor model on identical workloads. Only built when
+libuv is available
+
