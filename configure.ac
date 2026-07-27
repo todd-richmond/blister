@@ -5,6 +5,7 @@
 AC_PREREQ([2.71])
 AC_INIT([Blister],[1.4])
 AC_CONFIG_SRCDIR([lib/stdapi.h])
+AC_CONFIG_MACRO_DIRS([m4])
 AM_INIT_AUTOMAKE([1.16.2 -Wall -Werror dist-zip foreign no-define no-installinfo no-installman])
 AM_SILENT_RULES([yes])
 
@@ -18,6 +19,35 @@ AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_INSTALL
 AC_PROG_LN_S
+
+# Detect the compiler family the way CMake does (by asking the compiler,
+# not by trusting -dumpversion/--version output). Needed here, ahead of
+# LT_INIT, to pick an LTO-aware archiver below: plain ar/ranlib can't read
+# GCC/Clang LTO intermediate objects without the compiler's plugin, and
+# libtool bakes whatever AR/RANLIB are set to at LT_INIT time into the
+# generated libtool script.
+AC_LANG_PUSH([C++])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [[
+#ifndef __clang__
+# error not clang
+#endif
+]])], [compiler_clang=yes], [compiler_clang=no])
+AC_LANG_POP([C++])
+AC_MSG_CHECKING([whether $CXX is clang])
+AC_MSG_RESULT([$compiler_clang])
+
+if test "$compiler_clang" = yes; then
+    AC_PATH_TOOL([LTO_AR], [llvm-ar])
+    AC_PATH_TOOL([LTO_RANLIB], [llvm-ranlib])
+    AC_PATH_TOOL([LTO_NM], [llvm-nm])
+else
+    AC_PATH_TOOL([LTO_AR], [gcc-ar])
+    AC_PATH_TOOL([LTO_RANLIB], [gcc-ranlib])
+    AC_PATH_TOOL([LTO_NM], [gcc-nm])
+fi
+test -n "$LTO_AR" && AR=$LTO_AR
+test -n "$LTO_RANLIB" && RANLIB=$LTO_RANLIB
+test -n "$LTO_NM" && NM=$LTO_NM
 
 LT_PREREQ([2.4.7])
 LT_INIT
@@ -37,18 +67,7 @@ AC_SEARCH_LIBS([gethostbyname], [nsl])
 
 # The remaining flag logic mirrors CMakeLists.txt's per-compiler,
 # per-version selection so both build systems compile with the same
-# options. Detect the compiler family the way CMake does (by asking the
-# compiler, not by trusting -dumpversion/--version output)
-AC_LANG_PUSH([C++])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [[
-#ifndef __clang__
-# error not clang
-#endif
-]])], [compiler_clang=yes], [compiler_clang=no])
-AC_LANG_POP([C++])
-AC_MSG_CHECKING([whether $CXX is clang])
-AC_MSG_RESULT([$compiler_clang])
-
+# options. ($compiler_clang was already determined above, ahead of LT_INIT.)
 gcc_major=0
 if test "$compiler_clang" != yes; then
     gcc_major=`$CXX -dumpfullversion 2>/dev/null | cut -d. -f1`

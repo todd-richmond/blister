@@ -27,9 +27,9 @@ if [ -z "$CMAKE" ]; then
     [ -z "$LIBTOOLIZE" ] && echo "[g]libtoolize required in path" && exit 1
     set -x
     [ -f Makefile ] && make distclean > /dev/null 2>&1
+    $LIBTOOLIZE --automake || exit 1
     aclocal || exit 1
     autoconf || exit 1
-    $LIBTOOLIZE --automake || exit 1
     automake -a || exit 1
     ./configure $* || exit 1
 else

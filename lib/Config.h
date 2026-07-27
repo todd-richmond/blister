@@ -296,7 +296,7 @@ private:
     tstring get(tstring_view key, const tchar *def, const tchar *sect) const;
     bool get(tstring_view key, bool def, const tchar *sect) const;
     template<typename K, typename T, typename F>
-    T get_num(K key, T def, const tchar *sect, F conv) const {
+    __forceinline T get_num(K key, T def, const tchar *sect, F conv) const {
 	SpinRLocker lkr(lck);
 	const KV *kv = getkv(key, sect);
 

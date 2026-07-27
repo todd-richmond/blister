@@ -190,17 +190,23 @@ if(CHECK_CLANG_TIDY)
 	    file(GLOB CLANG_SYS_INC ${osxdir}/System/Library/Frameworks/Kernel.framework/Versions/Current/Headers)
 	else()
 	    file(GLOB CLANG_C_INC ${CLANG_DIR}/lib64/clang/*/include)
-	    file(GLOB CLANG_CXX_INC ${CLANG_DIR}/include/c++/*)
-	    file(GLOB CLANG_SYS_INC ${CLANG_DIR}/include/x86_64-*/c++/*)
+	    set(CLANG_CXX_INC "")
+	    set(CLANG_SYS_INC "")
 	endif()
 	set(CMAKE_C_CLANG_TIDY ${PROGRAM_CLANG_TIDY} --quiet
-	    --extra-arg=-isystem --extra-arg=${CLANG_C_INC}
-	    --extra-arg=-isystem --extra-arg=${CLANG_SYS_INC})
+	    --extra-arg=-isystem --extra-arg=${CLANG_C_INC})
 	set(CMAKE_CXX_CLANG_TIDY ${PROGRAM_CLANG_TIDY} --quiet
-	    --extra-arg=-isystem --extra-arg=${CLANG_CXX_INC}
 	    --extra-arg=-isystem --extra-arg=${CLANG_C_INC}
-	    --extra-arg=-isystem --extra-arg=${CLANG_SYS_INC}
 	    --extra-arg=-std=c++${CMAKE_CXX_STANDARD})
+	if(CLANG_SYS_INC)
+	    list(APPEND CMAKE_C_CLANG_TIDY --extra-arg=-isystem --extra-arg=${CLANG_SYS_INC})
+	endif()
+	if(CLANG_CXX_INC)
+	    list(APPEND CMAKE_CXX_CLANG_TIDY --extra-arg=-isystem --extra-arg=${CLANG_CXX_INC})
+	endif()
+	if(CLANG_SYS_INC)
+	    list(APPEND CMAKE_CXX_CLANG_TIDY --extra-arg=-isystem --extra-arg=${CLANG_SYS_INC})
+	endif()
 	set(CMAKE_DISABLE_PRECOMPILE_HEADERS TRUE)
     else()
 	message(AUTHOR_WARNING "clang-tidy not available")
