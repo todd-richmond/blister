@@ -35,6 +35,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@main
+        with:
+          persist-credentials: false
 
       - name: Build With Visual Studio 2026
         shell: cmd
