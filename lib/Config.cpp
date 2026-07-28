@@ -418,39 +418,45 @@ bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
 Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     vlen, const tchar *sect, size_t slen, bool append) {
     KV *kv, *oldkv;
+    tchar kbuf[KEYSZ];
+    tstring kstr;
+    const tchar *fkey;
+    size_t fklen;
 
     if (UNLIKELY(slen)) {
 	size_t total = slen + 1 + klen;
 
 	if (LIKELY(total + 1 < KEYSZ)) {
-	    tchar buf[KEYSZ];
-	    tchar *p = buf;
+	    tchar *p = kbuf;
 
 	    memcpy(p, sect, slen * sizeof (tchar));
 	    p += slen;
 	    *p++ = (tchar)'.';
 	    memcpy(p, key, (klen + 1) * sizeof (tchar));
-	    kv = newkv(buf, total, val, vlen);
+	    fkey = kbuf;
+	    fklen = total;
 	} else {
-	    tstring s;
-
-	    s.reserve(total);
-	    s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
-	    kv = newkv(s.c_str(), s.size(), val, vlen);
+	    kstr.reserve(total);
+	    kstr.append(sect, slen).append(1, (tchar)'.').append(key, klen);
+	    fkey = kstr.c_str();
+	    fklen = kstr.size();
 	}
     } else {
-	kv = newkv(key, klen, val, vlen);
+	fkey = key;
+	fklen = klen;
     }
 
-    auto old = amap.emplace(kv->key, kv);
+    auto it = amap.find(tstring_view(fkey, fklen));
 
-    if (LIKELY(old.second))
+    if (it == amap.end()) {
+	kv = newkv(fkey, fklen, val, vlen);
+	amap.emplace(kv->key, kv);
 	return *this;
-    oldkv = old.first->second;
+    }
+    oldkv = it->second;
     if (append) {
 	tstring s;
 
-	delkv(kv);
 	s.reserve(oldkv->vlen + vlen + (oldkv->quote ? 2 : 0));
 	if (oldkv->quote)
 	    s = oldkv->quote;
@@ -462,11 +468,13 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	    s.append(val, vlen);
 	if (oldkv->quote)
 	    s += oldkv->quote;
-	vlen = s.size();
-	kv = newkv(oldkv->key, oldkv->klen, s.c_str(), vlen);
+	kv = newkv(oldkv->key, oldkv->klen, s.c_str(), s.size());
+    } else {
+	kv = newkv(fkey, fklen, val, vlen);
     }
-    old.first->second = kv;
+    amap.erase(it);
     delkv(oldkv);
+    amap.emplace(kv->key, kv);
     return *this;
 }
 

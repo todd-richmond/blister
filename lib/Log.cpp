@@ -129,8 +129,11 @@ bool Log::LogFile::close(void) {
 void Log::LogFile::lock() {
     if (fd == -1)
 	reopen();
-    if (fd >= 0 && (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, mp ? 0 : 1) ||
-	(mp && (len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1))) {
+    // fcntl locking is only needed to arbitrate with other processes sharing
+    // this file; within a process, Log::lck already serializes access, so
+    // skip the syscall entirely when !mp
+    if (mp && fd >= 0 && (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
+	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1)) {
 	tcerr << T("unable to lock log ") << path << T(": ") <<
 	    tstrerror(errno) << endl;
 	close();
@@ -161,8 +164,9 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 	if (out == (long)charsz) {
 	    if (file[0] != '>')
 		len += charsz;
-	} else if (out > 0 && ftruncate(fd, (off_t)len)) {
-	    ;				// NOSONAR
+	} else if (out > 0 && !ftruncate(fd, (off_t)len)) {
+	    // rollback partial write
+	    lseek(fd, (off_t)len, SEEK_SET);
 	}
     }
 }
@@ -370,7 +374,7 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
 }
 
 void Log::LogFile::unlock(void) const {
-    if (fd >= 0)
+    if (mp && fd >= 0)
 	(void)lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
 }
 
@@ -516,9 +520,11 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (afd.len >= afd.sz)
 	    afd.roll();
     }
-    time(&now_sec);
-    now_usec = uticks();
-    now_usec %= 1000000;
+    struct timeval now_tv;
+
+    gettimeofday(&now_tv, NULL);
+    now_sec = now_tv.tv_sec;
+    now_usec = (usec_t)now_tv.tv_usec;
     if (now_sec != last_sec) {
 	tchar tbuf[128];
 	struct tm tmbuf;
@@ -628,8 +634,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	} else {
 	    ffd.print(strbuf);
 	}
-	if (mp)
-	    ffd.unlock();
+	ffd.unlock();
     }
 
     bool mailit = mailenable && clvl <= maillvl && !mailto.empty();

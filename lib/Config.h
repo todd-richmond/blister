@@ -167,7 +167,10 @@ public:
     tchar get(const tchar *key, tchar def, const tchar *sect = nullptr) const {
 	tchar buf[2];
 
-	buf[0] = def; buf[1] = '\0'; return get(key, buf, sect)[0];
+	buf[0] = def; buf[1] = '\0';
+
+	auto &&s = get(key, buf, sect);
+	return s.empty() ? def : s[0];
     }
     template<size_t N>
     tchar get(const tchar (&key)[N], tchar def, const tchar *sect = nullptr)
@@ -175,7 +178,9 @@ public:
 	tchar buf[2];
 
 	buf[0] = def; buf[1] = '\0';
-	return get(tstring_view(key, N - 1), buf, sect)[0];
+
+	auto &&s = get(tstring_view(key, N - 1), buf, sect);
+	return s.empty() ? def : s[0];
     }
     uint get(const tchar *key, uint def, const tchar *sect = nullptr) const {
 	return (uint)get(key, (ulong)def, sect);
@@ -216,13 +221,14 @@ public:
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = nullptr,
 	bool append = false, ulong sz = 0);
-    void reserve(ulong sz) { amap.reserve(amap.size() + sz / 64); }
     template<typename T>
     Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
 	tchar buf[64];
 	auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
 	SpinWLocker lkr(lck);
 
+	if (UNLIKELY(ec != errc{}))
+	    ptr = buf;
 	*ptr = '\0';
 	return set(key, tstrlen(key), buf, (size_t)(ptr - buf), sect, sect ?
 	    tstrlen(sect) : 0);
@@ -291,6 +297,7 @@ private:
 
     void clear_locked(void);
     bool expandkv(const KV *kv, tstring &val) const;
+    void reserve(ulong sz) { amap.reserve(amap.size() + sz / 64); }
     const KV *getkv(const tchar *key, const tchar *sect) const;
     const KV *getkv(tstring_view key, const tchar *sect) const;
     tstring get(tstring_view key, const tchar *def, const tchar *sect) const;

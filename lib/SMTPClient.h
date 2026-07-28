@@ -167,7 +167,6 @@ private:
     string boundary;
     tstring frm, sub;
     bool datasent, lmtp, mime;
-    uint parts;
     vector<tstring> tov, ccv, bccv, hdrv;
 };
 

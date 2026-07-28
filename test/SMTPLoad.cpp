@@ -19,7 +19,6 @@
 #ifdef _WIN32
 #include <conio.h>
 #endif
-#include <ctype.h>
 #include <fcntl.h>
 #include <float.h>
 #include <math.h>

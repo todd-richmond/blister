@@ -26,7 +26,7 @@
 const char SMTPClient::crlf[] = "\r\n";
 
 SMTPClient::SMTPClient(): sstrm(sock), datasent(false), lmtp(false),
-    mime(false), parts(0) {}
+    mime(false) {}
 
 bool SMTPClient::add(vector<tstring> &v, const RFC822Addr &addrs) {
     bool ret = true;
@@ -77,16 +77,22 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	delete [] buf;
 	delete [] uubuf;
     } else if (exts.find(T(" LOGIN")) != exts.npos) {
-	base64encode(id, idlen - 1, uubuf, uusz);
+	const char *aid = tchartoachar(id);
+
+	base64encode(aid, strlen(aid), uubuf, uusz);
 	while (uusz && isspace(uubuf[uusz - 1]))
 	    uubuf[--uusz] = '\0';
 	ret = cmd(T("AUTH LOGIN"), achartotchar(uubuf), 334);
 	delete [] uubuf;
-	if (ret && (ret = base64encode(pass, passlen - 1, uubuf, uusz)) == true) {
-	    while (uusz && isspace(uubuf[uusz - 1]))
-		uubuf[--uusz] = '\0';
-	    ret = cmd(achartotchar(uubuf), nullptr, 235);
-	    delete[] uubuf;
+	if (ret) {
+	    const char *apass = tchartoachar(pass);
+
+	    if ((ret = base64encode(apass, strlen(apass), uubuf, uusz)) == true) {
+		while (uusz && isspace(uubuf[uusz - 1]))
+		    uubuf[--uusz] = '\0';
+		ret = cmd(achartotchar(uubuf), nullptr, 235);
+		delete[] uubuf;
+	    }
 	}
     }
     return ret;
@@ -142,7 +148,8 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 	    sts.erase(trim + 1);
 	if (!multi.empty())
 	    multi += '\n';
-	multi += sts.substr(4);
+	if (sts.length() > 4)
+	    multi += sts.substr(4);
 	dlogt(Log::mod(T("smtp")), Log::kv(T("expected"), retcode),
 	    Log::kv(T("reply"), sts.c_str()));
     } while (sts[3] == '-');
@@ -192,7 +199,6 @@ bool SMTPClient::from(const tchar *id) {
     sstrm.clear();
     datasent = false;
     mime = false;
-    parts = 0;
     if (!*id)
 	id = T("<>");
     frm = id;
@@ -213,7 +219,6 @@ bool SMTPClient::from(const RFC822Addr &addr) {
     sstrm.clear();
     datasent = false;
     mime = false;
-    parts = 0;
     if (!addr.size())
 	return false;
     frm = addr.address(0, true);
@@ -272,7 +277,7 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
 }
 
 bool SMTPClient::data(bool m, const tchar *txt) {
-    static atomic nextmid(((uint64_t)seconds() << 18) & uticks());
+    static atomic nextmid(((uint64_t)seconds() << 18) ^ uticks());
     char buf[64];
     char *encbuf;
     size_t encbufsz;
@@ -355,8 +360,8 @@ bool SMTPClient::data(const void *p, uint sz, const tchar *type,
     sstrm << "Content-Disposition: " << tchartoachar(disp && *disp ? disp :
 	T("inline"));
     if (name && *name)
-	sstrm << "; filename=" << tchartoachar(name) << crlf;
-    sstrm << crlf;
+	sstrm << "; filename=" << tchartoachar(name);
+    sstrm << crlf << crlf;
     stuff(p, sz);
     return sstrm.good();
 }
@@ -1170,25 +1175,30 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     void *&output, size_t &outsz) {
     char *out;
     const char *p = input;
+    const char *end = input + sz;
+    const char *digits;
 
     outsz = 0;
-    while (isspace(*p))
+    while (p < end && isspace(*p))
 	p++;
-    if (strnicmp(p, "begin ", 6) != 0)
+    if (end - p < 6 || strnicmp(p, "begin ", 6) != 0)
 	return false;
     p += 5;
-    while (isspace(*p))
+    while (p < end && isspace(*p))
 	p++;
-    perm = (uint)strtoul(p, &out, 8);
-    if (!out || !isspace(*out))
+    digits = p;
+    perm = 0;
+    while (p < end && *p >= '0' && *p <= '7')
+	perm = perm * 8 + (uint)(*p++ - '0');
+    if (p == digits || p >= end || !isspace(*p))
 	return false;
-    while (!isspace(*p))
-	p++;
-    while (isspace(*p))
+    while (p < end && isspace(*p))
 	p++;
     file.erase();
-    while (*p != '\r' && *p != '\n'&& !isspace(*p))
+    while (p < end && *p && *p != '\r' && *p != '\n' && !isspace(*p))
 	file.append(1, *p++);
+    if (p >= end)
+	return false;
     sz -= (size_t)(p - input);
     if ((output = out = new char[sz * 3 / 4 + 8]) == nullptr)
 	return false;
@@ -1236,9 +1246,9 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
 	}
     }
     out[0] = '\0';
-    while (isspace(*p))
+    while (p < end && isspace(*p))
 	p++;
-    if (memcmp(p, "end", 3) != 0) {
+    if (end - p < 3 || memcmp(p, "end", 3) != 0) {
 	delete [] (char *)output;
 	return false;
     }

@@ -116,24 +116,6 @@ public:
     Sockaddr(const tchar *host, const tchar *service, Proto proto = TCP) {
 	set(host, service, proto);
     }
-    Sockaddr(const Sockaddr &sa) = default;
-    Sockaddr(Sockaddr &&sa) = default;
-    ~Sockaddr() = default;
-
-    Sockaddr &operator =(const Sockaddr &sa) {
-	if (this != &sa) {
-	    addr = sa.addr;
-	    name = sa.name;
-	}
-	return *this;
-    }
-    Sockaddr &operator =(Sockaddr &&sa) noexcept {
-	if (this != &sa) {
-	    addr = sa.addr;
-	    name = std::move(sa.name);
-	}
-	return *this;
-    }
     friend bool operator ==(const Sockaddr &a, const Sockaddr &b) {
 	if (a.family() != b.family())
 	    return false;

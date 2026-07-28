@@ -1,0 +1,9 @@
+{
+  "env": {
+    "CCACHE_DISABLE": "1"
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true
+  }
+}
