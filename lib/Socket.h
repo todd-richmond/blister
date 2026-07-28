@@ -32,8 +32,8 @@
 #define s6_addr32	u.Dword
 
 using sa_family_t = ushort;
-using socklen_t = int;
 using socket_t = SOCKET;
+using socklen_t = int;
 
 inline int sockerrno(void) { return WSAGetLastError(); }
 
@@ -70,6 +70,7 @@ inline int sockerrno(void) { return errno; }
 
 #include <vector>
 #include "Streams.h"
+#include "Thread.h"
 
 constexpr int SOCK_BACKLOG = 128;
 constexpr int SOCK_BUFSZ = 3 * 1024;
@@ -170,10 +171,18 @@ public:
     bool ipv4(void) const { return family() == AF_INET; }
     bool ipv6(void) const { return family() == AF_INET6; }
     bool localhost(void) const {
-	tstring s(ip());
+	if (proto() == Sockaddr::UNIX) {
+	    return true;
+	} else if (v4mapped()) {
+	    in_addr a4;
 
-	return s == T("127.0.0.1") || s == T("::1") || proto() ==
-	    Sockaddr::UNIX;
+	    return v4addr(&a4) && ntohl(a4.s_addr) >> 24 == 127;
+	} else if (ipv6()) {
+	    return IN6_IS_ADDR_LOOPBACK((const in6_addr *)*this);
+	} else if (ipv4()) {
+	    return ntohl(((const in_addr *)*this)->s_addr) >> 24 == 127;
+	}
+	return false;
     }
 #ifndef _WIN32
     const char *path(void) const {
@@ -308,11 +317,15 @@ public:
     explicit Socket(int type = SOCK_STREAM, socket_t sock = SOCK_INVALID):
 	sbuf(new SocketBuf(type, sock, sock == SOCK_INVALID)) {}
     // cppcheck-suppress copyCtorPointerCopying
-    Socket(const Socket &r): sbuf(r.sbuf) { r.sbuf->count++; }
-    ~Socket() { if (--sbuf->count == 0) delete sbuf; }
+    Socket(const Socket &r): sbuf(r.sbuf) { r.sbuf->reference(); }
+    Socket(Socket &&r) noexcept: sbuf(r.sbuf) {
+	r.sbuf = new SocketBuf(sbuf->type, SOCK_INVALID, true);
+    }
+    ~Socket() { if (sbuf->release()) delete sbuf; }
 
     Socket &operator =(socket_t sock);
     Socket &operator =(const Socket &r);
+    Socket &operator =(Socket &&r) noexcept;
     friend bool operator ==(const Socket &s, socket_t sock) {
 	return s.fd() == sock;
     }
@@ -383,11 +396,15 @@ public:
     bool loopback(void) const;
     bool loopback(bool on);
     bool nodelay(void) const {
-	return getsockopt(IPPROTO_TCP, TCP_NODELAY) != 0;
+	int i;
+
+	return getsockopt(IPPROTO_TCP, TCP_NODELAY, i) && i != 0;
     }
     bool nodelay(bool on) { return setsockopt(IPPROTO_TCP, TCP_NODELAY, on); }
     bool reuseaddr(void) const {
-	return getsockopt(SOL_SOCKET, SO_REUSEADDR) != 0;
+	int i;
+
+	return getsockopt(SOL_SOCKET, SO_REUSEADDR, i) && i != 0;
     }
     bool reuseaddr(bool on) { return setsockopt(SOL_SOCKET, SO_REUSEADDR, on); }
     int type(void) const { return getsockopt(SOL_SOCKET, SO_TYPE); }
@@ -435,22 +452,23 @@ public:
     long writev(const iovec *iov, int count, const Sockaddr &sa) const;
 
 protected:
-    class BLISTER SocketBuf: nocopy {
+    class BLISTER SocketBuf: public RefCount {
     public:
-	SocketBuf(int t, socket_t s, bool o): sock(s), count(1), err(0),
-	    path(nullptr), rto(SOCK_INFINITE), type(t), wto(SOCK_INFINITE),
-	    blck(true), own(o) {}
+	SocketBuf(int t, socket_t s, bool o): blck(true), own(o), err(0),
+	    path(nullptr), rto(SOCK_INFINITE), wto(SOCK_INFINITE), sock(s),
+	    type(t) {}
 	~SocketBuf() { if (own) close(); }
 
 	bool __forceinline blocked(void) const { return ::blocked(err); }
-	bool __forceinline interrupted(void) const { return ::interrupted(err); }
+	bool __forceinline interrupted(void) const {
+	    return ::interrupted(err);
+	}
 	bool __forceinline check(const int ret) const {
 	    if (LIKELY(ret != -1))
 		return true;
 	    err = sockerrno();
 	    return false;
 	}
-
 	bool __no_sanitize_thread close(void) {
 	    if (sock == SOCK_INVALID) {
 		err = EINVAL;
@@ -470,6 +488,17 @@ protected:
 	    }
 	    return false;
 	}
+	void reset(int t, socket_t s) {
+	    if (own)
+		close();
+	    blck = true;
+	    err = 0;
+	    own = false;
+	    rto = wto = SOCK_INFINITE;
+	    sock = s;
+	    type = t;
+	    reference();
+	}
 	void unlink(const char *p) {
 	    if (strchr(p, '/')) {
 		if (path)
@@ -479,14 +508,12 @@ protected:
 	}
 
     private:
-	socket_t sock;
-	uint count;
+	bool blck, own;
 	mutable int err;
 	char *path;
-	uint rto;
+	uint rto, wto;
+	socket_t sock;
 	int type;
-	uint wto;
-	bool blck, own;
 
 	friend class Socket;
     };
@@ -588,16 +615,12 @@ inline bool SocketSet::set(socket_t fd) {
 #ifdef _WIN32
 	fd_set *p = (fd_set *)new socket_t[(size_t)maxsz + 1];
 
-	if (!p)
-	    return false;
-	else if (fds)
+	if (fds)
 	    memcpy(p, fds, ((size_t)sz + 1) * sizeof (socket_t));
 #else
 	pollfd *p = new pollfd[maxsz];
 
-	if (!p)
-	    return false;
-	else if (fds)
+	if (fds)
 	    memcpy(p, fds, sz * sizeof (pollfd));
 #endif
 	delete [] fds;

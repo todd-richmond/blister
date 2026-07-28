@@ -443,19 +443,30 @@ bool CIDR::find(uint addr) const {
 Socket &Socket::operator =(socket_t sock) {
     int type = sbuf->type;
 
-    if (--sbuf->count == 0)
-	delete sbuf;
-    sbuf = new SocketBuf(type, sock, false);
+    if (sbuf->release())
+	sbuf->reset(type, sock);
+    else
+	sbuf = new SocketBuf(type, sock, false);
     return *this;
 }
 
 Socket &Socket::operator =(const Socket &r) {
     if (this == &r || sbuf == r.sbuf)
 	return *this;
-    if (--sbuf->count == 0)
+    if (sbuf->release())
 	delete sbuf;
     sbuf = r.sbuf;
-    sbuf->count++;
+    sbuf->reference();
+    return *this;
+}
+
+Socket &Socket::operator =(Socket &&r) noexcept {
+    if (this == &r)
+	return *this;
+    if (sbuf->release())
+	delete sbuf;
+    sbuf = r.sbuf;
+    r.sbuf = new SocketBuf(sbuf->type, SOCK_INVALID, true);
     return *this;
 }
 
@@ -606,7 +617,9 @@ bool Socket::cloexec(void) {
 
 bool Socket::cork(void) const {
 #ifdef CORK_VAL
-    return getsockopt(IPPROTO_TCP, CORK_VAL) != 0;
+    int i;
+
+    return getsockopt(IPPROTO_TCP, CORK_VAL, i) && i != 0;
 #else
     return true;
 #endif
@@ -636,7 +649,9 @@ bool Socket::linger(ushort sec) {
 
 bool Socket::loopback(void) const {
 #ifdef SO_USELOOPBACK
-    return getsockopt(IPPROTO_TCP, SO_USELOOPBACK) != 0;
+    int i;
+
+    return getsockopt(IPPROTO_TCP, SO_USELOOPBACK, i) && i != 0;
 #else
     return true;
 #endif

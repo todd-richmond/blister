@@ -114,10 +114,10 @@ private:
     static vector<unique_ptr<LoadCmd>> cmds;
 
     int onStart(void) override;
-    [[nodiscard]] static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
+    static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
     static const tchar *format(ulong u);
     static const tchar *format(float f);
-    [[nodiscard]] static char *load(uint idx, usec_t &iousec);
+    static char *load(uint idx, usec_t &iousec);
     static void add(const tchar *file);
     static uint next(void);
 };
@@ -234,7 +234,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
 	    continue;
-	if (!expand(buf, sizeof (buf))) {
+	if (!expand(buf, size(buf))) {
 	    tcerr << T("variable syntax err on line ") << line << T(": ") <<
 		buf << endl;
 	    return false;
@@ -454,10 +454,10 @@ int HTTPLoad::onStart(void) {
 		tstrcpy(buf, cmd->url.fullpath().c_str());
 	    } else if (!tstricmp(cmd->cmd.c_str(), T("get"))) {
 		tstrcpy(buf, cmd->url.relpath().c_str());
-		ret = expand(buf, sizeof (buf), lvars) && hc.get(buf);
+		ret = expand(buf, size(buf), lvars) && hc.get(buf);
 	    } else if (!tstricmp(cmd->cmd.c_str(), T("post"))) {
 		tstrcpy(buf, cmd->url.relpath().c_str());
-		if (!expand(buf, sizeof (buf), lvars)) {
+		if (!expand(buf, size(buf), lvars)) {
 		    ret = false;
 		} else if (cmd->data.empty()) {
 		    uint u = allfiles ? next() : ((uint)dist(rng) % (uint)bodies.size());
@@ -473,7 +473,7 @@ int HTTPLoad::onStart(void) {
 		    ret = false;
 		} else {
 		    tstrcpy(data, cmd->data.c_str());
-		    if (!expand(data, sizeof (data), lvars)) {
+		    if (!expand(data, size(data), lvars)) {
 			ret = false;
 		    } else {
 			hc.header(T("content-type"), T("application/x-www-form-urlencoded"));
@@ -626,7 +626,7 @@ void HTTPLoad::print(tostream &os, usec_t last) {
 
 void HTTPLoad::reset(bool all) {
     lock.lock();
-    for (auto &cmd : cmds) {
+    for (const auto &cmd : cmds) {
 	cmd->count = 0;
 	cmd->err = 0;
 	cmd->usec = cmd->minusec = cmd->maxusec = 0;

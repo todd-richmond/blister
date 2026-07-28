@@ -806,9 +806,9 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 		case '\v': esc2('v'); break;
 		default:
 		    if (LIKELY(c >= ' ' && c != '\x7f')) {
-			buf[bsz++] = (tchar)c;
-			if (bsz == (streamsize)sizeof (buf))
+			if (UNLIKELY(bsz == (streamsize)sizeof (buf)))
 			    flush();
+			buf[bsz++] = (tchar)c;
 		    } else {
 			if (UNLIKELY(bsz + 4 > (streamsize)sizeof (buf)))
 			    flush();

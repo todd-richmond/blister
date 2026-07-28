@@ -252,7 +252,7 @@ public:
     __forceinline void write(const T &val) {
 	if constexpr (is_integral_v<T>) {
 	    C buf[24];
-	    C *p = buf + std::size(buf);
+	    C *p = buf + std::size(buf);	// cppcheck-suppress uninitvar
 	    auto uval = static_cast<make_unsigned_t<T>>(val);
 
 	    if constexpr (is_signed_v<T>)
@@ -288,8 +288,7 @@ public:
 
 		for (const char *s = buf; s < end;)
 		    *d++ = (wchar)*s++;
-		// cppcheck-suppress uninitvar
-		write(wbuf, end - buf);
+		write(wbuf, end - buf);	// cppcheck-suppress uninitvar
 	    } else {
 		*this << val;
 	    }

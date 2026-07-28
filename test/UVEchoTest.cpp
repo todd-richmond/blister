@@ -50,8 +50,8 @@ static char *dbuf;
 static uint dsz;
 
 static atomic<ullong> gops{0}, gerrs{0}, gusecs{0};
-static atomic<llong> loops{MAXLLONG};
-static atomic<bool> qflag{false};
+static atomic loops{MAXLLONG};
+static atomic qflag{false};
 
 // consumes one unit of the shared loop budget; every completed round trip
 // and every failed attempt counts as one unit, matching echotest's
@@ -173,7 +173,7 @@ static void onConnectTimeout(uv_timer_t *t) {
 }
 
 // cppcheck-suppress constParameterCallback
-static void allocClient(uv_handle_t *h, size_t, uv_buf_t *buf) {
+static void allocClient(uv_handle_t *h, size_t, uv_buf_t *buf) {    // NOSONAR
     const EchoClient *c = (const EchoClient *)h->data;
 
     buf->base = c->rbuf + c->in;

@@ -352,7 +352,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    fail(T("FAIL: Heterogeneous lookup with string_view"));
 	// Negative heterogeneous lookup: key not present
 	tests++;
-	if (map_hetero.find(tstring_view(T("nokey"))) != map_hetero.end())
+	if (map_hetero.contains(tstring_view(T("nokey"))))
 	    fail(T("FAIL: Negative heterogeneous lookup with string_view"));
 	// Test case-insensitive heterogeneous lookup
 	unordered_map<tstring, tstring, strihash, strieq> map_case_hetero;
@@ -369,8 +369,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    map_case_hetero.end() || it3v->second != T("value"))
 	    fail(T("FAIL: Case-insensitive heterogeneous lookup with string_view"));
 	tests++;
-	if (map_case_hetero.find(tstring_view(T("nokey"))) !=
-	    map_case_hetero.end())
+	if (map_case_hetero.contains(tstring_view(T("nokey"))))
 	    fail(T("FAIL: Negative case-insensitive heterogeneous lookup with string_view"));
 	// Test heterogeneous lookup with map (ordered container)
 	map<tstring, tstring, strless> map_ordered_hetero;
@@ -387,8 +386,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    it4v == map_ordered_hetero.end() || it4v->second != T("value"))
 	    fail(T("FAIL: Heterogeneous lookup with ordered map (string_view)"));
 	tests++;
-	if (map_ordered_hetero.find(tstring_view(T("nokey"))) !=
-	    map_ordered_hetero.end())
+	if (map_ordered_hetero.contains(tstring_view(T("nokey"))))
 	    fail(T("FAIL: Negative heterogeneous lookup with ordered map"));
 	// Case-insensitive ordered map heterogeneous lookup (striless) --
 	// regression test: striless was completely broken for ANY
@@ -404,8 +402,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    it5v == map_iordered_hetero.end() || it5v->second != T("value"))
 	    fail(T("FAIL: Case-insensitive heterogeneous lookup with ordered map (string_view)"));
 	tests++;
-	if (map_iordered_hetero.find(tstring_view(T("nokey"))) !=
-	    map_iordered_hetero.end())
+	if (map_iordered_hetero.contains(tstring_view(T("nokey"))))
 	    fail(T("FAIL: Negative case-insensitive heterogeneous lookup with ordered map"));
     }
     tcout << T("Test Results: ") << (tests - failures) << T("/") << tests <<
