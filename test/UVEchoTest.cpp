@@ -41,8 +41,8 @@
 #include <uv.h>
 
 constexpr ulong DELAY = 20;
-constexpr ulong TIMEOUT = 10 * 1000;
-constexpr size_t MAXREAD = 8 * 1024;
+constexpr ulong TIMEOUT = 10UL * 1000;
+constexpr size_t MAXREAD = 8UL * 1024;
 constexpr uint STACKSZ = 32 * 1024;
 constexpr int BACKLOG = 128;
 
@@ -70,7 +70,7 @@ static void flush_stats(uint &opsLocal, ullong &usecsLocal) {
 
 struct Worker;
 
-struct EchoClient {
+struct EchoClient: nocopy {
     uv_tcp_t tcp;
     uv_timer_t timer;
     uv_connect_t connreq;
@@ -96,7 +96,7 @@ struct EchoClient {
     ~EchoClient() { delete [] rbuf; }
 };
 
-struct EchoServerConn {
+struct EchoServerConn: nocopy {
     uv_tcp_t tcp;
     uv_write_t writereq;
     char *buf;
@@ -172,8 +172,9 @@ static void onConnectTimeout(uv_timer_t *t) {
     onIoError((EchoClient *)t->data, T("client connect="), true);
 }
 
+// cppcheck-suppress constParameterCallback
 static void allocClient(uv_handle_t *h, size_t, uv_buf_t *buf) {
-    EchoClient *c = (EchoClient *)h->data;
+    const EchoClient *c = (const EchoClient *)h->data;
 
     buf->base = c->rbuf + c->in;
     buf->len = dsz - c->in;
@@ -364,6 +365,35 @@ static void onStop(uv_async_t *a) {
     uv_close((uv_handle_t *)a, nullptr);
 }
 
+// UV_TCP_REUSEPORT is only implemented by libuv on Linux, DragonFlyBSD,
+// FreeBSD 12+, Solaris and AIX; on macOS uv_tcp_bind() returns UV_ENOTSUP,
+// which the unchecked original code let fall through to an unbound listen()
+// that autobinds an ephemeral port, so every client connect to the intended
+// port was refused. Bind natively with SO_REUSEPORT instead so every worker
+// still gets a duplicate listening socket load-balanced by the kernel.
+#ifndef _WIN32
+static void bindListener(uv_tcp_t *listener, const Sockaddr &addr) {
+    int fd = (int)socket(addr.family(), SOCK_STREAM, 0);
+    int one = 1;
+
+    if (fd == -1) {
+	dloge(T("server socket="), achartotchar(strerror(errno)));
+	return;
+    }
+    setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof (one));
+    if (::bind(fd, addr, addr.size()) == -1) {
+	dloge(T("server bind="), achartotchar(strerror(errno)));
+	close(fd);
+	return;
+    }
+    uv_tcp_open(listener, fd);
+}
+#else
+static void bindListener(uv_tcp_t *listener, const Sockaddr &addr) {
+    uv_tcp_bind(listener, addr, 0);
+}
+#endif
+
 static int runWorker(void *arg) {
     Worker *w = (Worker *)arg;
 
@@ -374,7 +404,7 @@ static int runWorker(void *arg) {
     if (w->doServer) {
 	uv_tcp_init(&w->loop, &w->listener);
 	w->listener.data = w;
-	uv_tcp_bind(&w->listener, w->bindAddr, UV_TCP_REUSEPORT);
+	bindListener(&w->listener, w->bindAddr);
 	uv_listen((uv_stream_t *)&w->listener, BACKLOG, onNewConnection);
     }
     for (size_t i = 0; i < w->clients.size(); i++) {

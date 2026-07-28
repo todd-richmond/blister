@@ -161,11 +161,8 @@ void Log::LogFile::print(const tchar *buf, uint chars) {
 	if (out == (long)charsz) {
 	    if (file[0] != '>')
 		len += charsz;
-	} else if (out > 0) {
-	    // partial write - restore previous file length
-	    if (ftruncate(fd, (off_t)len)) {
-		;
-	    }
+	} else if (out > 0 && ftruncate(fd, (off_t)len)) {
+	    ;				// NOSONAR
 	}
     }
 }
@@ -528,7 +525,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	const struct tm *tm;
 
 	tm = gmt ? gmtime_r(&now_sec, &tmbuf) : localtime_r(&now_sec, &tmbuf);
-	tstrftime(tbuf, sizeof (tbuf) / sizeof (tchar), fmt.c_str(), tm);
+	tstrftime(tbuf, std::size(tbuf), fmt.c_str(), tm);
 	last_format = tbuf;
 	last_sec = now_sec;
 #ifdef NO_PERCENT_Z
@@ -909,7 +906,7 @@ void Log::stop(void) {
 }
 
 Log::Level Log::str2enum(const tchar *l) {
-    for (uint u = 0; u < sizeof (LevelStr) / sizeof (LevelStr[0]); ++u) {
+    for (uint u = 0; u < std::size(LevelStr); ++u) {
 	tstring_view sv = LevelStr[u];
 
 	if (!sv.empty() && sv.back() == ' ')

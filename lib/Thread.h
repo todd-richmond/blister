@@ -526,7 +526,7 @@ public:
 	    cv.notify_one();
     }
     __forceinline bool wait(ulong msec = INFINITE) {
-	unique_lock<mutex> ulck(lock, adopt_lock);
+	unique_lock ulck(lock, adopt_lock);
 	bool ret;
 
 	if (msec == INFINITE) {
@@ -701,7 +701,7 @@ public:
 	return 0;
     }
 
-    __forceinline bool try_acquire(void) { return false; }
+    __forceinline bool try_acquire(void) { return false; }  // NOSONAR
     bool try_acquire_for(ulong msec, uint spin = 0) {
 	Node *n = claim();
 	uint s;
@@ -979,7 +979,7 @@ public:
     __forceinline int get(void) const { return semctl(hdl, 0, GETVAL); }
     __forceinline int handle(void) const { return hdl; }
 
-    bool close(void) { return true; }
+    bool close(void) { return true; }			// NOSONAR
     bool erase(void) {
 	int h = hdl;
 

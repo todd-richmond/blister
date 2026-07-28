@@ -144,6 +144,7 @@ atomic<ulong> HTTPLoad::count, HTTPLoad::tcount;
 vector<unique_ptr<HTTPLoad::LoadCmd>> HTTPLoad::cmds;
 
 bool HTTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
+    const tchar *orig = str;
     tchar *p;
     tstring::size_type len;
 
@@ -152,7 +153,7 @@ bool HTTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
 
 	if (p != str && p[-1] == '$') {	    // $$() -> $()
 	    size_t remaining_len = tstrlen(p) + 1;
-	    size_t current_pos = (size_t)(p - str);
+	    size_t current_pos = (size_t)(p - orig);
 	    if (current_pos + remaining_len > buf_size) {
 		return false;  // Not enough space
 	    }
@@ -166,7 +167,7 @@ bool HTTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
 		return false;
 	    len = it->second.size();
 	    size_t end_len = tstrlen(end) + 1;
-	    size_t current_pos = (size_t)(p - str);
+	    size_t current_pos = (size_t)(p - orig);
 	    if (current_pos + len + end_len > buf_size) {
 		return false;  // Not enough space for expansion
 	    }

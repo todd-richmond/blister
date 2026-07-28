@@ -117,6 +117,7 @@ public:
     }
     Sockaddr(const Sockaddr &sa) = default;
     Sockaddr(Sockaddr &&sa) = default;
+    ~Sockaddr() = default;
 
     Sockaddr &operator =(const Sockaddr &sa) {
 	if (this != &sa) {

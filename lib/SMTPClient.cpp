@@ -272,7 +272,7 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
 }
 
 bool SMTPClient::data(bool m, const tchar *txt) {
-    static atomic<uint64_t> nextmid(((uint64_t)seconds() << 18) & uticks());
+    static atomic nextmid(((uint64_t)seconds() << 18) & uticks());
     char buf[64];
     char *encbuf;
     size_t encbufsz;

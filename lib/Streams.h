@@ -252,7 +252,7 @@ public:
     __forceinline void write(const T &val) {
 	if constexpr (is_integral_v<T>) {
 	    C buf[24];
-	    C *p = buf + sizeof (buf) / sizeof (C);
+	    C *p = buf + std::size(buf);
 	    auto uval = static_cast<make_unsigned_t<T>>(val);
 
 	    if constexpr (is_signed_v<T>)
@@ -276,7 +276,7 @@ public:
 	    if constexpr (is_signed_v<T>)
 		if (val < 0)
 		    *--p = (C)'-';
-	    write(p, buf + sizeof (buf) / sizeof (C) - p);
+	    write(p, buf + std::size(buf) - p);
 	} else if constexpr (is_floating_point_v<T>) {
 #ifdef UNICODE
 	    char buf[40];
