@@ -127,13 +127,17 @@ bool Log::LogFile::close(void) {
 }
 
 void Log::LogFile::lock() {
-    if (fd == -1)
+    bool reopened = fd == -1;
+
+    if (reopened)
 	reopen();
-    // fcntl locking is only needed to arbitrate with other processes sharing
-    // this file; within a process, Log::lck already serializes access, so
-    // skip the syscall entirely when !mp
-    if (mp && fd >= 0 && (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
-	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1)) {
+    // fcntl locking arbitrates with other processes sharing this file. mp
+    // mode takes and releases it around every write since other processes
+    // are actively interleaving writes. Single-process mode only needs it once
+    if (!mp || fd < 0 || reopened)
+	return;
+    if (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
+	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1) {
 	tcerr << T("unable to lock log ") << path << T(": ") <<
 	    tstrerror(errno) << endl;
 	close();
@@ -186,7 +190,14 @@ bool Log::LogFile::reopen(void) {
 #ifdef POSIX_FADV_SEQUENTIAL
     posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-    lock();
+    if (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
+	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1) {
+	tcerr << T("unable to lock log ") << path << T(": ") <<
+	    tstrerror(errno) << endl;
+	close();
+	fd = -3;
+	return false;
+    }
     newfile = fd >= 0 && len == 0;
 #ifdef _UNICODE
     if (newfile) {
@@ -789,15 +800,19 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 	    streamsize bsz = 0;
 	    tchar buf[128];
 	    static const tchar dquote = '"';
+	    static constexpr streamsize bufcnt = (streamsize)std::size(buf);
 
 	    os.write(dquote);
 	    os.write((const tchar *)start, p - start);
 	    auto flush = [&]() { if (bsz) { os.write(buf, bsz); bsz = 0; } };
-	    auto esc2 = [&](tchar e) {
-		if (UNLIKELY(bsz + 2 > (streamsize)sizeof (buf)))
+	    auto putc = [&](tchar cc) {
+		if (UNLIKELY(bsz == bufcnt))
 		    flush();
-		buf[bsz++] = '\\';
-		buf[bsz++] = e;
+		buf[bsz++] = cc;
+	    };
+	    auto esc2 = [&](tchar e) {
+		putc('\\');
+		putc(e);
 	    };
 	    while (*p) {
 		c = *p++;
@@ -811,16 +826,12 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 		case '\v': esc2('v'); break;
 		default:
 		    if (LIKELY(c >= ' ' && c != '\x7f')) {
-			if (UNLIKELY(bsz == (streamsize)sizeof (buf)))
-			    flush();
-			buf[bsz++] = (tchar)c;
+			putc((tchar)c);
 		    } else {
-			if (UNLIKELY(bsz + 4 > (streamsize)sizeof (buf)))
-			    flush();
-			buf[bsz++] = '\\';
-			buf[bsz++] = (tchar)('0' + ((c >> 6) & 7));
-			buf[bsz++] = (tchar)('0' + ((c >> 3) & 7));
-			buf[bsz++] = (tchar)('0' + (c & 7));
+			putc('\\');
+			putc((tchar)('0' + ((c >> 6) & 7)));
+			putc((tchar)('0' + ((c >> 3) & 7)));
+			putc((tchar)('0' + (c & 7)));
 		    }
 		}
 	    }

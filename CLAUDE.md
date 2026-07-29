@@ -73,6 +73,7 @@ The rest define their own classes on top of the framework:
 - `SMTPLoad.cpp` (`smtpload`) — `SMTPLoad : Thread` (with nested `LoadCmd`); scriptable multithreaded SMTP load generator built on `SMTPClient`.
 
 ### Cross-cutting conventions
+- Prefer C++23 language and standard-library features (e.g. `std::size`, `to_chars`, concepts, ranges) over older idioms in new or modified code, consistent with the project's C++23 standard target.
 - Public API surface is marked `BLISTER`; internal-only helpers are not.
 - Style: tabs (`tab_width=8`), 80-column soft limit (see `.editorconfig`, `.clang-format`) — not enforced by clang-format in CI but keep new code consistent with surrounding code.
 - No exceptions or RTTI anywhere in `lib/`; don't introduce `throw`/`try`/`dynamic_cast`.
