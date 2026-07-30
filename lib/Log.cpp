@@ -806,8 +806,10 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 	    os.write((const tchar *)start, p - start);
 	    auto flush = [&]() { if (bsz) { os.write(buf, bsz); bsz = 0; } };
 	    auto putc = [&](tchar cc) {
-		if (UNLIKELY(bsz == bufcnt))
-		    flush();
+		if (UNLIKELY(bsz == bufcnt)) {
+		    os.write(buf, bsz);
+		    bsz = 0;
+		}
 		buf[bsz++] = cc;
 	    };
 	    auto esc2 = [&](tchar e) {

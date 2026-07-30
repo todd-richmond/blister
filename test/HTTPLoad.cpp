@@ -152,8 +152,8 @@ bool HTTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
 
 	if (p != str && p[-1] == '$') {	    // $$() -> $()
 	    size_t remaining_len = tstrlen(p) + 1;
-	    size_t current_pos = (size_t)(p - orig);
-	    if (current_pos + remaining_len > buf_size) {
+	    size_t dst_pos = (size_t)(p - orig) - 1;
+	    if (dst_pos + remaining_len > buf_size) {
 		return false;  // Not enough space
 	    }
 	    memmove(p - 1, p, remaining_len);
