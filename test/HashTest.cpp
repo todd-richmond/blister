@@ -125,7 +125,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (map_view[tstring_view(key_str)] != T("value"))
 	    fail(T("FAIL: tstring_view map test"));
 	// string literal keys with case-insensitive equality
-	unordered_map<const tchar **, tstring, strihash, strieq> map_iliteral;
+	unordered_map<const tchar *, tstring, strihash, strieq> map_iliteral;
 	map_iliteral[T("ILITERAL_KEY")] = T("iliteral_value");
 	tests++;
 	if (map_iliteral[T("ILITERAL_KEY")] != T("iliteral_value"))
