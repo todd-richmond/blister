@@ -43,12 +43,12 @@ sa_family_t Sockaddr::families[] = {
 
 const void *Sockaddr::address(void) const {
     switch (family()) {
-	case AF_INET: return &addr.sa4.sin_addr;
-	case AF_INET6: return &addr.sa6.sin6_addr;
+    case AF_INET: return &addr.sa4.sin_addr;
+    case AF_INET6: return &addr.sa6.sin6_addr;
 #ifndef _WIN32
-	case AF_UNIX: return &addr.sau;
+    case AF_UNIX: return &addr.sau;
 #endif
-	default: return &addr.sa;
+    default: return &addr.sa;
     }
 }
 
@@ -139,7 +139,7 @@ tstring Sockaddr::ip(void) const {
 
 	return achartotstring(inet_ntop(fam, &addr.sa4.sin_addr, buf, sizeof
 	    (buf)));
-    } else if (fam  == AF_INET6) {
+    } else if (fam == AF_INET6) {
 	char buf[INET6_ADDRSTRLEN];
 	const char *s = inet_ntop(fam, &addr.sa6.sin6_addr, buf, sizeof (buf));
 
@@ -289,12 +289,12 @@ bool Sockaddr::set(const hostent *h) {
 
 bool Sockaddr::set(const sockaddr &sa) {
     switch (sa.sa_family) {
-	case AF_INET: addr.sa4 = (const sockaddr_in &)sa; break;
-	case AF_INET6: addr.sa6 = (const sockaddr_in6 &)sa; break;
+    case AF_INET: addr.sa4 = (const sockaddr_in &)sa; break;
+    case AF_INET6: addr.sa6 = (const sockaddr_in6 &)sa; break;
 #ifndef _WIN32
-	case AF_UNIX: addr.sau = (const sockaddr_un &)sa; break;
+    case AF_UNIX: addr.sau = (const sockaddr_un &)sa; break;
 #endif
-	default: addr.sa = sa; break;
+    default: addr.sa = sa; break;
     }
     return true;
 }

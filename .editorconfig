@@ -11,7 +11,7 @@ max_line_length = 80
 tab_width = 8
 trim_trailing_whitespace = true
 
-[CMakeLists.txt,Makefile]
+[{CMakeLists.txt,Makefile,Makefile.am,Makefile.inc,configure.ac}]
 indent_style = tab
 
 [*.{c,cpp,h,hpp,pl,pm}]

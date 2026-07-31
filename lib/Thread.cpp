@@ -275,7 +275,7 @@ void Thread::end(int status) {
 
 // call into ThreadMain with correct class scope
 int Thread::init(void *thisp) {
-    return (static_cast<Thread *> (thisp))->onStart();
+    return (static_cast<Thread *>(thisp))->onStart();
 }
 
 bool Thread::priority(int pri) {	// NOLINT
@@ -327,7 +327,7 @@ void Thread::thread_cleanup(void) {
 
 // setup thread and call it's main routine
 THREAD_FUNC Thread::thread_init(void *arg) {
-    Thread *thread = static_cast<Thread *> (arg);
+    Thread *thread = static_cast<Thread *>(arg);
 
     thread->lck.lock();
     thread->id = THREAD_ID();

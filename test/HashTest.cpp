@@ -72,7 +72,7 @@ int tmain(int argc, const tchar * const argv[]) {
     int failures = 0;
     int tests = 0;
 
-#define fail(msg) do { tcout << msg << T("\n"); failures++; } while(0)
+#define fail(msg) do { tcout << msg << T("\n"); failures++; } while (0)
 
     tcout << T("Testing hash and string functors...\n");
     // Test strhash functor
@@ -80,8 +80,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	tcout << T("Testing strhash functor...\n");
 	// tchar* key (use mutable array for pointer test)
 	static tchar key_array[] = T("key");
-	tchar* key_ptr = key_array;
-	unordered_map<tchar*, tstring, strhash> map_ptr;
+	tchar *key_ptr = key_array;
+	unordered_map<tchar *, tstring, strhash> map_ptr;
 	map_ptr[key_ptr] = T("value");
 	tests++;
 	if (map_ptr[key_ptr] != T("value"))
@@ -97,7 +97,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	tests++;
 	if (map_view[tstring_view(key_str)] != T("value"))
 	    fail(T("FAIL: tstring_view map test"));
-	unordered_map<const tchar*, tstring, strhash> map_literal;
+	unordered_map<const tchar *, tstring, strhash> map_literal;
 	map_literal[T("literal_key")] = T("literal_value");
 	tests++;
 	if (map_literal[T("literal_key")] != T("literal_value"))
@@ -107,8 +107,8 @@ int tmain(int argc, const tchar * const argv[]) {
     {
 	tcout << T("Testing strihash functor...\n");
 	static tchar key_array[] = T("key");
-	tchar* key_ptr = key_array;
-	unordered_map<tchar*, tstring, strihash> map_ptr;
+	tchar *key_ptr = key_array;
+	unordered_map<tchar *, tstring, strihash> map_ptr;
 	map_ptr[key_ptr] = T("value");
 	tests++;
 	if (map_ptr[key_ptr] != T("value"))
@@ -125,8 +125,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (map_view[tstring_view(key_str)] != T("value"))
 	    fail(T("FAIL: tstring_view map test"));
 	// string literal keys with case-insensitive equality
-	unordered_map<const tchar*, tstring, strihash, strieq>
-	    map_iliteral;
+	unordered_map<const tchar **, tstring, strihash, strieq> map_iliteral;
 	map_iliteral[T("ILITERAL_KEY")] = T("iliteral_value");
 	tests++;
 	if (map_iliteral[T("ILITERAL_KEY")] != T("iliteral_value"))
@@ -139,8 +138,8 @@ int tmain(int argc, const tchar * const argv[]) {
     {
 	tcout << T("Testing striasciihash functor...\n");
 	static tchar key_array[] = T("key");
-	tchar* key_ptr = key_array;
-	unordered_map<tchar*, tstring, striasciihash> map_ptr;
+	tchar *key_ptr = key_array;
+	unordered_map<tchar *, tstring, striasciihash> map_ptr;
 	map_ptr[key_ptr] = T("value");
 	tests++;
 	if (map_ptr[key_ptr] != T("value"))
@@ -157,7 +156,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (map_view[tstring_view(key_str)] != T("value"))
 	    fail(T("FAIL: tstring_view map test"));
 	// string literal keys with ASCII case-insensitive equality
-	unordered_map<const tchar*, tstring, striasciihash, strieq>
+	unordered_map<const tchar *, tstring, striasciihash, strieq>
 	map_asciiliteral;
 	map_asciiliteral[T("ASCIILITERAL_KEY")] = T("asciiliteral_value");
 	tests++;
@@ -290,7 +289,7 @@ int tmain(int argc, const tchar * const argv[]) {
     // Test different string literal lengths
     {
 	tcout << T("Testing different string literal lengths...\n");
-	unordered_map<const tchar*, int, strhash> map_lengths;
+	unordered_map<const tchar *, int, strhash> map_lengths;
 	map_lengths[T("a")] = 1;
 	map_lengths[T("abcde")] = 5;
 	tests++;
@@ -304,14 +303,14 @@ int tmain(int argc, const tchar * const argv[]) {
     {
 	tcout << T("Testing hash consistency with string literals...\n");
 	// Test that the same string literal produces the same hash
-	unordered_map<const tchar*, int, strhash> hash_consistency;
+	unordered_map<const tchar *, int, strhash> hash_consistency;
 	hash_consistency[T("same")] = 1;
 	hash_consistency[T("same")] = 2;  // Should overwrite, proving same hash
 	tests++;
 	if (hash_consistency[T("same")] != 2) // cppcheck-suppress knownConditionTrueFalse
 	    fail(T("FAIL: Hash consistency test"));
 	// Test case-insensitive hash consistency
-	unordered_map<const tchar*, int, strihash, strieq> ihash_consistency;
+	unordered_map<const tchar *, int, strihash, strieq> ihash_consistency;
 	ihash_consistency[T("CASE")] = 1;
 	ihash_consistency[T("case")] = 2;	// Should overwrite, proving
 						// case-insensitive hash
@@ -322,10 +321,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (ihash_consistency[T("case")] != 2)
 	    fail(T("FAIL: Case-insensitive hash consistency (lowercase) test"));
 	// Test ASCII case-insensitive hash consistency
-	unordered_map<const tchar*, int, striasciihash, strieq>
+	unordered_map<const tchar *, int, striasciihash, strieq>
 	ahash_consistency;
 	ahash_consistency[T("ASCII")] = 1;
-	 // Should overwrite, proving ASCII case-insensitive hash
+	// Should overwrite, proving ASCII case-insensitive hash
 	ahash_consistency[T("ascii")] = 2;
 	tests++;
 	if (ahash_consistency[T("ASCII")] != 2)

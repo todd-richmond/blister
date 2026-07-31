@@ -45,8 +45,7 @@ public:
 
 class BLISTER HTTPClient: nocopy {
 public:
-    using attrmap = unordered_multimap<tstring, tstring, strihash,
-	strieq>;
+    using attrmap = unordered_multimap<tstring, tstring, strihash, strieq>;
 
     HTTPClient();
     ~HTTPClient() { delete [] result; }
@@ -69,7 +68,7 @@ public:
     uint status(void) const { return sts; }
     uint wtimeout(void) const { return wto; }
 
-        bool close(void) { return sock.close(); }
+    bool close(void) { return sock.close(); }
     bool connect(const Sockaddr &sa, bool keepalive = false, uint timeout =
 	SOCK_INFINITE);
     bool connect(const tchar *host, ushort port = 80, bool keepalive = false,

@@ -29,7 +29,7 @@
 #ifdef _WIN32
 /*
  * select() is faster on Windows for normal fd set sizes
-#define DSP_WIN32_ASYNC
+ #define DSP_WIN32_ASYNC
  */
 #define DSP_POLL
 #elif defined(__linux__)
@@ -168,7 +168,7 @@ public:
 
 protected:
     struct compare {
-	bool operator()(const DispatchTimer *a, const DispatchTimer *b) const {
+	bool operator ()(const DispatchTimer *a, const DispatchTimer *b) const {
 	    msec_t ad = a->due();
 	    msec_t bd = b->due();
 
@@ -282,7 +282,7 @@ protected:
 
     Sockaddr addr;
 
- private:
+private:
     DSP_DECLARE(DispatchListenSocket, connection);
 };
 
@@ -321,7 +321,7 @@ private:
 	    return n.load(memory_order_relaxed);
 	}
 
-	atomic<uint> n {0};
+	atomic<uint> n = 0;
     };
 
     class BLISTER TimerSet: ::nocopy {
@@ -597,11 +597,12 @@ public:
 	    signaled = false;
 	    lck.unlock();
 	    waiter.ready();
-	} else  {
+	} else {
 	    waiters.push_back(waiter);
 	    lck.unlock();
 	}
     }
+
 protected:
     void cancel(Waiter &waiter) {
 	lck.lock();

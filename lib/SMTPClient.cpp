@@ -564,7 +564,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	}
     }
 
- pass1done:
+    pass1done:
     if (angledepth) {
 	err = T("Unbalanced '<'");
 	goto fail;
@@ -622,17 +622,17 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	    continue;
 	case ' ':
 	case '.': {
-		bool saw_dot = (c == '.');
+	    bool saw_dot = (c == '.');
 
-		while (pos < addr.length() &&
-		    ((c = addr[pos]) == ' ' || (!saw_dot && c == '.'))) {
-		    if (c == '.')
-			saw_dot = true;
-		    ++pos;
-		}
-		if (saw_dot || (!local_part.empty() && pos < addr.length() &&
-		    addr[pos] != '@'))
-		    local_part += '.';
+	    while (pos < addr.length() &&
+		((c = addr[pos]) == ' ' || (!saw_dot && c == '.'))) {
+		if (c == '.')
+		    saw_dot = true;
+		++pos;
+	    }
+	    if (saw_dot || (!local_part.empty() && pos < addr.length() &&
+		addr[pos] != '@'))
+		local_part += '.';
 	    }
 	    continue;
 	case ';':
@@ -654,7 +654,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	}
     }
 
- pass2done:
+    pass2done:
     if (local_part.empty()) {
 	err = T("User address required");
 	goto fail;
@@ -662,7 +662,7 @@ void RFC821Addr::parseaddr(const tchar *&input) {
     make_address();
     return;
 
- fail:
+    fail:
     addr.erase();
     domain_buf.erase();
     local_part.erase();
@@ -680,13 +680,15 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 		sawspace = false;
 		continue;
 	    }
-	    if (domain_buf.empty() || domain_buf[domain_buf.length()-1] == '.')
+	    if (domain_buf.empty() || domain_buf[domain_buf.length() - 1] ==
+		'.')
 		goto done;
 	    domain_buf += c;
 	    sawspace = false;
 	    continue;
 	case ' ':
-	    if (!domain_buf.empty() && domain_buf[domain_buf.length()-1] != '.') {
+	    if (!domain_buf.empty() && domain_buf[domain_buf.length() - 1] !=
+		'.') {
 		domain_buf += '.';
 		sawspace = true;
 	    }
@@ -752,8 +754,8 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 	}
     }
     done:
-    while (!domain_buf.empty() && domain_buf[domain_buf.length()-1] == '.')
-	domain_buf.erase(domain_buf.length()-1);
+    while (!domain_buf.empty() && domain_buf[domain_buf.length() - 1] == '.')
+	domain_buf.erase(domain_buf.length() - 1);
     if (domain_buf.empty())
 	err = T("Invalid domain");
 }
@@ -775,8 +777,8 @@ void RFC821Addr::make_address() {
 	tchar c = local_part[pos];
 
 	if (c == '.') {
-	    if (pos == 0 || pos == local_part.length()-1 ||
-		local_part[pos + 1] == '.')
+	    if (pos == 0 || pos == local_part.length() - 1 || local_part[pos +
+		1] == '.')
 		break;
 	} else if (!IS_ATEXT(c)) {
 	    break;
@@ -1181,6 +1183,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     outsz = 0;
     while (p < end && isspace(*p))
 	p++;
+    // cppcheck-suppress knownConditionTrueFalse
     if (end - p < 6 || strnicmp(p, "begin ", 6) != 0)
 	return false;
     p += 5;
@@ -1248,6 +1251,7 @@ bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
     out[0] = '\0';
     while (p < end && isspace(*p))
 	p++;
+    // cppcheck-suppress knownConditionTrueFalse
     if (end - p < 3 || memcmp(p, "end", 3) != 0) {
 	delete [] (char *)output;
 	return false;
@@ -1410,7 +1414,7 @@ time_t mkgmtime(const tm *tmp) {
      */
     for (bits = 0, t = 1; t > 0; ++bits, t <<= 1)
 	;
-    t = (t < 0) ? 0 : ((time_t) 1 << bits);
+    t = (t < 0) ? 0 : ((time_t)1 << bits);
     while (true) {
 	int dir;
 	const tm *newtm = gmtime_r(&t, &tmbuf);
@@ -1491,7 +1495,7 @@ time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {
 	return 0;
     month[3] = '\0';
     for (p = month; *p; p++)
-    	*p = (char)tolower(*p);
+	*p = (char)tolower(*p);
     for (tm.tm_mon = 0; tm.tm_mon < 12; tm.tm_mon++) {
 	if (!tstrcmp(month, monthname[tm.tm_mon]))
 	    break;

@@ -213,7 +213,8 @@ int __stdcall Service::ctrl_handler(ulong sig) {
 
 void Service::setsignal(bool abrt) {
     if (console)
-	SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOOPENFILEERRORBOX|SEM_NOGPFAULTERRORBOX);
+	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX |
+	    SEM_NOGPFAULTERRORBOX);
     if (abrt) {
 	signal(SIGABRT, signal_handler);
 	signal(SIGFPE, signal_handler);
@@ -321,10 +322,10 @@ void Service::handle(ulong sig) {
 	update(Running);
 	break;
     case SERVICE_CONTROL_SIGUSR1:
-  	onSigusr1();
+	onSigusr1();
 	break;
     case SERVICE_CONTROL_SIGUSR2:
-  	onSigusr2();
+	onSigusr2();
 	break;
     default:
 	onSignal(sig);
@@ -569,8 +570,8 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    return 1;
 	}
 	size = sizeof (counter);
-	status = RegQueryValueEx(key, T("First Counter"), 0L,
-	  &type, (LPBYTE)&counter, &size);
+	status = RegQueryValueEx(key, T("First Counter"), 0L, &type,
+	    (LPBYTE)&counter, &size);
 	size = sizeof (help);
 	if (!status)
 	    status = RegQueryValueEx(key, T("First Help"), 0L,
@@ -624,7 +625,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 #else
 	mbstowcs((wchar_t *)(pid + 1), name.c_str(), name.length() + 1);
 #endif
-	pcb = (PERF_COUNTER_BLOCK  *)((char *)pid + pid->ByteLength);
+	pcb = (PERF_COUNTER_BLOCK *)((char *)pid + pid->ByteLength);
 	pcb->ByteLength = (DWORD)(sizeof (PERF_COUNTER_BLOCK) + mapsz);
 	init = true;
     }
@@ -653,12 +654,12 @@ DWORD ServiceData::collect(LPCWSTR value, LPVOID *datap, LPDWORD total, LPDWORD
 	return ERROR_SUCCESS;
     } else if (value && wcscmp(value, L"Global") != 0 && wcscmp(value,
 	L"Costly") != 0) {
-    /*
+	/*
 	if (!(IsNumberInUnicodeList(
 	    MSDataDefinition.MS_ObjectType.ObjectNameTitleIndex, value)))
 	    // request received for data object not provided by this routine
 	    return ERROR_SUCCESS;
-    */
+	*/
     }
     if (*total < datasz + mapsz)
 	return ERROR_MORE_DATA;
@@ -1086,13 +1087,13 @@ bool Service::install(const char *file, const char *desc,
     (void)desc; (void)depend; (void)manual;
     if (!file)
 	file = path.c_str();
-    return chown(file, getuid(), getgid()) == -1 &&
-	chmod(file, S_ISUID|S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) != -1;
+    return chown(file, getuid(), getgid()) == -1 && chmod(file,
+	S_ISUID | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != -1;
 }
 
 bool Service::uninstall() {
     stop();
-    return chmod(path.c_str(), S_IRWXU|S_IRGRP|S_IXGRP) != -1;
+    return chmod(path.c_str(), S_IRWXU | S_IRGRP | S_IXGRP) != -1;
 }
 
 int Service::start(int argc, const tchar * const *argv) {
@@ -1480,7 +1481,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    lckfd = -1;
 	}
     } while (lckfd == -1);
-    snprintf(buf, sizeof(buf), "%ld", (long)getpid());
+    snprintf(buf, sizeof (buf), "%ld", (long)getpid());
     if (ftruncate(lckfd, 0) || write(lckfd, buf, (uint)strlen(buf)) < 1)
 	return 2;
     for (int i = 1; i < argc; i++) {
@@ -1692,7 +1693,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 #endif
     } else {
 	ret = Service::onStart(argc, argv);
-	snprintf(buf, sizeof(buf), "%lu", (ulong)sigpid);
+	snprintf(buf, sizeof (buf), "%lu", (ulong)sigpid);
 	if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) < 0 || write(lckfd,
 	    buf, (uint)strlen(buf)) < 1)
 	    ret = 0;

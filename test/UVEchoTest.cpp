@@ -49,9 +49,9 @@ constexpr int BACKLOG = 128;
 static char *dbuf;
 static uint dsz;
 
-static atomic<ullong> gops{0}, gerrs{0}, gusecs{0};
-static atomic loops{MAXLLONG};
-static atomic qflag{false};
+static atomic<ullong> gops = 0, gerrs = 0, gusecs = 0;
+static atomic loops = MAXLLONG;
+static atomic qflag = false;
 
 // consumes one unit of the shared loop budget; every completed round trip
 // and every failed attempt counts as one unit, matching echotest's
@@ -187,19 +187,19 @@ static void writeClient(EchoClient *c) {
     c->writereq.data = c;
     uv_write(&c->writereq, (uv_stream_t *)&c->tcp, &c->wbuf, 1,
 	[](uv_write_t *req, int status) {
-	    EchoClient *cl = (EchoClient *)req->data;
+	EchoClient *cl = (EchoClient *)req->data;
 
-	    cl->writePending = false;
-	    if (status < 0) {
-		onIoError(cl, T("client write="));
-		return;
-	    }
-	    dlogt(T("client write="), dsz);
-	    if (cl->nextRoundQueued) {
-		cl->nextRoundQueued = false;
-		writeClient(cl);
-	    }
-	});
+	cl->writePending = false;
+	if (status < 0) {
+	    onIoError(cl, T("client write="));
+	    return;
+	}
+	dlogt(T("client write="), dsz);
+	if (cl->nextRoundQueued) {
+	    cl->nextRoundQueued = false;
+	    writeClient(cl);
+	}
+    });
 }
 
 // the echo response for a round can arrive and be processed before this

@@ -26,7 +26,7 @@
 #include <stdarg.h>
 #include <time.h>
 
- //-V::303
+//-V::303
 #pragma comment(lib, "winmm.lib")
 #pragma warning(disable: 4305)
 #pragma warning(disable: 4306)
@@ -200,7 +200,7 @@ FILE *fdopen(int fd, const char *how) {
     else if (!strcmp(how, "r"))
 	flags |= O_RDONLY;
     return _fdopen(_open_osfhandle(fd, flags), how);
- }
+}
 
 int flock(int fd, int op) {
     if (op == LOCK_UN) {
@@ -319,7 +319,7 @@ int write(int fd, const void *buf, uint len) {
     return out;
 }
 
-long writev(int fd, const iovec *io , int num) {
+long writev(int fd, const iovec *io, int num) {
     ulong len = 0;
     char buf[1024];
     char *p = buf;
@@ -784,8 +784,8 @@ static int file_stat(HANDLE hnd, struct stat *buf) {
     if (bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
 	buf->st_mode |= (S_IREAD + (S_IREAD >> 3) + (S_IREAD >> 6));
     else
-	buf->st_mode |= ((S_IREAD | S_IWRITE) + ((S_IREAD | S_IWRITE) >> 3)
-	+ ((S_IREAD | S_IWRITE) >> 6));
+	buf->st_mode |= ((S_IREAD | S_IWRITE) + ((S_IREAD | S_IWRITE) >> 3) +
+	    ((S_IREAD | S_IWRITE) >> 6));
 
     if (!FileTimeToLocalFileTime(&bhfi.ftLastWriteTime, &LocalFTime) ||
 	!FileTimeToSystemTime(&LocalFTime, &SystemTime))
@@ -986,8 +986,8 @@ static int tzapiused;
 static TIME_ZONE_INFORMATION tzinfo;
 
 /*
-* Structure used to represent DST transition date/times.
-*/
+ * Structure used to represent DST transition date/times.
+ */
 typedef struct {
     int  yr;        /* year of interest */
     int  yd;        /* day of year */
@@ -995,7 +995,7 @@ typedef struct {
 } transitiondate;
 
 static transitiondate dststart = { -1, 0, 0L };
-static transitiondate dstend   = { -1, 0, 0L };
+static transitiondate dstend = { -1, 0, 0L };
 
 static void cvtdate(int trantype, int datetype, int year, int month,
     int week, int dayofweek, int date, int hour, int min, int sec, int msec) {
@@ -1125,7 +1125,7 @@ static ulong local_to_time_t(const SYSTEMTIME *stm) {
     ZERO(tb);
     tb.tm_yday = tmpdays;
     tb.tm_year = year;
-    tb.tm_mon  = stm->wMonth - 1;
+    tb.tm_mon = stm->wMonth - 1;
     tb.tm_hour = stm->wHour;
     tb.tm_sec = tb.tm_min = 0;
     if (_daylight && _isindst(&tb))
@@ -1141,51 +1141,51 @@ struct errentry {
 };
 
 static struct errentry errtable[] = {
-    {  ERROR_INVALID_FUNCTION,       EINVAL    },  /* 1 */
-    {  ERROR_FILE_NOT_FOUND,         ENOENT    },  /* 2 */
-    {  ERROR_PATH_NOT_FOUND,         ENOENT    },  /* 3 */
-    {  ERROR_TOO_MANY_OPEN_FILES,    EMFILE    },  /* 4 */
-    {  ERROR_ACCESS_DENIED,          EACCES    },  /* 5 */
-    {  ERROR_INVALID_HANDLE,         EBADF     },  /* 6 */
-    {  ERROR_ARENA_TRASHED,          ENOMEM    },  /* 7 */
-    {  ERROR_NOT_ENOUGH_MEMORY,      ENOMEM    },  /* 8 */
-    {  ERROR_INVALID_BLOCK,          ENOMEM    },  /* 9 */
-    {  ERROR_BAD_ENVIRONMENT,        E2BIG     },  /* 10 */
-    {  ERROR_BAD_FORMAT,             ENOEXEC   },  /* 11 */
-    {  ERROR_INVALID_ACCESS,         EINVAL    },  /* 12 */
-    {  ERROR_INVALID_DATA,           EINVAL    },  /* 13 */
-    {  ERROR_INVALID_DRIVE,          ENOENT    },  /* 15 */
-    {  ERROR_CURRENT_DIRECTORY,      EACCES    },  /* 16 */
-    {  ERROR_NOT_SAME_DEVICE,        EXDEV     },  /* 17 */
-    {  ERROR_NO_MORE_FILES,          ENOENT    },  /* 18 */
-    {  ERROR_LOCK_VIOLATION,         EACCES    },  /* 33 */
-    {  ERROR_BAD_NETPATH,            ENOENT    },  /* 53 */
-    {  ERROR_NETWORK_ACCESS_DENIED,  EACCES    },  /* 65 */
-    {  ERROR_BAD_NET_NAME,           ENOENT    },  /* 67 */
-    {  ERROR_FILE_EXISTS,            EEXIST    },  /* 80 */
-    {  ERROR_CANNOT_MAKE,            EACCES    },  /* 82 */
-    {  ERROR_FAIL_I24,               EACCES    },  /* 83 */
-    {  ERROR_INVALID_PARAMETER,      EINVAL    },  /* 87 */
-    {  ERROR_NO_PROC_SLOTS,          EAGAIN    },  /* 89 */
-    {  ERROR_DRIVE_LOCKED,           EACCES    },  /* 108 */
-    {  ERROR_BROKEN_PIPE,            EPIPE     },  /* 109 */
-    {  ERROR_DISK_FULL,              ENOSPC    },  /* 112 */
-    {  ERROR_INVALID_TARGET_HANDLE,  EBADF     },  /* 114 */
-    {  ERROR_INVALID_HANDLE,         EINVAL    },  /* 124 */
-    {  ERROR_WAIT_NO_CHILDREN,       ECHILD    },  /* 128 */
-    {  ERROR_CHILD_NOT_COMPLETE,     ECHILD    },  /* 129 */
-    {  ERROR_DIRECT_ACCESS_HANDLE,   EBADF     },  /* 130 */
-    {  ERROR_NEGATIVE_SEEK,          EINVAL    },  /* 131 */
-    {  ERROR_SEEK_ON_DEVICE,         EACCES    },  /* 132 */
-    {  ERROR_DIR_NOT_EMPTY,          ENOTEMPTY },  /* 145 */
-    {  ERROR_NOT_LOCKED,             EACCES    },  /* 158 */
-    {  ERROR_BAD_PATHNAME,           ENOENT    },  /* 161 */
-    {  ERROR_MAX_THRDS_REACHED,      EAGAIN    },  /* 164 */
-    {  ERROR_LOCK_FAILED,            EACCES    },  /* 167 */
-    {  ERROR_ALREADY_EXISTS,         EEXIST    },  /* 183 */
-    {  ERROR_FILENAME_EXCED_RANGE,   ENOENT    },  /* 206 */
-    {  ERROR_NESTING_NOT_ALLOWED,    EAGAIN    },  /* 215 */
-    {  ERROR_NOT_ENOUGH_QUOTA,       ENOMEM    }    /* 1816 */
+    { ERROR_INVALID_FUNCTION,       EINVAL    },
+    { ERROR_FILE_NOT_FOUND,         ENOENT    },
+    { ERROR_PATH_NOT_FOUND,         ENOENT    },
+    { ERROR_TOO_MANY_OPEN_FILES,    EMFILE    },
+    { ERROR_ACCESS_DENIED,          EACCES    },
+    { ERROR_INVALID_HANDLE,         EBADF     },
+    { ERROR_ARENA_TRASHED,          ENOMEM    },
+    { ERROR_NOT_ENOUGH_MEMORY,      ENOMEM    },
+    { ERROR_INVALID_BLOCK,          ENOMEM    },
+    { ERROR_BAD_ENVIRONMENT,        E2BIG     },
+    { ERROR_BAD_FORMAT,             ENOEXEC   },
+    { ERROR_INVALID_ACCESS,         EINVAL    },
+    { ERROR_INVALID_DATA,           EINVAL    },
+    { ERROR_INVALID_DRIVE,          ENOENT    },
+    { ERROR_CURRENT_DIRECTORY,      EACCES    },
+    { ERROR_NOT_SAME_DEVICE,        EXDEV     },
+    { ERROR_NO_MORE_FILES,          ENOENT    },
+    { ERROR_LOCK_VIOLATION,         EACCES    },
+    { ERROR_BAD_NETPATH,            ENOENT    },
+    { ERROR_NETWORK_ACCESS_DENIED,  EACCES    },
+    { ERROR_BAD_NET_NAME,           ENOENT    },
+    { ERROR_FILE_EXISTS,            EEXIST    },
+    { ERROR_CANNOT_MAKE,            EACCES    },
+    { ERROR_FAIL_I24,               EACCES    },
+    { ERROR_INVALID_PARAMETER,      EINVAL    },
+    { ERROR_NO_PROC_SLOTS,          EAGAIN    },
+    { ERROR_DRIVE_LOCKED,           EACCES    },
+    { ERROR_BROKEN_PIPE,            EPIPE     },
+    { ERROR_DISK_FULL,              ENOSPC    },
+    { ERROR_INVALID_TARGET_HANDLE,  EBADF     },
+    { ERROR_INVALID_HANDLE,         EINVAL    },
+    { ERROR_WAIT_NO_CHILDREN,       ECHILD    },
+    { ERROR_CHILD_NOT_COMPLETE,     ECHILD    },
+    { ERROR_DIRECT_ACCESS_HANDLE,   EBADF     },
+    { ERROR_NEGATIVE_SEEK,          EINVAL    },
+    { ERROR_SEEK_ON_DEVICE,         EACCES    },
+    { ERROR_DIR_NOT_EMPTY,          ENOTEMPTY },
+    { ERROR_NOT_LOCKED,             EACCES    },
+    { ERROR_BAD_PATHNAME,           ENOENT    },
+    { ERROR_MAX_THRDS_REACHED,      EAGAIN    },
+    { ERROR_LOCK_FAILED,            EACCES    },
+    { ERROR_ALREADY_EXISTS,         EEXIST    },
+    { ERROR_FILENAME_EXCED_RANGE,   ENOENT    },
+    { ERROR_NESTING_NOT_ALLOWED,    EAGAIN    },
+    { ERROR_NOT_ENOUGH_QUOTA,       ENOMEM    }
 };
 
 /* size of the table */

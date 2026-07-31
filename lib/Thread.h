@@ -73,9 +73,9 @@ typedef pthread_t thread_id_t;
 #define THREAD_FUNC		void *
 #define THREAD_HDL()		pthread_self()
 #if defined(__i386__) || defined(__x86_64__)
-#define THREAD_PAUSE()  	__builtin_ia32_pause()
+#define THREAD_PAUSE()		__builtin_ia32_pause()
 #elif defined(__ARM_ARCH)
-#define THREAD_PAUSE()  	asm volatile("yield")
+#define THREAD_PAUSE()		asm volatile("yield")
 #endif
 #define THREAD_YIELD()		sched_yield()
 
@@ -450,7 +450,7 @@ public:
 
 	return current.load(memory_order_acquire) == n &&
 	    next.compare_exchange_strong(n, (uint_fast16_t)(n + 1),
-		memory_order_acquire, memory_order_relaxed);
+	    memory_order_acquire, memory_order_relaxed);
     }
     __forceinline void unlock() {
 	// slight improvement over current.fetch_add(1, memory_order_release);
@@ -548,7 +548,7 @@ protected:
 template<class C>
 class BLISTER _Semaphore: public C, nocopy {
 public:
-    explicit _Semaphore() : C(0) {}
+    explicit _Semaphore(): C(0) {}
     ~_Semaphore() = default;
 
     using C::acquire;
@@ -739,10 +739,10 @@ private:
     enum : uint { PENDING, TAKEN, CANCELLED };
 
     struct Node {
-	atomic<Node *> next {nullptr};
-	atomic<uint> state {TAKEN};
+	atomic<Node *> next = nullptr;
+	atomic<uint> state = TAKEN;
 	FastSemaphore sema4;
-	Node *allnext {nullptr};
+	Node *allnext = nullptr;
     };
 
     // ABA-safe lock-free Treiber stack head
@@ -778,8 +778,8 @@ private:
 		Wide old = head.load(memory_order_acquire);
 
 		while (old.ptr) {
-		    Wide nw {old.ptr->next.load(memory_order_acquire),
-			old.tag + 1};
+		    Wide nw {old.ptr->next.load(memory_order_acquire), old.tag +
+			1};
 
 		    if (head.compare_exchange_weak(old, nw,
 			memory_order_acq_rel, memory_order_acquire))
@@ -821,8 +821,8 @@ private:
 
     alignas(64) TaggedStack<Node> waitstack;
     alignas(64) TaggedStack<Node> freelist;
-    alignas(64) atomic<Node *> allnodes {nullptr};
-    alignas(64) atomic_uint_fast32_t waiters {0};
+    alignas(64) atomic<Node *> allnodes { nullptr };
+    alignas(64) atomic_uint_fast32_t waiters { 0 };
 
     Node *claim(void) {
 	Node *n = freelist.pop();
@@ -986,7 +986,7 @@ public:
 	hdl = -1;
 	return h == -1 || semctl(h, 0, IPC_RMID) == 0;
     }
-    bool open(const tchar *name = nullptr, uint init = 0, bool excl= false);
+    bool open(const tchar *name = nullptr, uint init = 0, bool excl = false);
     __forceinline bool set(uint cnt = 1) {		// NOSONAR
 	sembuf op;
 
@@ -1199,8 +1199,8 @@ public:
     ThreadLocalClass() { tls_init(key); }
     ~ThreadLocalClass() { tls_free(key); }
 
-    __forceinline C &operator*(void) const { return get(); }
-    __forceinline C *operator->(void) const { return &get(); }
+    __forceinline C &operator *(void) const { return get(); }
+    __forceinline C *operator ->(void) const { return &get(); }
     void erase(void) {
 	C *c = (C *)tls_get(key);
 

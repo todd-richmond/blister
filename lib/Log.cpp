@@ -203,7 +203,7 @@ bool Log::LogFile::reopen(void) {
     if (newfile) {
 	static const char bom[] = { '\xFF', '\xFE' };
 
-	if (::write(fd, bom, sizeof(bom)) == sizeof(bom))
+	if (::write(fd, bom, sizeof (bom)) == sizeof (bom))
 	    len = sizeof (bom);
     }
 #endif
@@ -450,7 +450,7 @@ void Log::strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz) 
 #elif defined(__ARM_NEON)
     {
 	const uint8x16_t space_vec = vdupq_n_u8(0x20);
-	const uint8x16_t tab_vec   = vdupq_n_u8('\t');
+	const uint8x16_t tab_vec = vdupq_n_u8('\t');
 
 	for (; q + 16 <= end; q += 16) {
 	    uint8x16_t chunk = vld1q_u8((const uint8_t *)q);
@@ -491,10 +491,12 @@ scan_done:
 	    } else if (*p == '\r') {
 		strm.write(T("\\r"), 2);
 	    } else {
-		tchar oct[4] = { '\\',
+		tchar oct[4] = {
+		    '\\',
 		    (tchar)('0' + (((uchar)*p >> 6) & 7)),
 		    (tchar)('0' + (((uchar)*p >> 3) & 7)),
-		    (tchar)('0' + ((uchar)*p & 7)) };
+		    (tchar)('0' + ((uchar)*p & 7))
+		};
 
 		strm.write(oct, 4);
 	    }
@@ -551,7 +553,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
 	    int diff;
 	    tchar gmtoff[16];
-	    struct tm tmbuf2{};
+	    struct tm tmbuf2 {};
 	    const struct tm *tm2;
 
 	    memcpy(&tmbuf, tm, sizeof (tmbuf));
@@ -561,7 +563,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	    diff = (tm2->tm_hour - tm->tm_hour) * 100 + tm2->tm_min - tm->tm_min;
 	    if (tm->tm_wday != tm2->tm_wday)
 		diff -= 2400 * (tm->tm_wday > tm2->tm_wday ||
-		    (tm->tm_wday == 0  && tm2->tm_wday == 6) ? 1 : -1);
+		    (tm->tm_wday == 0 && tm2->tm_wday == 6) ? 1 : -1);
 	    if (diff < 0)
 		tsprintf(gmtoff, T("-%04d"), -1 * diff);
 	    else
@@ -800,7 +802,7 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 	    streamsize bsz = 0;
 	    tchar buf[128];
 	    static const tchar dquote = '"';
-	    static constexpr streamsize bufcnt = (streamsize)std::size(buf);
+	    static constexpr streamsize bufcnt = (streamsize)std::size(buf);	// cppcheck-suppress uninitvar
 
 	    os.write(dquote);
 	    os.write((const tchar *)start, p - start);
@@ -889,8 +891,8 @@ void Log::set(const Config &cfg, const tchar *sect) {
 
 bool Log::setids(uid_t uid, gid_t gid) const {
 #ifdef _WIN32
-	(void)uid; (void)gid;
-	return true;
+    (void)uid; (void)gid;
+    return true;
 #else
     return (!alertfile() || chown(alertpath(), uid, gid) == 0) &&
 	(!file() || chown(filepath(), uid, gid) == 0);

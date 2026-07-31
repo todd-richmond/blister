@@ -2,6 +2,21 @@
   "env": {
     "CCACHE_DISABLE": "1"
   },
+  "permissions": {
+    "allow": [
+      "Bash(clang-format *)",
+      "Bash(uncrustify *)",
+      "Bash(diff *)",
+      "Bash(grep *)",
+      "Bash(cat *)",
+      "Bash(wc *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(sed *)"
+    ]
+  },
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true

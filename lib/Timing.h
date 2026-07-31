@@ -142,18 +142,18 @@ public:
 
 private:
     struct BLISTER Stats: nocopy {
-	alignas(64) atomic_uint_fast32_t cnt{0};
+	alignas(64) atomic_uint_fast32_t cnt = 0;
 	atomic_uint_fast32_t cnts[TIMINGSLOTS]{};
-	atomic_uint_fast64_t tot{0};
+	atomic_uint_fast64_t tot = 0;
 	Stats *flist = nullptr;
 	strhash_t hash = 0;
 	uint klen = 0;
 	tchar key[];
 
-	Stats(strhash_t h, uint k) : hash(h), klen(k) {}
+	Stats(strhash_t h, uint k): hash(h), klen(k) {}
 	static Stats *newstats(const tchar *k, uint klen, strhash_t h);
 	static void delstats(Stats *s) {
-	    operator delete((void *)s, align_val_t(alignof(Stats)));
+	    operator delete((void *)s, align_val_t(alignof (Stats)));
 	}
     };
 

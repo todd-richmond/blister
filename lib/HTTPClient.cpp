@@ -185,7 +185,7 @@ void URL::unescape(tstring &str, bool plus) {
 	    if (hex_val1 > 15 || hex_val2 > 15) {
 		// Invalid hex digit
 		str[i++] = '%';
-		str[i++] = str[j-1];
+		str[i++] = str[j - 1];
 		if (hex_val1 <= 15)
 		    str[i++] = str[j];
 		continue;
@@ -256,7 +256,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     req += " HTTP/1.1\r\nHost: ";
     req += tstringtoastring(addr.host());
     if (addr.port() != 80) {
-	snprintf(buf, sizeof(buf), ":%u", addr.port());
+	snprintf(buf, sizeof (buf), ":%u", addr.port());
 	req += buf;
     }
     req += "\r\n";

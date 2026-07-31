@@ -26,7 +26,7 @@
 #endif
 
 extern "C" {
-    fpos_t std::_Fpz = {0, 0};
+    fpos_t std::_Fpz = { 0, 0 };
 }
 
 #endif

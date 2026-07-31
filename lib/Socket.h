@@ -239,7 +239,7 @@ private:
 };
 
 // Socket address list for hosts that resolve to multiple results
-class BLISTER SockaddrList: public ObjectList<ObjectListNode<Sockaddr> > {
+class BLISTER SockaddrList: public ObjectList<ObjectListNode<Sockaddr>> {
 public:
     SockaddrList() = default;
     SockaddrList(const tchar *host, ushort port, Sockaddr::Proto proto =
@@ -518,7 +518,7 @@ public:
     ~SocketSet() { delete [] fds; }
 
     SocketSet &operator =(const SocketSet &ss);
-    template<class C> socket_t operator[](C at) const {
+    template<class C> socket_t operator [](C at) const {
 	return SSET_FD((uint)at);
     }
 
@@ -703,4 +703,4 @@ private:
 
 // NOLINTEND(misc-multiple-inheritance)
 
-#endif	// Socket_h
+#endif // Socket_h

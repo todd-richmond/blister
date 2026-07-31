@@ -511,7 +511,7 @@ int Dispatcher::onStart() {
 	    }
 	}
 #elif defined(DSP_DEVPOLL)
-	dvpoll dvp = { evts, MAX_EVENTS, msec };
+	dvpoll dvp = {evts, MAX_EVENTS, msec};
 
 	nevts = ioctl(evtfd, DP_POLL, &dvp);
 #elif defined(DSP_EPOLL)
@@ -824,7 +824,7 @@ void Dispatcher::wakeup(ulong msec) {
     RETRY(eventfd_write(wfd, 1));
 #elif defined(DSP_KQUEUE)
     event_t evt;
-    static timespec ts = { 0, 0 };
+    static timespec ts = {0, 0};
 
     if (msec)
 	EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, msec, NULL);
@@ -931,7 +931,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
 	ds.flags &= ~DSP_SelectAll;
 	olock.unlock();
 
-	event_t evt = { fd, POLLREMOVE, 0 };
+	event_t evt = {fd, POLLREMOVE, 0};
 
 	slock.lock();
 	smap.erase(fd);
@@ -944,7 +944,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
 #elif defined(DSP_KQUEUE)
 	event_t chgs[2], evts[MIN_EVENTS];
 	uint nevts = 0;
-	static timespec ts = { 0, 0 };
+	static timespec ts = {0, 0};
 
 	if (ds.flags & (DSP_SelectRead | DSP_SelectAccept))
 	    EV_SET(&chgs[nevts++], fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
@@ -1080,7 +1080,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	wset.set(ds.fd());
     slock.unlock();
 #elif defined(DSP_DEVPOLL)
-    event_t evt = { ds.fd(), sockevts[m] | POLLERR | POLLHUP, 0 };
+    event_t evt = {ds.fd(), sockevts[m] | POLLERR | POLLHUP, 0};
 
     RETRY(pwrite(evtfd, &evt, sizeof (evt), 0));
 #elif defined(DSP_EPOLL)
@@ -1097,7 +1097,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 #elif defined(DSP_KQUEUE)
     event_t chgs[6], evts[MIN_EVENTS];
     uint nevts = 0;
-    static timespec ts = { 0, 0 };
+    static timespec ts = {0, 0};
 
     if (LIKELY(m == DispatchRead || m == DispatchReadWrite || m ==
 	DispatchAccept || m == DispatchClose)) {

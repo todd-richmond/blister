@@ -91,7 +91,7 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	if ((epos = val.find(open == '(' ? ')' : '}', spos + 2)) == val.npos)
 	    break;
 
-	uint off = (spos + 3 < val.size() && val[spos + 2] =='*' &&
+	uint off = (spos + 3 < val.size() && val[spos + 2] == '*' &&
 	    val[spos + 3] == '.') ? 2 : 0;
 	const tchar *repl;
 	size_t repllen;

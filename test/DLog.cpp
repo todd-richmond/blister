@@ -243,7 +243,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[-t|--type keyval|nolevel|notime|simple|syslog]\n")
 	    T("\t[-u|--unlocked]\n")
 	    T("\t[[-w|--write] logstr]*\n") << endl;
-	    return 1;
+	return 1;
     }
     while (!out) {  //-V776
 	while (getline(ifs.is_open() ? ifs : tcin, s)) {

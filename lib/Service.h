@@ -109,7 +109,7 @@ protected:
     static bool exiting;
     static bool restart;
     static Service *service;
-    static atomic< pid_t> sigpid;
+    static atomic<pid_t> sigpid;
     static tstring srvcpath;
     static tstring ver;
     static atomic<pid_t> watchpid;
@@ -136,7 +136,7 @@ protected:
     static void null_handler(int sig);
     static int run(int argc = 0, const tchar * const *argv = nullptr);
 
- private:
+private:
     bool close(void);
     bool open(const tchar *file = nullptr);
     void set_files(void);

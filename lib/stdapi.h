@@ -1031,7 +1031,7 @@ auto to_chars(wchar_t *first, wchar_t *last, T value) {
     };
     char buf[128];
     auto [char_end, char_ec] = to_chars(buf, buf + sizeof (buf), value);
-    result r{first, char_ec};
+    result r = {first, char_ec};
 
     for (char *p = buf; p != char_end && r.ptr != last; ++p)
 	*r.ptr++ = static_cast<wchar_t>(static_cast<uchar>(*p));
@@ -1409,7 +1409,7 @@ inline strhash_t rapid_hash(const void *data, size_t len) {
 	    do {
 		strhash_t s0, s1, s2, s3, s4, s5;
 
-		memcpy(&s0, p, 8); memcpy(&s1, p +  8, 8);
+		memcpy(&s0, p, 8); memcpy(&s1, p + 8, 8);
 		memcpy(&s2, p + 16, 8); memcpy(&s3, p + 24, 8);
 		memcpy(&s4, p + 32, 8); memcpy(&s5, p + 40, 8);
 		a = rapidmix(s0 ^ RAPID_SECRET0, s1 ^ a);
@@ -1595,7 +1595,7 @@ protected:
 };
 
 // fast single linked object list
-template <class C>
+template<class C>
 class BLISTER ObjectList: nocopy {
 public:
     struct BLISTER Node: nocopy {
@@ -1742,7 +1742,7 @@ struct ObjectListSize {
 };
 
 // ObjectList with size counter
-template <class C, class Size = ObjectListSize>
+template<class C, class Size = ObjectListSize>
 class BLISTER SizedObjectList: public ObjectList<C> {
 public:
     using Base = ObjectList<C>;
@@ -1787,7 +1787,7 @@ protected:
     Size sz;
 };
 
-template <class C>
+template<class C>
 struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C>>::Node {
     __forceinline explicit ObjectListNode(const C &c): val(c) {}
     __forceinline explicit ObjectListNode(C &&c): val(move(c)) {}

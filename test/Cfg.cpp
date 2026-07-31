@@ -86,7 +86,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("\t[-q|--quiet]\n")
 	    T("\t[-s|--section section]\n")
 	    T("\t[-u|--update]\n");
-	    return -1;
+	return -1;
     }
     if (!(tstrcmp(file, T("-")) ? cfg.read(file, prefix) : cfg.read(tcin,
 	prefix))) {

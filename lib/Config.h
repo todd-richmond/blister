@@ -108,12 +108,12 @@ public:
     }
     bool get(const tchar *key, bool def, const tchar *sect = nullptr) const;
     template<size_t N>
-    bool get(const tchar (&key)[N], bool def, const tchar *sect = nullptr) const
-    {
+    bool get(const tchar (&key)[N], bool def, const tchar *sect = nullptr)
+	const {
 	return get(tstring_view(key, N - 1), def, sect);
     }
-    double get(const tchar *key, double def, const tchar *sect = nullptr) const
-    {
+    double get(const tchar *key, double def, const tchar *sect = nullptr)
+	const {
 	return get_num(key, def, sect,
 	    [](const tchar *s, size_t) { return atod<double>(s); });
     }
@@ -144,7 +144,8 @@ public:
 	return get_num(key, def, sect, atoin<long>);
     }
     template<size_t N>
-    long get(const tchar (&key)[N], long def, const tchar *sect = nullptr) const {
+    long get(const tchar (&key)[N], long def, const tchar *sect = nullptr)
+	const {
 	return get_num(tstring_view(key, N - 1), def, sect, atoin<long>);
     }
     llong get(const tchar *key, llong def, const tchar *sect = nullptr) const {
@@ -186,8 +187,8 @@ public:
 	return (uint)get(key, (ulong)def, sect);
     }
     template<size_t N>
-    uint get(const tchar (&key)[N], uint def, const tchar *sect = nullptr) const
-	{
+    uint get(const tchar (&key)[N], uint def, const tchar *sect = nullptr)
+	const {
 	return (uint)get_num(tstring_view(key, N - 1), (ulong)def, sect,
 	    atoun<ulong>);
     }
@@ -199,8 +200,8 @@ public:
 	const {
 	return get_num(tstring_view(key, N - 1), def, sect, atoun<ulong>);
     }
-    ullong get(const tchar *key, ullong def, const tchar *sect = nullptr) const
-	{
+    ullong get(const tchar *key, ullong def, const tchar *sect = nullptr)
+	const {
 	return get_num(key, def, sect, atoun<ullong>);
     }
     template<size_t N>
@@ -208,8 +209,8 @@ public:
 	const {
 	return get_num(tstring_view(key, N - 1), def, sect, atoun<ullong>);
     }
-    ushort get(const tchar *key, ushort def, const tchar *sect = nullptr) const
-	{
+    ushort get(const tchar *key, ushort def, const tchar *sect = nullptr)
+	const {
 	return (ushort)get(key, (ulong)def, sect);
     }
     template<size_t N>
@@ -255,8 +256,8 @@ public:
 	return set(key.data(), key.size(), val.data(), val.size(),
 	    sect.data(), sect.size());
     }
-    Config &setv(const tchar *key, const tchar *val, ... /* , const tchar
-	*sect = nullptr, nullptr */);
+    // end with [const tchar *sect = nullptr], nullptr */
+    Config &setv(const tchar *key, const tchar *val, ...);
     bool write(tostream &os) const { return write(os, ini); }
     bool write(tostream &os, bool ini) const;
     void lock(void) { lck.lock(); }

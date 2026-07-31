@@ -109,7 +109,7 @@ private:
     static int filecnt;
     static uint nextfile;
     static uint startfile;
-    static atomic<ulong> usec, tusec,	count, tcount;
+    static atomic<ulong> usec, tusec, count, tcount;
     static vector<unique_ptr<LoadCmd>> cmds;
 
     int onStart(void) override;
@@ -323,7 +323,8 @@ char *HTTPLoad::load(uint idx, usec_t &iousec) {
     }
     ret = nullptr;
     iousec = uticks();
-    if ((fd = open(tchartoachar(file), O_RDONLY|O_BINARY|O_SEQUENTIAL)) != -1) {
+    if ((fd = open(tchartoachar(file), O_RDONLY | O_BINARY | O_SEQUENTIAL)) !=
+	-1) {
 	ret = new char[(size_t)filelen + 1];
 	if (::read(fd, ret, filelen) == (int)filelen) {
 	    ret[filelen] = '\0';
@@ -736,7 +737,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[-s stattime] [-t threads] [-w timeout] cmdfile") << endl;
 	return 1;
     }
-    setvbuf(stdout, NULL , _IOFBF, 4096);
+    setvbuf(stdout, NULL, _IOFBF, 4096);
     signal(SIGINT, signal_handler);
     signal(SIGHUP, signal_handler);
     if (!wld)

@@ -162,7 +162,7 @@ public:
 	    endlog(tlsd);
     }
     void flush(void) { Locker lkr(lck); _flush(); }
-    template <typename T>
+    template<typename T>
     __forceinline Log &log(const T &val) { log(tls.get(), val); return *this; }
     __forceinline Log &log(const tchar *val) { log(tls.get(), val); return *this; }
     // required to log tchar * - ignore linters
@@ -176,8 +176,8 @@ public:
     __forceinline Log &log(Log::Level l) { log(tls.get(), l); return *this; }
     template<typename T>
     __forceinline Log &log(const KV<T> &val) { log(tls.get(), val); return *this; }
-    template <typename T, typename... U>
-    __forceinline Log &log(const T &first, const U&...  rest) {
+    template<typename T, typename... U>
+    __forceinline Log &log(const T &first, const U&... rest) {
 	log(tls.get(), first, rest...);
 
 	return *this;
@@ -191,7 +191,7 @@ public:
     void start(void);
     void stop(void);
 
-    template <typename... T>
+    template<typename... T>
     void log(Log::Level l, const T&... args) {
 	if (UNLIKELY(l <= lvl)) {
 	    Tlsdata &tlsd(*tls);
@@ -203,31 +203,31 @@ public:
 	    }
 	}
     }
-    template <typename... T>
+    template<typename... T>
     __forceinline void emerg(const T&... args) { log(Emerg, args...); }
     __forceinline Log &emerg(void) { return log(Emerg); }
-    template <typename... T>
+    template<typename... T>
     __forceinline void alert(const T&... args) { log(Alert, args...); }
     __forceinline Log &alert(void) { return log(Alert); }
-    template <typename... T>
+    template<typename... T>
     __forceinline void crit(const T&... args) { log(Crit, args...); }
     __forceinline Log &crit(void) { return log(Crit); }
-    template <typename... T>
+    template<typename... T>
     __forceinline void err(const T&... args) { log(Err, args...); }
     __forceinline Log &err(void) { return log(Err); }
-    template <typename... T>
+    template<typename... T>
     __forceinline void warn(const T&... args) { log(Warn, args...); }
     __forceinline Log &warn(void) { return log(Warn); }
-    template <typename... T>
+    template<typename... T>
     __forceinline void note(const T&... args) { log(Note, args...); }
     __forceinline Log &note(void) { return log(Note); }
-    template <typename... T>
+    template<typename... T>
     __forceinline void info(const T&... args) { log(Info, args...); }
     __forceinline Log &info(void) { return log(Info); }
-    template <typename... T>
+    template<typename... T>
     __forceinline void debug(const T&... args) { log(Debug, args...); }
     __forceinline Log &debug(void) { return log(Debug); }
-    template <typename... T>
+    template<typename... T>
     __forceinline void trace(const T&... args) { log(Trace, args...); }
     __forceinline Log &trace(void) { return log(Trace); }
 
@@ -342,7 +342,7 @@ private:
     void _mail(Level l, const tchar *to, const tchar *from, const tchar
 	*host);
     void _syslog(Level l, const tchar *host, uint fac);
-    template <typename T>
+    template<typename T>
     Log &log(Tlsdata &tlsd, const T &val) {
 	if (LIKELY(tlsd.clvl != None)) {
 	    if (tlsd.sep == '=') {
@@ -380,7 +380,7 @@ private:
 	}
 	return *this;
     }
-    template <size_t N>
+    template<size_t N>
     Log &log(Tlsdata &tlsd, const tchar (&val)[N]) {
 	if (LIKELY(tlsd.clvl != None)) {
 	    if (tlsd.sep == '=') {
@@ -416,8 +416,8 @@ private:
 	}
 	return *this;
     }
-    template <typename T, typename... U>
-    __forceinline void log(Tlsdata &tlsd, const T &first, const U&...  rest) {
+    template<typename T, typename... U>
+    __forceinline void log(Tlsdata &tlsd, const T &first, const U&... rest) {
 	log(tlsd, first);
 	log(tlsd, rest...);	// recursive call using pack expansion
     }

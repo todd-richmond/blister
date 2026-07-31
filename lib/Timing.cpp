@@ -37,7 +37,7 @@ Timing::Stats *Timing::Stats::newstats(const tchar *k, uint klen, strhash_t
     if (!klen)
 	klen = (uint)tstrlen(k);
     s = (Stats *)operator new(offsetof(Stats, key) + ((size_t)klen + 1) *
-	sizeof (tchar), align_val_t(alignof(Stats)));
+	sizeof (tchar), align_val_t(alignof (Stats)));
     new (s) Stats(h, klen);
     memcpy(s->key, k, ((size_t)klen + 1) * sizeof (tchar));
     return s;
@@ -126,8 +126,9 @@ tstring Timing::data(bool sort_key, uint columns) const {
     }
     lck.unlock_shared();
     if (sort_key) {
-	ranges::sort(sorted, [](const Stats *a, const Stats *b)
-	    { return stringless(a->key, b->key); });
+	ranges::sort(sorted, [](const Stats *a, const Stats *b) {
+	    return stringless(a->key, b->key);
+	});
     } else {
 	ranges::sort(sorted, [](const Stats *a, const Stats *b) {
 	    const timing_t tot_a = a->tot.load(memory_order_relaxed);
@@ -261,21 +262,21 @@ void Timing::erase(strhash_t hash) {
 
 const tchar *Timing::format(timing_t t, tchar *buf) {
     if (t < 10000LLU)
-	    tsprintf(buf, T("%.3f"), (double)t / 1000.0);
+	tsprintf(buf, T("%.3f"), (double)t / 1000.0);
     else if (t < 100000LLU)
-	    tsprintf(buf, T("%.2f"), (double)t / 1000.0);
+	tsprintf(buf, T("%.2f"), (double)t / 1000.0);
     else if (t < 1000000LLU)
-	    tsprintf(buf, T("%llu"), t / 1000LLU);
+	tsprintf(buf, T("%llu"), t / 1000LLU);
     else if (t < 100000000LLU)
-	    tsprintf(buf, T("%.1fk"), (double)t / 1000000.0);
+	tsprintf(buf, T("%.1fk"), (double)t / 1000000.0);
     else if (t < 1000000000LLU)
-	    tsprintf(buf, T("%lluk"), t / 1000000LLU);
+	tsprintf(buf, T("%lluk"), t / 1000000LLU);
     else if (t < 100000000000LLU)
-	    tsprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
+	tsprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
     else if (t < 1000000000000LLU)
-	    tsprintf(buf, T("%llum"), t / 1000000000LLU);
+	tsprintf(buf, T("%llum"), t / 1000000000LLU);
     else
-	    tsprintf(buf, T("%llug"), t / 1000000000000LLU);
+	tsprintf(buf, T("%llug"), t / 1000000000000LLU);
     return buf;
 }
 

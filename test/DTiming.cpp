@@ -82,7 +82,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("\t[-s|--sec]\n")
 	    T("\t[-u|--usec]\n")
 	    T("\t<key[= ]duration>\\n*") << endl;
-	    return 1;
+	return 1;
     }
     if (!out) {
 	while (getline(ifs.is_open() ? ifs : tcin, s)) {

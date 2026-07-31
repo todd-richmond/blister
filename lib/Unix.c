@@ -146,8 +146,8 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	if (p) {
 	    sscanf(p + 2, "%c %ld %ld %ld %ld %ld %lu %lu %lu %lu %lu %lu %lu",
 		&c, &d, &d, &d, &d, &d, &u, &u, &u, &u, &u, &utime, &stime);
-		psbuf->stime = stime * 1000 / HZ;
-		psbuf->utime = utime * 1000 / HZ;
+	    psbuf->stime = stime * 1000 / HZ;
+	    psbuf->utime = utime * 1000 / HZ;
 	}
     }
     fclose(f);

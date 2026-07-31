@@ -318,7 +318,8 @@ char *SMTPLoad::load(uint idx, usec_t &iousec) {
     }
     ret = nullptr;
     iousec = uticks();
-    if ((fd = open(tchartoachar(file), O_RDONLY|O_BINARY|O_SEQUENTIAL)) != -1) {
+    if ((fd = open(tchartoachar(file), O_RDONLY | O_BINARY | O_SEQUENTIAL)) !=
+	-1) {
 	ret = new char[(size_t)filelen + 1];
 	if (::read(fd, ret, filelen) == (int)filelen) {
 	    ret[filelen] = '\0';
@@ -607,7 +608,7 @@ void SMTPLoad::reset(bool all) {
 	    cmd->tusec = cmd->tminusec = cmd->tmaxusec = 0;
 	}
     }
-    usec =  0;
+    usec = 0;
     count = 0;
     if (all) {
 	tusec = 0;
@@ -676,7 +677,7 @@ int tmain(int argc, tchar *argv[]) {
 	} else if (!tstricmp(argv[i], T("-s"))) {
 	    stattime = atoi<ulong>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-t"))) {
-	   threads = (uint)atoi<ulong>(argv[++i]);
+	    threads = (uint)atoi<ulong>(argv[++i]);
 	    if (!maxuser)
 		maxuser = threads;
 	} else if (!tstricmp(argv[i], T("-w"))) {
@@ -700,7 +701,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[-s stattime] [-t threads] [-w timeout] cmdfile") << endl;
 	return 1;
     }
-    setvbuf(stdout, NULL , _IOFBF, 4096);
+    setvbuf(stdout, NULL, _IOFBF, 4096);
     signal(SIGINT, signal_handler);
     signal(SIGHUP, signal_handler);
     if (!wld)

@@ -233,7 +233,7 @@ private:
  * and works around broken MSVC sstream::seekp() that leaks memory. Use this as
  * a replacement for strstream / sstream
  */
-template <class C>
+template<class C>
 class BLISTER bufferstream: public basic_ostream<C> {
 public:
     bufferstream(): basic_ostream<C>(&sb), sb(ios::out) {}
@@ -248,7 +248,7 @@ public:
     void write(bool b) { sb.write(b ? C('t') : C('f')); }
     void put(C c) { sb.write(c); }
     void write(const C *s, streamsize n) { sb.write(s, n); }
-    template <typename T>
+    template<typename T>
     __forceinline void write(const T &val) {
 	if constexpr (is_integral_v<T>) {
 	    C buf[24];
@@ -410,12 +410,12 @@ public:
 
 private:
     struct null_buffer: public basic_streambuf<tchar> {
-        streamsize xsputn(const tchar *, streamsize n) override { return n; }
-        int_type overflow(int_type c) override { return c; }
-        pos_type seekoff(off_type, ios_base::seekdir, ios_base::openmode)
+	streamsize xsputn(const tchar *, streamsize n) override { return n; }
+	int_type overflow(int_type c) override { return c; }
+	pos_type seekoff(off_type, ios_base::seekdir, ios_base::openmode)
 	    override { return -1; }
-        pos_type seekpos(pos_type, ios_base::openmode) override { return -1; }
-        int sync() override { return 0; }
+	pos_type seekpos(pos_type, ios_base::openmode) override { return -1; }
+	int sync() override { return 0; }
     };
 
     null_buffer nb;

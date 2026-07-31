@@ -1,4 +1,29 @@
 {
+  "editor.detectIndentation": false,
+  "editor.rulers": [80],
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.eol": "\n",
+  "files.associations": {
+    "*.inc": "makefile"
+  },
+  "[c]": {
+    "editor.tabSize": 8,
+    "editor.insertSpaces": false
+  },
+  "[cpp]": {
+    "editor.tabSize": 8,
+    "editor.insertSpaces": false
+  },
+  "[makefile]": {
+    "editor.tabSize": 8,
+    "editor.insertSpaces": false
+  },
+  "[markdown]": {
+    "editor.rulers": []
+  },
+  "C_Cpp.clang_format_style": "file",
+  "C_Cpp.clang_format_sortIncludes": true,
   "C_Cpp.default.compilerArgs": [
     "-Wno-deprecated-declarations"
   ],

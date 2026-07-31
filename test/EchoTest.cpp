@@ -406,7 +406,7 @@ int tmain(int argc, const tchar * const argv[]) {
     signal(SIGINT, signal_handler);
 #ifndef _WIN32
     struct rlimit rl;
-    struct sigaction sig{};
+    struct sigaction sig {};
 
     if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
 	rl.rlim_cur = rl.rlim_max;
