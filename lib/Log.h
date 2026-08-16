@@ -303,7 +303,7 @@ private:
 
     struct BLISTER Tlsdata {
 	tstring prefix;
-	tstring strbuf;
+	tstring strbuf, tailbuf;
 	tbufferstream strm;
 	Level clvl;
 	tchar sep;

@@ -514,11 +514,42 @@ void Log::endlog(Tlsdata &tlsd) {
     Level clvl = tlsd.clvl;
     bool aenabled = afd.enable && clvl <= afd.lvl;
     bool fenabled = ffd.enable && clvl <= ffd.lvl;
-    size_t lvllen, tmlen;
+    size_t lvllen, tmlen, taillvllen;
     time_t now_sec;
     usec_t now_usec;
     tstring &strbuf(tlsd.strbuf);
+    tstring &tailbuf(tlsd.tailbuf);
     size_t sz = (size_t)tlsd.strm.size();
+
+    // build text without timestamp outside of lock
+    tailbuf.erase();
+    if (_type == KeyVal) {
+	tailbuf += T("ll=");
+	if (clvl >= None && clvl <= Trace)
+	    tailbuf += LevelStr2[clvl];
+	tailbuf += ' ';
+    } else if (_type != NoLevel && _type != NoTime) {
+	if (clvl >= None && clvl <= Trace)
+	    tailbuf += LevelStr[clvl];
+	if (_type == Syslog)
+	    tailbuf += ':';
+	tailbuf += ' ';
+    }
+    taillvllen = tailbuf.size();
+    if (!tlsd.prefix.empty()) {
+	tailbuf += tlsd.prefix;
+	if (_type == Syslog)
+	    tailbuf += ':';
+	tailbuf += ' ';
+    }
+    if (_type == KeyVal) {
+	tailbuf.append(T("txt=\""), 5);
+	tailbuf.append(tlsd.strm.str(), sz);
+	tailbuf += '"';
+    } else {
+	tailbuf.append(tlsd.strm.str(), sz);
+    }
+    tailbuf += '\n';
 
     lck.lock();
     if (fenabled) {
@@ -592,33 +623,8 @@ void Log::endlog(Tlsdata &tlsd) {
 	    strbuf += ' ';
     }
     tmlen = strbuf.size();
-    if (_type == KeyVal) {
-	strbuf += T("ll=");
-	if (clvl >= None && clvl <= Trace)
-	    strbuf += LevelStr2[clvl];
-	strbuf += ' ';
-    } else if (_type != NoLevel && _type != NoTime) {
-	if (clvl >= None && clvl <= Trace)
-	    strbuf += LevelStr[clvl];
-	if (_type == Syslog)
-	    strbuf += ':';
-	strbuf += ' ';
-    }
-    lvllen = strbuf.size();
-    if (!tlsd.prefix.empty()) {
-	strbuf += tlsd.prefix;
-	if (_type == Syslog)
-	    strbuf += ':';
-	strbuf += ' ';
-    }
-    if (_type == KeyVal) {
-	strbuf.append(T("txt=\""), 5);
-	strbuf.append(tlsd.strm.str(), sz);
-	strbuf += '"';
-    } else {
-	strbuf.append(tlsd.strm.str(), sz);
-    }
-    strbuf += '\n';
+    strbuf += tailbuf;
+    lvllen = tmlen + taillvllen;
     if (aenabled) {
 	if (src.empty()) {
 	    afd.print(strbuf);
