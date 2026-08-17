@@ -59,7 +59,7 @@ static Log &_dlog(void) {
 
 Log &dlog(_dlog());
 
-Log &Log::log(Tlsdata &tlsd, Log::Escalator &escalator) {
+Log &Log::log(Tlsdata &tlsd, const Log::Escalator &escalator) {
     FastSpinLocker lkr(escalator.lck);
     ulong count;
     msec_t now = mticks() / 1000, start;
@@ -106,14 +106,27 @@ int Log::FlushThread::onStart(void) {
     Locker lkr(l.lck);
 
     while (!qflag) {
-	// wake up on 1st buffered write
+	if (UNLIKELY(l.pauserequested)) {
+	    l.flushpaused = true;
+	    l.cv.broadcast();
+	    // cppcheck-suppress knownConditionTrueFalse
+	    while (l.pauserequested && !qflag)
+		l.cv.wait(INFINITE);
+	    l.flushpaused = false;
+	    continue;
+	}
+	// wake on 1st buffered write, a pause request, or quit
 	l.cv.wait(INFINITE);
-	// sleep for buffer time before flush
 	// cppcheck-suppress knownConditionTrueFalse
-	if (!qflag)
-	    l.cv.wait(l.buftm);
-	l._flush();
+	if (qflag || l.pauserequested)
+	    continue;
+	// sleep for buffer time before flush
+	l.cv.wait(l.buftm);
+	if (l.pauserequested)
+	    continue;
+	l.drainbuffers(true);
     }
+    l.drainbuffers(true);
     return 0;
 }
 
@@ -279,6 +292,23 @@ void Log::LogFile::roll(void) {
 	    }
 	    if ((s3 == path && path != file))
 		continue;
+	    if (!sec && path == file) {
+		// optimized path for plain numbered file rotation
+		const tchar *suffix = ent->d_name + s2.size();
+
+		if (*suffix == '\0') {
+		    entries.emplace_back(ULONG_MAX, s3);
+		    continue;
+		} else if (*suffix == '.' && istdigit(suffix[1])) {
+		    tchar *end;
+		    ulong n = tstrtoul(suffix + 1, &end, 10);
+
+		    if (!*end) {
+			entries.emplace_back(ULONG_MAX - n, s3);
+			continue;
+		    }
+		}
+	    }
 	    if (tstat(s3.c_str(), &sbuf) == 0)
 		entries.emplace_back((ulong)sbuf.st_mtime, s3);
 	}
@@ -300,14 +330,18 @@ void Log::LogFile::roll(void) {
 	}
     }
     if (cnt && path == file) {
-	tchar buf[32];
-	uint u;
+	tchar buf[16];
+	auto [ep, ec] = to_chars(buf, buf + std::size(buf), files);
 
-	tsprintf(buf, T(".%u"), files);
-	s1 = file + buf;
-	for (u = files; u > 1; u--) {
-	    tsprintf(buf, T(".%u"), u - 1);
-	    s2 = file + buf;
+	s1 = file;
+	s1 += '.';
+	s1.append(buf, (size_t)(ep - buf));
+	for (uint u = files; u > 1; u--) {
+	    auto [ep2, ec2] = to_chars(buf, buf + std::size(buf), u - 1);
+
+	    s2 = file;
+	    s2 += '.';
+	    s2.append(buf, (size_t)(ep2 - buf));
 	    (void)tunlink(s1.c_str());
 	    if (trename(s2.c_str(), s1.c_str()))
 		break;
@@ -389,17 +423,20 @@ void Log::LogFile::unlock(void) const {
 	(void)lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
 }
 
-Log::Log(Level level): cv(lck), afd(false, Err, T("stderr"), true), ffd(true,
-    Info, T("stdout"), true), bufenable(false), mailenable(false),
-    syslogenable(false), bufsz(32U * 1024), buftm(1000), ft(*this), gmt(false),
-    mp(true), last_sec(0), lvl(level), maillvl(None), sysloglvl(None),
-    syslogfac(1), syslogsock(SOCK_DGRAM), _type(Simple), upos(0) {
+Log::Log(Level level): cv(lck), ft(*this), lvl(level) {
     format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
 }
 
 Log::~Log() {
     stop();
+    // prevent close -> flush from restarting FlushThread
+    bufenable = false;
     (void)close();
+    delete bufcur;
+    for (auto *buf : bufpending)
+	delete buf;
+    for (auto *buf : buffree)
+	delete buf;
 }
 
 void Log::alertfile(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
@@ -409,7 +446,9 @@ void Log::alertfile(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
 }
 
 void Log::buffer(bool enable) {
-    bufenable = !mp && enable;
+    if (enable && mp)
+	setmp(false);
+    bufenable = enable;
     if (bufenable)
 	start();
     else
@@ -552,12 +591,11 @@ void Log::endlog(Tlsdata &tlsd) {
     tailbuf += '\n';
 
     lck.lock();
-    if (fenabled) {
+    if (fenabled && !bufenable) {
+	// unbuffered logs must check size and roll inline
 	ffd.lock();
-	if (ffd.len + (ulong)bufstrm.size() >= ffd.sz) {
-	    _flush();
+	if (ffd.len >= ffd.sz)
 	    ffd.roll();
-	}
     }
     if (aenabled) {
 	afd.lock();
@@ -642,18 +680,26 @@ void Log::endlog(Tlsdata &tlsd) {
 	afd.unlock();
     }
     if (fenabled) {
-	if (ft.getState() == Running) {
-	    bool b = bufstrm.size() == 0;
+	if (bufenable) {
+	    bool b = bufcur->size() == 0;
 
-	    bufstrm.write(strbuf.data(), (streamsize)strbuf.size());
-	    if ((uint)bufstrm.size() > bufsz)
-		_flush();
-	    else if (b)
+	    bufcur->write(strbuf.data(), (streamsize)strbuf.size());
+	    if ((uint)bufcur->size() > bufsz) {
+		bufpending.push_back(bufcur);
+		if (buffree.empty()) {
+		    bufcur = new tbufferstream;
+		} else {
+		    bufcur = buffree.back();
+		    buffree.pop_back();
+		}
 		cv.set();
+	    } else if (b) {
+		cv.set();
+	    }
 	} else {
 	    ffd.print(strbuf);
+	    ffd.unlock();
 	}
-	ffd.unlock();
     }
 
     bool mailit = mailenable && clvl <= maillvl && !mailto.empty();
@@ -717,16 +763,39 @@ void Log::endlog(Tlsdata &tlsd) {
 }
 
 void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong sec) {
+    PauseFlush pf(*this);
     Locker lkr(lck);
 
-    _flush();
+    drainbuffers(false);
     ffd.set(l, f, cnt, sz, sec);
 }
 
-void Log::_flush(void) {
-    if (bufstrm.size()) {
-	ffd.print(bufstrm.str(), (uint)bufstrm.size());
-	bufstrm.reset();
+// drain all pending buffers and allow other threads to continue writing
+void Log::drainbuffers(bool unlockedio) {
+    if (bufcur->size()) {
+	bufpending.push_back(bufcur);
+	if (buffree.empty()) {
+	    bufcur = new tbufferstream;
+	} else {
+	    bufcur = buffree.back();
+	    buffree.pop_back();
+	}
+    }
+    while (!bufpending.empty()) {
+	tbufferstream *buf = bufpending.front();
+
+	bufpending.pop_front();
+	if (unlockedio)
+	    lck.unlock();
+	ffd.lock();
+	ffd.print(buf->str(), (uint)buf->size());
+	if (ffd.len >= ffd.sz)
+	    ffd.roll();
+	ffd.unlock();
+	buf->reset();
+	if (unlockedio)
+	    lck.lock();
+	buffree.push_back(buf);
     }
 }
 
@@ -808,7 +877,8 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 	    streamsize bsz = 0;
 	    tchar buf[128];
 	    static const tchar dquote = '"';
-	    static constexpr streamsize bufcnt = (streamsize)std::size(buf);	// cppcheck-suppress uninitvar
+	    static constexpr streamsize bufcnt =
+		(streamsize)std::size(buf);	// cppcheck-suppress uninitvar
 
 	    os.write(dquote);
 	    os.write((const tchar *)start, p - start);
@@ -859,8 +929,9 @@ void Log::set(const Config &cfg, const tchar *sect) {
     tstring::size_type pos;
     tstring s;
 
+    stop();
     lck.lock();
-    _flush();
+    drainbuffers(false);
     bufsz = cfg.get(T("file.buffer.size"), 32U * 1024, sect);
     buftm = cfg.get(T("file.buffer.msec"), 1000UL, sect);
     bufenable = cfg.get(T("file.buffer.enable"), false, sect);
@@ -913,11 +984,32 @@ void Log::setmp(bool b) {
     mp = ffd.mp = b;
 }
 
+// force all buffer threads into MainThreadGroup rather than whatever caller
+// started them to prevent deadlock waiting for them to quit during destruction
+static vector<Log *> flushlogs;
+static SpinLock flushlck;
+
+static void flush_stop(void) {
+    SpinLocker lkr(flushlck);
+
+    for (Log *l : flushlogs)
+	l->stop();
+}
+
 void Log::start(void) {
     Locker lkr(lck);
 
-    if (bufenable && ft.getState() != Running)
-	ft.start(16U * 1024);
+    if (bufenable && ft.getState() != Running) {
+	ft.start(16U * 1024, &ThreadGroup::MainThreadGroup);
+
+	SpinLocker slkr(flushlck);
+
+	if (ranges::find(flushlogs, this) == flushlogs.end()) {
+	    if (flushlogs.empty())
+		atexit(flush_stop);
+	    flushlogs.push_back(this);
+	}
+    }
 }
 
 void Log::stop(void) {
@@ -929,6 +1021,27 @@ void Log::stop(void) {
 	lkr.unlock();
 	ft.wait();
     }
+}
+
+void Log::flush(void) {
+    PauseFlush pf(*this);
+    Locker lkr(lck);
+
+    drainbuffers(false);
+}
+
+bool Log::reopen(void) {
+    PauseFlush pf(*this);
+    Locker lkr(lck);
+
+    return ffd.reopen();
+}
+
+void Log::roll(void) {
+    PauseFlush pf(*this);
+    Locker lkr(lck);
+
+    ffd.roll();
 }
 
 Log::Level Log::str2enum(const tchar *l) {

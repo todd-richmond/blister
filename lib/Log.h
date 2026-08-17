@@ -18,6 +18,7 @@
 #ifndef Log_h
 #define Log_h
 
+#include <deque>
 #include "Socket.h"
 #include "Thread.h"
 
@@ -75,17 +76,18 @@ public:
 
     class BLISTER Escalator: nocopy {
     public:
-	Escalator(Level l1, Level l2, ulong per, ulong min, ulong to): count(0),
-	    mincount(min), period(per), timeout(to), level1(l1), level2(l2),
-	    start(0) {}
+	Escalator(Level l1, Level l2, ulong per, ulong min, ulong to):
+	    mincount(min), period(per), timeout(to), level1(l1), level2(l2) {}
 
     private:
 	friend class Log;
 
-	ulong count, mincount, period, timeout;
-	SpinLock lck;
+	// logging through an Escalator is logically const to the caller
+	mutable ulong count = 0, mincount;
+	ulong period, timeout;
+	mutable SpinLock lck;
 	Level level1, level2;
-	msec_t start;
+	mutable msec_t start = 0;
     };
 
     template<typename T>
@@ -106,8 +108,6 @@ public:
 	(void)log(val); return *this;
     }
     __forceinline Log &operator <<(void(Log &)) { endlog(); return *this; }
-    // cppcheck-suppress constParameterReference
-    __forceinline Log &operator <<(Escalator &e) { (void)log(e); return *this; }
     friend Log &operator <<(Log &l, Log &(* const f)(Log &)) { return f(l); }
 
     bool alertfile(void) const { return afd.enable; }
@@ -161,30 +161,27 @@ public:
 	if (tlsd.clvl != None)
 	    endlog(tlsd);
     }
-    void flush(void) { Locker lkr(lck); _flush(); }
+    void flush(void);
     template<typename T>
-    __forceinline Log &log(const T &val) { log(tls.get(), val); return *this; }
-    __forceinline Log &log(const tchar *val) { log(tls.get(), val); return *this; }
+    __forceinline Log &log(const T &val) { return logtls(val); }
+    __forceinline Log &log(const tchar *val) { return logtls(val); }
     // required to log tchar * - ignore linters
 #pragma warning(disable: 26461)
     // NOLINTNEXTLINE(readability-non-const-parameter)
     __forceinline Log &log(tchar *val) {	// NOSONAR
-	log(tls.get(), (const tchar *)val); return *this;
+	return logtls((const tchar *)val);
     }
-    // cppcheck-suppress constParameterReference
-    __forceinline Log &log(Escalator &e) { log(tls.get(), e); return *this; }
-    __forceinline Log &log(Log::Level l) { log(tls.get(), l); return *this; }
+    __forceinline Log &log(const Escalator &e) { return logtls(e); }
+    __forceinline Log &log(Log::Level l) { return logtls(l); }
     template<typename T>
-    __forceinline Log &log(const KV<T> &val) { log(tls.get(), val); return *this; }
+    __forceinline Log &log(const KV<T> &val) { return logtls(val); }
     template<typename T, typename... U>
     __forceinline Log &log(const T &first, const U&... rest) {
-	log(tls.get(), first, rest...);
-
-	return *this;
+	return logtls(first, rest...);
     }
     void logv(int l, ...);
-    bool reopen(void) { Locker lkr(lck); return ffd.reopen(); }
-    void roll(void) { Locker lkr(lck); ffd.roll(); }
+    bool reopen(void);
+    void roll(void);
     void set(const Config &cfg, const tchar *sect = T("log"));
     bool setids(uid_t uid, gid_t gid) const;
     void setmp(bool b = false);
@@ -251,21 +248,49 @@ public:
 private:
     class BLISTER FlushThread: public Thread {
     public:
-	explicit FlushThread(Log &lg): l(lg), qflag(false) {}
+	explicit FlushThread(Log &lg): l(lg) {}
 
 	void quit(void) { qflag = true; }
 
     private:
 	Log &l;
-	atomic_bool qflag;
+	atomic_bool qflag = false;
 
 	int onStart(void) override;
     };
 
+    // pause FlushThread during flush/roll/reopen/file/set
+    class BLISTER PauseFlush: nocopy {
+    public:
+	explicit PauseFlush(Log &lg): l(lg) {
+	    Locker lkr(l.lck);
+
+	    if (l.ft.getState() == Running) {
+		l.pauserequested = true;
+		l.cv.broadcast();
+		while (!l.flushpaused)
+		    l.cv.wait(INFINITE);
+		paused = true;
+	    }
+	}
+	~PauseFlush() {
+	    if (paused) {
+		Locker lkr(l.lck);
+
+		l.pauserequested = false;
+		l.cv.broadcast();
+	    }
+	}
+
+    private:
+	Log &l;
+	bool paused = false;
+    };
+
     class BLISTER LogFile: nocopy {
     public:
-	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m): cnt(0),
-	    fd(-1), gmt(false), mp(m), len(0), sec(0), sz(0), lvl(dlvl) {
+	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m): mp(m),
+	    lvl(dlvl) {
 	    set(dlvl, dfile, 3, 5UL * 1024 * 1024, 0);
 	    enable = denable;
 	}
@@ -291,12 +316,12 @@ private:
     private:
 	friend class Log;
 
-	uint cnt;
-	bool enable;
-	int fd;
+	uint cnt = 0;
+	bool enable = false;
+	int fd = -1;
 	tstring file;
-	bool gmt, mp;
-	ulong len, sec, sz;
+	bool gmt = false, mp;
+	ulong len = 0, sec = 0, sz = 0;
 	Level lvl;
 	tstring path;
     };
@@ -305,43 +330,50 @@ private:
 	tstring prefix;
 	tstring strbuf, tailbuf;
 	tbufferstream strm;
-	Level clvl;
-	tchar sep;
-	bool suppress;
-
-	Tlsdata(): clvl(None), sep('\0'), suppress(false) {}
+	Level clvl = None;
+	tchar sep = '\0';
+	bool suppress = false;
     };
 
     Lock lck;
     Condvar cv;
     ThreadLocalClass<Tlsdata> tls;
-    LogFile afd, ffd;
-    bool bufenable, mailenable, syslogenable;
-    uint bufsz;
-    ulong buftm;
-    tbufferstream bufstrm;
+    LogFile afd{false, Err, T("stderr"), true}, ffd{true, Info, T("stdout"),
+	true};
+    bool bufenable = false, mailenable = false, syslogenable = false;
+    uint bufsz = 32U * 1024;
+    ulong buftm = 1000;
+    // dequeue allows threads to continue logging during slow file rolloever
+    tbufferstream *bufcur = new tbufferstream;
+    vector<tbufferstream *> buffree;
+    deque<tbufferstream *> bufpending;
+    bool flushpaused = false, pauserequested = false;
     tstring fmt;
     FlushThread ft;
-    bool gmt, mp;
+    bool gmt = false, mp = true;
     tstring last_format;
-    time_t last_sec;
-    Level lvl, maillvl, sysloglvl;
+    time_t last_sec = 0;
+    Level lvl, maillvl = None, sysloglvl = None;
     tstring hostname, mailfrom, mailhost, mailto;
     tstring src;
     Sockaddr syslogaddr;
-    uint syslogfac;
+    uint syslogfac = 1;
     tstring sysloghost;
-    Socket syslogsock;
-    Type _type;
-    tstring::size_type upos;
+    Socket syslogsock{SOCK_DGRAM};
+    Type _type = Simple;
+    tstring::size_type upos = 0;
     static const tstring_view LevelStr[];
     static const tstring_view LevelStr2[];
 
     void endlog(Tlsdata &tlsd);
-    void _flush(void);
-    void _mail(Level l, const tchar *to, const tchar *from, const tchar
-	*host);
+    void drainbuffers(bool unlockedio);
+    void _mail(Level l, const tchar *to, const tchar *from, const tchar *host);
     void _syslog(Level l, const tchar *host, uint fac);
+    template<typename... T>
+    __forceinline Log &logtls(const T&... args) {
+	log(tls.get(), args...);
+	return *this;
+    }
     template<typename T>
     Log &log(Tlsdata &tlsd, const T &val) {
 	if (LIKELY(tlsd.clvl != None)) {
@@ -396,8 +428,7 @@ private:
     __forceinline Log &log(Tlsdata &tlsd, tchar *val) {	// NOSONAR
 	return log(tlsd, (const tchar *)val);
     }
-    // cppcheck-suppress constParameterReference
-    Log &log(Tlsdata &tlsd, Escalator &e);
+    Log &log(Tlsdata &tlsd, const Escalator &e);
     __forceinline Log &log(Tlsdata &tlsd, Log::Level l) {
 	if (l <= lvl && LIKELY(!tlsd.suppress))
 	    tlsd.clvl = l;
