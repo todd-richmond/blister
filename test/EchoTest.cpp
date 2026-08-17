@@ -42,8 +42,8 @@ public:
     class EchoClientSocket: public DispatchClientSocket {
     public:
 	EchoClientSocket(EchoTest &es, const Sockaddr &a, ulong t, ulong w):
-	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0), ops(0),
-	    rbuf(new char[dsz]), tmt(t), wait(w), usecs(0) {}
+	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0),
+	    rbuf(new char[dsz]), tmt(t), wait(w) {}
 	~EchoClientSocket() override { delete [] rbuf; }
 
 	void start(ulong msec) { timeout(start, msec); }
@@ -52,12 +52,9 @@ public:
 	const Sockaddr &sa;
 	timing_t begin;
 	uint in, out;
-	uint ops;
 	char *rbuf;
 	ulong tmt, wait;
-	usec_t usecs;
 
-	void flush(void);
 	void onConnect(void) override;
 
 	DSP_DECLARE(EchoClientSocket, input);
@@ -121,13 +118,6 @@ static inline bool loop_exit(void) {
     return loops.fetch_sub(1, memory_order_relaxed) <= 0 || qflag;
 }
 
-void EchoTest::EchoClientSocket::flush(void) {
-    ::ops.fetch_add(ops, memory_order_relaxed);
-    ::usecs.fetch_add(usecs, memory_order_relaxed);
-    ops = 0;
-    usecs = 0;
-}
-
 void EchoTest::EchoClientSocket::onConnect(void) {
     if (error()) {
 	if (loop_exit()) {
@@ -168,9 +158,8 @@ void EchoTest::EchoClientSocket::input() {
 	if (UNLIKELY(loop_exit())) {
 	    erase();
 	} else {
-	    if (++ops >= 32)
-		flush();
-	    usecs += usec;
+	    ::ops.fetch_add(1, memory_order_relaxed);
+	    ::usecs.fetch_add(usec, memory_order_relaxed);
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read="), len);
 	    if (wait) {
@@ -227,7 +216,6 @@ void EchoTest::EchoClientSocket::repeat() {
 }
 
 void EchoTest::EchoClientSocket::start() {
-    flush();
     in = out = 0;
     close();
     dlogd(T("connecting"));
@@ -415,6 +403,7 @@ int tmain(int argc, const tchar * const argv[]) {
     sig.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sig, nullptr);
 #endif
+    dlog.buffer(true);
     if (!et.start(threads, 32 * 1024)) {
 	tcerr << T("echo: unable to start ") << host << endl;
 	return 1;

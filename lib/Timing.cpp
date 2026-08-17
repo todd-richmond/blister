@@ -79,7 +79,6 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
 	lck.unlock_shared();
 	cache[idx].store(stats, memory_order_release);
     }
-    stats->cnt.fetch_add(1, memory_order_relaxed);
     stats->cnts[slot].fetch_add(1, memory_order_relaxed);
     stats->tot.fetch_add(diff, memory_order_relaxed);
 }
@@ -158,10 +157,11 @@ tstring Timing::data(bool sort_key, uint columns) const {
     s += (tchar)'\n';
     for (const Stats *stats : sorted) {
 	tchar buf[128];
-	ulong sum = 0;
-	const ulong scnt = stats->cnt.load(memory_order_relaxed);
+	ulong scnt = 0, sum = 0;
 	const timing_t tot = stats->tot.load(memory_order_relaxed);
 
+	for (const auto &c : stats->cnts)
+	    scnt += c.load(memory_order_relaxed);
 	if (columns) {
 	    tchar cbuf[24];
 	    size_t klen = stats->klen;

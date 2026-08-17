@@ -80,7 +80,7 @@ public:
     static constexpr uint CACHESIZE = 4096;
     static constexpr uint TIMINGSLOTS = 10;
 
-    Timing(): cache{}, flist(nullptr) {}
+    Timing() = default;
     ~Timing();
 
     uint depth(void) const { return static_cast<uint>(tls->entries.size()); }
@@ -142,8 +142,7 @@ public:
 
 private:
     struct BLISTER Stats: nocopy {
-	alignas(64) atomic_uint_fast32_t cnt = 0;
-	atomic_uint_fast32_t cnts[TIMINGSLOTS]{};
+	alignas(64) atomic_uint_fast32_t cnts[TIMINGSLOTS]{};
 	atomic_uint_fast64_t tot = 0;
 	Stats *flist = nullptr;
 	strhash_t hash = 0;
@@ -170,7 +169,7 @@ private:
     using timingmap = unordered_map<strhash_t, Stats *>;
 
     atomic<Stats *> cache[CACHESIZE]{};
-    atomic<Stats *> flist;
+    atomic<Stats *> flist = nullptr;
     mutable SpinRWLock lck;
     ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
@@ -211,11 +210,11 @@ private:
 class BLISTER TimingFrame: nocopy {
 public:
     template<class C> __forceinline explicit TimingFrame(const C &key,
-	Timing &t = dtiming): started(true), timing(t) {
+	Timing &t = dtiming): timing(t) {
 	timing.start(key);
     }
     template<size_t N> __forceinline explicit TimingFrame(const tchar (&key)[N],
-	Timing &t = dtiming): started(true), timing(t) {
+	Timing &t = dtiming): timing(t) {
 	timing.start(key);
     }
     __forceinline ~TimingFrame() {
@@ -237,7 +236,7 @@ public:
     }
 
 private:
-    bool started;
+    bool started = true;
     Timing &timing;
 };
 
