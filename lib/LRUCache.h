@@ -30,8 +30,7 @@ using lruhash_t = uint64_t;
 
 class BLISTER LRUCacheEntry {
 public:
-    LRUCacheEntry(const void *d, ulong s): data(nullptr), sz(0),
-	hash(rapid_hash(d, s)), msec(0) {}
+    LRUCacheEntry(const void *d, ulong s): hash(rapid_hash(d, s)) {}
     LRUCacheEntry(const LRUCacheEntry &ce) = default;
 
     __forceinline operator bool() const { return data != nullptr; }
@@ -41,11 +40,11 @@ public:
     __forceinline void touch(msec_t now) { msec = now; }
 
     shared_ptr<const void> data;
-    ulong sz;
+    ulong sz = 0;
 
 private:
     lruhash_t hash;
-    mutable msec_t msec;
+    mutable msec_t msec = 0;
 };
 
 template<typename C>
@@ -58,7 +57,7 @@ public:
     static constexpr msec_t LRUCACHE_TIME = 5UL * 60 * 1000;
 
     explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME):
-	cursz(0), maxsz(sz), maxtm(tm), last_purge(0) {
+	maxsz(sz), maxtm(tm) {
 	static_assert(is_base_of_v<LRUCacheEntry, C>, "C must derive from LRUCacheEntry");
 	cache_map.reserve(sz / 1024 > 128 ? sz / 1024 : 128);
     }
@@ -146,8 +145,8 @@ private:
     SpinLock lock;
     lru_list cache_list;
     lru_map cache_map;
-    ulong cursz, maxsz;
-    msec_t maxtm, last_purge;
+    ulong cursz = 0, maxsz;
+    msec_t maxtm, last_purge = 0;
 
     void purge(ulong sz, msec_t now, lru_list &freed) {
 	if (maxtm && now) {

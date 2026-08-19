@@ -87,9 +87,9 @@ public:
     static constexpr child_t child{};
 
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = nullptr): dcb(cb),
-	dspr(d), flags(0), msg(DispatchNone), group(nullptr) {}
+	dspr(d), flags(0) {}
     DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb = nullptr):
-	dcb(cb), dspr(parent.dspr), flags(DSP_Grouped), msg(DispatchNone), group(nullptr) {
+	dcb(cb), dspr(parent.dspr), flags(DSP_Grouped) {
 	if (!parent.group)
 	    parent.group = new Group();
 	group = &parent.group->add();
@@ -118,21 +118,21 @@ protected:
     DispatchObjCB dcb;
     Dispatcher &dspr;
     dspflag_t flags;
-    DispatchMsg msg;
+    DispatchMsg msg = DispatchNone;
 
 private:
     class BLISTER Group: nocopy {
     public:
-	Group(): active(false) {}
+	Group() = default;
 
 	ObjectList<DispatchObj> glist;
 	RefCount refcount;
-	bool active;
+	bool active = false;
 
 	Group &add(void) { refcount.reference(); return *this; }
     };
 
-    Group *group;
+    Group *group = nullptr;
 
     DispatchObj &operator =(const DispatchObj &obj) = delete;
     friend class Dispatcher;
@@ -147,13 +147,13 @@ public:
 
     DispatchTimer(const DispatchTimer &dt): DispatchTimer((DispatchObj &)dt) {}
     explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
-	DispatchObj(d), to(msec), tm(DSP_NEVER_DUE) { init(); }
+	DispatchObj(d), to(msec) { init(); }
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
-	DispatchObj(d), to(0), tm(DSP_NEVER_DUE) { init(); timeout(cb, msec); }
+	DispatchObj(d) { init(); timeout(cb, msec); }
     explicit DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
-	DispatchObj(child, parent), to(msec), tm(DSP_NEVER_DUE) { init(); }
+	DispatchObj(child, parent), to(msec) { init(); }
     DispatchTimer(DispatchObj &parent, ulong msec, DispatchObjCB cb):
-	DispatchObj(child, parent), to(0), tm(DSP_NEVER_DUE) {
+	DispatchObj(child, parent) {
 	init();
 	timeout(cb, msec);
     }
@@ -176,7 +176,7 @@ protected:
 	}
     };
 
-    ulong to;
+    ulong to = 0;
 
 private:
     __forceinline msec_t due(void) const {
@@ -187,7 +187,7 @@ private:
     }
     void init(void);
 
-    atomic<msec_t> tm;
+    atomic<msec_t> tm = DSP_NEVER_DUE;
 
     friend class Dispatcher;
 };
@@ -197,15 +197,14 @@ private:
 class BLISTER DispatchSocket: public DispatchTimer, public Socket {
 public:
     explicit DispatchSocket(Dispatcher &d, int type = SOCK_STREAM, ulong msec =
-	DSP_NEVER): DispatchTimer(d, msec), Socket(type), mapped(false) {}
+	DSP_NEVER): DispatchTimer(d, msec), Socket(type) {}
     DispatchSocket(const DispatchSocket &) = delete;
     DispatchSocket(Dispatcher &d, const Socket &s, ulong msec = DSP_NEVER):
-	DispatchTimer(d, msec), Socket(s), mapped(false) {}
+	DispatchTimer(d, msec), Socket(s) {}
     explicit DispatchSocket(DispatchObj &parent, int type = SOCK_STREAM, ulong
-	msec = DSP_NEVER): DispatchTimer(parent, msec), Socket(type),
-	mapped(false) {}
+	msec = DSP_NEVER): DispatchTimer(parent, msec), Socket(type) {}
     DispatchSocket(DispatchObj &parent, const Socket &s, ulong msec =
-	DSP_NEVER): DispatchTimer(parent, msec), Socket(s), mapped(false) {}
+	DSP_NEVER): DispatchTimer(parent, msec), Socket(s) {}
     virtual ~DispatchSocket() { DispatchSocket::cancel(); }
 
     void cancel(void) override;
@@ -214,7 +213,7 @@ public:
 protected:
     void poll(DispatchObjCB cb, ulong msec, DispatchMsg msg);
 
-    bool mapped;
+    bool mapped = false;
 
     friend class Dispatcher;
 };
@@ -330,7 +329,7 @@ private:
 	using unsorted_timerset = unordered_set<DispatchTimer *,
 	    ptrhash<DispatchTimer>>;
 
-	TimerSet(): split(0) {}
+	TimerSet() = default;
 
 	bool empty(void) const { return unsorted.empty(); }
 	msec_t half(void) const { return split; }
@@ -393,7 +392,7 @@ private:
 
     private:
 	sorted_timerset sorted;
-	msec_t split;
+	msec_t split = 0;
 	unsorted_timerset unsorted;
     };
 
@@ -567,7 +566,7 @@ public:
 	AsyncCondvar &ac;
     };
 
-    AsyncCondvar(Dispatcher &d, Lock &l): dspr(d), lck(l), signaled(false) {}
+    AsyncCondvar(Dispatcher &d, Lock &l): dspr(d), lck(l) {}
 
     __forceinline explicit operator bool(void) const { return !waiters.empty(); }
 
@@ -613,7 +612,7 @@ protected:
 private:
     Dispatcher &dspr;
     Lock &lck;
-    atomic_bool signaled;
+    atomic_bool signaled = false;
     SizedObjectList<Waiter> waiters;
 };
 

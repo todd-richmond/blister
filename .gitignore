@@ -1,3 +1,11 @@
+# CMake test/ target binaries (no file extension, built alongside sources).
+# Placed first so later, more specific patterns (CMakeFiles, Makefile*, etc.)
+# still take precedence over the broad re-include below.
+test/*
+!test/*.*
+!test/*/
+!test/README
+
 # Configure output
 .cmake
 .deps
@@ -80,7 +88,6 @@ x64
 .ruby-version
 .scannerwork
 .settings
-.windsurf
 bak
 cov-int
 SharedPrecompiledHeaders

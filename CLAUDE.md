@@ -78,3 +78,12 @@ The rest define their own classes on top of the framework:
 - Style: tabs (`tab_width=8`), 80-column soft limit (see `.editorconfig`, `.clang-format`) — not enforced by clang-format in CI but keep new code consistent with surrounding code.
 - No exceptions or RTTI anywhere in `lib/`; don't introduce `throw`/`try`/`dynamic_cast`.
 - New object types participating in the reactor should follow the existing `DispatchObj`/`DispatchTimer`/`DispatchSocket` inheritance pattern rather than inventing a parallel mechanism.
+
+## Working efficiently in this repo
+
+- **Never read or search generated/backup directories**: `build/`, `CMakeFiles/` (root and per-subdir, e.g. `lib/CMakeFiles/`, `test/CMakeFiles/`), `.cache/`, `.lto/`, `Testing/`, `autom4te.cache/`, `bak/`. The tree is built in-source, so these are gitignored build output or backups already sitting in the working copy — not source, and grepping them burns tool calls for no signal. Never open `*.pch` files (e.g. `cmake_pch.hxx.pch`) — they're multi-megabyte compiled binary blobs, not text.
+- **Large files — use targeted `Grep`/offset `Read`, not a full read**: several `lib/` headers/sources exceed 24KB. Check size first (e.g. `ls -la` or `wc -l`) before reading a file in `lib/`, and prefer `Grep` or an offset `Read` over a full read for anything above ~24KB.
+- **Build is usually already configured**: an in-place `Makefile`/`CMakeCache.txt` normally already exists at repo root, so default to `make -j4` for a rebuild; only re-run `cmake`/`build/build` when `CMakeLists.txt` or build options changed (see Build above).
+- **`ctest` = one test**: it only runs `HashFunctors`. Don't run it speculatively or search for a broader unit-test suite that doesn't exist — there isn't one.
+- **Static analysis is opt-in and slow**: `CHECK_CLANG_TIDY`/`CHECK_CPPCHECK`/`CHECK_CPPLINT`/`CHECK_IWYU`/`CHECK_ALL` are off by default; clang-tidy in particular leaves most checks enabled (a large but narrow exclusion list), so a full run is slow. Don't turn these on proactively — only when the user asks or a task specifically calls for it.
+- **No vendored/third-party code**: there's no `vendor/`/`third_party/`/`deps/` tree, so a symbol's definition is in `lib/` or a system/standard header — no need to search for an external-code directory that doesn't exist.

@@ -1599,9 +1599,9 @@ template<class C>
 class BLISTER ObjectList: nocopy {
 public:
     struct BLISTER Node: nocopy {
-	__forceinline Node(): next(nullptr) {}
+	Node() = default;
 
-	C *next;
+	C *next = nullptr;
     };
 
     class BLISTER const_iterator {
@@ -1625,7 +1625,7 @@ public:
 	const C *cur;
     };
 
-    ObjectList(): back(nullptr), front(nullptr) {}
+    ObjectList() = default;
 
     __forceinline bool operator !(void) const { return front == nullptr; }
     __forceinline explicit operator bool(void) const { return front != nullptr; }
@@ -1727,7 +1727,7 @@ public:
     }
 
 protected:
-    C *back, *front;
+    C *back = nullptr, *front = nullptr;
 };
 
 // default non-atomic size-counter policy for SizedObjectList

@@ -32,12 +32,11 @@
 template<class C>
 class BLISTER faststreambuf: public streambuf, private nocopy {
 public:
-    explicit faststreambuf(streamsize sz = 4096, char *p = nullptr):
-	alloced(false), buf(nullptr), bufsz(0), fd(nullptr) {
+    explicit faststreambuf(streamsize sz = 4096, char *p = nullptr) {
 	faststreambuf::setbuf(p, sz);
     }
     explicit faststreambuf(const C &c, streamsize sz = 4096, char *p = nullptr):
-	alloced(false), buf(nullptr), bufsz(0), fd(&c) {
+	fd(&c) {
 	faststreambuf::setbuf(p, sz);
     }
     virtual ~faststreambuf() { if (alloced) delete [] buf; }
@@ -222,10 +221,10 @@ public:
     }
 
 private:
-    bool alloced;
-    char *buf;
-    streamsize bufsz;
-    const C *fd;
+    bool alloced = false;
+    char *buf = nullptr;
+    streamsize bufsz = 0;
+    const C *fd = nullptr;
 };
 
 /*
@@ -236,7 +235,7 @@ private:
 template<class C>
 class BLISTER bufferstream: public basic_ostream<C> {
 public:
-    bufferstream(): basic_ostream<C>(&sb), sb(ios::out) {}
+    bufferstream(): basic_ostream<C>(&sb) {}
 
     streamsize pcount(void) const { return sb.pcount(); }
     streamsize size(void) const { return pcount(); }
@@ -356,7 +355,7 @@ private:
 	}
     };
 
-    bufferbuf sb;   // NOSONAR
+    bufferbuf sb{ios::out};   // NOSONAR
 };
 
 using tbufferstream = bufferstream<tchar>;

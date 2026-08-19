@@ -141,7 +141,7 @@ static __forceinline void spin_release(bool = true, bool yield = false) {
  */
 class BLISTER DLLibrary: nocopy {
 public:
-    explicit DLLibrary(const tchar *dll = nullptr): hdl(0) { open(dll); }
+    explicit DLLibrary(const tchar *dll = nullptr) { open(dll); }
     ~DLLibrary() { close(); }
 
     operator void *(void) const { return hdl; }
@@ -156,7 +156,7 @@ public:
 private:
     tstring err;
     tstring file;
-    void *hdl;
+    void *hdl = nullptr;
 };
 
 class BLISTER Processor: nocopy {
@@ -353,7 +353,7 @@ using SpinLocker = LockerTemplate<SpinLock>;
 
 class BLISTER SpinRWLock: nocopy {
 public:
-    explicit SpinRWLock(uint lmt = SPIN_LIMIT): state(0),
+    explicit SpinRWLock(uint lmt = SPIN_LIMIT):
 	spins(Processor::count() == 1 ? 0 : lmt) {}
 
     __forceinline void downlock(void) { state.store(1, memory_order_release); }
@@ -417,7 +417,7 @@ public:
     }
 
 private:
-    alignas(64) atomic_uint_fast32_t state;
+    alignas(64) atomic_uint_fast32_t state = 0;
     const uint spins;
 
     static constexpr uint_fast32_t WRITE_BIT = 1U << 31;
@@ -435,7 +435,7 @@ using SpinWLocker = LockerTemplate<SpinRWLock, &SpinRWLock::lock,
 
 class TicketLock: nocopy {
 public:
-    explicit TicketLock(uint lmt = 0): current(0), next(0), yield(lmt ? lmt :
+    explicit TicketLock(uint lmt = 0): yield(lmt ? lmt :
 	Processor::count() / 2) {}
     __forceinline void lock() {
 	uint_fast16_t ticket = next.fetch_add(1, memory_order_relaxed);
@@ -459,8 +459,8 @@ public:
     }
 
 private:
-    alignas(64) atomic_uint_fast16_t current;
-    alignas(64) atomic_uint_fast16_t next;
+    alignas(64) atomic_uint_fast16_t current = 0;
+    alignas(64) atomic_uint_fast16_t next = 0;
     const uint yield;
 };
 
@@ -470,7 +470,7 @@ using TicketLocker = LockerTemplate<TicketLock>;
 
 class BLISTER UnfairLock: nocopy {
 public:
-    explicit UnfairLock(uint lmt = SPIN_LIMIT): state(0),
+    explicit UnfairLock(uint lmt = SPIN_LIMIT):
 	spins(Processor::count() == 1 ? 0 : lmt) {}
     ~UnfairLock() = default;
 
@@ -508,7 +508,7 @@ private:
 	}
     }
 
-    alignas(64) atomic<uint32_t> state;
+    alignas(64) atomic<uint32_t> state = 0;
     const uint spins;
 };
 
@@ -869,7 +869,7 @@ private:
 class BLISTER Event: nocopy {
 public:
     explicit Event(bool manual = false, bool set = false, const tchar *name =
-	nullptr): hdl(nullptr) { open(manual, set, name); }
+	nullptr) { open(manual, set, name); }
     ~Event() { close(); }
 
     __forceinline operator HANDLE(void) const { return hdl; }
@@ -894,13 +894,12 @@ public:
     }
 
 protected:
-    HANDLE hdl;
+    HANDLE hdl = nullptr;
 };
 
 class BLISTER SharedSemaphore: nocopy {
 public:
-    explicit SharedSemaphore(const tchar *name = nullptr, uint init = 0):
-	hdl(nullptr) {
+    explicit SharedSemaphore(const tchar *name = nullptr, uint init = 0) {
 	if (init != (uint)-1)
 	    open(name, init);
     }
@@ -933,7 +932,7 @@ public:
     }
 
 protected:
-    HANDLE hdl;
+    HANDLE hdl = nullptr;
 };
 
 class BLISTER Process: nocopy {
@@ -969,8 +968,7 @@ inline void msleep(ulong msec) {
 
 class BLISTER SharedSemaphore: nocopy {
 public:
-    explicit SharedSemaphore(const tchar *name = nullptr, uint init = 0):
-	hdl(-1) {
+    explicit SharedSemaphore(const tchar *name = nullptr, uint init = 0) {
 	open(name, init);
     }
     ~SharedSemaphore() { close(); }
@@ -1028,7 +1026,7 @@ public:
     }
 
 protected:
-    int hdl;
+    int hdl = -1;
 
     __forceinline bool semop(sembuf &op) {		// NOSONAR
 	do {

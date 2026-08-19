@@ -6,19 +6,26 @@
     "allow": [
       "Bash(clang-format *)",
       "Bash(uncrustify *)",
-      "Bash(diff *)",
-      "Bash(grep *)",
-      "Bash(cat *)",
-      "Bash(wc *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(find *)",
-      "Bash(ls *)",
       "Bash(sed *)"
     ]
   },
   "sandbox": {
+    "autoAllowBashIfSandboxed": true,
     "enabled": true,
-    "autoAllowBashIfSandboxed": true
+    "filesystem": {
+      "denyRead": [
+        "build",
+        "**/CMakeFiles",
+        ".cache",
+        ".lto",
+        "Testing",
+        "autom4te.cache",
+        "bak",
+        "**/*.pch"
+      ]
+    },
+    "network": {
+      "allowLocalBinding": true
+    }
   }
 }

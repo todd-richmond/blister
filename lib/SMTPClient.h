@@ -52,11 +52,11 @@ private:
 
 class BLISTER RFC822Addr: nocopy {
 public:
-    explicit RFC822Addr(const tchar *addrs = nullptr): buf(nullptr) {
+    explicit RFC822Addr(const tchar *addrs = nullptr) {
 	if (addrs)
 	    parse(addrs);
     }
-    explicit RFC822Addr(const tstring &addrs): buf(nullptr) {
+    explicit RFC822Addr(const tstring &addrs) {
 	parse(addrs.c_str());
     }
     ~RFC822Addr() { delete [] buf; }
@@ -79,7 +79,7 @@ public:
     uint parse(const tchar *addrs);
 
 private:
-    tchar *buf;
+    tchar *buf = nullptr;
     vector<const tchar *> domains, locals, phrases, routes;
 
     void parse_append(const tchar *name, const tchar *route, const tchar

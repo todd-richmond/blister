@@ -1,12 +1,4 @@
 {
-  "editor.detectIndentation": false,
-  "editor.rulers": [80],
-  "files.trimTrailingWhitespace": true,
-  "files.insertFinalNewline": true,
-  "files.eol": "\n",
-  "files.associations": {
-    "*.inc": "makefile"
-  },
   "[c]": {
     "editor.tabSize": 8,
     "editor.insertSpaces": false
@@ -41,5 +33,45 @@
     "-Wno-unknown-pragmas",
     "-Wno-deprecated-declarations",
     "-Wno-old-style-cast"
-  ]
+  ],
+  "cmake.sourceDirectory": "${workspaceFolder}/src",
+  "editor.detectIndentation": false,
+  "editor.rulers": [80],
+  "explorer.excludeGitIgnore": true,
+  "files.associations": {
+    "*.inc": "makefile"
+  },
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.exclude": {
+    "**/build": true,
+    "**/CMakeFiles": true,
+    "**/.cache": true,
+    "**/.lto": true,
+    "**/Testing": true,
+    "**/autom4te.cache": true,
+    "**/bak": true
+  },
+  "files.watcherExclude": {
+    "**/build/**": true,
+    "**/CMakeFiles/**": true,
+    "**/.cache/**": true,
+    "**/.lto/**": true,
+    "**/Testing/**": true,
+    "**/autom4te.cache/**": true,
+    "**/bak/**": true
+  },
+  "files.trimTrailingWhitespace": true,
+  "git.ignoreLimitWarning": true,
+  "search.exclude": {
+    "**/build": true,
+    "**/CMakeFiles": true,
+    "**/.cache": true,
+    "**/.lto": true,
+    "**/Testing": true,
+    "**/autom4te.cache": true,
+    "**/bak": true,
+    "**/compile_commands.json": true
+  },
+  "search.useIgnoreFiles": true
 }

@@ -436,9 +436,7 @@ public:
 protected:
     class BLISTER SocketBuf: public RefCount {
     public:
-	SocketBuf(int t, socket_t s, bool o): blck(true), own(o), err(0),
-	    path(nullptr), rto(SOCK_INFINITE), wto(SOCK_INFINITE), sock(s),
-	    type(t) {}
+	SocketBuf(int t, socket_t s, bool o): own(o), sock(s), type(t) {}
 	~SocketBuf() { if (own) close(); }
 
 	bool __forceinline blocked(void) const { return ::blocked(err); }
@@ -490,10 +488,10 @@ protected:
 	}
 
     private:
-	bool blck, own;
-	mutable int err;
-	char *path;
-	uint rto, wto;
+	bool blck = true, own;
+	mutable int err = 0;
+	char *path = nullptr;
+	uint rto = SOCK_INFINITE, wto = SOCK_INFINITE;
 	socket_t sock;
 	int type;
 
@@ -514,7 +512,7 @@ protected:
 class BLISTER SocketSet {
 public:
     explicit SocketSet(uint maxfds = 0);
-    SocketSet(const SocketSet &ss): fds(nullptr), maxsz(0), sz(0) { *this = ss; }
+    SocketSet(const SocketSet &ss) { *this = ss; }
     ~SocketSet() { delete [] fds; }
 
     SocketSet &operator =(const SocketSet &ss);
@@ -543,14 +541,14 @@ public:
 
 private:
 #ifdef _WIN32
-    fd_set *fds;
+    fd_set *fds = nullptr;
 #else
-    pollfd *fds;
+    pollfd *fds = nullptr;
 #endif
-    uint maxsz, sz;
+    uint maxsz = 0, sz = 0;
 };
 
-inline SocketSet::SocketSet(uint maxfds): maxsz(maxfds), sz(0) {
+inline SocketSet::SocketSet(uint maxfds): maxsz(maxfds) {
 #ifdef _WIN32
     if (!maxsz)
 	maxsz = 32;

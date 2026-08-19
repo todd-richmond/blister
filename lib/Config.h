@@ -56,10 +56,10 @@
 
 class BLISTER Config: nocopy {
 public:
-    explicit Config(const tchar *prestr = nullptr): ini(false) {
+    explicit Config(const tchar *prestr = nullptr) {
 	prefix(prestr);
     }
-    explicit Config(tistream &is, const tchar *prestr = nullptr): ini(false) {
+    explicit Config(tistream &is, const tchar *prestr = nullptr) {
 	(void)read(is, prestr);
     }
     ~Config() { clear(); }
@@ -294,7 +294,7 @@ private:
     kvmap amap;
     mutable SpinRWLock lck;
     tstring pre;
-    bool ini;
+    bool ini = false;
 
     void clear_locked(void);
     bool expandkv(const KV *kv, tstring &val) const;
