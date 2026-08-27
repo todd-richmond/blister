@@ -384,7 +384,7 @@ private:
 	    } else if (dir == ios_base::beg) {
 		char *np = begin + off;
 
-		setg(begin, np < begin ? begin : np >= last ? last : p, last);
+		setg(begin, np < begin ? begin : np >= last ? last : np, last);
 	    } else {
 		char *np = last + off;
 
