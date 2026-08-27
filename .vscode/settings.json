@@ -1,28 +1,22 @@
 {
-  "[c]": {
-    "editor.tabSize": 8,
-    "editor.insertSpaces": false
-  },
-  "[cpp]": {
-    "editor.tabSize": 8,
-    "editor.insertSpaces": false
-  },
-  "[makefile]": {
-    "editor.tabSize": 8,
-    "editor.insertSpaces": false
+  "[c][cpp][h][makefile]": {
+    "editor.formatOnType": true,
+    "editor.indentSize": 4,
+    "editor.inlayHints.enabled": "off",
+    "editor.insertSpaces": false,
+    "editor.tabSize": 8
   },
   "[markdown]": {
     "editor.rulers": []
   },
-  "C_Cpp.clang_format_style": "file",
   "C_Cpp.clang_format_sortIncludes": true,
+  "C_Cpp.clang_format_style": "file",
+  "C_Cpp.codeAnalysis.clangTidy.enabled": true,
   "C_Cpp.default.compilerArgs": [
     "-Wno-deprecated-declarations"
   ],
   "c-cpp-flylint.cppcheck.extraArgs": [
-    "--suppress=dangerousTypeCast",
-    "--suppress=cstyleCast",
-    "--suppress=normalCheckLevelMaxBranches"
+    "--suppressions-list=${workspaceFolder}/.cppcheck-suppressions"
   ],
   "c-cpp-flylint.clang.extraArgs": [
     "-DBUILD_BLISTER",
@@ -30,13 +24,49 @@
     "-include",
     "${workspaceFolder}/lib/stdapi.h",
     "-std=gnu++23",
-    "-Wno-unknown-pragmas",
     "-Wno-deprecated-declarations",
-    "-Wno-old-style-cast"
+    "-Wno-old-style-cast",
+    "-Wno-unknown-pragmas"
   ],
-  "cmake.sourceDirectory": "${workspaceFolder}/src",
+  "chat.experimental.permissionsSandboxToggle.enabled": true,
+  "cmake.sourceDirectory": "${workspaceFolder}",
+  "cppcheck-official.arguments": "--suppressions-list=${workspaceFolder}/.cppcheck-suppressions",
+  "cpplint.cpplintPath": "cpplint",
+  "cpplint.excludes": [
+    "CMakeFiles"
+  ],
+  "cpplint.filters": [
+    "-build/header_guard",
+    "-build/include",
+    "-build/include_order",
+    "-build/include_subdir",
+    "-build/include_what_you_use",
+    "-build/namespaces",
+    "-legal/copyrigh",
+    "-readability/braces",
+    "-readability/casting",
+    "-readability/multiline_comment",
+    "-readability/nolint",
+    "-readability/todo",
+    "-runtime/int",
+    "-runtime/operator",
+    "-runtime/printf",
+    "-runtime/references",
+    "-runtime/string",
+    "-runtime/threadsafe_fn",
+    "-whitespace/comments",
+    "-whitespace/indent",
+    "-whitespace/newline",
+    "-whitespace/line_length",
+    "-whitespace/parens",
+    "-whitespace/semicolon",
+    "-whitespace/tab"
+  ],
+  "editor.autoIndentOnPaste": true,
   "editor.detectIndentation": false,
   "editor.rulers": [80],
+  "editor.wordwrap": "on",
+  "editor.wrappingIndent": "indent",
   "explorer.excludeGitIgnore": true,
   "files.associations": {
     "*.inc": "makefile"

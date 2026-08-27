@@ -45,7 +45,9 @@ public:
     const char *str(void) const { return buf; }
     // cppcheck-suppress nullPointer
     void str(char *p, streamsize sz) { setbuf(p, sz); }
-    streamsize read(void *in, streamsize sz) { return xsgetn((char *)in, sz); }
+    streamsize read(void *in, streamsize sz) {
+	return xsgetn((char *)in, sz);
+    }
     template<class T> streamsize read(T &t) { return read(&t, sizeof (t)); }
     streamsize write(const void *in, streamsize sz) {
 	return xsputn((const char *)in, sz);
@@ -382,11 +384,13 @@ private:
 	    } else if (dir == ios_base::beg) {
 		char *np = begin + off;
 
-		setg(begin, np < begin ? begin : np >= last ? last : np, last);
+		setg(begin, np < begin ? begin : np >= last ? last :
+		    p, last);
 	    } else {
 		char *np = last + off;
 
-		setg(begin, np < begin ? begin : np > last ? last : np, last);
+		setg(begin, np < begin ? begin : np > last ? last :
+		    np, last);
 	    }
 	    return gptr() - eback();
 	}
@@ -419,7 +423,6 @@ private:
 
     null_buffer nb;
 };
-
 
 // NOLINTEND(misc-multiple-inheritance)
 
