@@ -1,89 +1,67 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repo.
 
 ## Project overview
 
-Blister is a lightweight, high-performance C++ library for building async I/O servers and clients: an epoll/kqueue/poll-based reactor, config parsing, logging, sockets, threading primitives, and HTTP/SMTP client-server protocol support. It targets Linux, Solaris, macOS, BSD and Windows (with a POSIX emulation layer for the latter).
+Blister: C++ library for async I/O servers/clients — epoll/kqueue/poll reactor, config parsing, logging, sockets, threading primitives, HTTP/SMTP client-server support. Targets Linux, Solaris, macOS, BSD, Windows (POSIX emulation layer).
 
 ## Build
 
-Primary build system is CMake (>= 3.10); autotools (`configure.ac`/`Makefile.am`) and MSVC `.vcxproj` files also exist but CMake is what's actively maintained. The tree is configured and built in place at the repo root (in-source), not into a separate out-of-source `build/` directory:
+CMake (>= 3.10), built in-source at repo root (not a separate `build/` dir). Autotools/MSVC project files also exist but are unmaintained.
 
 ```sh
 cmake -DCMAKE_BUILD_TYPE=Debug .   # or: build/build [check|tsan] [Debug|Release|...]
-make -j4                           # after the initial cmake/build/build, rebuild with just this
-ctest                              # runs the one automated test (HashFunctors)
+make -j4                           # rebuild after initial cmake/build/build
+ctest                              # only test: HashFunctors
 ```
 
-`build/build` is a convenience wrapper around the same steps: it runs `make distclean` if a Makefile already exists, reconfigures with `cmake -DCMAKE_BUILD_TYPE=<type> .`, and does an initial `make -j8`. Pass `check` for `-DCHECK_ALL=ON` or `tsan` for `-DCHECK_TSAN=ON`. Either way, once the tree is configured, subsequent changes only need `make -j4` (or `-j8`) — no need to re-run cmake/`build/build` unless `CMakeLists.txt` or build options change.
+- `build/build [check|tsan] [BuildType]`: `make distclean` + reconfigure + `make -j8`. `check`→`-DCHECK_ALL=ON`, `tsan`→`-DCHECK_TSAN=ON`. Only re-run when `CMakeLists.txt`/build options change — otherwise just `make -j4`.
+- CMake options (default off): `CHECK_CLANG_TIDY`, `CHECK_CPPCHECK`, `CHECK_CPPLINT`, `CHECK_IWYU`/`CHECK_ALL`, `CHECK_TSAN=<sanitizer>`. `COMPILE_PCH` (default ON) auto-disables under static analysis.
+- C++23/C23, `-fno-exceptions -fno-rtti`, `-Werror`/`/WX` on GCC/Clang/MSVC — new warnings are build breaks.
+- No unit test framework. Only `test/HashTest.cpp` (`HashFunctors` ctest target, `EXCLUDE_FROM_ALL`) is automated; rest of `test/` is sample/load-test programs — see `test/README.md`.
+- Static analysis config at repo root: `.clang-tidy`, `.cppcheck-suppressions`, `CPPLINT.cfg`. CI runs CodeQL, MSVC Code Analysis, SonarQube on push/PR to `master`.
 
-Useful CMake options (all off by default): `CHECK_CLANG_TIDY`, `CHECK_CPPCHECK`, `CHECK_CPPLINT`, `CHECK_IWYU` (or `CHECK_ALL` for all four), `CHECK_TSAN=<sanitizer>` (e.g. `thread`). `COMPILE_PCH` (default ON) controls precompiled-header use — it's auto-disabled when a static analyzer is active since they conflict with PCH.
+## Simplicity
 
-Standard is C++23 / C23, built with `-fno-exceptions -fno-rtti`. All warnings are errors (`-Werror`/`/WX`) on both GCC/Clang and MSVC, so treat new warnings as build breaks.
+Prefer the simplest complete implementation.
 
-There is no top-level test framework (no gtest/catch2). The only automated test is `test/HashTest.cpp`, exercising the hash functors in `stdapi.h` (`bernstein_hash`, `rapid_hash`, `ptrhash`, etc.); it's built on demand by the `HashFunctors` ctest target (`EXCLUDE_FROM_ALL`, not part of the default `all` build). Everything else in `test/` (`cfg`, `daemonize`, `dlog`, `dtiming`, `echotest`, `httpload`, `smtpload`, `uhttpd`) is a sample program / load-testing tool, not a unit test — see `test/README` for what each does.
-
-Static analysis config lives at repo root: `.clang-tidy`, `.cppcheck-suppressions`, `CPPLINT.cfg`. CI (`.github/workflows/`) runs CodeQL, MSVC Code Analysis, and SonarQube on push/PR to `master`.
+Avoid:
+- unnecessary abstractions or indirection
+- speculative extensibility not required by current requirements
+- helpers or wrappers that add complexity without improving clarity
+- comments that restate obvious code
+- redundant defensive code for states excluded by established invariants
+- unrelated refactoring or scope expansion
+- unnecessary caching or premature optimization
 
 ## Code architecture
 
-### `lib/stdapi.h` — the portability foundation
-Included (usually via precompiled header) by everything. It:
-- Provides POSIX-on-Windows emulation (`open`, `stat`, `readdir`, `writev`, etc., declared `extern BLISTER` and implemented in `Windows.c`/`WindowsCPP.cpp`; the Unix equivalents live in `Unix.c`).
-- Defines the `tchar` generic-text layer (à la Windows `TCHAR`, but cross-platform): `T("literal")`, `tstring`, `tstrcmp`/`tstricmp`/`tstrlen`/etc. Code that needs to work in both narrow and `_UNICODE` (wide) builds must go through these macros rather than raw `char`/`std::string` — this is an actively-maintained convention (recent history includes wide-char fixes), so match it in new lib/test code.
-- Defines `BLISTER` (`DLL_EXPORT`/`DLL_IMPORT` depending on `BUILD_BLISTER`), used to annotate every publicly-exported class/function.
-- Supplies fast hashing (`bernstein_hash`, `rapid_hash`, `stringhash`/`stringihash`, `ptrhash`), fast int parsing (`atou`/`atoi`/`atoin` templates using SWAR tricks), and string compare/eq functors (`streq`, `strless`, etc., all `is_transparent` for heterogeneous lookup).
-- Implements a zero-allocation intrusive singly-linked list, `ObjectList<C>` (elements derive from `ObjectList<C>::Node`) and its size-tracked variant `SizedObjectList`, used throughout the Dispatch object hierarchy to avoid heap churn.
+See `lib/README.md` for full per-class detail; summary below.
 
-### `lib/Dispatch.h/.cpp` — the reactor core
-`Dispatcher` (extends `ThreadGroup` from `Thread.h`) is the event loop; its backend is chosen at compile time per platform: `DSP_EPOLL` (Linux), `DSP_KQUEUE` (BSD), `DSP_DEVPOLL` (Solaris), `DSP_POLL`/`DSP_WIN32_ASYNC` (Windows/fallback). One or more worker threads run `Dispatcher::exec()`.
+- `lib/stdapi.h` — portability foundation, included via PCH by everything: POSIX-on-Windows emulation; `tchar` generic-text layer (`T()`, `tstring`, `tstrcmp` etc. — use these, not raw `char`/`std::string`, for text that must work in `_UNICODE` builds); `BLISTER` export macro; fast hash/int-parse/string-compare functors; intrusive `ObjectList<C>`/`SizedObjectList`.
+- `lib/Dispatch.h/.cpp` — reactor core. `Dispatcher : ThreadGroup` runs the event loop (`DSP_EPOLL`/`DSP_KQUEUE`/`DSP_DEVPOLL`/`DSP_POLL` per platform). Object hierarchy: `DispatchObj` (base, groupable) → `DispatchTimer` (timeouts) → `DispatchSocket`/`DispatchIOSocket` → `DispatchClientSocket`/`DispatchServerSocket`/`DispatchListenSocket`. `SimpleDispatchListenSocket<D,C>` is the template most servers use to auto-spawn connection handler `C` per accept. New reactor object types should extend this hierarchy, not invent a parallel mechanism.
+- `lib/Config.h/.cpp` — thread-safe config parser (`key = value` or ini `[section]`); prefix scoping; `${key}` expansion; `+=` append; typed `get<T>()`/`set<T>()`.
+- `lib/Log.h/.cpp` — logging: rollover, multi-process-safe writes, syslog/mail alerts.
+- `lib/Socket.h/.cpp` — cross-platform socket layer. `Sockaddr` (IPv4/IPv6/UNIX), `SockaddrList`, `CIDR`. `Socket` = refcounted fd handle, non-blocking-safe I/O with EINTR retry. `SocketSet` abstracts poll/select. `isockstream`/`osockstream`/`sockstream` adapt `Socket` to `std::iostream`.
+- `lib/Thread.h/.cpp` — threading primitives. `Thread`, `ThreadGroup` (base of `Dispatcher`). Lock types: `SpinLock`/`SpinRWLock`, `TicketLock`, `UnfairLock`, `Lock`/`RWLock`, all with RAII `*Locker`. Also `LifoSemaphore`, `ThreadLocal`, `RefCount`, `DLLibrary`, `Processor`.
+- `lib/Service.h/.cpp` — unified Windows SCM / Unix signal daemon control.
+- `lib/Timing.h/.cpp` — call-duration profiling; `TimingEntry`/`TimingFrame` are RAII scope timers; global `dtiming` instance.
+- `lib/HTTPClient`/`HTTPServer`/`SMTPClient` — protocol implementations on `Dispatch`. `lib/MPHTTPServer` layers multi-process worker management (prefork, rolling restarts, health/metrics endpoints) on top of `HTTPServer`.
+- `lib/LRUCache.h` — header-only size/time-bounded LRU cache.
+- `test/` — sample/load-test programs, not unit tests (`cfg`, `dlog`, `dtiming`, `hashtest`, `daemonize`, `echotest`, `uvechotest`, `uhttpd`, `httpload`, `smtpload` — see `test/README.md`). `echotest` is the canonical Dispatch client+server example.
 
-Object hierarchy (all under `DispatchObj`, an `ObjectList<DispatchObj>::Node`):
-- `DispatchObj` — base event object with a callback (`DispatchObjCB`), can be "grouped" as a child of a parent object (refcounted `Group`) so child lifetimes track the parent.
-- `DispatchTimer` — adds timeout scheduling; timers are tracked in `Dispatcher::TimerSet`, a hybrid sorted/unsorted structure (`sorted` `std::set` for near-term timers, `unsorted` hash set for the rest) that's periodically re-split to avoid re-sorting far-future timers on every insert.
-- `DispatchSocket` / `DispatchIOSocket` — socket + timer combined; `acceptable()`/`readable()`/`writeable()`/`rwable()`/`closeable()` register interest with the reactor.
-- `DispatchClientSocket`, `DispatchServerSocket`, `DispatchListenSocket` — connect/accept lifecycles; `SimpleDispatchListenSocket<D, C>` is the template most servers instantiate to auto-spawn a connection handler `C` per accepted socket, reading listen config (`host`, `socket.backlog`, `socket.reuse`, `enable`) from a `Config` section named by `C::section()`.
-
-`AsyncCondvar` provides condition-variable-like semantics without blocking a thread — `wait()` queues a callback to be invoked later instead of parking the thread.
-
-### Other core headers in `lib/`
-- `Config.h/.cpp` — thread-safe property (`key = value`, dotted subsections) or ini-style (`[section]`) config parser backed by a `SpinRWLock`-guarded hash map of variable-length `KV` entries. Supports prefix scoping so multiple programs share one file (a `*` prefix shares a value across all of them), `${key}`/`$(key)` recursive expansion, quoted values, `\`-continued lines, `#include`, and `+=` append; typed `get<T>()`/`set<T>()` overloads parse/format straight to/from text via `atoin`/`atoun`/`to_chars` rather than going through `sstream`. `ConfigFile` layers path-based load/save convenience over the istream/ostream-based `Config` base.
-- `Log.h/.cpp` — logging with rollover, multi-process-safe writes, syslog/mail alerting; the `test/dlog` utility is a CLI wrapper around it.
-- `Socket.h/.cpp` — cross-platform Berkeley/WinSock socket layer underpinning `DispatchSocket`. `Sockaddr` unifies IPv4/IPv6/UNIX-domain addressing (resolution, comparison, string formatting) behind one API; `SockaddrList` holds multi-address DNS results; `CIDR` does fast IP-range membership checks. `Socket` is a small refcounted, copyable handle around a `SocketBuf`/fd, providing non-blocking-safe accept/connect/read/write/readv/writev with automatic EINTR retry and blocked-vs-hard-error classification (`blocked()`/`interrupted()`). `SocketSet` abstracts `poll()`/`select()` differences for large fd sets, and `isockstream`/`osockstream`/`sockstream` adapt a `Socket` to `std::istream`/`ostream`/`iostream` via the `faststreambuf` from `Streams.h`.
-- `Thread.h/.cpp` — cross-platform threading primitives underpinning `Dispatcher`. `Thread` wraps a native OS thread (`onStart`/`onStop` hooks, suspend/terminate/wait); `ThreadGroup` (base of `Dispatcher`) manages a pool of threads as a unit, with group-wide start/stop/terminate and a `master` thread. A range of lock types trade off fairness vs. speed — `SpinLock`/`SpinRWLock` (spinning), `TicketLock` (fair spinning), `UnfairLock` (futex-backed fast path), plus `Lock`/`RWLock` (`std::mutex`/`shared_mutex` aliases) — all paired with RAII `*Locker`/`FastLocker` templates. `LifoSemaphore` is a lock-free, LIFO-ordered semaphore built on a tagged Treiber stack, used by `Dispatcher` to wake worker threads. Also provides `ThreadLocal`/`ThreadLocalClass` (TLS wrappers with destruction on thread exit), `RefCount`, `DLLibrary` (dynamic library loading), and `Processor` (CPU count/affinity).
-- `Service.h/.cpp` — unifies Windows Service Control Manager and Unix signal-based daemon control behind one API.
-- `Timing.h/.cpp` — low-overhead call-duration profiling: per-key stats (count/total/bucketed histogram) accumulated in a lock-free hashed cache, with thread-local call-stack tracking for nested/"stack" mode timing. `TimingEntry`/`TimingFrame` are RAII helpers for timing a scope; the global `dtiming` instance is what the `test/dtiming` utility parses and pretty-prints.
-- `HTTPClient`/`HTTPServer`/`SMTPClient` — protocol implementations built on top of `Dispatch`.
-- `LRUCache.h` — header-only, size- and time-bounded LRU cache (`LRUCache<C>`, `C` deriving from `LRUCacheEntry`): entries are hashed with `rapid_hash`, held via `shared_ptr<const void>` with a custom deleter, and tracked in a splice-friendly `list` + `unordered_map` (list order = recency) under a single `SpinLock`. `get()`/`put()` opportunistically purge expired/oversized entries inline rather than using a background thread.
-- `MD5.c/.h` — supporting utility.
-
-### `test/` — sample and load-test programs
-None of these are unit tests (see Build above for the one automated test); each is a small, complete program demonstrating a slice of the library end to end. Programs that don't define their own classes drive a single core class directly:
-- `Cfg.cpp` (`cfg`) — `Config`/`ConfigFile` only: parses a file and prints a key's value or returns it as an exit code.
-- `DLog.cpp` (`dlog`) — `Log` only: stdin/CLI-driven logging utility (rollover, syslog, mail alerts).
-- `DTiming.cpp` (`dtiming`) — `Timing` only: parses and pretty-prints timing data produced via `dtiming`/`TimingEntry`/`TimingFrame`.
-- `HashTest.cpp` (`hashtest`) — `stdapi.h` hash functors only; this is the one program run as an automated test.
-
-The rest define their own classes on top of the framework:
-- `Daemonize.cpp` (`daemonize`) — `WatchDaemon : Daemon` (`Service.h`); wraps an arbitrary child process as a watched, auto-restarting daemon/service.
-- `EchoTest.cpp` (`echotest`) — `EchoTest : Dispatcher` containing `EchoClientSocket : DispatchClientSocket`, `EchoServerSocket : DispatchServerSocket`, and `EchoListenSocket : SimpleDispatchListenSocket<EchoTest, EchoServerSocket>`; the canonical example of a scalable client+server pair built directly on `Dispatch`.
-- `HTTPd.cpp` (`uhttpd`) — `HTTPDaemonSocket : HTTPServerSocket` and `HTTPDaemon : Daemon`; a minimal static-file HTTP server combining `HTTPServer` with `Service`.
-- `HTTPLoad.cpp` (`httpload`) — `HTTPLoad : Thread` (with nested `LoadCmd`); scriptable multithreaded HTTP load generator built on `HTTPClient`.
-- `SMTPLoad.cpp` (`smtpload`) — `SMTPLoad : Thread` (with nested `LoadCmd`); scriptable multithreaded SMTP load generator built on `SMTPClient`.
-
-### Cross-cutting conventions
-- Prefer C++23 language and standard-library features (e.g. `std::size`, `to_chars`, concepts, ranges) over older idioms in new or modified code, consistent with the project's C++23 standard target.
+### Conventions
+- Prefer C++23 (concepts, ranges, `to_chars`, etc.) over older idioms in new/modified code.
 - Public API surface is marked `BLISTER`; internal-only helpers are not.
-- Style: tabs (`tab_width=8`), 80-column soft limit (see `.editorconfig`, `.clang-format`) — not enforced by clang-format in CI but keep new code consistent with surrounding code.
-- No exceptions or RTTI anywhere in `lib/`; don't introduce `throw`/`try`/`dynamic_cast`.
-- New object types participating in the reactor should follow the existing `DispatchObj`/`DispatchTimer`/`DispatchSocket` inheritance pattern rather than inventing a parallel mechanism.
+- Tabs (width 8), 80-column soft limit.
+- No exceptions or RTTI in `lib/` — don't introduce `throw`/`try`/`dynamic_cast`.
 
 ## Working efficiently in this repo
 
-- **Never read or search generated/backup directories**: `build/`, `CMakeFiles/` (root and per-subdir, e.g. `lib/CMakeFiles/`, `test/CMakeFiles/`), `.cache/`, `.lto/`, `Testing/`, `autom4te.cache/`, `bak/`. The tree is built in-source, so these are gitignored build output or backups already sitting in the working copy — not source, and grepping them burns tool calls for no signal. Never open `*.pch` files (e.g. `cmake_pch.hxx.pch`) — they're multi-megabyte compiled binary blobs, not text.
-- **Large files — use targeted `Grep`/offset `Read`, not a full read**: several `lib/` headers/sources exceed 24KB. Check size first (e.g. `ls -la` or `wc -l`) before reading a file in `lib/`, and prefer `Grep` or an offset `Read` over a full read for anything above ~24KB.
-- **Build is usually already configured**: an in-place `Makefile`/`CMakeCache.txt` normally already exists at repo root, so default to `make -j4` for a rebuild; only re-run `cmake`/`build/build` when `CMakeLists.txt` or build options changed (see Build above).
-- **`ctest` = one test**: it only runs `HashFunctors`. Don't run it speculatively or search for a broader unit-test suite that doesn't exist — there isn't one.
-- **Static analysis is opt-in and slow**: `CHECK_CLANG_TIDY`/`CHECK_CPPCHECK`/`CHECK_CPPLINT`/`CHECK_IWYU`/`CHECK_ALL` are off by default; clang-tidy in particular leaves most checks enabled (a large but narrow exclusion list), so a full run is slow. Don't turn these on proactively — only when the user asks or a task specifically calls for it.
-- **No vendored/third-party code**: there's no `vendor/`/`third_party/`/`deps/` tree, so a symbol's definition is in `lib/` or a system/standard header — no need to search for an external-code directory that doesn't exist.
+- Never read/search `build/`, `CMakeFiles/` (root or per-subdir), `.cache/`, `.lto/`, `Testing/`, `autom4te.cache/`, `bak/` — gitignored build output/backups, not source. Never open `*.pch` files — compiled binary blobs.
+- Several `lib/` files exceed 24KB — check size first (`wc -l`/`ls -la`) and prefer `Grep`/offset `Read` over a full read above ~24KB.
+- Build is usually already configured — default to `make -j4`; only re-run `cmake`/`build/build` when `CMakeLists.txt`/build options change.
+- `ctest` runs only `HashFunctors` — don't search for a broader unit-test suite; there isn't one.
+- Static analysis (`CHECK_CLANG_TIDY`/`CHECK_CPPCHECK`/`CHECK_CPPLINT`/`CHECK_IWYU`/`CHECK_ALL`) is off by default and slow — don't enable proactively, only when asked.
+- No vendored/third-party code — a symbol's definition is in `lib/` or a system/standard header.

@@ -29,6 +29,7 @@
     "-Wno-unknown-pragmas"
   ],
   "chat.experimental.permissionsSandboxToggle.enabled": true,
+  "cmake.generator": "Unix Makefiles",
   "cmake.sourceDirectory": "${workspaceFolder}",
   "cppcheck-official.arguments": "--suppressions-list=${workspaceFolder}/.cppcheck-suppressions",
   "cpplint.cpplintPath": "cpplint",
