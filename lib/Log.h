@@ -382,7 +382,7 @@ private:
 		if (UNLIKELY(!is_fundamental_v<T>)) {
 		    if constexpr (is_enum_v<T>) {
 			tlsd.strm.write(
-			    static_cast<underlying_type_t<T>>(val));
+			    (underlying_type_t<T>)val);
 		    } else if constexpr (requires { val.c_str(); }) {
 			quote(tlsd.strm, val.c_str());
 		    } else {

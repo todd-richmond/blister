@@ -83,7 +83,7 @@ public:
     Timing() = default;
     ~Timing();
 
-    uint depth(void) const { return static_cast<uint>(tls->entries.size()); }
+    uint depth(void) const { return (uint)tls->entries.size(); }
 
     template<size_t N>
     __forceinline void add(const tchar (&key)[N], timing_t diff) {
@@ -93,7 +93,7 @@ public:
 	add(key, 0, stringhash(key), diff);
     }
     __forceinline void add(const tstring &key, timing_t diff) {
-	add(key.c_str(), static_cast<uint>(key.length()), stringhash(key), diff);
+	add(key.c_str(), (uint)key.length(), stringhash(key), diff);
     }
     void clear(void);
     tstring data(bool sort_by_key = false, uint columns = TIMINGSLOTS - 2)

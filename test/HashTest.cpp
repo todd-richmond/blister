@@ -21,7 +21,7 @@ vector<tchar> read_file_content(const tstring& filename) {
     streamsize size = file.tellg();
     file.seekg(0, ios::beg);
 
-    vector<tchar> buffer(static_cast<size_t>(size));
+    vector<tchar> buffer((size_t)size);
     if (!file.read(buffer.data(), size))
 	return {};
     return buffer;

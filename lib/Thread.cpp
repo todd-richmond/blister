@@ -275,7 +275,7 @@ void Thread::end(int status) {
 
 // call into ThreadMain with correct class scope
 int Thread::init(void *thisp) {
-    return (static_cast<Thread *>(thisp))->onStart();
+    return ((Thread *)thisp)->onStart();
 }
 
 bool Thread::priority(int pri) {	// NOLINT
@@ -327,7 +327,7 @@ void Thread::thread_cleanup(void) {
 
 // setup thread and call it's main routine
 THREAD_FUNC Thread::thread_init(void *arg) {
-    Thread *thread = static_cast<Thread *>(arg);
+    Thread *thread = (Thread *)arg;
 
     thread->lck.lock();
     thread->id = THREAD_ID();
@@ -335,7 +335,7 @@ THREAD_FUNC Thread::thread_init(void *arg) {
     thread->setState(Running);
     thread->cv.set();
     thread->lck.unlock();
-    thread->retval = (thread->main)(thread->argument);
+    thread->retval = thread->main(thread->argument);
     thread->clear();
     return 0;
 }
@@ -524,7 +524,7 @@ void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
 }
 
 int ThreadGroup::init(void *thisp) {
-    return (static_cast<ThreadGroup *>(thisp))->onStart();
+    return ((ThreadGroup *)thisp)->onStart();
 }
 
 void ThreadGroup::notify(const Thread &thread) {

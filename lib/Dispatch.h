@@ -44,7 +44,7 @@
 
 #define DSP_DECLARE(cls, func) \
     static __forceinline void func(DispatchObj *obj) { \
-	(static_cast<cls *>(obj))->func(); \
+	((cls *)obj)->func(); \
     } \
     void func(void)
 
@@ -504,7 +504,7 @@ public:
 
 protected:
     void onAccept(Socket &sock) override {
-	C *c = new(nothrow) C(static_cast<D &>(dspr), sock);
+	C *c = new(nothrow) C((D &)dspr, sock);
 
 	if (c == nullptr) {
 	    sock.close();

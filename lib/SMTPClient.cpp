@@ -304,7 +304,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 #else
     const long gmtoff = tmbuf.tm_gmtoff;
 #endif
-    const auto off_min = static_cast<int>(gmtoff / 60);
+    const auto off_min = (int)(gmtoff / 60);
     sstrm << "Date: " << format("{:%a, %d %b %Y %H:%M:%S}",
 	chrono::system_clock::from_time_t(now) +
 	chrono::seconds(gmtoff)) << ' ' << format("{:+03d}{:02d}",

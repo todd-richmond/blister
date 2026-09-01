@@ -254,7 +254,7 @@ public:
 	if constexpr (is_integral_v<T>) {
 	    C buf[24];
 	    C *p = buf + std::size(buf);	// cppcheck-suppress uninitvar
-	    auto uval = static_cast<make_unsigned_t<T>>(val);
+	    auto uval = (make_unsigned_t<T>)val;
 
 	    if constexpr (is_signed_v<T>)
 		if (val < 0)
@@ -303,7 +303,7 @@ public:
 		*this << val;
 #endif
 	} else if constexpr (is_enum_v<T>) {
-	    write(static_cast<underlying_type_t<T>>(val));
+	    write((underlying_type_t<T>)val);
 	} else {
 	    *this << val;
 	}

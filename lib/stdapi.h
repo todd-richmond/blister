@@ -941,12 +941,13 @@ __forceinline T atoun(const tchar *str, size_t len) {
 	str += 4;
 	len -= 4;
     }
-    switch (len) {  // NOSONAR
+    switch (len) {
     case 3: val = val * 1000 + (size_t)(str[0] - '0') * 100 +
 	(size_t)(str[1] - '0') * 10 + (size_t)(str[2] - '0'); break;
     case 2: val = val * 100 + (size_t)(str[0] - '0') * 10 +
 	(size_t)(str[1] - '0'); break;
     case 1: val = val * 10 + (size_t)(str[0] - '0'); break;
+    default: break;
     }
     return (T)val;
 #endif
@@ -980,7 +981,7 @@ auto to_chars(wchar_t *first, wchar_t *last, T value) {
     result r = {first, char_ec};
 
     for (char *p = buf; p != char_end && r.ptr != last; ++p)
-	*r.ptr++ = static_cast<wchar_t>(static_cast<uchar>(*p));
+	*r.ptr++ = (wchar_t)(uchar)*p;
     if (r.ptr == last && char_ec == errc{})
 	r.ec = errc::value_too_large;
     return r;
@@ -1719,12 +1720,12 @@ public:
     __forceinline void push_back(C &obj) { Base::push_back(obj); sz.inc(); }
     __forceinline void push_front(C &obj) { Base::push_front(obj); sz.inc(); }
     void push_back(SizedObjectList &lst) {
-	Base::push_back(static_cast<Base &>(lst));
+	Base::push_back((Base &)lst);
 	sz.add(lst.size());
 	lst.sz.zero();
     }
     void push_front(SizedObjectList &lst) {
-	Base::push_front(static_cast<Base &>(lst));
+	Base::push_front((Base &)lst);
 	sz.add(lst.size());
 	lst.sz.zero();
     }

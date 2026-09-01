@@ -175,7 +175,7 @@ int Dispatcher::run() {
 }
 
 int Dispatcher::worker(void *param) {
-    return (static_cast<Dispatcher *>(param))->run();
+    return ((Dispatcher *)param)->run();
 }
 
 #ifdef DSP_WIN32_ASYNC
@@ -621,9 +621,9 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    }
 	}
 #elif defined(DSP_EPOLL)
-	ds = static_cast<DispatchSocket *>(evt->data.ptr);
+	ds = (DispatchSocket *)evt->data.ptr;
 #elif defined(DSP_KQUEUE)
-	ds = static_cast<DispatchSocket *>(evt->udata);
+	ds = (DispatchSocket *)evt->udata;
 #endif
 	if (UNLIKELY(DSP_EVENT_WRITE(evt)))
 	    mask |= EVT_WRITE;

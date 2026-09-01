@@ -144,7 +144,7 @@ public:
     explicit DLLibrary(const tchar *dll = nullptr) { open(dll); }
     ~DLLibrary() { close(); }
 
-    operator void *(void) const { return hdl; }
+    explicit operator void *(void) const { return hdl; }
     friend bool operator !(const DLLibrary &dll) { return dll.hdl == nullptr; }
 
     const tstring &error(void) const { return err; }
@@ -303,11 +303,11 @@ public:
 
 using Lock = mutex;
 using FastLocker = FastLockerTemplate<Lock,
-    static_cast<void (Lock::*)()>(&Lock::lock),
-    static_cast<void (Lock::*)()>(&Lock::unlock)>;
+    (void (Lock::*)())&Lock::lock,
+    (void (Lock::*)())&Lock::unlock>;
 using Locker = LockerTemplate<Lock,
-    static_cast<void (Lock::*)()>(&Lock::lock),
-    static_cast<void (Lock::*)()>(&Lock::unlock)>;
+    (void (Lock::*)())&Lock::lock,
+    (void (Lock::*)())&Lock::unlock>;
 
 using RWLock = shared_mutex;
 using FastRLocker = FastLockerTemplate<RWLock, &RWLock::lock_shared,
@@ -973,7 +973,7 @@ public:
     }
     ~SharedSemaphore() { close(); }
 
-    __forceinline operator int(void) const { return hdl; }
+    __forceinline explicit operator int(void) const { return hdl; }
     __forceinline int get(void) const { return semctl(hdl, 0, GETVAL); }
     __forceinline int handle(void) const { return hdl; }
 
@@ -1090,7 +1090,7 @@ public:
     bool running(void) const { return getState() == Running; }
     bool terminated(void) const { return getState() == Terminated; }
 
-    operator thread_hdl_t(void) const { return hdl; }
+    explicit operator thread_hdl_t(void) const { return hdl; }
     friend bool operator ==(const Thread &a, const Thread &b) {
 	return THREAD_EQUAL(a.id, b.id);
     }

@@ -794,7 +794,7 @@ int tmain(int argc, tchar *argv[]) {
     dlog.level(Log::None);
     if (fs.is_open())
 	fs.close();
-    while ((thread = (HTTPLoad *)(ThreadGroup::MainThreadGroup.wait( 3000))) !=
+    while ((thread = (HTTPLoad *)ThreadGroup::MainThreadGroup.wait(3000)) !=
 	nullptr)
 	delete thread;
     HTTPLoad::uninit();

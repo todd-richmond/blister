@@ -370,15 +370,15 @@ void Log::LogFile::set(const Config &cfg, const tchar *sect,
     sz = cfg.get((s + T("size")).c_str(), 10UL * 1024 * 1024, sect);
     sec = cfg.get((s + T("time")).c_str(), 0UL, sect);
     set(lvl, f.c_str(), cnt, sz, sec);
-    if (fd == -1 && !tstrchr(file.c_str(), '/') &&
-	!tstrchr(file.c_str(), '\\')) {
+    if (fd == -1 && !tstrchr(file.c_str(), '/') && !tstrchr(file.c_str(),
+	'\\')) {
 	tstring dir(cfg.get(T("installdir")));
 
 	if (!dir.empty()) {
 	    dir += T("/log");
 	    if (access(tstringtoachar(dir), W_OK))
 		dir = cfg.get(T("installdir"));
-	    dir += T("/");
+	    dir += (tchar)'/';
 	    file = dir + file;
 	    path = dir + path;
 	}
@@ -882,7 +882,7 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 
 	    os.write(dquote);
 	    os.write((const tchar *)start, p - start);
-	    auto flush = [&]() { if (bsz) { os.write(buf, bsz); bsz = 0; } };
+	    auto flush = [&] { if (bsz) { os.write(buf, bsz); bsz = 0; } };
 	    auto putc = [&](tchar cc) {
 		if (UNLIKELY(bsz == bufcnt)) {
 		    os.write(buf, bsz);
