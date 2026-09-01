@@ -2,7 +2,7 @@
 
 #define VERSION      3,0,0,0
 #define VERSIONSTR  "3.0.0.0"
-#define DATE        "08/01/26"
+#define DATE        "09/01/26"
 
 #define PRODUCT	    "Blister"
 #ifndef NAME

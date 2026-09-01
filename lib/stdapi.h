@@ -30,12 +30,12 @@
 #endif
 
 #ifdef _MSC_VER
+#define __builtin_prefetch(p, i, j)
 #define __no_sanitize(check)
 #define __no_sanitize_address
 #define __no_sanitize_memory
 #define __no_sanitize_thread
 #define __no_sanitize_unsigned
-#define __builtin_prefetch(p, i, j)
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
 #define DLL_LOCAL
@@ -107,14 +107,13 @@
 #endif
 
 #pragma inline_depth(69)
-#pragma warning(disable: 4018 4068 4097 4100 4103 4127 4146 4200 4201 4250)
-#pragma warning(disable: 4251 4335 4324 4503 4511 4512 4530 4577 4619 4625 4626)
-#pragma warning(disable: 4668 4710 4711 4786 4820 4996 5026 5027)
-#pragma warning(disable: 26110 26135 26400 26401 26408 26409 26426 26429 26432)
-#pragma warning(disable: 26433 26434 26438 26440 26443 26446 26447 26455 26457)
-#pragma warning(disable: 26462 26472 26494 26496 26497 28125 26477 26481 26482)
-#pragma warning(disable: 26485 26486 26487 26489 26492 26493 26812 26814 26818)
-#pragma warning(disable: 26819 26826)
+#pragma warning(disable: 4018 4068 4097 4100 4103 4127 4146 4200 4201 4250 4251)
+#pragma warning(disable: 4335 4324 4503 4511 4512 4530 4577 4619 4625 4626)
+#pragma warning(disable: 4668 4710 4711 4786 4820 4996 5026 5027 26110 26135)
+#pragma warning(disable: 26400 26401 26408 26409 26426 26429 26432 26433 26434)
+#pragma warning(disable: 26438 26440 26443 26446 26447 26455 26457 26462 26472)
+#pragma warning(disable: 26494 26496 26497 28125 26477 26481 26482 26485 26486)
+#pragma warning(disable: 26487 26489 26492 26493 26812 26814 26818 26819 26826)
 
 #ifndef WIN32
 #define WIN32
@@ -422,20 +421,12 @@ EXTERNC_
 
 #else // _WIN32
 
+#define __BSD_VISIBLE		1
 #define _DARWIN_C_SOURCE
-#define _FILE_OFFSET_BITS	64
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#ifndef _LARGEFILE_SOURCE
-#define _LARGEFILE_SOURCE	1
-#define _LARGEFILE64_SOURCE	1
-#endif
-#ifndef _REENTRANT
-#define _REENTRANT
-#endif
 #define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_15_0
-#define __BSD_VISIBLE		1
 
 #include <ctype.h>
 #include <unistd.h>
@@ -453,6 +444,7 @@ EXTERNC_
 #include <strings.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+
 #define __cdecl
 #define __declspec(x)
 #ifndef __fastcall
