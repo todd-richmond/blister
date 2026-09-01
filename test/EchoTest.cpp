@@ -110,7 +110,7 @@ public:
 
 static EchoTest *etp;
 static atomic<uint> errs, ops;
-static atomic loops(MAXLLONG);
+static atomic loops(LLONG_MAX);
 static volatile sig_atomic_t qflag;
 alignas(64) static atomic<usec_t> usecs;
 

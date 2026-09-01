@@ -81,15 +81,7 @@
 				WARN_DISABLE(w)
 
 #ifdef __cplusplus
-#if __cplusplus <= 201103L
-#define CPLUSPLUS	11
-#elif __cplusplus <= 201402L
-#define CPLUSPLUS	14
-#elif __cplusplus <= 201703L
-#define CPLUSPLUS	17
-#elif __cplusplus <= 202002L
-#define CPLUSPLUS	20
-#elif __cplusplus <= 202302L
+#if __cplusplus <= 202302L
 #define CPLUSPLUS	23
 #else
 #define CPLUSPLUS	26
@@ -540,44 +532,6 @@ extern int wcscasecmp(const wchar_t *, const wchar_t *);
 EXTERNC_
 #endif
 #endif // _WIN32
-
-// primitive type value limits
-#define MAXUCHAR	~(uchar)0
-#ifndef MAXCHAR
-#define MAXCHAR		(char)(MAXUCHAR >> 1)
-#endif
-#ifndef MINCHAR
-#define MINCHAR		(char)~MAXCHAR
-#endif
-#define MAXUSHORT	~(ushort)0
-#ifndef MAXSHORT
-#define MAXSHORT	(short)(MAXUSHORT >> 1)
-#endif
-#ifndef MINSHORT
-#define MINSHORT	(short)~MAXSHORT
-#endif
-#ifndef MAXUINT
-#define MAXUINT		~(uint)0
-#endif
-#ifndef MAXINT
-#define MAXINT		(int)(MAXUINT >> 1)
-#endif
-#ifndef MININT
-#define MININT		(int)~MAXINT
-#endif
-#define MAXULONG	~(ulong)0
-#ifndef MAXLONG
-#define MAXLONG		(long)(MAXULONG >> 1)
-#endif
-#ifndef MINLONG
-#define MINLONG		(long)~MAXLONG
-#endif
-#define MAXULLONG	~(ullong)0
-#define MAXLLONG	(llong)(MAXULLONG >> 1)
-#define MINLLONG	(llong)~MAXLLONG
-#define MAXBYTE		0xff
-#define MAXWORD		0xffff
-#define MAXDWORD	0xffffffff
 
 #define ZERO(x)		memset(&(x), 0, sizeof (x))
 

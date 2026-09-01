@@ -50,7 +50,7 @@ static char *dbuf;
 static uint dsz;
 
 static atomic<ullong> gops = 0, gerrs = 0, gusecs = 0;
-static atomic loops = MAXLLONG;
+static atomic loops = LLONG_MAX;
 static atomic qflag = false;
 
 // consumes one unit of the shared loop budget; every completed round trip
