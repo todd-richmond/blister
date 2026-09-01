@@ -745,77 +745,47 @@ private:
 	Node *allnext = nullptr;
     };
 
-    // ABA-safe lock-free Treiber stack head
+    // ABA-safe lock-free Treiber stack head (64-bit: 48-bit ptr + 16-bit tag)
     template<class N>
     class TaggedStack: nocopy {
-    public:
-	TaggedStack() {
-	    if constexpr (WIDE)
-		head.store(Wide {nullptr, 0}, memory_order_relaxed);
-	    else
-		head.store(0, memory_order_relaxed);
-	}
+	static_assert(atomic<uint64_t>::is_always_lock_free);
+	static_assert(sizeof(N *) == 8, "TaggedStack requires 64-bit pointers");
 
-	void push(N *n) {
-	    if constexpr (WIDE) {
-		Wide old = head.load(memory_order_relaxed);
-
-		do {
-		    n->next.store(old.ptr, memory_order_relaxed);
-		} while (!head.compare_exchange_weak(old, Wide {n, old.tag + 1},
-		    memory_order_release, memory_order_relaxed));
-	    } else {
-		uint64_t old = head.load(memory_order_relaxed);
-
-		do {
-		    n->next.store(unpack(old), memory_order_relaxed);
-		} while (!head.compare_exchange_weak(old, pack(n, old + ONE),
-		    memory_order_release, memory_order_relaxed));
-	    }
-	}
-	N *pop(void) {
-	    if constexpr (WIDE) {
-		Wide old = head.load(memory_order_acquire);
-
-		while (old.ptr) {
-		    Wide nw {old.ptr->next.load(memory_order_acquire), old.tag +
-			1};
-
-		    if (head.compare_exchange_weak(old, nw,
-			memory_order_acq_rel, memory_order_acquire))
-			return old.ptr;
-		}
-		return nullptr;
-	    } else {
-		uint64_t old = head.load(memory_order_acquire);
-		N *p;
-
-		while ((p = unpack(old)) != nullptr) {
-		    uint64_t nw = pack(p->next.load(memory_order_acquire),
-			old + ONE);
-
-		    if (head.compare_exchange_weak(old, nw,
-			memory_order_acq_rel, memory_order_acquire))
-			return p;
-		}
-		return nullptr;
-	    }
-	}
-
-    private:
-	struct Wide { N *ptr; uintptr_t tag; };
-
-	static constexpr bool WIDE = atomic<Wide>::is_always_lock_free;
 	static constexpr uint64_t PMASK = 0xFFFFFFFFFFFFULL;
-	static constexpr uint64_t ONE = (uint64_t)1 << 48;
-
-	conditional_t<WIDE, atomic<Wide>, atomic<uint64_t>> head;
+	static constexpr uint64_t ONE   = (uint64_t)1 << 48;
+	atomic<uint64_t> head;
 
 	static __forceinline N *unpack(uint64_t v) {
 	    return (N *)(uintptr_t)(v & PMASK);
 	}
 	static __forceinline uint64_t pack(N *p, uint64_t tagged) {
 	    return ((uint64_t)(uintptr_t)p & PMASK) | (tagged & ~PMASK);
+	}
+
+    public:
+	TaggedStack() { head.store(0, memory_order_relaxed); }
+
+	void push(N *n) {
+	    uint64_t old = head.load(memory_order_relaxed);
+
+	    do {
+		n->next.store(unpack(old), memory_order_relaxed);
+	    } while (!head.compare_exchange_weak(old, pack(n, old + ONE),
+		memory_order_release, memory_order_relaxed));
+	}
+
+	N *pop(void) {
+	    uint64_t old = head.load(memory_order_acquire);
+	    N *p;
+
+	    while ((p = unpack(old)) != nullptr) {
+		uint64_t nw = pack(p->next.load(memory_order_acquire), old + ONE);
+
+		if (head.compare_exchange_weak(old, nw,
+		    memory_order_acq_rel, memory_order_acquire))
+		    return p;
+	    }
+	    return nullptr;
 	}
     };
 
