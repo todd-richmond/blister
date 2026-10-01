@@ -73,8 +73,8 @@
 #define WARN_DISABLE(w)		PRAGMA_STR(GCC diagnostic ignored #w)
 #endif
 #define WARN_ENABLE(w)		PRAGMA_STR(GCC diagnostic warning #w)
-#define WARN_POP()		PRAGMA_STR(GCC pop_options)
-#define WARN_PUSH()		PRAGMA_STR(GCC push_options)
+#define WARN_POP()		PRAGMA_STR(GCC diagnostic pop)
+#define WARN_PUSH()		PRAGMA_STR(GCC diagnostic push)
 #endif
 
 #define WARN_PUSH_DISABLE(w)	WARN_PUSH() \

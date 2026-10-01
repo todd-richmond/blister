@@ -184,10 +184,10 @@ extern BLISTER Timing &dtiming;
 // time a code block
 class BLISTER TimingEntry: nocopy {
 public:
-    template<class C> __forceinline explicit TimingEntry(const C &key,
-	Timing &t = dtiming): key(key), start(t.start()), timing(t) {}
-    template<size_t N> __forceinline explicit TimingEntry(const tchar (&key)[N],
-	Timing &t = dtiming): key(key), start(t.start()), timing(t) {}
+    template<class C> __forceinline explicit TimingEntry(const C &k,
+	Timing &t = dtiming): key(k), start(t.start()), timing(t) {}
+    template<size_t N> __forceinline explicit TimingEntry(const tchar (&k)[N],
+	Timing &t = dtiming): key(k), start(t.start()), timing(t) {}
     __forceinline ~TimingEntry() {
 	if (start != (timing_t)-1)
 	    timing.add(key, Timing::now() - start);

@@ -24,14 +24,13 @@
 #include "Thread.h"
 
 /*
- * Time and size limited LRU Cache
+ * Time, size and count limited LRU Cache
  */
 using lruhash_t = uint64_t;
 
 class BLISTER LRUCacheEntry {
 public:
     LRUCacheEntry(const void *d, ulong s): hash(rapid_hash(d, s)) {}
-    LRUCacheEntry(const LRUCacheEntry &ce) = default;
 
     __forceinline operator bool() const { return data != nullptr; }
     __forceinline operator lruhash_t() const { return hash; }
@@ -50,16 +49,18 @@ private:
 template<typename C>
 class BLISTER LRUCache: nocopy {
 public:
-    using lru_kv = pair<lruhash_t, C>;
-    using lru_list = list<lru_kv>;
+    using lru_list = list<C>;
     using lru_map = unordered_map<lruhash_t, typename lru_list::iterator>;
+    static constexpr ulong LRUCACHE_COUNT = 0;
     static constexpr ulong LRUCACHE_SIZE = 10UL * 1024 * 1024;
     static constexpr msec_t LRUCACHE_TIME = 5UL * 60 * 1000;
 
-    explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME):
-	maxsz(sz), maxtm(tm) {
+    explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME,
+	ulong cnt = LRUCACHE_COUNT): maxcnt(cnt), maxsz(sz), maxtm(tm) {
 	static_assert(is_base_of_v<LRUCacheEntry, C>, "C must derive from LRUCacheEntry");
-	cache_map.reserve(sz / 1024 > 128 ? sz / 1024 : 128);
+	ulong heur = sz / 1024 > 128 ? sz / 1024 : 128;
+
+	cache_map.reserve(cnt && cnt < heur ? cnt : heur);
     }
     ~LRUCache() { clear(); }
 
@@ -72,23 +73,23 @@ public:
 	cursz = 0;
 	last_purge = 0;
     }
-    const C get(const void *data, ulong sz) {
+    C get(const void *data, ulong sz) {
 	C entry(data, sz);
 	lru_list freed;
 	msec_t now = LIKELY(maxtm) ? mticks() : 0;
 	FastSpinLocker lkr(lock);
 
 	if (LIKELY(maxtm) && now - last_purge > maxtm / 2) {
-	    purge(0, now, freed);
+	    purge(now, freed);
 	    last_purge = now;
 	}
 	auto it = cache_map.find(entry);
-	if (it != cache_map.end() && it->second->second.sz == sz &&
-	    (!maxtm || now - it->second->second.touch() <= maxtm)) {
+	if (it != cache_map.end() &&
+	    (!maxtm || now - it->second->touch() <= maxtm)) {
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
 	    if (LIKELY(maxtm))
-		it->second->second.touch(now);
-	    return it->second->second;
+		it->second->touch(now);
+	    return *it->second;
 	}
 	return entry;
     }
@@ -102,73 +103,62 @@ public:
 	msec_t now = maxtm ? mticks() : 0;
 	lru_list freed;
 	shared_ptr<const void> old_data;
-	shared_ptr<const void> newdata(data, [](const void *p) {
+
+	entry.data = shared_ptr<const void>(data, [](const void *p) {
 	    delete [] (const char *)p;
 	});
+	entry.sz = sz;
+	entry.touch(now);
+
 	FastSpinLocker lkr(lock);
-	auto it = cache_map.find(entry);
+	auto [it, added] = cache_map.try_emplace(lruhash_t(entry));
 
-	if (it != cache_map.end()) {
-	    ulong old_sz = it->second->second.sz;
-
-	    old_data = it->second->second.data;
-	    entry.data = newdata;
-	    entry.sz = sz;
-	    entry.touch(now);
-	    it->second->second = entry;
-	    cache_list.splice(cache_list.begin(), cache_list, it->second);
-	    cursz -= old_sz;
-	    purge(sz, now, freed);
-	    cursz += sz;
+	if (added) {
+	    cache_list.emplace_front(entry);
+	    it->second = cache_list.begin();
 	} else {
-	    purge(sz, now, freed);
-	    entry.data = newdata;
-	    entry.sz = sz;
-	    entry.touch(now);
-	    cursz += sz;
-	    cache_list.emplace_front(lruhash_t(entry), entry);
-	    cache_map[entry] = cache_list.begin();
+	    C &node = *it->second;
+
+	    old_data = std::move(node.data);
+	    cursz -= node.sz;
+	    node = entry;
+	    cache_list.splice(cache_list.begin(), cache_list, it->second);
 	}
+	cursz += sz;
+	purge(now, freed);
 	return true;
     }
-    void resize(ulong sz, msec_t tm = 0) {
+    void resize(ulong sz, msec_t tm = 0, ulong cnt = 0) {
 	lru_list freed;
 	FastSpinLocker lkr(lock);
 
-	maxtm = tm;
-	if (sz < maxsz)
-	    purge(maxsz - sz, maxtm ? mticks() : 0, freed);
+	maxcnt = cnt;
 	maxsz = sz;
+	maxtm = tm;
+	purge(maxtm ? mticks() : 0, freed);
     }
 
 private:
     SpinLock lock;
     lru_list cache_list;
     lru_map cache_map;
-    ulong cursz = 0, maxsz;
+    ulong cursz = 0, maxcnt, maxsz;
     msec_t maxtm, last_purge = 0;
 
-    void purge(ulong sz, msec_t now, lru_list &freed) {
+    void evict(lru_list &freed) {
+	cursz -= cache_list.back().sz;
+	cache_map.erase(lruhash_t(cache_list.back()));
+	freed.splice(freed.end(), cache_list, prev(cache_list.end()));
+    }
+    void purge(msec_t now, lru_list &freed) {
 	if (maxtm && now) {
-	    while (!cache_list.empty()) {
-		auto &back_entry = cache_list.back();
-		if (LIKELY(now - back_entry.second.touch() > maxtm)) {
-		    cursz -= back_entry.second.sz;
-		    cache_map.erase(back_entry.first);
-		    freed.splice(freed.end(), cache_list,
-			prev(cache_list.end()));
-		} else {
-		    break;
-		}
-	    }
+	    while (!cache_list.empty() &&
+		LIKELY(now - cache_list.back().touch() > maxtm))
+		evict(freed);
 	}
-	while (UNLIKELY(cursz + sz > maxsz) && !cache_list.empty()) {
-	    auto &back_entry = cache_list.back();
-
-	    cursz -= back_entry.second.sz;
-	    cache_map.erase(back_entry.first);
-	    freed.splice(freed.end(), cache_list, prev(cache_list.end()));
-	}
+	while (UNLIKELY(cursz > maxsz ||
+	    (maxcnt && cache_map.size() > maxcnt)) && !cache_list.empty())
+	    evict(freed);
     }
 };
 

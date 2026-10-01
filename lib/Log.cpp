@@ -423,9 +423,11 @@ void Log::LogFile::unlock(void) const {
 	(void)lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
 }
 
+WARN_PUSH_DISABLE(-Wstrict-overflow)
 Log::Log(Level level): cv(lck), ft(*this), lvl(level) {
     format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
 }
+WARN_POP()
 
 Log::~Log() {
     stop();

@@ -63,7 +63,7 @@ if(CHECK_ALL)
 endif()
 option(COMPILE_PCH "Use precompiled headers" ON)
 
-if(NOT CMAKE_BUILD_TYPE STREQUAL Debug)
+if(NOT CMAKE_BUILD_TYPE MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
     include(CheckIPOSupported)
     check_ipo_supported(RESULT ipo)
     if(ipo AND NOT CHECK_CLANG_TIDY AND NOT CHECK_TSAN)

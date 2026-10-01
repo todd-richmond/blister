@@ -100,7 +100,7 @@ Multi-process hardening on top of `HTTPServer` for production services:
 
 ## `LRUCache.h`
 
-- `LRUCache<C>` (`C` deriving from `LRUCacheEntry`) — header-only, size- and time-bounded LRU cache.
+- `LRUCache<C>` (`C` deriving from `LRUCacheEntry`) — header-only, size-, count- and time-bounded LRU cache.
 - Entries hashed with `rapid_hash`, held via `shared_ptr<const void>` with a custom deleter.
 - Tracked in a splice-friendly `list` + `unordered_map` (list order = recency) under a single `SpinLock`.
 - `get()`/`put()` opportunistically purge expired/oversized entries inline rather than using a background thread.
