@@ -94,7 +94,7 @@ public:
     struct KV {
 	__forceinline KV(tstring_view k, const T &v): key(k), val(v) {}
 	template<size_t N>
-	constexpr KV(const tchar (&k)[N], const T &v): key(k, N - 1), val(v) {}
+	constexpr KV(const tchar (&k)[N], const T &v): key(k), val(v) {}
 
 	tstring_view key;
 	const T &val;
@@ -241,7 +241,10 @@ public:
     LOG_KV_FN(mod,      "mod")
     LOG_KV_FN(status,   "sts")
 #undef LOG_KV_FN
-    static tbufferstream &quote(tbufferstream &os, const tchar *s);
+    static tbufferstream &quote(tbufferstream &os, tstring_view s);
+    static tbufferstream &quote(tbufferstream &os, const tchar *s) {
+	return quote(os, tstring_view(s));
+    }
     static const tchar *section(void) { return T("log"); }
     static Level str2enum(const tchar *lvl);
 
@@ -388,8 +391,9 @@ private:
 		    } else {
 			tbufferstream buf;
 
-			buf << val << '\0';
-			quote(tlsd.strm, buf.str());
+			buf << val;
+			quote(tlsd.strm, tstring_view(buf.str(),
+			    (size_t)buf.size()));
 		    }
 		    return *this;
 		}
@@ -419,7 +423,8 @@ private:
 		quote(tlsd.strm, val);
 		tlsd.sep = ' ';
 	    } else {
-		write_str(tlsd, val, (streamsize)(N - 1));
+		write_str(tlsd, val,
+		    (streamsize)char_traits<tchar>::length(val));
 	    }
 	}
 	return *this;
@@ -477,7 +482,7 @@ template<> inline Log &Log::log(Tlsdata &tlsd, const tstring &val) {
 template<> inline Log &Log::log(Tlsdata &tlsd, const tstring_view &val) {
     if (LIKELY(tlsd.clvl != None)) {
 	if (tlsd.sep == '=') {
-	    quote(tlsd.strm, tstring(val).c_str());
+	    quote(tlsd.strm, val);
 	    tlsd.sep = ' ';
 	} else {
 	    write_str(tlsd, val.data(), (streamsize)val.size());

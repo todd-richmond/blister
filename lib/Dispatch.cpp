@@ -93,6 +93,8 @@ Dispatcher::Dispatcher(const Config &config): cfg(config),
 
 WARN_DISABLE(26430)
 bool Dispatcher::exec() {
+    bool counted = maxthreads != 0;
+
     olock.lock();
     while (rlist) {
 	dspflag_t flags;
@@ -118,9 +120,11 @@ bool Dispatcher::exec() {
 	}
 	obj->flags = (flags & ~DSP_Ready) | DSP_Active;
 	olock.unlock();
-	scanning.fetch_sub(1, memory_order_release);
+	if (counted) {
+	    scanning.fetch_sub(1, memory_order_seq_cst);
+	    counted = false;
+	}
 	obj->dcb(obj);
-	scanning.fetch_add(1, memory_order_release);
 	olock.lock();
 	flags = obj->flags &= ~DSP_Active;
 	if (UNLIKELY(flags & DSP_PostCB)) {
@@ -148,27 +152,38 @@ bool Dispatcher::exec() {
 	}
     }
     olock.unlock();
+    if (counted)
+	scanning.fetch_sub(1, memory_order_seq_cst);
     return !shutdown;
 }
 
 int Dispatcher::run() {
     static uint cpus = Processor::count();
 
+    // producers skip wakeups while this thread counts as scanning or before
+    // it is a registered waiter so recheck rlist once registered
+    auto pending = [this] { return rlist.size() != 0; };
+
     priority(-1);
     while (exec()) {
-	scanning.fetch_sub(1, memory_order_relaxed);
+	dspsema4_t::WaitResult r;
+
 	if (workers < cpus) {
 #ifdef THREAD_PAUSE                     // enqueue then spin before parking
 	    if (scanning.load(memory_order_acquire) == 0)
-		sema4.acquire(1024);
+		r = sema4.wait(INFINITE, 1024, pending);
 	    else
-		sema4.try_acquire_for(MAX_WAIT_TIME);
+		r = sema4.wait(MAX_WAIT_TIME, 0, pending);
 #else
-	    sema4.acquire();
+	    r = sema4.wait(INFINITE, 0, pending);
 #endif
-	} else if (!sema4.try_acquire_for(MAX_WAIT_TIME)) {
+	} else if ((r = sema4.wait(MAX_WAIT_TIME, 0, pending)) ==
+	    dspsema4_t::Timeout) {
 	    break;
 	}
+	// a release() already counted this thread as scanning
+	if (r != dspsema4_t::Released)
+	    scanning.fetch_add(1, memory_order_relaxed);
     }
     workers--;
     return 0;
@@ -714,7 +729,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
     // phase 4: batch wake threads
     if (LIKELY(rcnt && maxthreads)) {
 	uint maxwake = (rcnt + 1) / 2;
-	uint_fast32_t s = scanning.load(memory_order_acquire);
+	uint_fast32_t s = scanning.load(memory_order_seq_cst);
 
 	while (rcnt && rsz > s) {
 	    uint done;
@@ -741,7 +756,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		rcnt -= done;
 	    }
 	    rsz = rlist.size();
-	    s = scanning.load(memory_order_acquire);
+	    s = scanning.load(memory_order_seq_cst);
 	}
     } else if (rcnt && polling.load(memory_order_relaxed)) {
 	wakeup(0);
@@ -862,7 +877,7 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong msec) {
 	if (UNLIKELY(tmt < due)) {
 	    due = tmt;
 	    tlock.unlock();
-	    wakeup((ulong)(due - now));
+	    wakeup((ulong)(tmt - now));
 	} else {
 	    tlock.unlock();
 	}
@@ -1059,7 +1074,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     }
     if (b) {
 	if (tmt)
-	    wakeup((ulong)(due - now));
+	    wakeup((ulong)(tmt - now));
 	return;
     }
 #ifdef DSP_WIN32_ASYNC
@@ -1090,10 +1105,22 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     evt.events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLONESHOT;
     // EPOLLET requires read to completion, but is ok for accept
 #ifdef EPOLLEXCLUSIVE
-    if (UNLIKELY(m == DispatchAccept))
+    if (UNLIKELY(m == DispatchAccept)) {
+	// registration persists and EPOLL_CTL_MOD rejects EPOLLEXCLUSIVE
+	if (op == EPOLL_CTL_MOD) {
+	    if (tmt)
+		wakeup((ulong)(tmt - now));
+	    return;
+	}
 	evt.events = (evt.events & ~EPOLLONESHOT) | EPOLLET | EPOLLEXCLUSIVE;
+    }
 #endif
-    RETRY(epoll_ctl(evtfd, op, ds.fd(), &evt));
+    int ret;
+
+    RETRY(ret = epoll_ctl(evtfd, op, ds.fd(), &evt));
+    // closing the fd silently removed it from epoll so re-add the new fd
+    if (UNLIKELY(ret == -1 && op == EPOLL_CTL_MOD && errno == ENOENT))
+	RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, ds.fd(), &evt));
 #elif defined(DSP_KQUEUE)
     event_t chgs[6], evts[MIN_EVENTS];
     uint nevts = 0;
@@ -1118,7 +1145,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     }
     if (tmt) {
 	EV_SET(&chgs[nevts++], 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0,
-	    (ulong)(due - now), NULL);
+	    (ulong)(tmt - now), NULL);
 	tmt = 0;
     }
     RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS, &ts));
@@ -1126,7 +1153,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	handleEvents(evts, nevts);
 #endif
     if (tmt)
-	wakeup((ulong)(due - now));
+	wakeup((ulong)(tmt - now));
 #endif
 }
 
@@ -1193,7 +1220,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	olock.unlock();
 	rsz = rlist.size();
 	if (LIKELY(maxthreads)) {
-	    uint_fast32_t s = scanning.load(memory_order_acquire);
+	    uint_fast32_t s = scanning.load(memory_order_seq_cst);
 
 	    while (rsz > s) {
 		if (scanning.compare_exchange_weak(s, s + 1,
@@ -1210,7 +1237,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 		    }
 		}
 		rsz = rlist.size();
-		s = scanning.load(memory_order_acquire);
+		s = scanning.load(memory_order_seq_cst);
 	    }
 	} else if (polling.load(memory_order_relaxed)) {
 	    wakeup(0);

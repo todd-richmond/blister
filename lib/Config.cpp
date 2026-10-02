@@ -31,8 +31,9 @@
 #define ENDL '\n'
 #endif
 
-constexpr uint BUFSZ = 128 * 1024U;
+constexpr uint MINBUFSZ = 4 * 1024U;
 constexpr uint KEYSZ = 256;
+constexpr uint MAXEXPAND = 64;
 
 void Config::clear_locked(void) {
     for (auto it = amap.begin(); it != amap.end(); ++it)
@@ -76,6 +77,7 @@ void Config::erase(const tchar *key, const tchar *sect) {
 
 bool Config::expandkv(const KV *kv, tstring &val) const {
     tstring::size_type epos, spos, search = 0;
+    uint expansions = 0;
 
     val.assign(kv->val, kv->vlen);
     while ((spos = val.find('$', search)) != val.npos) {
@@ -105,6 +107,9 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	    search = epos + 1;
 	    continue;
 	}
+	// stop runaway expansion of self referencing values
+	if (++expansions > MAXEXPAND)
+	    break;
 	repl = it->second->val;
 	repllen = it->second->vlen;
 	val.replace(spos, epos - spos + 1, repl, repllen);
@@ -232,7 +237,7 @@ Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
 	++val;
 	vlen -= 2;
     }
-    kv = (KV *)new char[offsetof(KV, val) + klen + vlen + 2];
+    kv = (KV *)new char[offsetof(KV, val) + (klen + vlen + 2) * sizeof (tchar)];
     kv->quote = quote;
     kv->klen = (uint)klen;
     kv->vlen = (uint)vlen;
@@ -240,7 +245,6 @@ Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     kv->val[vlen] = '\0';
     memcpy(kv->val + vlen + 1, key, klen * sizeof (tchar));
     kv->val[vlen + 1 + klen] = '\0';
-    kv->key = kv->val + vlen + 1;
     kv->expand = false;
     if (LIKELY(vlen > 3 && quote != '\'')) {
 #ifdef _UNICODE
@@ -277,7 +281,7 @@ ulong Config::open_file(const tstring &file, tifstream &is, unique_ptr<tchar[]>
 
     if (stat(tstringtoachar(file), &sbuf))
 	return 0;
-    sz = sbuf.st_size > (off_t)BUFSZ ? (uint)sbuf.st_size : BUFSZ;
+    sz = max((uint)sbuf.st_size + 1, MINBUFSZ);
     fbuf.reset(new tchar[sz]);
     is.rdbuf()->pubsetbuf(fbuf.get(), sz);
     is.open(file.c_str());
@@ -450,7 +454,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 
     if (it == amap.end()) {
 	kv = newkv(fkey, fklen, val, vlen);
-	amap.emplace(kv->key, kv);
+	amap.emplace(kv->key(), kv);
 	return *this;
     }
     oldkv = it->second;
@@ -468,13 +472,17 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	    s.append(val, vlen);
 	if (oldkv->quote)
 	    s += oldkv->quote;
-	kv = newkv(oldkv->key, oldkv->klen, s.c_str(), s.size());
+	kv = newkv(oldkv->key(), oldkv->klen, s.c_str(), s.size());
     } else {
 	kv = newkv(fkey, fklen, val, vlen);
     }
-    amap.erase(it);
+    // reuse the map node rather than erase + emplace
+    auto nh = amap.extract(it);
+
+    nh.key() = kv->key();
+    nh.mapped() = kv;
+    amap.insert(move(nh));
     delkv(oldkv);
-    amap.emplace(kv->key, kv);
     return *this;
 }
 

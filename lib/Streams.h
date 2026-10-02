@@ -103,7 +103,7 @@ public:
 		(int)c : -1;
 	}
 	if (LIKELY(gp < egptr()))
-	    return *gp;
+	    return (uchar)*gp;
 
 	char *pb = pbase();
 	const char *pp = pptr();

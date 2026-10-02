@@ -666,20 +666,10 @@ public:
 	return (uint)waiters.load(memory_order_acquire);
     }
 
-    void acquire(uint spin = 0) {
-	Node *n = claim();
+    enum WaitResult: uint { Released, Timeout, Cancelled };
 
-	n->state.store(PENDING, memory_order_relaxed);
-	pushwait(n);
-	for (uint u = 0; u < spin; ++u) {
-	    if (UNLIKELY(n->sema4.try_acquire())) {
-		recycle(n);
-		return;
-	    }
-	    spin_release();
-	}
-	n->sema4.acquire();
-	recycle(n);
+    void acquire(uint spin = 0) {
+	(void)wait(INFINITE, spin, [] { return false; });
     }
     __forceinline uint broadcast(void) { return (uint)-1 - release((uint)-1); }
     uint release(uint count = 1) {
@@ -703,36 +693,31 @@ public:
 
     __forceinline bool try_acquire(void) { return false; }  // NOSONAR
     bool try_acquire_for(ulong msec, uint spin = 0) {
+	return wait(msec, spin, [] { return false; }) == Released;
+    }
+    // release() drops wakeups when no waiter is registered, so cancel() is
+    // tested after registering to let callers recheck for missed work
+    template<class P>
+    WaitResult wait(ulong msec, uint spin, P cancel) {
 	Node *n = claim();
-	uint s;
 
 	n->state.store(PENDING, memory_order_relaxed);
 	pushwait(n);
+	if (UNLIKELY(cancel()))
+	    return unwait(n) ? Cancelled : Released;
 	for (uint u = 0; u < spin; ++u) {
 	    if (UNLIKELY(n->sema4.try_acquire())) {
 		recycle(n);
-		return true;
+		return Released;
 	    }
 	    spin_release();
 	}
-	if (UNLIKELY(msec == INFINITE)) {
-	    n->sema4.acquire();
+	if (LIKELY(msec == INFINITE ? (n->sema4.acquire(), true) :
+	    n->sema4.try_acquire_for(msec))) {
 	    recycle(n);
-	    return true;
+	    return Released;
 	}
-	if (LIKELY(n->sema4.try_acquire_for(msec))) {
-	    recycle(n);
-	    return true;
-	}
-	s = PENDING;
-	if (LIKELY(n->state.compare_exchange_strong(s, CANCELLED,
-	    memory_order_acq_rel, memory_order_acquire))) {
-	    waiters.fetch_sub(1, memory_order_acq_rel);
-	    return false;
-	}
-	n->sema4.acquire();
-	recycle(n);
-	return true;
+	return unwait(n) ? Timeout : Released;
     }
 
 private:
@@ -817,8 +802,21 @@ private:
     }
     __forceinline void recycle(Node *n) { freelist.push(n); }
     __forceinline void pushwait(Node *n) {
-	waiters.fetch_add(1, memory_order_acq_rel);
+	waiters.fetch_add(1, memory_order_seq_cst);
 	waitstack.push(n);
+    }
+    // cancel a pending wait or consume a release already in flight
+    bool unwait(Node *n) {
+	uint s = PENDING;
+
+	if (LIKELY(n->state.compare_exchange_strong(s, CANCELLED,
+	    memory_order_acq_rel, memory_order_acquire))) {
+	    waiters.fetch_sub(1, memory_order_acq_rel);
+	    return true;
+	}
+	n->sema4.acquire();
+	recycle(n);
+	return false;
     }
     Node *popwait(void) {
 	for (uint i = 0; ; ++i) {
@@ -826,7 +824,7 @@ private:
 
 	    if (LIKELY(n != nullptr))
 		return n;
-	    if (LIKELY(!waiters.load(memory_order_acquire)))
+	    if (LIKELY(!waiters.load(memory_order_seq_cst)))
 		return nullptr;
 	    spin_release(LIKELY(i < 128), true);
 	}
@@ -983,9 +981,8 @@ public:
 	(void)msec;
 	return semop(op);
 #else
-	timespec ts;
+	timespec ts{};
 
-	clock_gettime(CLOCK_REALTIME_COARSE, &ts);	// NOSONAR
 	time_adjust_msec(&ts, msec);
 	do {
 	    if (LIKELY(!semtimedop(hdl, &op, 1, &ts)))
@@ -1021,10 +1018,7 @@ public:
 	cnt.fetch_add(1, memory_order_relaxed);
     }
     __forceinline bool release(void) {
-	if (cnt.fetch_sub(1, memory_order_release) != 1)
-	    return false;
-	atomic_thread_fence(memory_order_acquire);
-	return true;
+	return cnt.fetch_sub(1, memory_order_acq_rel) == 1;
     }
 
 private:

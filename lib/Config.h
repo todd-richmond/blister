@@ -96,7 +96,7 @@ public:
     template<size_t N>
     tstring get(const tchar (&key)[N], const tchar *def = nullptr, const tchar
 	*sect = nullptr) const {
-	return get(tstring_view(key, N - 1), def, sect);
+	return get(tstring_view(key), def, sect);
     }
     tstring get(const tstring &key) const { return get(key.c_str()); }
     tstring get(const tstring &key, const tstring &def) const {
@@ -110,7 +110,7 @@ public:
     template<size_t N>
     bool get(const tchar (&key)[N], bool def, const tchar *sect = nullptr)
 	const {
-	return get(tstring_view(key, N - 1), def, sect);
+	return get(tstring_view(key), def, sect);
     }
     double get(const tchar *key, double def, const tchar *sect = nullptr)
 	const {
@@ -120,7 +120,7 @@ public:
     template<size_t N>
     double get(const tchar (&key)[N], double def, const tchar *sect = nullptr)
 	const {
-	return get_num(tstring_view(key, N - 1), def, sect,
+	return get_num(tstring_view(key), def, sect,
 	    [](const tchar *s, size_t) { return atod<double>(s); });
     }
     float get(const tchar *key, float def, const tchar *sect = nullptr) const {
@@ -129,7 +129,7 @@ public:
     template<size_t N>
     float get(const tchar (&key)[N], float def, const tchar *sect = nullptr)
 	const {
-	return (float)get_num(tstring_view(key, N - 1), (double)def, sect,
+	return (float)get_num(tstring_view(key), (double)def, sect,
 	    [](const tchar *s, size_t) { return atod<double>(s); });
     }
     int get(const tchar *key, int def, const tchar *sect = nullptr) const {
@@ -137,7 +137,7 @@ public:
     }
     template<size_t N>
     int get(const tchar (&key)[N], int def, const tchar *sect = nullptr) const {
-	return (int)get_num(tstring_view(key, N - 1), (long)def, sect,
+	return (int)get_num(tstring_view(key), (long)def, sect,
 	    atoin<long>);
     }
     long get(const tchar *key, long def, const tchar *sect = nullptr) const {
@@ -146,7 +146,7 @@ public:
     template<size_t N>
     long get(const tchar (&key)[N], long def, const tchar *sect = nullptr)
 	const {
-	return get_num(tstring_view(key, N - 1), def, sect, atoin<long>);
+	return get_num(tstring_view(key), def, sect, atoin<long>);
     }
     llong get(const tchar *key, llong def, const tchar *sect = nullptr) const {
 	return get_num(key, def, sect, atoin<llong>);
@@ -154,7 +154,7 @@ public:
     template<size_t N>
     llong get(const tchar (&key)[N], llong def, const tchar *sect = nullptr)
 	const {
-	return get_num(tstring_view(key, N - 1), def, sect, atoin<llong>);
+	return get_num(tstring_view(key), def, sect, atoin<llong>);
     }
     short get(const tchar *key, short def, const tchar *sect = nullptr) const {
 	return (short)get(key, (long)def, sect);
@@ -162,7 +162,7 @@ public:
     template<size_t N>
     short get(const tchar (&key)[N], short def, const tchar *sect = nullptr)
 	const {
-	return (short)get_num(tstring_view(key, N - 1), (long)def, sect,
+	return (short)get_num(tstring_view(key), (long)def, sect,
 	    atoin<long>);
     }
     tchar get(const tchar *key, tchar def, const tchar *sect = nullptr) const {
@@ -180,7 +180,7 @@ public:
 
 	buf[0] = def; buf[1] = '\0';
 
-	auto &&s = get(tstring_view(key, N - 1), buf, sect);
+	auto &&s = get(tstring_view(key), buf, sect);
 	return s.empty() ? def : s[0];
     }
     uint get(const tchar *key, uint def, const tchar *sect = nullptr) const {
@@ -189,7 +189,7 @@ public:
     template<size_t N>
     uint get(const tchar (&key)[N], uint def, const tchar *sect = nullptr)
 	const {
-	return (uint)get_num(tstring_view(key, N - 1), (ulong)def, sect,
+	return (uint)get_num(tstring_view(key), (ulong)def, sect,
 	    atoun<ulong>);
     }
     ulong get(const tchar *key, ulong def, const tchar *sect = nullptr) const {
@@ -198,7 +198,7 @@ public:
     template<size_t N>
     ulong get(const tchar (&key)[N], ulong def, const tchar *sect = nullptr)
 	const {
-	return get_num(tstring_view(key, N - 1), def, sect, atoun<ulong>);
+	return get_num(tstring_view(key), def, sect, atoun<ulong>);
     }
     ullong get(const tchar *key, ullong def, const tchar *sect = nullptr)
 	const {
@@ -207,7 +207,7 @@ public:
     template<size_t N>
     ullong get(const tchar (&key)[N], ullong def, const tchar *sect = nullptr)
 	const {
-	return get_num(tstring_view(key, N - 1), def, sect, atoun<ullong>);
+	return get_num(tstring_view(key), def, sect, atoun<ullong>);
     }
     ushort get(const tchar *key, ushort def, const tchar *sect = nullptr)
 	const {
@@ -216,7 +216,7 @@ public:
     template<size_t N>
     ushort get(const tchar (&key)[N], ushort def, const tchar *sect = nullptr)
 	const {
-	return (ushort)get_num(tstring_view(key, N - 1), (ulong)def, sect,
+	return (ushort)get_num(tstring_view(key), (ulong)def, sect,
 	    atoun<ulong>);
     }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
@@ -268,12 +268,14 @@ protected:
 	unique_ptr<tchar[]> &fbuf);
 
 private:
+    // key is stored after val
     struct BLISTER KV {
-	const tchar *key;
 	uint klen, vlen;
 	bool expand;
 	tchar quote;
 	tchar val[];
+
+	const tchar *key(void) const { return val + vlen + 1; }
     };
 
     struct keyless {

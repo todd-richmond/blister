@@ -312,12 +312,14 @@ private:
 #endif
     // Lock optimized SizedObjectList counter
     struct ObjectListAtomicSize {
-	__forceinline void inc(void) { n.fetch_add(1, memory_order_relaxed); }
-	__forceinline void dec(void) { n.fetch_sub(1, memory_order_relaxed); }
+	__forceinline void inc(void) { n.fetch_add(1, memory_order_seq_cst); }
+	__forceinline void dec(void) {
+	    n.store(n.load(memory_order_relaxed) - 1, memory_order_relaxed);
+	}
 	__forceinline void add(uint v) { n.fetch_add(v, memory_order_relaxed); }
 	__forceinline void zero(void) { n.store(0, memory_order_relaxed); }
 	__forceinline uint get(void) const {
-	    return n.load(memory_order_relaxed);
+	    return n.load(memory_order_seq_cst);
 	}
 
 	atomic<uint> n = 0;

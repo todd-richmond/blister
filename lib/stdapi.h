@@ -770,6 +770,7 @@ EXTERNC_
 // common includes, defines and code for C++ software
 #ifdef __cplusplus
 
+#include <bit>
 #include <chrono>
 #include <functional>
 #include <iostream>
@@ -926,6 +927,12 @@ __forceinline T atoun(const tchar *str, size_t len) {
     }
     return (T)val;
 #else
+    for (size_t i = 0; i < len; ++i) {
+	if ((size_t)(tuchar)str[i] - '0' > 9) {
+	    len = i;
+	    break;
+	}
+    }
     if (UNLIKELY(len >= 8)) {
 	val = swar8(str);
 	str += 8;
@@ -1293,59 +1300,82 @@ __forceinline strhash_t bernstein_hash(const T *s, F xfrm = {}) {
     return ret;
 }
 
-// compile-time version for string literals
+// compile-time version for string literals - length folds for literals and
+// stays correct for partially filled arrays
 template<typename T1, size_t N, class F = decltype([](T1 c) { return c; })>
 constexpr strhash_t bernstein_hash(const T1 (&s)[N], F xfrm = {}) {
     static_assert(N > 0, "string literal required");
-    return bernstein_hash(s, N - 1, xfrm);
+    return bernstein_hash(s, char_traits<T1>::length(s), xfrm);
 }
 
 // rapidhash for arbitrary binary data
-static __forceinline strhash_t rapidmix(strhash_t a, strhash_t b) {
-#ifdef _MSC_VER
-    strhash_t hi;
-    ullong r = _umul128(a, b, &hi);
-
-    return r ^ hi;
-#elif defined(__SIZEOF_INT128__)
+__forceinline constexpr strhash_t rapidmix(strhash_t a, strhash_t b) {
+#if defined(__SIZEOF_INT128__)
     __uint128_t r = (__uint128_t)a * b;
 
     return (strhash_t)r ^ (strhash_t)(r >> 64);
 #else
+#ifdef _MSC_VER
+    if !consteval {
+	strhash_t hi;
+	ullong r = _umul128(a, b, &hi);
+
+	return r ^ hi;
+    }
+#endif
     strhash_t a_lo = (uint32_t)a, a_hi = a >> 32;
     strhash_t b_lo = (uint32_t)b, b_hi = b >> 32;
-    strhash_t cross = a_lo * b_hi + a_hi * b_lo;
-    strhash_t lo = a_lo * b_lo + (cross << 32);
-    strhash_t hi = a_hi * b_hi + (cross >> 32);
+    strhash_t ll = a_lo * b_lo, lh = a_lo * b_hi, hl = a_hi * b_lo;
+    strhash_t mid = (ll >> 32) + (uint32_t)lh + (uint32_t)hl;
+    strhash_t lo = (mid << 32) | (uint32_t)ll;
+    strhash_t hi = a_hi * b_hi + (lh >> 32) + (hl >> 32) + (mid >> 32);
 
     return lo ^ hi;
 #endif
 }
 
-inline strhash_t rapid_hash(const void *data, size_t len) {
+// native endian unaligned loads usable in constant expressions
+template<typename U, typename B>
+__forceinline constexpr U rapidload(const B *p) {
+    if consteval {
+	U u = 0;
+
+	for (size_t i = 0; i < sizeof (U); ++i) {
+	    size_t sh = endian::native == endian::little ? i : sizeof (U) - 1
+		- i;
+
+	    u |= (U)(uint8_t)p[i] << (sh * 8);
+	}
+	return u;
+    } else {
+	U u;
+
+	memcpy(&u, p, sizeof (u));
+	return u;
+    }
+}
+
+template<typename B> requires (sizeof (B) == 1)
+constexpr strhash_t rapid_hash(const B *p, size_t len) {
     static constexpr strhash_t RAPID_SECRET0 = 0x9e3779b97f4a7c15ULL;
     static constexpr strhash_t RAPID_SECRET1 = 0x6c62272e07bb0142ULL;
     static constexpr strhash_t RAPID_SECRET2 = 0x94d049bb133111ebULL;
     strhash_t a = RAPID_SECRET0 ^ (strhash_t)len;
     strhash_t b = RAPID_SECRET1;
     strhash_t c = RAPID_SECRET2;
-    const uint8_t *p = (const uint8_t *)data;
     strhash_t r0, r1;
 
     if (LIKELY(len <= 16)) {
 	r0 = r1 = 0;
 	if (LIKELY(len >= 8)) {
-	    memcpy(&r0, p, 8);
-	    memcpy(&r1, p + len - 8, 8);
+	    r0 = rapidload<strhash_t>(p);
+	    r1 = rapidload<strhash_t>(p + len - 8);
 	} else if (len >= 4) {
-	    uint32_t lo, hi;
-
-	    memcpy(&lo, p, 4);
-	    memcpy(&hi, p + len - 4, 4);
-	    r0 = ((strhash_t)lo << 32) | hi;
+	    r0 = ((strhash_t)rapidload<uint32_t>(p) << 32) |
+		rapidload<uint32_t>(p + len - 4);
 	} else if (len > 0) {
-	    r0 = ((strhash_t)p[0] << 16) | ((strhash_t)p[len >> 1] << 8) |
-		p[len - 1];
+	    r0 = ((strhash_t)(uint8_t)p[0] << 16) |
+		((strhash_t)(uint8_t)p[len >> 1] << 8) | (uint8_t)p[len - 1];
 	}
 	a = rapidmix(r0 ^ RAPID_SECRET0, r1 ^ a);
 	b = rapidmix(r1 ^ RAPID_SECRET1, r0 ^ b);
@@ -1354,11 +1384,13 @@ inline strhash_t rapid_hash(const void *data, size_t len) {
 	    strhash_t d = a, e = b, f = c;
 
 	    do {
-		strhash_t s0, s1, s2, s3, s4, s5;
+		strhash_t s0 = rapidload<strhash_t>(p);
+		strhash_t s1 = rapidload<strhash_t>(p + 8);
+		strhash_t s2 = rapidload<strhash_t>(p + 16);
+		strhash_t s3 = rapidload<strhash_t>(p + 24);
+		strhash_t s4 = rapidload<strhash_t>(p + 32);
+		strhash_t s5 = rapidload<strhash_t>(p + 40);
 
-		memcpy(&s0, p, 8); memcpy(&s1, p + 8, 8);
-		memcpy(&s2, p + 16, 8); memcpy(&s3, p + 24, 8);
-		memcpy(&s4, p + 32, 8); memcpy(&s5, p + 40, 8);
 		a = rapidmix(s0 ^ RAPID_SECRET0, s1 ^ a);
 		b = rapidmix(s2 ^ RAPID_SECRET1, s3 ^ b);
 		c = rapidmix(s4 ^ RAPID_SECRET2, s5 ^ c);
@@ -1371,30 +1403,33 @@ inline strhash_t rapid_hash(const void *data, size_t len) {
 	    a ^= d; b ^= e; c ^= f;
 	}
 	while (len >= 16) {
-	    memcpy(&r0, p, 8); memcpy(&r1, p + 8, 8);
+	    r0 = rapidload<strhash_t>(p);
+	    r1 = rapidload<strhash_t>(p + 8);
 	    a = rapidmix(r0 ^ RAPID_SECRET0, r1 ^ a);
 	    b = rapidmix(r1 ^ RAPID_SECRET1, r0 ^ b);
 	    p += 16;
 	    len -= 16;
 	}
 	if (len >= 8) {
-	    memcpy(&r0, p, 8);
+	    r0 = rapidload<strhash_t>(p);
 	    a = rapidmix(r0 ^ RAPID_SECRET0, a ^ RAPID_SECRET2);
 	    p += 8;
 	    len -= 8;
 	}
 	if (len >= 4) {
-	    uint32_t r32;
-
-	    memcpy(&r32, p, 4);
-	    b = rapidmix((strhash_t)r32 ^ RAPID_SECRET1, b ^ RAPID_SECRET0);
+	    b = rapidmix((strhash_t)rapidload<uint32_t>(p) ^ RAPID_SECRET1, b ^
+		RAPID_SECRET0);
 	    p += 4;
 	    len -= 4;
 	}
 	for (size_t i = 0; i < len; ++i)
-	    a ^= (strhash_t)p[i] << (i * 8);
+	    a ^= (strhash_t)(uint8_t)p[i] << (i * 8);
     }
     return rapidmix(a ^ b ^ c ^ RAPID_SECRET0, a ^ b ^ RAPID_SECRET1);
+}
+
+inline strhash_t rapid_hash(const void *data, size_t len) {
+    return rapid_hash((const uint8_t *)data, len);
 }
 
 template<typename T1, size_t N>
@@ -1416,7 +1451,9 @@ __forceinline strhash_t stringhash(const T &s) {
 
 template<typename T>
 constexpr auto ascii_fold = [](T c) {
-    return c | (T)((c - 'A') <= (T)('Z' - 'A') ? 0x20 : 0);
+    using U = make_unsigned_t<T>;
+
+    return c | (T)((U)(c - 'A') <= (U)('Z' - 'A') ? 0x20 : 0);
 };
 constexpr auto unicode_fold = [](wchar c) {
     // towupper() is not constexpr so fold the ASCII subrange

@@ -663,7 +663,9 @@ void Log::endlog(Tlsdata &tlsd) {
 	    strbuf += ' ';
     }
     tmlen = strbuf.size();
-    strbuf += tailbuf;
+    // only direct writes need the full line - buffered writes append in place
+    if (aenabled || (fenabled && !bufenable))
+	strbuf += tailbuf;
     lvllen = tmlen + taillvllen;
     if (aenabled) {
 	if (src.empty()) {
@@ -685,7 +687,8 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (bufenable) {
 	    bool b = bufcur->size() == 0;
 
-	    bufcur->write(strbuf.data(), (streamsize)strbuf.size());
+	    bufcur->write(strbuf.data(), (streamsize)tmlen);
+	    bufcur->write(tailbuf.data(), (streamsize)tailbuf.size());
 	    if ((uint)bufcur->size() > bufsz) {
 		bufpending.push_back(bufcur);
 		if (buffree.empty()) {
@@ -713,7 +716,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	mto = mailto;
     }
     lck.unlock();
-    strbuf.erase(strbuf.size() - 1);
+    tailbuf.pop_back();
     tlsd.clvl = None;
     tlsd.sep = '\0';
     tlsd.strm.reset();
@@ -739,7 +742,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	}
 	sprintf(buf, "[%d]: ", getpid());
 	ss += buf;
-	ss += tstringtoastring(strbuf.substr(tmlen));
+	ss += tstringtoastring(tailbuf);
 	syslogsock.write(ss.data(), (uint)ss.size(), syslogaddr);
     }
     if (mailit) {
@@ -755,7 +758,9 @@ void Log::endlog(Tlsdata &tlsd) {
 	    }
 	    smtp.from(RFC822Addr(ss));
 	    smtp.to(RFC822Addr(mto));
-	    smtp.subject(strbuf.substr(tmlen, 69).c_str());
+	    strbuf.resize(tmlen);
+	    strbuf += tailbuf;
+	    smtp.subject(tailbuf.substr(0, 69).c_str());
 	    smtp.data(false, strbuf.c_str());
 	    smtp.enddata();
 	    smtp.quit();
@@ -850,8 +855,9 @@ void Log::_mail(Level l, const tchar *to, const tchar *from, const tchar
     }
 }
 
-tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
-    static const uchar needquote[256] = {
+tbufferstream &Log::quote(tbufferstream &os, tstring_view s) {
+    // chars >= 0x80 always need quoting
+    static const uchar needquote[128] = {
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // NUL - SI
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // DLE - US
 	1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // SPACE - /
@@ -860,22 +866,15 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,  // P - _
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // ` - o
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0x80 - 0x8F
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0x90 - 0x9F
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xA0 - 0xAF
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xB0 - 0xBF
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xC0 - 0xCF
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xD0 - 0xDF
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xE0 - 0xEF
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  // 0xF0 - 0xFF
     };
-    const tuchar *start = (const tuchar *)s;
+    const tuchar *start = (const tuchar *)s.data();
+    const tuchar *end = start + s.size();
     const tuchar *p = start;
 
-    while (*p) {
+    while (p < end) {
 	tuchar c = *p;
 
-	if (UNLIKELY(needquote[c])) {
+	if (UNLIKELY(c >= 0x80 || needquote[c])) {
 	    streamsize bsz = 0;
 	    tchar buf[128];
 	    static const tchar dquote = '"';
@@ -896,7 +895,7 @@ tbufferstream &Log::quote(tbufferstream &os, const tchar *s) {
 		putc('\\');
 		putc(e);
 	    };
-	    while (*p) {
+	    while (p < end) {
 		c = *p++;
 		switch (c) {
 		case '"': esc2('"'); break;

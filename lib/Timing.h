@@ -75,6 +75,11 @@
 
 using timing_t = usec_t;
 
+// excludes arrays so string literals bind to the array overloads where the
+// key hash folds to a compile-time constant
+template<typename P>
+concept timing_key_ptr = is_pointer_v<P> && is_convertible_v<P, const tchar *>;
+
 class BLISTER Timing: nocopy {
 public:
     static constexpr uint CACHESIZE = 4096;
@@ -87,9 +92,10 @@ public:
 
     template<size_t N>
     __forceinline void add(const tchar (&key)[N], timing_t diff) {
-	add(key, N - 1, stringhash(key), diff);
+	add(key, (uint)tstrlen(key), stringhash(key), diff);
     }
-    __forceinline void add(const tchar *key, timing_t diff) {
+    template<timing_key_ptr P>
+    __forceinline void add(const P &key, timing_t diff) {
 	add(key, 0, stringhash(key), diff);
     }
     __forceinline void add(const tstring &key, timing_t diff) {
@@ -102,7 +108,8 @@ public:
     __forceinline void erase(const tchar (&key)[N]) {
 	erase(stringhash(key));
     }
-    __forceinline void erase(const tchar *key) {
+    template<timing_key_ptr P>
+    __forceinline void erase(const P &key) {
 	erase(stringhash(key));
     }
     __forceinline void erase(const tstring &key) {
@@ -114,10 +121,11 @@ public:
     __forceinline timing_t record(const tchar (&key)[N], timing_t begin) {
 	timing_t n = now();
 
-	add(key, N - 1, stringhash(key), n - begin);
+	add(key, (uint)tstrlen(key), stringhash(key), n - begin);
 	return n;
     }
-    __forceinline timing_t record(const tchar *key, timing_t begin) {
+    template<timing_key_ptr P>
+    __forceinline timing_t record(const P &key, timing_t begin) {
 	timing_t n = now();
 
 	add(key, 0, stringhash(key), n - begin);
@@ -134,7 +142,8 @@ public:
     __forceinline void start(const tchar (&key)[N]) {
 	start(key, stringhash(key));
     }
-    __forceinline void start(const tchar *key) { start(key, stringhash(key)); }
+    template<timing_key_ptr P>
+    __forceinline void start(const P &key) { start(key, stringhash(key)); }
     __forceinline void start(const tstring &key) { start(key.c_str()); }
     void stop(void);
     static __forceinline timing_t now(void) { return uticks(); }
@@ -142,7 +151,7 @@ public:
 
 private:
     struct BLISTER Stats: nocopy {
-	alignas(64) atomic_uint_fast32_t cnts[TIMINGSLOTS]{};
+	alignas(64) atomic<uint32_t> cnts[TIMINGSLOTS]{};
 	atomic_uint_fast64_t tot = 0;
 	Stats *flist = nullptr;
 	strhash_t hash = 0;
@@ -164,6 +173,7 @@ private:
 	};
 
 	vector<Entry> entries;
+	tstring path;
     };
 
     using timingmap = unordered_map<strhash_t, Stats *>;
@@ -173,6 +183,8 @@ private:
     mutable SpinRWLock lck;
     ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
+
+    friend class TimingEntry;
 
     void add(const tchar *key, uint klen, strhash_t hash, timing_t diff);
     void start(const tchar *key, strhash_t hash);
@@ -185,16 +197,18 @@ extern BLISTER Timing &dtiming;
 class BLISTER TimingEntry: nocopy {
 public:
     template<class C> __forceinline explicit TimingEntry(const C &k,
-	Timing &t = dtiming): key(k), start(t.start()), timing(t) {}
+	Timing &t = dtiming): key(k), hash(stringhash(k)), start(t.start()),
+	timing(t) {}
     template<size_t N> __forceinline explicit TimingEntry(const tchar (&k)[N],
-	Timing &t = dtiming): key(k), start(t.start()), timing(t) {}
+	Timing &t = dtiming): key(k), hash(stringhash(k)), start(t.start()),
+	timing(t) {}
     __forceinline ~TimingEntry() {
 	if (start != (timing_t)-1)
-	    timing.add(key, Timing::now() - start);
+	    timing.add(key, 0, hash, Timing::now() - start);
     }
 
     __forceinline void record(void) {
-	timing.record(key, start);
+	timing.add(key, 0, hash, Timing::now() - start);
 	stop();
     }
     void restart(void) { start = timing.start(); }
@@ -202,6 +216,7 @@ public:
 
 private:
     const tchar *key;
+    strhash_t hash;
     timing_t start;
     Timing &timing;
 };

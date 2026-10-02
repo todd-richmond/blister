@@ -404,6 +404,105 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (map_iordered_hetero.contains(tstring_view(T("nokey"))))
 	    fail(T("FAIL: Negative case-insensitive heterogeneous lookup with ordered map"));
     }
+    // Partially filled arrays bind to the array overloads -- regression test
+    // for hashing N - 1 chars instead of the actual string length
+    {
+	tcout << T("Testing mutable buffer keys...\n");
+	tchar buf[32] = T("key");
+	const tchar *bufp = buf;
+
+	tests++;
+	if (strhash{}(buf) != strhash{}(T("key")) || strhash{}(buf) !=
+	    strhash{}(bufp))
+	    fail(T("FAIL: strhash mutable buffer test"));
+	tests++;
+	if (strihash{}(buf) != strihash{}(T("KEY")))
+	    fail(T("FAIL: strihash mutable buffer test"));
+	tests++;
+	if (striasciihash{}(buf) != striasciihash{}(T("KEY")))
+	    fail(T("FAIL: striasciihash mutable buffer test"));
+	unordered_map<tstring, tstring, strhash, streq> map_buf;
+	map_buf[T("key")] = T("value");
+	tests++;
+	if (!map_buf.contains(buf))
+	    fail(T("FAIL: Heterogeneous lookup with mutable buffer"));
+    }
+    // Every key representation must hash identically across the 4 char
+    // unrolled loop boundaries
+    {
+	tcout << T("Testing hash consistency across key types...\n");
+	static const tchar src[] = T("aBcDeFgHi");
+
+	for (size_t len = 0; len < std::size(src); ++len) {
+	    tstring s(src, len);
+	    tstring_view sv(s);
+	    const tchar *p = s.c_str();
+
+	    tests++;
+	    if (stringhash(s) != stringhash(sv) || stringhash(s) !=
+		stringhash(p) || stringihash(s) != stringihash(p) ||
+		stringiasciihash(sv) != stringiasciihash(p))
+		fail(T("FAIL: Hash consistency for length ") << len);
+	}
+	tests++;
+	if (stringhash(T("aBcDe")) != stringhash(tstring(T("aBcDe"))))
+	    fail(T("FAIL: Literal vs tstring hash consistency"));
+    }
+    // ASCII folding must only touch A-Z
+    {
+	tcout << T("Testing ASCII case folding range...\n");
+	tests++;
+	if (striasciihash{}(T("@")) == striasciihash{}(T("`")) ||
+	    strihash{}(T("[")) == strihash{}(T("{")))
+	    fail(T("FAIL: ASCII fold outside A-Z test"));
+	tests++;
+	if (striasciihash{}(T("A")) != striasciihash{}(T("a")) ||
+	    striasciihash{}(T("Z")) != striasciihash{}(T("z")))
+	    fail(T("FAIL: ASCII fold A-Z test"));
+    }
+    // rapid_hash must be constexpr and match the void * runtime version for
+    // every length branch
+    {
+	tcout << T("Testing rapid_hash...\n");
+	static_assert(rapid_hash("abcdefgh", 8) != rapid_hash("abcdefgi", 8),
+	    "rapid_hash must be constexpr-evaluable");
+	static constexpr char data[] =
+	    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	static constexpr strhash_t ct17 = rapid_hash(data, 17);
+	static constexpr strhash_t ct100 = rapid_hash(data, 100);
+	static const size_t lens[] = {
+	    0, 1, 3, 4, 7, 8, 15, 16, 17, 47, 48, 49, 100
+	};
+
+	for (size_t len : lens) {
+	    tests++;
+	    if (rapid_hash(data, len) != rapid_hash((const void *)data, len))
+		fail(T("FAIL: rapid_hash consistency for length ") << len);
+	}
+	tests++;
+	if (ct17 != rapid_hash((const void *)data, 17) || ct100 !=
+	    rapid_hash((const void *)data, 100))
+	    fail(T("FAIL: rapid_hash compile-time vs runtime test"));
+    }
+    // Length-bounded integer parsing must stop at the first non-digit like
+    // atou -- regression test for SWAR parsing of trailing garbage
+    {
+	tcout << T("Testing bounded integer parsing...\n");
+	static const tchar *nums[] = {
+	    T("0"), T("30"), T("30s"), T("1.5"), T("12345678x"),
+	    T("1234567890123456789"), T(" 12"), T("-5"), T("-123456789")
+	};
+
+	for (const tchar *n : nums) {
+	    size_t len = tstrlen(n);
+
+	    tests++;
+	    if (atoun<ulong>(n, len) != atou<ulong>(n) || atoin<long>(n, len) !=
+		atoi<long>(n))
+		fail(T("FAIL: Bounded integer parse of ") << n);
+	}
+    }
     tcout << T("Test Results: ") << (tests - failures) << T("/") << tests <<
 	T(" tests passed\n");
     if (failures > 0)

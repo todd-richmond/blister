@@ -136,7 +136,7 @@ tstring Timing::data(bool sort_key, uint columns) const {
 	});
     }
     begin = (!columns || last < columns) ? 0 : last - columns + 1;
-    const size_t estimated_size = tmap.size() * (columns ? 60 : 90) + 200;
+    const size_t estimated_size = sorted.size() * (columns ? 60 : 90) + 200;
     s.reserve(estimated_size);
 
     s = columns ? T("key                            msec   cnt   avg") :
@@ -297,21 +297,14 @@ void Timing::record(void) {
 	tlsd.entries.pop_back();
 	return;
     }
-    size_t callerlen = tstrlen(entry.caller);
-    size_t lbuf[16];
-    size_t len = callerlen + entries * 2;
-    vector<size_t> lvec;
-    size_t *lens = entries <= 16 ? lbuf : (lvec.resize(entries), lvec.data());
-    tstring s;
+    tstring &s(tlsd.path);
 
-    for (size_t i = 0; i < entries; ++i)
-	len += (lens[i] = tstrlen(tlsd.entries[i].caller));
-    s.reserve(len);
+    s.clear();
     for (size_t i = 0; i < entries; ++i) {
-	s.append(tlsd.entries[i].caller, lens[i]);
+	s += tlsd.entries[i].caller;
 	s += T("->");
     }
-    s.append(entry.caller, callerlen);
+    s += entry.caller;
     add(s, diff);
     add(entry.caller, 0, entry.hash, diff);
     tlsd.entries.pop_back();
