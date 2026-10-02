@@ -481,7 +481,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 
     nh.key() = kv->key();
     nh.mapped() = kv;
-    amap.insert(move(nh));
+    amap.insert(std::move(nh));
     delkv(oldkv);
     return *this;
 }
