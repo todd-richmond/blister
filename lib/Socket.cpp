@@ -790,7 +790,11 @@ long Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
 	msgh.msg_name = sa.data();
 	msgh.msg_namelen = sa.size();
 	msgh.msg_iov = iov;
+#ifdef BSD_BASE
+	msgh.msg_iovlen = count;
+#else
 	msgh.msg_iovlen = (size_t)count;
+#endif
 	if (check((int)(in = ::recvmsg(sbuf->sock, &msgh, 0))))
 	    break;
 #endif

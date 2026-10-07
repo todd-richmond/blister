@@ -126,8 +126,8 @@ public:
 		sizeof (in6_addr));
 	return !memcmp(&a.addr, &b.addr, a.size());	// NOSONAR
     }
-    friend tostream &operator <<(tostream &os, const Sockaddr &addr) {
-	return os << addr.str();
+    friend tostream &operator <<(tostream &os, const Sockaddr &sa) {
+	return os << sa.str();
     }
     operator const in_addr *() const { return &addr.sa4.sin_addr; }
     operator const in6_addr *() const { return &addr.sa6.sin6_addr; }
