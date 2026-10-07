@@ -43,7 +43,7 @@ public:
     public:
 	EchoClientSocket(EchoTest &es, const Sockaddr &a, ulong t, ulong w):
 	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0),
-	    rbuf(new char[dsz]), tmt(t), wait(w) {}
+	    rbuf(new char[dsz + MAXREAD]), tmt(t), wait(w) {}
 	~EchoClientSocket() override { delete [] rbuf; }
 
 	void start(ulong msec) { timeout(start, msec); }
@@ -141,8 +141,9 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 void EchoTest::EchoClientSocket::input() {
     uint len;
 
-    if (UNLIKELY(error() || ((len = (uint)read(rbuf + in, dsz - in)) ==
-	(uint)-1))) {
+    // read past the reply like a normal server so short reads skip re-arming
+    if (UNLIKELY(error() || ((len = (uint)read(rbuf + in, dsz + MAXREAD -
+	in)) == (uint)-1))) {
 	if (loop_exit()) {
 	    erase();
 	} else {
@@ -152,7 +153,7 @@ void EchoTest::EchoClientSocket::input() {
 		T("close"));
 	    timeout(start, wait);
 	}
-    } else if (LIKELY((in += len) == dsz)) {
+    } else if (LIKELY((in += len) >= dsz)) {
 	timing_t usec = Timing::now() - begin;
 
 	if (UNLIKELY(loop_exit())) {
@@ -288,8 +289,9 @@ void EchoTest::connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
 bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
     EchoListenSocket *els = new EchoListenSocket(*this, timeout);
 
+    // detach before listen registers els with the poller thread
+    els->detach();
     if (els->listen(sa)) {
-	els->detach();
 	return true;	// -V::773
     } else {
 	delete els;

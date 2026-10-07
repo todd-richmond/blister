@@ -329,6 +329,7 @@ public:
     tstring errstr(void) const;
     socket_t fd(void) const { return sbuf->sock; }
     bool open(void) const { return sbuf->sock != SOCK_INVALID; }
+    bool stream(void) const { return sbuf->type == SOCK_STREAM; }
 
     // socket actions
     bool accept(Socket &sock, bool cloexec = true, bool nonblock = false);
@@ -421,7 +422,7 @@ public:
     int read(void *buf, uint len, Sockaddr &sa) const;
     template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
     long readv(iovec *iov, int count) const;
-    long readv(iovec *iov, int count, const Sockaddr &sa) const;
+    long readv(iovec *iov, int count, Sockaddr &sa) const;
 #ifndef _WIN32
     long sendmsg(const msghdr &msgh, int flags = 0) const;
 #endif

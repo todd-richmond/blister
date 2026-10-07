@@ -742,6 +742,69 @@ int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
     }
 }
 
+long Socket::readv(iovec *iov, int count) const {
+    long in;
+
+    do {
+	if (UNLIKELY(sbuf->rto != SOCK_INFINITE && blocking()) && !rpoll())
+	    return -1;
+#ifdef _WIN32
+	ulong flags = 0;
+
+	in = -1;
+	if (check(WSARecv(sbuf->sock, iov, (ulong)count, (ulong *)&in, // NOSONAR
+	    &flags, NULL, NULL)))
+	    break;
+#else
+	if (check((int)(in = ::readv(sbuf->sock, iov, count))))
+	    break;
+#endif
+    } while (interrupted());
+    if (LIKELY(in > 0)) {
+	return in;
+    } else if (in) {
+	return blocked() ? 0 : in;
+    } else {
+	sbuf->err = EOF;
+	return -1;
+    }
+}
+
+long Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
+    long in;
+
+    do {
+	if (UNLIKELY(sbuf->rto != SOCK_INFINITE && blocking()) && !rpoll())
+	    return -1;
+#ifdef _WIN32
+	ulong flags = 0;
+	int asz = sa.size();
+
+	in = -1;
+	if (check(WSARecvFrom(sbuf->sock, iov, (ulong)count, // NOSONAR
+	    (ulong *)&in, &flags, sa.data(), &asz, NULL, NULL)))
+	    break;
+#else
+	msghdr msgh {};
+
+	msgh.msg_name = sa.data();
+	msgh.msg_namelen = sa.size();
+	msgh.msg_iov = iov;
+	msgh.msg_iovlen = (size_t)count;
+	if (check((int)(in = ::recvmsg(sbuf->sock, &msgh, 0))))
+	    break;
+#endif
+    } while (interrupted());
+    if (LIKELY(in > 0)) {
+	return in;
+    } else if (in) {
+	return blocked() ? 0 : in;
+    } else {
+	sbuf->err = EOF;
+	return -1;
+    }
+}
+
 #ifndef _WIN32
 long Socket::sendmsg(const msghdr &msgh, int flags) const {
     int out;

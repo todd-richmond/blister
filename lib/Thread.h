@@ -89,8 +89,6 @@ typedef pthread_key_t tlskey_t;
 
 #if defined(__ARM_ARCH)
 #define SPIN_LIMIT		128
-#elif defined(__AVX2__)
-#define SPIN_LIMIT		16
 #elif defined(THREAD_PAUSE)
 #define SPIN_LIMIT		64
 #else

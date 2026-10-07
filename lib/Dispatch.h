@@ -73,7 +73,8 @@ enum DispatchFlag: dspflag_t {
     DSP_SelectAccept = 0x1000,
     DSP_SelectRead = 0x2000,
     DSP_SelectWrite = 0x4000,
-    DSP_SelectClose = 0x8000
+    DSP_SelectClose = 0x8000,
+    DSP_Polled = 0x10000
 };
 
 class Dispatcher;
@@ -88,12 +89,7 @@ public:
 
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = nullptr): dcb(cb),
 	dspr(d), flags(0) {}
-    DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb = nullptr):
-	dcb(cb), dspr(parent.dspr), flags(DSP_Grouped) {
-	if (!parent.group)
-	    parent.group = new Group();
-	group = &parent.group->add();
-    }
+    DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb = nullptr);
     virtual ~DispatchObj() {
 	DispatchObj::cancel();
 	if (group && group->refcount.release())
@@ -144,6 +140,7 @@ public:
     static constexpr ulong DSP_NEVER = (ulong)-1;
     static constexpr ulong DSP_PREVIOUS = (ulong)-2;
     static constexpr msec_t DSP_NEVER_DUE = (msec_t)-1;
+    static constexpr msec_t DSP_FIRING = DSP_NEVER_DUE - 1;
 
     DispatchTimer(const DispatchTimer &dt): DispatchTimer((DispatchObj &)dt) {}
     explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
@@ -157,7 +154,7 @@ public:
 	init();
 	timeout(cb, msec);
     }
-    virtual ~DispatchTimer() { DispatchTimer::cancel(); }
+    virtual ~DispatchTimer();
 
     msec_t expires(void) const { return due(); }
     ulong timeout(void) const { return to; }
@@ -209,11 +206,42 @@ public:
 
     void cancel(void) override;
     void erase(void) override;
+    bool close(void);
+    int read(void *buf, uint len) {
+	return drained(Socket::read(buf, len), len);
+    }
+    int read(void *buf, uint len, Sockaddr &sa) {
+	return drained(Socket::read(buf, len, sa), len);
+    }
+    template<class C> int read(C &c) { return read(&c, sizeof (c)); }
+    long readv(iovec *iov, int count) {
+	return drained(Socket::readv(iov, count), iovlen(iov, count));
+    }
+    long readv(iovec *iov, int count, Sockaddr &sa) {
+	return drained(Socket::readv(iov, count, sa), iovlen(iov, count));
+    }
 
 protected:
     void poll(DispatchObjCB cb, ulong msec, DispatchMsg msg);
 
+#ifdef DSP_EPOLL
+    uint32_t evmask = 0;
+#endif
     bool mapped = false;
+    bool rdrain = false;
+
+private:
+    template<typename N> __forceinline N drained(N n, ulong len) {
+	rdrain = n == 0 ? blocked() : n > 0 && (ulong)n < len && stream();
+	return n;
+    }
+    static ulong iovlen(const iovec *iov, int count) {
+	ulong len = 0;
+
+	while (count-- > 0)
+	    len += (ulong)iov++->iov_len;
+	return len;
+    }
 
     friend class Dispatcher;
 };
@@ -349,15 +377,28 @@ private:
 	    if (dt.due() <= split)
 		sorted.erase(&dt);
 	    unsorted.erase(&dt);
+	    // drop from an in-flight batch so it is not touched once freed
+	    for (uint u = 0; u < nfiring; u++) {
+		DispatchTimer *p = &dt;
+
+		if (firing[u].compare_exchange_strong(p, nullptr,
+		    memory_order_acq_rel))
+		    break;
+	    }
+	}
+	DispatchTimer *claim(uint u) {
+	    return firing[u].exchange(nullptr, memory_order_acq_rel);
 	}
 	uint get(msec_t when, DispatchTimer **batch, uint maxcnt) {
 	    uint cnt = 0;
 	    auto it = sorted.begin();
 
 	    while (cnt < maxcnt && it != sorted.end() && (*it)->due() <= when) {
-		(*it)->due(DispatchTimer::DSP_NEVER_DUE);
+		(*it)->due(DispatchTimer::DSP_FIRING);
+		firing[cnt].store(*it, memory_order_relaxed);
 		batch[cnt++] = *it++;
 	    }
+	    nfiring = cnt;
 	    sorted.erase(sorted.begin(), it);
 	    batch[cnt] = cnt < maxcnt && it != sorted.end() ? *it : nullptr;
 	    return cnt;
@@ -392,7 +433,11 @@ private:
 		sorted.insert(&dt);
 	}
 
+	static constexpr uint BATCHSZ = 32;
+
     private:
+	atomic<DispatchTimer *> firing[BATCHSZ] = {};
+	uint nfiring = 0;
 	sorted_timerset sorted;
 	msec_t split = 0;
 	unsorted_timerset unsorted;
@@ -411,6 +456,11 @@ private:
 	tlock.unlock();
     }
     void cancelTimer(DispatchTimer &dt, bool del = false);
+    void eraseTimer(DispatchTimer &dt) {
+	tlock.lock();
+	timers.erase(dt);
+	tlock.unlock();
+    }
     void removeTimer(DispatchTimer &dt) {
 	if (dt.due() == DispatchTimer::DSP_NEVER_DUE)
 	    return;
@@ -423,11 +473,13 @@ private:
     friend class DispatchSocket;
     void cancelSocket(DispatchSocket &ds, bool del = false);
     void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg);
+    void unmapSocket(DispatchSocket &ds, socket_t fd);
 
     void cleanup(void);
     bool exec(void);
     void handleEvents(const void *evts, uint cnt);
     DispatchTimer *handleTimers(msec_t now);
+    void reclaim(void);
     void reset(void);
     int run(void);
     void wakeup(ulong msec);
@@ -445,7 +497,8 @@ private:
     SpinLock olock;
     uint maxthreads;
     SizedObjectList<DispatchObj, ObjectListAtomicSize> rlist;
-    atomic_bool polling, shutdown;
+    ObjectList<DispatchObj> zlist;
+    atomic_bool polling, shutdown, zpending;
     alignas(64) atomic_uint_fast32_t scanning, workers;
     SpinLock tlock;
     atomic<msec_t> cache;
@@ -529,6 +582,7 @@ inline void DispatchObj::ready(DispatchObjCB cb, bool hipri, DispatchMsg
 
 inline void DispatchTimer::cancel(void) { dspr.cancelTimer(*this); }
 inline void DispatchTimer::erase(void) { dspr.cancelTimer(*this, true); }
+inline DispatchTimer::~DispatchTimer() { dspr.eraseTimer(*this); }
 inline void DispatchTimer::init(void) { dspr.addTimer(*this); }
 inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
     callback(cb);
@@ -538,6 +592,10 @@ inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
 }
 
 inline void DispatchSocket::cancel(void) { dspr.cancelSocket(*this); }
+inline bool DispatchSocket::close(void) {
+    dspr.unmapSocket(*this, fd());
+    return Socket::close();
+}
 inline void DispatchSocket::erase(void) { dspr.cancelSocket(*this, true); }
 inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg
     reason) {
@@ -550,22 +608,39 @@ inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg
 /*
  * AsyncCondvar acts like a std::condition_variable, but queues a callback
  * to be called instead of blocking the thread. The lock must be held
- * but wait() returns with it unlocked
+ * but wait() returns with it unlocked. A Waiter must not be destroyed or
+ * cancelled while its thread holds the lock
  */
 class BLISTER AsyncCondvar: nocopy {
 public:
     class BLISTER Waiter: public DispatchObj {
     public:
-	explicit Waiter(AsyncCondvar &a): DispatchObj(a.dispatcher()), ac(a) {}
+	explicit Waiter(AsyncCondvar &a): DispatchObj(a.dispatcher()), ac(a),
+	    link(*this) {}
+	~Waiter() override { ac.cancel(*this); }
 
 	void wait(DispatchObjCB cb) {
 	    callback(cb);
 	    ac.wait(*this);
 	}
-	void cancel(void) override { ac.cancel(*this); }
+	void cancel(void) override {
+	    ac.cancel(*this);
+	    DispatchObj::cancel();
+	}
 
     private:
+	// own node so a queued ready() cannot corrupt the waiter list
+	struct Link: ObjectList<Link>::Node {
+	    explicit Link(Waiter &w): waiter(w) {}
+
+	    Waiter &waiter;
+	};
+
 	AsyncCondvar &ac;
+	Link link;
+	bool waiting = false;
+
+	friend class AsyncCondvar;
     };
 
     AsyncCondvar(Dispatcher &d, Lock &l): dspr(d), lck(l) {}
@@ -574,19 +649,21 @@ public:
 
     __forceinline Dispatcher &dispatcher(void) const { return dspr; }
     __forceinline uint size(void) const { return waiters.size(); }
-    __forceinline Waiter *peek(void) const { return waiters.peek(); }
+    __forceinline Waiter *peek(void) const {
+	Waiter::Link *l = waiters.peek();
+
+	return l ? &l->waiter : nullptr;
+    }
 
     void broadcast(void) {
 	while (waiters)
-	    waiters.pop_front()->ready();
+	    wake();
     }
     uint set(uint count = 1) {
 	uint woken = 0;
 
 	while (count && waiters) {
-	    Waiter *waiter = waiters.pop_front();
-
-	    waiter->ready();
+	    wake();
 	    --count;
 	    ++woken;
 	}
@@ -599,7 +676,10 @@ public:
 	    lck.unlock();
 	    waiter.ready();
 	} else {
-	    waiters.push_back(waiter);
+	    if (!waiter.waiting) {
+		waiter.waiting = true;
+		waiters.push_back(waiter.link);
+	    }
 	    lck.unlock();
 	}
     }
@@ -607,15 +687,25 @@ public:
 protected:
     void cancel(Waiter &waiter) {
 	lck.lock();
-	waiters.pop(waiter);
+	if (waiter.waiting) {
+	    waiter.waiting = false;
+	    waiters.pop(waiter.link);
+	}
 	lck.unlock();
     }
 
 private:
+    void wake(void) {
+	Waiter &waiter = waiters.pop_front()->waiter;
+
+	waiter.waiting = false;
+	waiter.ready();
+    }
+
     Dispatcher &dspr;
     Lock &lck;
     atomic_bool signaled = false;
-    SizedObjectList<Waiter> waiters;
+    SizedObjectList<Waiter::Link> waiters;
 };
 
 #endif // Dispatch_h

@@ -348,14 +348,20 @@ bool Thread::start(uint stacksz, ThreadGroup *tg, bool suspend, bool aterm) {
 // create Thread and start it running at a given function
 bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     bool suspend, bool aterm) {
+    ThreadGroup *g = ThreadGroup::add(*this, tg);
     Locker lkr(lck);
 
+    if (getState() != Terminated && getState() != Init) {
+	lkr.unlock();
+	if (g != group)
+	    g->remove(*this);
+	return false;
+    }
+    group = g;
     argument = arg;
     autoterm = aterm;
     main = func;
-    if (getState() != Terminated && getState() != Init)
-	return false;
-    else if (suspend)
+    if (suspend)
 	setState(Suspended);
     else
 	setState(Running);
@@ -379,13 +385,15 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     pthread_attr_destroy(&attr);
 #endif
     if (hdl) {
-	group = ThreadGroup::add(*this, tg);
 	cv.wait();
 	if (suspend)
 	    msleep(100);		    // wait for thread to sleep
 	return true;
     } else {
 	setState(Init);
+	group = nullptr;
+	lkr.unlock();
+	g->remove(*this);
 	return false;
     }
 }
