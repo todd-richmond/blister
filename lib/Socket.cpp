@@ -31,6 +31,7 @@ Sockaddr::SockInit Sockaddr::init;
 #else
 
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #ifdef __sun__
 #include <sys/filio.h>
 #endif
@@ -199,6 +200,8 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
     const tchar *p;
     tstring s;
 
+    if (host && !tstrncmp(host, "unix:", 5))
+	return set(host, (const tchar *)nullptr, proto);
     if (!host) {
 	p = nullptr;
     } else if (*host == ':' && host[1] == ':') {
@@ -246,19 +249,19 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
     }
     if (host && (proto == UNIX || tstrchr(host, '/'))) {
 	const uint sz = sizeof (addr.sau.sun_path);
-
-	addr.sau.sun_family = AF_UNIX;
 #ifdef __linux__	// anonymous file support
-	if (tstrchr(host, '/')) {
-	    strncpy(addr.sau.sun_path, host, sz);
-	} else {
-	    addr.sau.sun_path[0] = '\0';
-	    strncpy(addr.sau.sun_path + 1, host, sz - 1);
-	}
+	const uint anon = !tstrchr(host, '/');
 #else
-	strncpy(addr.sau.sun_path, host, sz);
+	const uint anon = 0;
 #endif
-	addr.sau.sun_path[sz - 1] = '\0';
+
+	if (tstrlen(host) + anon >= sz)
+	    return false;
+	addr.sau.sun_family = AF_UNIX;
+#ifdef BSD_BASE
+	addr.sau.sun_len = (uint8_t)sizeof (addr.sau);
+#endif
+	strncpy(addr.sau.sun_path + anon, host, sz - anon - 1);
 	return true;
     }
 #endif
@@ -503,6 +506,9 @@ bool Socket::accept(Socket &sock, bool _cloexec, bool nonblock) {
 	    sock.sbuf->type = sbuf->type;
 	    sock.sbuf->own = true;
 	    sock.sbuf->blck = !nonblock;
+#ifdef SO_NOSIGPIPE
+	    (void)sock.setsockopt(SOL_SOCKET, SO_NOSIGPIPE, true);
+#endif
 #ifndef __linux__
 	    if (_cloexec)
 		sock.cloexec();
@@ -521,8 +527,15 @@ bool Socket::bind(const Sockaddr &sa, bool reuse) {
     if (reuse && !reuseaddr(true))
 	return false;
 #ifndef _WIN32
-    if (sa.proto() == Sockaddr::UNIX)
+    if (sa.proto() == Sockaddr::UNIX &&
+	((const sockaddr_un *)sa)->sun_path[0]) {
+	struct stat st;
+
+	// remove a stale socket file left by a crashed process
+	if (!::stat(sa.path(), &st) && S_ISSOCK(st.st_mode))
+	    (void)::unlink(sa.path());
 	sbuf->unlink(sa.path());
+    }
 #endif
     return check(::bind(sbuf->sock, sa, sa.size()));
 }
@@ -616,7 +629,12 @@ bool Socket::open(int family) {
     sbuf->sock = ::socket(family, sbuf->type, 0);
     sbuf->own = true;
     sbuf->blck = true;
-    return check(sbuf->sock == SOCK_INVALID ? -1 : 0);
+    if (!check(sbuf->sock == SOCK_INVALID ? -1 : 0))
+	return false;
+#ifdef SO_NOSIGPIPE
+    (void)setsockopt(SOL_SOCKET, SO_NOSIGPIPE, true);
+#endif
+    return true;
 }
 
 bool Socket::shutdown(bool in, bool out) {

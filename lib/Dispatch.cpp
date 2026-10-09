@@ -1108,7 +1108,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT, EPOLLIN, EPOLLOUT, 0, 0, 0
     };
 #endif
-#ifdef DSP_EPOLL
+#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
     bool drained = ds.rdrain;
 
     ds.rdrain = false;
@@ -1154,6 +1154,12 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	return;
     }
     b = sarray[m] == (flags & DSP_SelectAll);
+#ifdef DSP_KQUEUE
+    // EV_CLEAR edges only fire on new data so re-adding re-checks unread data
+    if (b && !drained && (m == DispatchRead || m == DispatchReadWrite ||
+	m == DispatchClose))
+	b = false;
+#endif
     ds.flags &= ~(DSP_SelectAll | DSP_IO);
     ds.flags |= sarray[m] | DSP_Scheduled;
 #ifdef DSP_EPOLL

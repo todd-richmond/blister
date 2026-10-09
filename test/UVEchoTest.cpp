@@ -62,10 +62,20 @@ static bool loop_exit(void) {
 	qflag.load(memory_order_relaxed);
 }
 
+// TCP and UNIX domain sockets are different libuv handle types that share the
+// uv_stream_t prefix, so the stream calls take either one
+union Handle {
+    uv_tcp_t tcp;
+    uv_pipe_t pipe;
+};
+
+static bool unixsock;		// -h unix:/path uses pipes instead of TCP
+static int unixfd = -1;		// listening fd duplicated into every worker
+
 struct Worker;
 
 struct EchoClient: nocopy {
-    uv_tcp_t tcp;
+    Handle tcp;
     uv_timer_t timer;
     uv_connect_t connreq;
     uv_write_t writereq;
@@ -88,7 +98,7 @@ struct EchoClient: nocopy {
 };
 
 struct EchoServerConn: nocopy {
-    uv_tcp_t tcp;
+    Handle tcp;
     uv_write_t writereq;
     char *buf;
     uint writeLen;
@@ -100,7 +110,7 @@ struct EchoServerConn: nocopy {
 struct Worker {
     uv_loop_t loop {};
     uv_async_t stopper {};
-    uv_tcp_t listener {};
+    Handle listener {};
     Thread thread;
     vector<EchoClient *> clients;
     Sockaddr bindAddr;
@@ -268,9 +278,20 @@ static void onClientConnect(uv_connect_t *req, int status) {
     if (c->errorHandled)	// superseded by a connect timeout already
 	return;
     uv_timer_stop(&c->timer);
-    uv_tcp_nodelay(&c->tcp, 1);
+    if (!unixsock)
+	uv_tcp_nodelay(&c->tcp.tcp, 1);
     uv_read_start((uv_stream_t *)&c->tcp, allocClient, onClientRead);
     writeClient(c);
+}
+
+// a leading NUL is a Linux abstract name that Sockaddr pads to the whole
+// sun_path so match the length bound by the server
+static void connectUnix(EchoClient *c, const Sockaddr &addr) {
+    const char *name = ((const sockaddr_un *)addr)->sun_path;
+    size_t len = *name ? strlen(name) : sizeof (sockaddr_un::sun_path);
+
+    uv_pipe_connect2(&c->connreq, &c->tcp.pipe, name, len, 0,
+	onClientConnect);
 }
 
 static void startClient(EchoClient *c) {
@@ -280,13 +301,20 @@ static void startClient(EchoClient *c) {
     c->errorHandled = false;
     c->writePending = false;
     c->nextRoundQueued = false;
-    uv_tcp_init(&w.loop, &c->tcp);
+    if (unixsock)
+	uv_pipe_init(&w.loop, &c->tcp.pipe, 0);
+    else
+	uv_tcp_init(&w.loop, &c->tcp.tcp);
     c->tcpOpen = true;
-    c->tcp.data = c;
+    c->tcp.tcp.data = c;
     c->connreq.data = c;
     dlogd(T("connecting"));
     uv_timer_start(&c->timer, onConnectTimeout, w.tmt, 0);
-    uv_tcp_connect(&c->connreq, &c->tcp, w.connectAddr, onClientConnect);
+    if (unixsock)
+	connectUnix(c, w.connectAddr);
+    else
+	uv_tcp_connect(&c->connreq, &c->tcp.tcp, w.connectAddr,
+	    onClientConnect);
 }
 
 static void onServerConnClosed(uv_handle_t *h) {
@@ -349,10 +377,14 @@ static void onNewConnection(uv_stream_t *server, int status) {
     auto *w = (Worker *)server->data;
     auto *sc = new EchoServerConn;
 
-    uv_tcp_init(&w->loop, &sc->tcp);
-    sc->tcp.data = sc;
+    if (unixsock)
+	uv_pipe_init(&w->loop, &sc->tcp.pipe, 0);
+    else
+	uv_tcp_init(&w->loop, &sc->tcp.tcp);
+    sc->tcp.tcp.data = sc;
     if (uv_accept(server, (uv_stream_t *)&sc->tcp) == 0) {
-	uv_tcp_nodelay(&sc->tcp, 1);
+	if (!unixsock)
+	    uv_tcp_nodelay(&sc->tcp.tcp, 1);
 	uv_read_start((uv_stream_t *)&sc->tcp, allocServer, onServerRead);
     } else {
 	uv_close((uv_handle_t *)&sc->tcp, onServerConnClosed);
@@ -376,7 +408,7 @@ static void onStop(uv_async_t *a) {
 // port was refused. Bind natively with SO_REUSEPORT instead so every worker
 // still gets a duplicate listening socket load-balanced by the kernel.
 #ifndef _WIN32
-static void bindListener(uv_tcp_t *listener, const Sockaddr &addr) {
+static void bindListener(Handle *listener, const Sockaddr &addr) {
     int fd = (int)socket(addr.family(), SOCK_STREAM, 0);
     int one = 1;
 
@@ -390,11 +422,11 @@ static void bindListener(uv_tcp_t *listener, const Sockaddr &addr) {
 	close(fd);
 	return;
     }
-    uv_tcp_open(listener, fd);
+    uv_tcp_open(&listener->tcp, fd);
 }
 #else
-static void bindListener(uv_tcp_t *listener, const Sockaddr &addr) {
-    uv_tcp_bind(listener, addr, 0);
+static void bindListener(Handle *listener, const Sockaddr &addr) {
+    uv_tcp_bind(&listener->tcp, addr, 0);
 }
 #endif
 
@@ -406,9 +438,14 @@ static int runWorker(void *arg) {
     w->stopper.data = w;
 
     if (w->doServer) {
-	uv_tcp_init(&w->loop, &w->listener);
-	w->listener.data = w;
-	bindListener(&w->listener, w->bindAddr);
+	if (unixsock) {
+	    uv_pipe_init(&w->loop, &w->listener.pipe, 0);
+	    uv_pipe_open(&w->listener.pipe, dup(unixfd));
+	} else {
+	    uv_tcp_init(&w->loop, &w->listener.tcp);
+	    bindListener(&w->listener, w->bindAddr);
+	}
+	w->listener.tcp.data = w;
 	uv_listen((uv_stream_t *)&w->listener, BACKLOG, onNewConnection);
     }
     for (size_t i = 0; i < w->clients.size(); i++) {
@@ -529,6 +566,19 @@ int tmain(int argc, const tchar * const argv[]) {
 
     signal(SIGINT, signalHandler);
 #ifndef _WIN32
+    unixsock = bindAddr.family() == AF_UNIX;
+    if (unixsock && server) {
+	sockaddr_un *sun = (sockaddr_un *)(const sockaddr_un *)bindAddr;
+
+	unixfd = (int)socket(AF_UNIX, SOCK_STREAM, 0);
+	if (sun->sun_path[0])
+	    unlink(sun->sun_path);
+	if (unixfd == -1 || ::bind(unixfd, bindAddr, bindAddr.size()) == -1) {
+	    tcerr << T("uvechotest: unable to bind ") << host << endl;
+	    delete [] dbuf;
+	    return 1;
+	}
+    }
     struct rlimit rl;
     struct sigaction sig {};
 
@@ -595,6 +645,11 @@ int tmain(int argc, const tchar * const argv[]) {
     for (Worker &w : workers)
 	w.thread.wait();
 
+    if (unixfd != -1) {
+	close(unixfd);
+	if (((const sockaddr_un *)bindAddr)->sun_path[0])
+	    unlink(bindAddr.path());
+    }
     delete [] dbuf;
     tcout << dtiming.data() << endl;
     return qflag.load(memory_order_relaxed) ? -1 : 0;

@@ -477,10 +477,7 @@ protected:
 	    type = t;
 	    reference();
 	}
-	void unlink(const char *p) {
-	    if (strchr(p, '/'))
-		path = p;
-	}
+	void unlink(const char *p) { path = p; }
 
     private:
 	bool blck = true, own;
