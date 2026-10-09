@@ -405,7 +405,8 @@ int tmain(int argc, const tchar * const argv[]) {
     sig.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sig, nullptr);
 #endif
-    dlog.buffer(true);
+    if (dlog.level() >= Log::Debug)
+	dlog.buffer(true);
     if (!et.start(threads, 32 * 1024)) {
 	tcerr << T("echo: unable to start ") << host << endl;
 	return 1;
@@ -416,6 +417,7 @@ int tmain(int argc, const tchar * const argv[]) {
     if (client) {
 	dlogi(Log::mod(T("echo")), Log::cmd(T("echo")), Log::kv(T("addr"),
 	    sa.str()), Log::kv(T("data"), path));
+	dlog.flush();
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	if (sa.host() == T("*"))
 	    sa.host(T("localhost"));

@@ -589,6 +589,8 @@ int tmain(int argc, const tchar * const argv[]) {
     sig.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sig, nullptr);
 #endif
+    if (dlog.level() >= Log::Debug)
+	dlog.buffer(true);
 
     vector<Worker> workers(threads);
     uint base = 0;
@@ -617,6 +619,7 @@ int tmain(int argc, const tchar * const argv[]) {
     if (client) {
 	dlogi(Log::mod(T("uvecho")), Log::cmd(T("echo")), Log::kv(T("addr"),
 	    connectAddr.str()), Log::kv(T("data"), path));
+	dlog.flush();
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 
 	timing_t last = Timing::now();
