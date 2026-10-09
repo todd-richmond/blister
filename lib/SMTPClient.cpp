@@ -919,7 +919,6 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
 
 int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
     tchar c;
-    tchar *cdst;
     tchar *dst;
     tchar *src = in;
 
@@ -940,6 +939,7 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
 		*dst++ = c;
 	    cmt = nullptr;
 	} else if (c == '(') {
+	    tchar *cdst;
 	    uint cnt = 1;
 
 	    cmt = cdst = src;

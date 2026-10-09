@@ -386,7 +386,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	close(fd);
     }
     if (!host)
-	host = T("*:8888");
+	host = T("unix:./socket");
     if (!sa.set(host)) {
 	tcerr << T("echo: unknown host ") << host << endl;
 	return 1;

@@ -547,7 +547,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	close(fd);
     }
     if (!host)
-	host = T("*:8888");
+	host = T("unix:./socket");
 
     Sockaddr bindAddr;
 
