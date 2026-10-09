@@ -24,6 +24,7 @@
 #include <stdatomic.h>
 #include <mach/task.h>
 #include <mach/mach_init.h>
+#include <mach/mach_port.h>
 #include <mach/mach_time.h>
 #include <sys/sysctl.h>
 #include "Thread.h"
