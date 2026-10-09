@@ -17,9 +17,9 @@
 #ifndef LRUCache_h
 #define LRUCache_h
 
+#include <concepts>
 #include <list>
 #include <memory>
-#include <type_traits>
 #include <unordered_map>
 #include "Thread.h"
 
@@ -43,10 +43,10 @@ public:
 
 private:
     lruhash_t hash;
-    mutable msec_t msec = 0;
+    msec_t msec = 0;
 };
 
-template<typename C>
+template<derived_from<LRUCacheEntry> C>
 class BLISTER LRUCache: nocopy {
 public:
     using lru_list = list<C>;
@@ -57,7 +57,6 @@ public:
 
     explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME,
 	ulong cnt = LRUCACHE_COUNT): maxcnt(cnt), maxsz(sz), maxtm(tm) {
-	static_assert(is_base_of_v<LRUCacheEntry, C>, "C must derive from LRUCacheEntry");
 	ulong heur = sz / 1024 > 128 ? sz / 1024 : 128;
 
 	cache_map.reserve(cnt && cnt < heur ? cnt : heur);
@@ -128,7 +127,8 @@ public:
 	purge(now, freed);
 	return true;
     }
-    void resize(ulong sz, msec_t tm = 0, ulong cnt = 0) {
+    void resize(ulong sz, msec_t tm = LRUCACHE_TIME,
+	ulong cnt = LRUCACHE_COUNT) {
 	lru_list freed;
 	FastSpinLocker lkr(lock);
 

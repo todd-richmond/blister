@@ -16,12 +16,11 @@
  */
 
 #include "stdapi.h"
+#include <errno.h>
 #include <fcntl.h>
 #include <time.h>
 #include <sys/times.h>
-#if defined(__linux__)
-#include <linux/param.h>
-#elif defined(__APPLE__)
+#if defined(__APPLE__)
 #include <stdatomic.h>
 #include <mach/task.h>
 #include <mach/mach_init.h>
@@ -74,7 +73,13 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
     fl.l_whence = whence;
     fl.l_start = (off_t)start;
     fl.l_len = (off_t)len;
-    return fcntl(fd, test ? F_SETLK : F_SETLKW, &fl);
+
+    int ret;
+
+    do
+	ret = fcntl(fd, test ? F_SETLK : F_SETLKW, &fl);
+    while (ret == -1 && errno == EINTR && !test);
+    return ret;
 }
 
 int pidstat(pid_t pid, struct pidstat *psbuf) {
@@ -97,6 +102,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	psbuf->utime = (ulong)tinfo.user_time.seconds * 1000 +
 	    (ulong)tinfo.user_time.microseconds / 1000;
     }
+    mach_port_deallocate(mach_task_self(), task);
 #elif defined(sun)
     // TODO incomplete
     char buf[PATH_MAX];
@@ -107,47 +113,52 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	return -1;
     psbuf->sz = sbuf.st_size / 1024;
 #elif defined(__linux__)
-    char buf[512], fbuf[4096];
+    char buf[512];
     FILE *f;
+    ulong pages, rpages;
 
-    snprintf(buf, sizeof (buf), "/proc/%ld/smaps", (long)pid);
+    snprintf(buf, sizeof (buf), "/proc/%ld/statm", (long)pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
-    setvbuf(f, fbuf, _IOFBF, sizeof (fbuf));
-    while (fgets(buf, (int)sizeof (buf), f) != NULL) {
-	char *end;
-	ulong val;
+    if (fscanf(f, "%lu %lu", &pages, &rpages) == 2) {
+	long pgkb = sysconf(_SC_PAGESIZE) / 1024;
 
-	if (!strncmp(buf, "Pss:", (size_t)4)) {
-	    val = strtoul(buf + 4, &end, 10);
-	    if (!strncmp(end, " kB", (size_t)3))
-		psbuf->pss += val;
-	} else if (!strncmp(buf, "Rss:", (size_t)4)) {
-	    val = strtoul(buf + 4, &end, 10);
-	    if (!strncmp(end, " kB", (size_t)3))
-		psbuf->rss += val;
-	} else if (!strncmp(buf, "Size:", (size_t)5)) {
-	    val = strtoul(buf + 5, &end, 10);
-	    if (!strncmp(end, " kB", (size_t)3))
-		psbuf->sz += val;
-	}
+	psbuf->sz = pages * (ulong)pgkb;
+	psbuf->rss = rpages * (ulong)pgkb;
     }
     fclose(f);
+    snprintf(buf, sizeof (buf), "/proc/%ld/smaps_rollup", (long)pid);
+    if ((f = fopen(buf, "r")) != NULL) {
+	while (fgets(buf, (int)sizeof (buf), f) != NULL) {
+	    if (!strncmp(buf, "Pss:", (size_t)4)) {
+		char *end;
+		ulong val = strtoul(buf + 4, &end, 10);
+
+		if (!strncmp(end, " kB", (size_t)3))
+		    psbuf->pss = val;
+		break;
+	    }
+	}
+	fclose(f);
+    }
+    if (!psbuf->pss)
+	psbuf->pss = psbuf->rss;
     snprintf(buf, sizeof (buf), "/proc/%ld/stat", (long)pid);
     if ((f = fopen(buf, "r")) == NULL)
 	return -1;
     if (fgets(buf, (int)sizeof (buf), f) != NULL) {
+	const char *p = strrchr(buf, ')');
 	char c;
 	long d;
-	const char *p = strchr(buf, ')');
-	ulong u;
-	ulong stime, utime;
+	ulong u, stime, utime;
 
-	if (p) {
-	    sscanf(p + 2, "%c %ld %ld %ld %ld %ld %lu %lu %lu %lu %lu %lu %lu",
-		&c, &d, &d, &d, &d, &d, &u, &u, &u, &u, &u, &utime, &stime);
-	    psbuf->stime = stime * 1000 / HZ;
-	    psbuf->utime = utime * 1000 / HZ;
+	if (p && sscanf(p + 2,
+	    "%c %ld %ld %ld %ld %ld %lu %lu %lu %lu %lu %lu %lu", &c, &d, &d, &d,
+	    &d, &d, &u, &u, &u, &u, &u, &utime, &stime) == 13) {
+	    long hz = sysconf(_SC_CLK_TCK);
+
+	    psbuf->stime = stime * 1000 / (ulong)hz;
+	    psbuf->utime = utime * 1000 / (ulong)hz;
 	}
     }
     fclose(f);

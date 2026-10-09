@@ -29,14 +29,12 @@
 typedef HANDLE thread_hdl_t;
 typedef DWORD thread_id_t;
 
-#define THREAD_BARRIER()	_ReadWriteBarrier()
 #define THREAD_EQUAL(x, y)	((x) == (y))
-#define THREAD_FENCE()		MemoryBarrier()
 #define THREAD_FUNC		uint __stdcall
 #define THREAD_HDL()		GetCurrentThread()
 #define THREAD_ID()		GetCurrentThreadId()
 #define THREAD_PAUSE()		YieldProcessor()
-#define THREAD_YIELD()		if (!SwitchToThread()) Sleep(0)
+#define THREAD_YIELD()		do { if (!SwitchToThread()) Sleep(0); } while (0)
 
 typedef DWORD tlskey_t;
 
@@ -68,8 +66,6 @@ typedef pthread_t thread_id_t;
 #endif
 
 #define INFINITE		(ulong)-1
-#define THREAD_BARRIER()	atomic_signal_fence(memory_order_acquire);
-#define THREAD_FENCE()		atomic_thread_fence(memory_order_relaxed);
 #define THREAD_FUNC		void *
 #define THREAD_HDL()		pthread_self()
 #if defined(__i386__) || defined(__x86_64__)
@@ -105,6 +101,7 @@ typedef pthread_key_t tlskey_t;
 #include <semaphore>
 #include <set>
 #include <shared_mutex>
+#include <thread>
 #include <unordered_map>
 
 #ifdef THREAD_PAUSE
@@ -176,8 +173,6 @@ public:
     ~ThreadLocal() { tls_free(key); }
 
     __forceinline ThreadLocal &operator =(C c) { set(c); return *this; }
-    // cppcheck-suppress returnDanglingLifetime
-    __forceinline C *operator ->(void) const { return &get(); }
     explicit __forceinline operator bool(void) const {
 	return tls_get(key) != nullptr;
     }
@@ -274,30 +269,7 @@ private:
     bool locked;
 };
 
-#ifdef __cpp_lib_atomic_flag_test
-class BLISTER atomic_bit: public atomic_flag {
-public:
-    explicit atomic_bit(void) { clear(); }
-};
-
-#else
-
-class BLISTER atomic_bit: private atomic_bool {
-public:
-    explicit atomic_bit(void): atomic_bool(false) {}
-
-    __forceinline void clear(memory_order order = memory_order_release) {
-	store(false, order);
-    }
-    __forceinline bool test(memory_order order = memory_order_relaxed) const {
-	return load(order);
-    }
-    __forceinline bool test_and_set(memory_order order = memory_order_acquire) {
-	// cppcheck-suppress knownConditionTrueFalse
-	return exchange(true, order);
-    }
-};
-#endif
+using atomic_bit = atomic_flag;
 
 using Lock = mutex;
 using FastLocker = FastLockerTemplate<Lock,
@@ -319,7 +291,7 @@ class BLISTER SpinLock: nocopy {
 public:
     explicit SpinLock(uint lmt = SPIN_LIMIT): spins(Processor::count() == 1 ?
 	0 : lmt) {}
-    __forceinline __no_sanitize_thread void lock(void) {
+    __forceinline void lock(void) {
 	// cppcheck-suppress knownConditionTrueFalse
 	while (UNLIKELY(!try_lock())) {
 	    uint limit = spins > 0;
@@ -332,11 +304,11 @@ public:
     __forceinline bool test_lock(void) const {
 	return lck.test(memory_order_relaxed);
     }
-    __forceinline __no_sanitize_thread bool try_lock(void) {
+    __forceinline bool try_lock(void) {
 	// cppcheck-suppress knownConditionTrueFalse
 	return !lck.test_and_set(memory_order_acquire);
     }
-    __forceinline __no_sanitize_thread void unlock(void) {
+    __forceinline void unlock(void) {
 	lck.clear(memory_order_release);
     }
 
@@ -470,7 +442,6 @@ class BLISTER UnfairLock: nocopy {
 public:
     explicit UnfairLock(uint lmt = SPIN_LIMIT):
 	spins(Processor::count() == 1 ? 0 : lmt) {}
-    ~UnfairLock() = default;
 
     __forceinline void lock(void) {
 	uint32_t expected = 0;
@@ -544,10 +515,9 @@ protected:
 };
 
 template<class C>
-class BLISTER _Semaphore: public C, nocopy {
+class BLISTER TimedSemaphore: public C, nocopy {
 public:
-    explicit _Semaphore(): C(0) {}
-    ~_Semaphore() = default;
+    explicit TimedSemaphore(): C(0) {}
 
     using C::acquire;
     using C::release;
@@ -562,8 +532,8 @@ public:
     }
 };
 
-typedef _Semaphore<binary_semaphore> FastSemaphore;
-typedef _Semaphore<counting_semaphore<>> Semaphore;
+using FastSemaphore = TimedSemaphore<binary_semaphore>;
+using Semaphore = TimedSemaphore<counting_semaphore<>>;
 
 // semaphore with tracking counter
 class BLISTER CountedSemaphore: nocopy {
@@ -922,11 +892,7 @@ private:
 #else
 
 inline void msleep(ulong msec) {
-    struct timespec ts;
-
-    ts.tv_sec = (time_t)(msec / 1000UL);
-    ts.tv_nsec = (long)((msec % 1000UL) * 1000000UL);
-    nanosleep(&ts, NULL);
+    this_thread::sleep_for(chrono::milliseconds(msec));
 }
 
 #include <sys/ipc.h>
@@ -976,8 +942,28 @@ public:
 	if (msec == INFINITE)
 	    return semop(op);
 #ifdef BSD_BASE
-	(void)msec;
-	return semop(op);
+	// no semtimedop() so poll with a short backoff until the deadline
+	msec_t end = mticks() + msec;
+	ulong nap = 1;
+
+	op.sem_flg = IPC_NOWAIT;
+	for (;;) {
+	    if (::semop(hdl, &op, 1) == 0)
+		return true;
+	    if (errno != EAGAIN && errno != EINTR)
+		return false;
+	    msec_t now = mticks();
+
+	    if (now >= end)
+		return false;
+	    if (errno == EAGAIN) {
+		ulong left = (ulong)(end - now);
+
+		msleep(nap < left ? nap : left);
+		if (nap < 10)
+		    nap *= 2;
+	    }
+	}
 #else
 	timespec ts{};
 

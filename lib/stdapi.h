@@ -81,11 +81,6 @@
 				WARN_DISABLE(w)
 
 #ifdef __cplusplus
-#if __cplusplus <= 202302L
-#define CPLUSPLUS	23
-#else
-#define CPLUSPLUS	26
-#endif
 #define EXTERNC		extern "C" {
 #define EXTERNC_	}
 #define LAMBDA(m)	[this]() { m(); }
@@ -480,6 +475,7 @@ EXTERNC_
 #define stricmp		strcasecmp
 #define strnicmp	strncasecmp
 #define wcsicmp		wcscasecmp
+#define wcsnicmp	wcsncasecmp
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 #ifdef __APPLE__
@@ -550,7 +546,7 @@ EXTERNC_
 #define tstrlcat	wcslcat
 #define tstrncat	wcsncat
 #define tstrcpy		wcscpy
-#define tstlncpy	wcslcpy
+#define tstrlcpy	wcslcpy
 #define tstrncpy	wcsncpy
 #define tstrlen		wcslen
 #define	tstrchr		wcschr
@@ -771,6 +767,7 @@ EXTERNC_
 #ifdef __cplusplus
 
 #include <bit>
+#include <charconv>
 #include <chrono>
 #include <functional>
 #include <iostream>
@@ -896,6 +893,8 @@ inline uint32_t swar4(const char *s) {
     uint32_t chunk;
 
     memcpy(&chunk, s, sizeof (chunk));
+    if constexpr (endian::native == endian::big)
+	chunk = byteswap(chunk);
     chunk -= 0x30303030U;
     chunk = chunk * 10 + (chunk >> 8);
     chunk &= 0x00FF00FFU;
@@ -906,6 +905,8 @@ inline uint32_t swar8(const char *s) {
     uint64_t chunk;
 
     memcpy(&chunk, s, sizeof (chunk));
+    if constexpr (endian::native == endian::big)
+	chunk = byteswap(chunk);
     chunk -= 0x3030303030303030ULL;
     chunk = chunk * 10 + (chunk >> 8);
     chunk = (((chunk & 0x000000FF000000FFULL) * 0x000F424000000064ULL) +
@@ -1006,231 +1007,159 @@ __forceinline tchar *to_str(tchar *buf, tchar *last, T val) {
 }
 
 // modern time(NULL) replacement
-static inline time_t seconds(void) {
+inline time_t seconds(void) {
     return chrono::system_clock::to_time_t(chrono::system_clock::now());
 }
 
-// string comparison functions
+// string comparison functions - C strings (pointers or arrays) compare with
+// the C library and string-like classes through basic_string_view
 template<typename T>
-__forceinline int stringcmp(const T *a, const T *b) {
-    if constexpr (is_same_v<T, wchar>)
+concept cstr_arg = is_pointer_v<decay_t<T>> &&
+    is_integral_v<remove_pointer_t<decay_t<T>>>;
+
+template<typename T>
+concept strview_arg = requires (const T &t) {
+    typename T::value_type;
+    t.data();
+    t.size();
+};
+
+template<typename T>
+__forceinline auto strview(const T &s) {
+    if constexpr (cstr_arg<T>) {
+	using P = decay_t<T>;
+
+	return basic_string_view<remove_cv_t<remove_pointer_t<P>>>(
+	    static_cast<P>(s));
+    } else if constexpr (strview_arg<T>) {
+	return basic_string_view<typename T::value_type>(s.data(), s.size());
+    } else {
+	return tstring_view(s);
+    }
+}
+
+template<typename C>
+__forceinline int cstrcmp(const C *a, const C *b) {
+    if constexpr (is_same_v<C, wchar>)
 	return wcscmp(a, b);
     else
 	return strcmp(a, b);
 }
 
-template<class C>
-__forceinline int stringcmp(const C &a, const C &b) {
-    if constexpr (is_same_v<C, basic_string<typename C::value_type>>) {
-	return a.compare(b);
-    } else {
-	size_t asz = size(a), bsz = size(b);
-	int ret = tstrncmp(data(a), data(b), asz < bsz ? asz : bsz);
-
-	if (ret != 0)
-	    return ret;
-	if (asz < bsz)
-	    return -1;
-	return asz > bsz ? 1 : 0;
-    }
+template<typename C>
+__forceinline int cstrncmp(const C *a, const C *b, size_t n) {
+    if constexpr (is_same_v<C, wchar>)
+	return wcsncmp(a, b, n);
+    else
+	return strncmp(a, b, n);
 }
 
-template<typename T>
-__forceinline int stringicmp(const T *a, const T *b) {
-    if constexpr (is_same_v<T, wchar>)
+template<typename C>
+__forceinline int cstricmp(const C *a, const C *b) {
+    if constexpr (is_same_v<C, wchar>)
 	return wcsicmp(a, b);
     else
 	return stricmp(a, b);
 }
 
-template<class C>
-__forceinline int stringicmp(const C &a, const C &b) {
-    size_t asz = size(a), bsz = size(b);
-    int ret = tstrnicmp(data(a), data(b), asz < bsz ? asz : bsz);
-
-    if (ret != 0)
-	return ret;
-    if (asz < bsz)
-	return -1;
-    return asz > bsz ? 1 : 0;
+template<typename C>
+__forceinline int cstrnicmp(const C *a, const C *b, size_t n) {
+    if constexpr (is_same_v<C, wchar>)
+	return wcsnicmp(a, b, n);
+    else
+	return strnicmp(a, b, n);
 }
 
-template<typename T1, typename T2>
-__forceinline int stringicmp(const T1 *a, const basic_string_view<T2> &b) {
-    size_t bsz = b.size();
-    int ret = tstrnicmp(a, b.data(), bsz);
+template<typename A, typename B>
+__forceinline int stringcmp(const A &a, const B &b) {
+    if constexpr (cstr_arg<A> && cstr_arg<B>) {
+	const auto *ap = a;
+	const auto *bp = b;
 
-    if (ret != 0)
-	return ret;
-    return a[bsz] == '\0' ? 0 : 1;
-}
+	return cstrcmp(ap, bp);
+    } else if constexpr (cstr_arg<A>) {
+	const auto *ap = a;
+	const auto bv = strview(b);
+	int ret = cstrncmp(ap, bv.data(), bv.size());
 
-template<typename T, class C>
-__forceinline int stringicmp(const T *a, const C &b) {
-    return stringicmp(a, basic_string_view<T>(b));
-}
-
-template<class C, typename T>
-__forceinline int stringicmp(const C &a, const T *b) {
-    return -stringicmp(b, a);		// NOSONAR
-}
-
-template<typename T1, typename T2>
-__forceinline int stringicmp(const T1 &a, const T2 &b) {
-    if constexpr (requires { typename T1::value_type; data(a); size(a); } &&
-	requires { typename T2::value_type; data(b); size(b); }) {
-	size_t asz = size(a), bsz = size(b);
-	int ret = tstrnicmp(data(a), data(b), asz < bsz ? asz : bsz);
-
-	if (ret != 0)
-	    return ret;
-	if (asz < bsz)
-	    return -1;
-	return asz > bsz ? 1 : 0;
+	return ret ? ret : (ap[bv.size()] == '\0' ? 0 : 1);
+    } else if constexpr (cstr_arg<B>) {
+	return -stringcmp(b, a);
     } else {
-	return stringicmp(tstring(a), tstring(b));
+	return strview(a).compare(strview(b));
     }
 }
 
-template<typename T>
-__forceinline bool stringeq(const T *a, const T *b) {
-    if constexpr (is_same_v<T, wchar>)
-	return *a == *b && !wcscmp(a, b);
-    else
-	return *a == *b && !strcmp(a, b);
-}
+template<typename A, typename B>
+__forceinline int stringicmp(const A &a, const B &b) {
+    if constexpr (cstr_arg<A> && cstr_arg<B>) {
+	const auto *ap = a;
+	const auto *bp = b;
 
-template<class C>
-__forceinline bool stringeq(const C &a, const C &b) {
-    if constexpr (is_same_v<C, basic_string<typename C::value_type>>)
-	return a == b;
-    else
-	return size(a) == size(b) && !tstrncmp(data(a), data(b), size(a));
-}
+	return cstricmp(ap, bp);
+    } else if constexpr (cstr_arg<A>) {
+	const auto *ap = a;
+	const auto bv = strview(b);
+	int ret = cstrnicmp(ap, bv.data(), bv.size());
 
-template<typename T1, typename T2>
-__forceinline bool stringeq(const T1 *a, const basic_string_view<T2> &b) {
-    return !tstrncmp(a, b.data(), b.size()) && a[b.size()] == '\0';
-}
-
-template<typename T, class C>
-__forceinline bool stringeq(const T *a, const C &b) {
-    return stringeq(a, basic_string_view<T>(b));
-}
-
-template<class C, typename T>
-__forceinline bool stringeq(const C &a, const T *b) { return stringeq(b, a); }
-
-template<typename T1, typename T2>
-__forceinline bool stringeq(const T1 &a, const T2 &b) {
-    if constexpr (is_same_v<T1, T2>) {
-	return a == b;
-    } else if constexpr (is_pointer_v<T1> && is_pointer_v<T2>) {
-	return !tstrcmp(a, b);
-    } else if constexpr (is_pointer_v<T1>) {
-	using T3 = remove_pointer_t<T1>;
-	if constexpr (is_convertible_v<T2, basic_string_view<T3>>) {
-	    basic_string_view<T3> bv(b);
-
-	    return !tstrncmp(a, bv.data(), bv.size()) && a[bv.size()] == '\0';
-	} else {
-	    return !tstrcmp(a, tstring(b).c_str());
-	}
-    } else if constexpr (is_pointer_v<T2>) {
-	using T3 = remove_pointer_t<T2>;
-	if constexpr (is_convertible_v<T1, basic_string_view<T3>>) {
-	    basic_string_view<T3> av(a);
-
-	    return !tstrncmp(av.data(), b, av.size()) && b[av.size()] == '\0';
-	} else {
-	    return !tstrcmp(tstring(a).c_str(), b);
-	}
-    } else if constexpr (is_convertible_v<T1,
-	basic_string_view<typename T1::value_type>> && is_convertible_v<T2,
-	basic_string_view<typename T2::value_type>>) {
-	basic_string_view<typename T1::value_type> av(a);
-	basic_string_view<typename T2::value_type> bv(b);
-
-	return av == bv;
+	return ret ? ret : (ap[bv.size()] == '\0' ? 0 : 1);
+    } else if constexpr (cstr_arg<B>) {
+	return -stringicmp(b, a);
     } else {
-	return tstring(a) == tstring(b);
+	const auto av = strview(a);
+	const auto bv = strview(b);
+	size_t asz = av.size(), bsz = bv.size();
+	int ret = cstrnicmp(av.data(), bv.data(), asz < bsz ? asz : bsz);
+
+	return ret ? ret : (asz < bsz ? -1 : (asz > bsz ? 1 : 0));
     }
 }
 
-template<typename T>
-__forceinline bool stringieq(const T *a, const T *b) {
-    return !stringicmp(a, b);
-}
+template<typename A, typename B>
+__forceinline bool stringeq(const A &a, const B &b) {
+    if constexpr (cstr_arg<A> && cstr_arg<B>) {
+	const auto *ap = a;
+	const auto *bp = b;
 
-template<class C>
-__forceinline bool stringieq(const C &a, const C &b) {
-    return size(a) == size(b) && !tstrnicmp(data(a), data(b), size(a));
-}
+	return *ap == *bp && !cstrcmp(ap, bp);
+    } else if constexpr (cstr_arg<A>) {
+	const auto *ap = a;
+	const auto bv = strview(b);
 
-template<typename T1, typename T2>
-__forceinline bool stringieq(const T1 *a, const basic_string_view<T2> &b) {
-    return !tstrnicmp(a, b.data(), b.size()) && a[b.size()] == '\0';
-}
-
-template<typename T, class C>
-__forceinline bool stringieq(const T *a, const C &b) {
-    return stringieq(a, basic_string_view<T>(b));
-}
-
-template<class C, typename T>
-__forceinline bool stringieq(const C &a, const T *b) { return stringieq(b, a); }
-
-template<typename T1, typename T2>
-__forceinline bool stringieq(const T1 &a, const T2 &b) {
-    if constexpr (requires { typename T1::value_type; data(a); size(a); } &&
-	requires { typename T2::value_type; data(b); size(b); })
-	return size(a) == size(b) && !tstrnicmp(data(a), data(b), size(a));
-    else
-	return stringieq(tstring(a), tstring(b));
-}
-
-template<typename T>
-__forceinline bool stringless(const T *a, const T *b) {
-    if constexpr (is_same_v<T, wchar>)
-	return wcscmp(a, b) < 0;
-    else
-	return strcmp(a, b) < 0;
-}
-
-template<class C>
-__forceinline bool stringless(const C &a, const C &b) { return a < b; }
-
-template<typename T1, typename T2>
-__forceinline bool stringless(const T1 *a, const basic_string_view<T2> &b) {
-    return tstrncmp(a, b.data(), b.size()) < 0;
-}
-
-template<typename T, class C>
-__forceinline bool stringless(const T *a, const C &b) {
-    return stringless(a, basic_string_view<T>(b));
-}
-
-template<class C, typename T>
-__forceinline bool stringless(const C &a, const T *b) {
-    basic_string_view<T> av(a);
-    int ret = tstrncmp(av.data(), b, av.size());
-
-    return ret < 0 || (ret == 0 && b[av.size()] != '\0');
-}
-
-template<typename T1, typename T2>
-__forceinline bool stringless(const T1 &a, const T2 &b) {
-    if constexpr (requires { typename T1::value_type; data(a); size(a); } &&
-	requires { typename T2::value_type; data(b); size(b); }) {
-	size_t asz = size(a), bsz = size(b);
-	int ret = tstrncmp(data(a), data(b), asz < bsz ? asz : bsz);
-
-	if (ret != 0)
-	    return ret < 0;
-	return asz < bsz;
+	return !cstrncmp(ap, bv.data(), bv.size()) && ap[bv.size()] == '\0';
+    } else if constexpr (cstr_arg<B>) {
+	return stringeq(b, a);
     } else {
-	return tstring(a) < tstring(b);
+	return strview(a) == strview(b);
     }
+}
+
+template<typename A, typename B>
+__forceinline bool stringieq(const A &a, const B &b) {
+    if constexpr (cstr_arg<A> && cstr_arg<B>) {
+	const auto *ap = a;
+	const auto *bp = b;
+
+	return !cstricmp(ap, bp);
+    } else if constexpr (cstr_arg<A>) {
+	const auto *ap = a;
+	const auto bv = strview(b);
+
+	return !cstrnicmp(ap, bv.data(), bv.size()) && ap[bv.size()] == '\0';
+    } else if constexpr (cstr_arg<B>) {
+	return stringieq(b, a);
+    } else {
+	const auto av = strview(a);
+	const auto bv = strview(b);
+
+	return av.size() == bv.size() && !cstrnicmp(av.data(), bv.data(),
+	    av.size());
+    }
+}
+
+template<typename A, typename B>
+__forceinline bool stringless(const A &a, const B &b) {
+    return stringcmp(a, b) < 0;
 }
 
 // string comparison functors
@@ -1457,9 +1386,11 @@ constexpr auto ascii_fold = [](T c) {
 };
 constexpr auto unicode_fold = [](wchar c) {
     // towupper() is not constexpr so fold the ASCII subrange
-    if (is_constant_evaluated())
+    if consteval {
 	return c >= L'a' && c <= L'z' ? (wchar)(c - (L'a' - L'A')) : c;
-    return (wchar)towupper((ushort)c);
+    } else {
+	return (wchar)towupper((ushort)c);
+    }
 };
 
 template<typename T1, size_t N>
@@ -1516,14 +1447,9 @@ __forceinline strhash_t stringihash(const T &s) {
 
 template<class C>
 struct ptrhash {
+    // heap addresses have constant low bits that power-of-2 tables would mask
     constexpr size_t operator ()(const C *p) const {
-	if constexpr (sizeof (size_t) == 4 && sizeof (char *) == 8) {
-	    uintptr_t addr = (uintptr_t)p;
-
-	    return (size_t)((addr >> 32) ^ addr);
-	} else {
-	    return (size_t)p;
-	}
+	return (size_t)rapidmix((strhash_t)(uintptr_t)p, 0x9e3779b97f4a7c15ULL);
     }
 };
 
@@ -1636,12 +1562,12 @@ public:
     }
     bool pop(C &obj) {
 	if (front == &obj) {
-	    if ((front = (C *)obj.next) == nullptr)
+	    if ((front = obj.next) == nullptr)
 		back = nullptr;
 	    obj.next = nullptr;
 	    return true;
 	}
-	for (C *p = front; LIKELY(p); p = (C *)p->next) {
+	for (C *p = front; LIKELY(p); p = p->next) {
 	    if (UNLIKELY(p->next == &obj)) {
 		if ((p->next = obj.next) == nullptr)
 		    back = p;
@@ -1660,7 +1586,7 @@ public:
 	    C *p = front;
 
 	    while (LIKELY(p->next != back))
-		p = (C *)p->next;
+		p = p->next;
 	    back = p;
 	    back->next = nullptr;
 	}
@@ -1669,7 +1595,7 @@ public:
     __forceinline C *pop_front(void) {
 	C *obj = front;
 
-	if ((front = (C *)obj->next) == nullptr)
+	if ((front = obj->next) == nullptr)
 	    back = nullptr;
 	else
 	    obj->next = nullptr;
@@ -1745,7 +1671,8 @@ public:
     __forceinline C *pop_back(void) {
 	C *obj = Base::pop_back();
 
-	sz.dec();
+	if (LIKELY(obj))
+	    sz.dec();
 	return obj;
     }
     __forceinline C *pop_front(void) {
@@ -1757,12 +1684,12 @@ public:
     __forceinline void push_back(C &obj) { Base::push_back(obj); sz.inc(); }
     __forceinline void push_front(C &obj) { Base::push_front(obj); sz.inc(); }
     void push_back(SizedObjectList &lst) {
-	Base::push_back((Base &)lst);
+	Base::push_back(lst);
 	sz.add(lst.size());
 	lst.sz.zero();
     }
     void push_front(SizedObjectList &lst) {
-	Base::push_front((Base &)lst);
+	Base::push_front(lst);
 	sz.add(lst.size());
 	lst.sz.zero();
     }

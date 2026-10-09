@@ -102,19 +102,19 @@ bool DLLibrary::open(const tchar *dll) {
     file = dll ? dll : T("self");
 #ifdef _WIN32
     hdl = dll ? LoadLibrary(dll) : GetModuleHandle(NULL);
-    if (!hdl && dll && file.find(T(".dll")) == file.npos) {
+    if (!hdl && dll && !file.contains(T(".dll"))) {
 	file += T(".dll");
 	hdl = LoadLibrary(file.c_str());
     }
 #else
     hdl = dlopen(dll, RTLD_LAZY | RTLD_GLOBAL);
 #ifdef __APPLE__
-    if (!hdl && dll && file.find(".dylib") == file.npos) {
+    if (!hdl && dll && !file.contains(".dylib")) {
 	file += ".dylib";
 	hdl = dlopen(file.c_str(), RTLD_LAZY | RTLD_GLOBAL);
     }
 #else
-    if (!hdl && dll && file.find(".so") == file.npos) {
+    if (!hdl && dll && !file.contains(".so")) {
 	file += ".so";
 	hdl = dlopen(file.c_str(), RTLD_LAZY | RTLD_GLOBAL);
     }
@@ -155,6 +155,12 @@ uint Processor::init(void) {
     GetSystemInfo(&si);
     return (uint)si.dwNumberOfProcessors;
 #else
+#ifdef __linux__
+    cpu_set_t cset;
+
+    if (!sched_getaffinity(0, sizeof (cset), &cset) && CPU_COUNT(&cset) > 0)
+	return (uint)CPU_COUNT(&cset);
+#endif
     return (uint)sysconf(_SC_NPROCESSORS_ONLN);
 #endif
 }
@@ -209,10 +215,10 @@ void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
     if (func) {
 	(*fmap)[data] = func;
     } else if (data) {
-	func = (*fmap)[data];
-	fmap->erase(data);
-	if (func)
-	    func(data);
+	auto node = fmap->extract(data);
+
+	if (node)
+	    node.mapped()(data);
     }
     WARN_POP();
 }
@@ -329,9 +335,11 @@ void Thread::thread_cleanup(void) {
 THREAD_FUNC Thread::thread_init(void *arg) {
     Thread *thread = (Thread *)arg;
 
-    thread->lck.lock();
     thread->id = THREAD_ID();
+    thread->lck.lock();
+#ifdef _WIN32
     srand((uint)((ulong)uticks() ^ (ulong)(usec_t)thread->id));	// NOSONAR
+#endif
     thread->setState(Running);
     thread->cv.set();
     thread->lck.unlock();
@@ -381,7 +389,8 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
 	pthread_attr_setstacksize(&attr, stacksz);
     }
     pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-    pthread_create(&hdl, &attr, thread_init, this);
+    if (pthread_create(&hdl, &attr, thread_init, this))
+	hdl = 0;
     pthread_attr_destroy(&attr);
 #endif
     if (hdl) {
@@ -452,7 +461,20 @@ bool Thread::wait(ulong timeout) {
     if (getState() == Init) {
 	return true;
     } else if (getState() == Terminated) {
-	return hdl ? cv.wait() : true;
+	msec_t end = mticks() + timeout;
+
+	while (hdl) {
+	    msec_t now = mticks();
+
+	    if (timeout != INFINITE) {
+		if (now >= end)
+		    return false;
+		cv.wait((ulong)(end - now));
+	    } else {
+		cv.wait();
+	    }
+	}
+	return true;
     } else if (id == NOID) {
 	lkr.unlock();
 #ifdef _WIN32
@@ -521,14 +543,19 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
 }
 
 // control all threads in group - does not work yet if caller is in same group
+// func runs unlocked since Thread::terminate() re-enters notify()
 void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
+    vector<Thread *> snapshot;
     Locker lck(cvlck);
 
     setState(ts);
     for (auto *thread : threads) {
 	if (!THREAD_ISSELF(thread->id))
-	    (thread->*func)();
+	    snapshot.push_back(thread);
     }
+    lck.unlock();
+    for (auto *thread : snapshot)
+	(thread->*func)();
 }
 
 int ThreadGroup::init(void *thisp) {

@@ -55,8 +55,6 @@ void SMTPClient::attribute(const tchar *attr, const tchar *val) {
 }
 
 bool SMTPClient::auth(const tchar *id, const tchar *pass) {
-    size_t idlen = tstrlen(id) + 1;
-    size_t passlen = tstrlen(pass) + 1;
     size_t uusz;
     char *uubuf;
     bool ret = false;
@@ -65,6 +63,8 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	// return "success" if server is open and does not allow auth
 	ret = true;
     } else if (exts.find(T(" PLAIN")) != exts.npos) {
+	size_t idlen = tstrlen(id) + 1;
+	size_t passlen = tstrlen(pass) + 1;
 	char *buf = new char[idlen + passlen + 1];
 
 	buf[0] = '\0';
@@ -920,7 +920,6 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
 int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
     tchar c;
     tchar *cdst;
-    uint cnt;
     tchar *dst;
     tchar *src = in;
 
@@ -941,8 +940,9 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
 		*dst++ = c;
 	    cmt = nullptr;
 	} else if (c == '(') {
+	    uint cnt = 1;
+
 	    cmt = cdst = src;
-	    cnt = 1;
 	    while (cnt && (c = *src) != 0 &&
 		!(c == '\n' && src[1] != ' ' && src[1] != '\t')) {
 		src++;

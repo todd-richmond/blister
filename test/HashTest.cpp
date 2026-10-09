@@ -503,6 +503,80 @@ int tmain(int argc, const tchar * const argv[]) {
 		fail(T("FAIL: Bounded integer parse of ") << n);
 	}
     }
+    // every pointer / array / string / string_view pairing must agree with
+    // the std::string result for both char types
+    {
+	tcout << T("Testing string compare type matrix...\n");
+	static const char *words[] = {
+	    "", "a", "A", "abc", "ABC", "abd", "abcd", "ABCD", "Zebra", "zebra"
+	};
+	int bad = 0;
+
+	auto check = [&](auto tag) {
+	    using C = decltype(tag);
+	    using S = basic_string<C>;
+
+	    for (const char *wa : words) {
+		for (const char *wb : words) {
+		    S sa(wa, wa + strlen(wa)), sb(wb, wb + strlen(wb));
+		    S la(sa), lb(sb);
+		    C ma[16] = {}, mb[16] = {};
+		    C *pa = ma, *pb = mb;
+		    const C *ca = sa.c_str(), *cb = sb.c_str();
+		    basic_string_view<C> va(sa), vb(sb);
+
+		    copy(sa.begin(), sa.end(), ma);
+		    copy(sb.begin(), sb.end(), mb);
+		    for (auto &c : la)
+			c = (C)(c >= 'A' && c <= 'Z' ? c + 32 : c);
+		    for (auto &c : lb)
+			c = (C)(c >= 'A' && c <= 'Z' ? c + 32 : c);
+
+		    int rc = sa.compare(sb), ric = la.compare(lb);
+		    auto sgn = [](int v) { return (v > 0) - (v < 0); };
+		    auto ok = [&](const auto &a, const auto &b) {
+			return stringeq(a, b) == (rc == 0) &&
+			    stringieq(a, b) == (ric == 0) &&
+			    stringless(a, b) == (rc < 0) &&
+			    sgn(stringcmp(a, b)) == sgn(rc) &&
+			    sgn(stringicmp(a, b)) == sgn(ric);
+		    };
+
+		    bad += !ok(pa, pb) + !ok(pa, cb) + !ok(ca, pb) +
+			!ok(ca, cb) + !ok(ma, mb) + !ok(ma, cb) + !ok(pa, mb) +
+			!ok(sa, pb) + !ok(sa, mb) + !ok(sa, cb) + !ok(ca, sb) +
+			!ok(ma, sb) + !ok(sa, sb) + !ok(va, vb) + !ok(sa, vb) +
+			!ok(va, sb) + !ok(ca, vb) + !ok(va, cb) + !ok(ma, vb) +
+			!ok(va, mb) + !ok(pa, vb) + !ok(va, pb);
+		}
+	    }
+	};
+
+	check(char {});
+	check(wchar_t {});
+	tests++;
+	if (bad)
+	    fail(T("FAIL: string compare type matrix, ") << bad << T(" bad"));
+    }
+    // aligned addresses must not leave the low hash bits constant
+    {
+	tcout << T("Testing ptrhash functor...\n");
+	static char objs[1000][16];
+	bool seen[64] = {};
+	int distinct = 0;
+
+	for (auto &o : objs) {
+	    size_t slot = ptrhash<char>()(o) & 63;
+
+	    if (!seen[slot]) {
+		seen[slot] = true;
+		++distinct;
+	    }
+	}
+	tests++;
+	if (distinct < 48)
+	    fail(T("FAIL: ptrhash low bits cover ") << distinct << T("/64"));
+    }
     tcout << T("Test Results: ") << (tests - failures) << T("/") << tests <<
 	T(" tests passed\n");
     if (failures > 0)

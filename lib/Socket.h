@@ -55,6 +55,7 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #define WSAEALREADY	EALREADY
 #define WSAEINPROGRESS	EINPROGRESS
 #define WSAEINTR	EINTR
+#define WSAETIMEDOUT	ETIMEDOUT
 #define WSAEWOULDBLOCK	EWOULDBLOCK
 
 #ifdef BSD_BASE
@@ -68,6 +69,7 @@ inline int closesocket(socket_t fd) { return ::close(fd); }
 inline int sockerrno(void) { return errno; }
 #endif
 
+#include <utility>
 #include <vector>
 #include "Streams.h"
 #include "Thread.h"
@@ -80,11 +82,8 @@ constexpr socket_t SOCK_INVALID = INVALID_SOCKET;
 constexpr bool blocked(int e) {
 #ifdef _WIN32
     return e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY;
-#elif EAGAIN == EWOULDBLOCK
-    return LIKELY(e == EAGAIN) || e == ENOBUFS || e == ENOSR ||
-	e == EINPROGRESS || e == EALREADY;
 #else
-    return LIKELY(e == EWOULDBLOCK || e == EAGAIN) || e == ENOBUFS ||
+    return LIKELY(e == EAGAIN || e == EWOULDBLOCK) || e == ENOBUFS ||
 	e == ENOSR || e == EINPROGRESS || e == EALREADY;
 #endif
 }
@@ -183,7 +182,10 @@ public:
     bool set(const hostent *h);
     bool set(const sockaddr &sa);
     ushort size(void) const { return size(family()); }
-    tstring str(void) const { return str(host()); }
+    // like host() but never does a reverse DNS lookup
+    tstring str(void) const {
+	return str(!name.empty() || !(ipv4() || ipv6()) ? host() : ip());
+    }
     bool v4addr(in_addr *addr4) const {
 	if (!v4mapped())
 	    return false;
@@ -233,7 +235,10 @@ private:
 
     sockaddr_any addr;
     mutable tstring name;
-    static sa_family_t families[];
+    static constexpr sa_family_t families[] = {
+	AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6, AF_UNIX,
+	AF_UNSPEC
+    };
 
     tstring str(const tstring &val) const;
 };
@@ -272,20 +277,13 @@ public:
     }
 
 private:
-    struct BLISTER Range {
-	bool operator ()(const Range &a, const Range &b) const {
-	    return a.rmax < b.rmin;
-	}
-	auto operator <=>(const Range &a) const {
-	    if (rmin != a.rmin)
-		return rmin <=> a.rmin;
-	    return rmax <=> a.rmax;
-	}
+    struct Range {
+	auto operator <=>(const Range &) const = default;
 
-	ulong rmin, rmax;
+	uint32_t rmin, rmax;
     };
 
-    vector<Range> ranges;
+    vector<Range> ranges;			// sorted and disjoint
 };
 
 /*
@@ -367,8 +365,8 @@ public:
 
 	return getsockopt(lvl, opt, i) ? i : -1;
     }
-    template<class C> bool setsockopt(int lvl, int opt, C &val) { // NOSONAR
-	return check(::setsockopt(sbuf->sock, lvl, opt, (char *)&val, // NOSONAR
+    template<class C> bool setsockopt(int lvl, int opt, const C &val) { // NOSONAR
+	return check(::setsockopt(sbuf->sock, lvl, opt, (const char *)&val,
 	    sizeof (val)));
     }
     bool setsockopt(int lvl, int opt, bool val) { // NOSONAR
@@ -407,20 +405,21 @@ public:
     bool rtimeout(uint msec) { sbuf->rto = msec; return true; }
     bool rtimeout(const timeval &tv) {
 	if (!setsockopt(SOL_SOCKET, SO_RCVTIMEO, tv))
-	    rtimeout((uint)(tv.tv_sec * 1000 + tv.tv_usec / 1000));
-	return true;
+	    return false;
+	return rtimeout((uint)(tv.tv_sec * 1000 + tv.tv_usec / 1000));
     }
     uint wtimeout(void) const { return sbuf->wto; }
     bool wtimeout(uint msec) { sbuf->wto = msec; return true; }
     bool wtimeout(const timeval &tv) {
 	if (!setsockopt(SOL_SOCKET, SO_SNDTIMEO, tv))
-	    wtimeout((uint)(tv.tv_sec * 1000 + tv.tv_usec / 1000));
-	return true;
+	    return false;
+	return wtimeout((uint)(tv.tv_sec * 1000 + tv.tv_usec / 1000));
     }
 
     int read(void *buf, uint len) const;
     int read(void *buf, uint len, Sockaddr &sa) const;
-    template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
+    template<class C> requires is_trivially_copyable_v<C>
+    int read(C &c) const { return read(&c, sizeof (c)); }
     long readv(iovec *iov, int count) const;
     long readv(iovec *iov, int count, Sockaddr &sa) const;
 #ifndef _WIN32
@@ -428,9 +427,8 @@ public:
 #endif
     int write(const void *buf, uint len) const;
     int write(const void *buf, uint len, const Sockaddr &sa) const;
-    template<class C> int write(const C &c) const {
-	return write(&c, sizeof (c));
-    }
+    template<class C> requires is_trivially_copyable_v<C>
+    int write(const C &c) const { return write(&c, sizeof (c)); }
     long writev(const iovec *iov, int count) const;
     long writev(const iovec *iov, int count, const Sockaddr &sa) const;
 
@@ -457,10 +455,9 @@ protected:
 		int ret = ::closesocket(sock);
 
 		sock = SOCK_INVALID;
-		if (path) {
-		    (void)::unlink(path);
-		    free(path);
-		    path = nullptr;
+		if (!path.empty()) {
+		    (void)::unlink(path.c_str());
+		    path.clear();
 		}
 		if (ret)
 		    err = sockerrno();
@@ -481,17 +478,14 @@ protected:
 	    reference();
 	}
 	void unlink(const char *p) {
-	    if (strchr(p, '/')) {
-		if (path)
-		    free(path);
-		path = strdup(p);
-	    }
+	    if (strchr(p, '/'))
+		path = p;
 	}
 
     private:
 	bool blck = true, own;
 	mutable int err = 0;
-	char *path = nullptr;
+	string path;
 	uint rto = SOCK_INFINITE, wto = SOCK_INFINITE;
 	socket_t sock;
 	int type;
@@ -500,8 +494,8 @@ protected:
     };
 
     bool __forceinline check(int ret) const { return sbuf->check(ret); }
-    bool rpoll(void) const;
-    bool wpoll(void) const;
+    long rdret(long in) const;
+    bool iowait(bool out) const;
 
     SocketBuf *sbuf;
 };
@@ -514,9 +508,16 @@ class BLISTER SocketSet {
 public:
     explicit SocketSet(uint maxfds = 0);
     SocketSet(const SocketSet &ss) { *this = ss; }
-    ~SocketSet() { delete [] fds; }
+    SocketSet(SocketSet &&ss) noexcept: fds(std::move(ss.fds)),
+	maxsz(std::exchange(ss.maxsz, 0U)), sz(std::exchange(ss.sz, 0U)) {}
 
     SocketSet &operator =(const SocketSet &ss);
+    SocketSet &operator =(SocketSet &&ss) noexcept {
+	fds.swap(ss.fds);
+	swap(maxsz, ss.maxsz);
+	swap(sz, ss.sz);
+	return *this;
+    }
     template<class C> socket_t operator [](C at) const {
 	return SSET_FD((uint)at);
     }
@@ -542,10 +543,23 @@ public:
 
 private:
 #ifdef _WIN32
-    fd_set *fds = nullptr;
+    struct FdFree {
+	void operator ()(fd_set *p) const { delete [] (socket_t *)p; }
+    };
+    using fdptr = unique_ptr<fd_set, FdFree>;
+
+    static fdptr alloc(uint n) {
+	return fdptr((fd_set *)new socket_t[(size_t)n + 1]);
+    }
 #else
-    pollfd *fds = nullptr;
+    using fdptr = unique_ptr<pollfd[]>;
+
+    static fdptr alloc(uint n) {
+	return make_unique_for_overwrite<pollfd[]>(n);
+    }
 #endif
+
+    fdptr fds;
     uint maxsz = 0, sz = 0;
 };
 
@@ -553,10 +567,11 @@ inline SocketSet::SocketSet(uint maxfds): maxsz(maxfds) {
 #ifdef _WIN32
     if (!maxsz)
 	maxsz = 32;
-    fds = (fd_set *)new socket_t[(size_t)maxsz + 1];
+    fds = alloc(maxsz);
     fds->fd_count = 0;
 #else
-    fds = maxsz ? new pollfd[maxsz] : nullptr;
+    if (maxsz)
+	fds = alloc(maxsz);
 #endif
 }
 
@@ -573,18 +588,16 @@ inline SocketSet &SocketSet::operator =(const SocketSet &ss) {
 #ifdef _WIN32
 	if (maxsz < sz) {
 	    maxsz = ss.maxsz;
-	    delete [] fds;
-	    fds = (fd_set *)new socket_t[(size_t)maxsz + 1];
+	    fds = alloc(maxsz);
 	}
-	memcpy(fds, ss.fds, ((size_t)sz + 1) * sizeof (socket_t));
+	memcpy(fds.get(), ss.fds.get(), ((size_t)sz + 1) * sizeof (socket_t));
 #else
 	if (maxsz < sz) {
 	    maxsz = ss.maxsz;
-	    delete [] fds;
-	    fds = maxsz ? new pollfd[maxsz] : nullptr;
+	    fds = alloc(maxsz);
 	}
-	if (fds)
-	    memcpy(fds, ss.fds, sz * sizeof (pollfd));
+	if (sz)
+	    memcpy(fds.get(), ss.fds.get(), sz * sizeof (pollfd));
 #endif
     }
     return *this;
@@ -593,19 +606,16 @@ inline SocketSet &SocketSet::operator =(const SocketSet &ss) {
 inline bool SocketSet::set(socket_t fd) {
     if (!fds || sz == maxsz) {
 	maxsz = maxsz ? maxsz * 2 : 32;
+
+	fdptr p = alloc(maxsz);
+
+	if (fds)
 #ifdef _WIN32
-	fd_set *p = (fd_set *)new socket_t[(size_t)maxsz + 1];
-
-	if (fds)
-	    memcpy(p, fds, ((size_t)sz + 1) * sizeof (socket_t));
+	    memcpy(p.get(), fds.get(), ((size_t)sz + 1) * sizeof (socket_t));
 #else
-	pollfd *p = new pollfd[maxsz];
-
-	if (fds)
-	    memcpy(p, fds, sz * sizeof (pollfd));
+	    memcpy(p.get(), fds.get(), sz * sizeof (pollfd));
 #endif
-	delete [] fds;
-	fds = p;
+	fds = std::move(p);
     }
     SSET_FD(sz++) = fd;
 #ifdef _WIN32
@@ -642,8 +652,9 @@ public:
 
     const char *str(void) const { return sb.str(); }
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
-    streamsize read(void *p, streamsize sz) { return sb.read(p, (uint)sz); }
-    template<class C> streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
+    streamsize read(void *p, streamsize sz) { return sb.read(p, sz); }
+    template<class C> requires is_trivially_copyable_v<C>
+    streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
 
     socketbuf *rdbuf(void) { return &sb; }
     const socketbuf *rdbuf(void) const { return &sb; }
@@ -662,11 +673,14 @@ public:
     const char *str(void) const { return sb.str(); }
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
     streamsize write(const void *p, streamsize sz) {
-	return sb.write(p, (uint)sz);
+	streamsize n = sb.write(p, sz);
+
+	if (UNLIKELY(n != sz))
+	    setstate(ios::badbit);
+	return n;
     }
-    template<class C> streamsize write(const C &c) {
-	return sb.write(&c, sizeof (c));
-    }
+    template<class C> requires is_trivially_copyable_v<C>
+    streamsize write(const C &c) { return write(&c, (streamsize)sizeof (c)); }
 
     socketbuf *rdbuf(void) { return &sb; }
     const socketbuf *rdbuf(void) const { return &sb; }
@@ -684,14 +698,18 @@ public:
 
     const char *str(void) const { return sb.str(); }
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
-    streamsize read(void *p, streamsize sz) { return sb.read(p, (uint)sz); }
+    streamsize read(void *p, streamsize sz) { return sb.read(p, sz); }
     streamsize write(const void *p, streamsize sz) {
-	return sb.write(p, (uint)sz);
+	streamsize n = sb.write(p, sz);
+
+	if (UNLIKELY(n != sz))
+	    setstate(ios::badbit);
+	return n;
     }
-    template<class C> streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
-    template<class C> streamsize write(const C &c) {
-	return sb.write(&c, sizeof (c));
-    }
+    template<class C> requires is_trivially_copyable_v<C>
+    streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
+    template<class C> requires is_trivially_copyable_v<C>
+    streamsize write(const C &c) { return write(&c, (streamsize)sizeof (c)); }
 
     socketbuf *rdbuf(void) { return &sb; }
     const socketbuf *rdbuf(void) const { return &sb; }

@@ -49,9 +49,10 @@ constexpr int BACKLOG = 128;
 static char *dbuf;
 static uint dsz;
 
-static atomic<ullong> gops = 0, gerrs = 0, gusecs = 0;
-static atomic loops = LLONG_MAX;
+static atomic<uint> gerrs, gops;
+static atomic loops(LLONG_MAX);
 static atomic qflag = false;
+alignas(64) static atomic<usec_t> gusecs;
 
 // consumes one unit of the shared loop budget; every completed round trip
 // and every failed attempt counts as one unit, matching echotest's
@@ -59,13 +60,6 @@ static atomic qflag = false;
 static bool loop_exit(void) {
     return loops.fetch_sub(1, memory_order_relaxed) <= 0 ||
 	qflag.load(memory_order_relaxed);
-}
-
-static void flush_stats(uint &opsLocal, ullong &usecsLocal) {
-    gops.fetch_add(opsLocal, memory_order_relaxed);
-    gusecs.fetch_add(usecsLocal, memory_order_relaxed);
-    opsLocal = 0;
-    usecsLocal = 0;
 }
 
 struct Worker;
@@ -79,8 +73,6 @@ struct EchoClient: nocopy {
     Worker *worker;
     char *rbuf;
     uint in;
-    uint opsLocal;
-    ullong usecsLocal;
     timing_t begin;
     bool done;		// permanently stopped; loop budget is exhausted
     bool errorHandled;	// dedups a timed-out connect racing a late callback
@@ -89,10 +81,9 @@ struct EchoClient: nocopy {
     bool writePending;	// a uv_write on writereq hasn't completed yet
     bool nextRoundQueued;	// next round wants to start once it does
 
-    explicit EchoClient(Worker *w): worker(w), rbuf(new char[dsz]), in(0),
-	opsLocal(0), usecsLocal(0), begin(0), done(false),
-	errorHandled(false), closingTcp(false), tcpOpen(false),
-	writePending(false), nextRoundQueued(false) {}
+    explicit EchoClient(Worker *w): worker(w), rbuf(new char[dsz + MAXREAD]),
+	in(0), begin(0), done(false), errorHandled(false), closingTcp(false),
+	tcpOpen(false), writePending(false), nextRoundQueued(false) {}
     ~EchoClient() { delete [] rbuf; }
 };
 
@@ -143,11 +134,17 @@ static void requestCloseTcp(EchoClient *c) {
     });
 }
 
+// like echotest, tell a connected server the test is over so it closes quietly
 static void beginTeardown(EchoClient *c) {
     if (c->done)
 	return;
     c->done = true;
-    flush_stats(c->opsLocal, c->usecsLocal);
+    if (c->tcpOpen && !c->errorHandled &&
+	uv_is_writable((uv_stream_t *)&c->tcp)) {
+	uv_buf_t mark = uv_buf_init((char *)"", 1);
+
+	uv_try_write((uv_stream_t *)&c->tcp, &mark, 1);
+    }
     uv_timer_stop(&c->timer);
     uv_close((uv_handle_t *)&c->timer, [](uv_handle_t *) {});
     requestCloseTcp(c);
@@ -177,10 +174,16 @@ static void allocClient(uv_handle_t *h, size_t, uv_buf_t *buf) {    // NOSONAR
     const EchoClient *c = (const EchoClient *)h->data;
 
     buf->base = c->rbuf + c->in;
-    buf->len = dsz - c->in;
+    // read past the reply like a normal server so short reads skip re-arming
+    buf->len = dsz + MAXREAD - c->in;
 }
 
 static void writeClient(EchoClient *c) {
+    if (UNLIKELY(loops.load(memory_order_relaxed) <= 0 ||
+	qflag.load(memory_order_relaxed))) {
+	beginTeardown(c);
+	return;
+    }
     c->begin = Timing::now();
     c->writePending = true;
     c->wbuf = uv_buf_init(dbuf, (unsigned int)dsz);
@@ -227,22 +230,23 @@ static void onClientRead(uv_stream_t *s, ssize_t nread, const uv_buf_t *) {
     if (nread == 0)
 	return;
     c->in += (uint)nread;
-    if (c->in != dsz) {
+    if (c->in < dsz) {
 	dlogd(T("client partial read="), (uint)nread);
 	return;
     }
 
     timing_t usec = Timing::now() - c->begin;
 
-    c->usecsLocal += usec;
-    if (++c->opsLocal >= 32)
-	flush_stats(c->opsLocal, c->usecsLocal);
-    dtiming.add(T("echo"), usec);
-    dlogt(T("client read="), dsz);
     c->in = 0;
     if (loop_exit()) {
 	beginTeardown(c);
-    } else if (c->worker->wait) {
+	return;
+    }
+    gops.fetch_add(1, memory_order_relaxed);
+    gusecs.fetch_add(usec, memory_order_relaxed);
+    dtiming.add(T("echo"), usec);
+    dlogt(T("client read="), dsz);
+    if (c->worker->wait) {
 	static thread_local mt19937 rng(random_device {}());
 	ulong wait = c->worker->wait;
 	ulong jitter = wait < 2000 ? 0 :

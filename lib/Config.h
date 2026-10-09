@@ -91,14 +91,11 @@ public:
 
 	return getkv(key, sect) != nullptr;
     }
-    tstring get(const tchar *key, const tchar *def = nullptr, const tchar
-	*sect = nullptr) const;
-    template<size_t N>
-    tstring get(const tchar (&key)[N], const tchar *def = nullptr, const tchar
-	*sect = nullptr) const {
-	return get(tstring_view(key), def, sect);
+    template<typename K> requires is_convertible_v<const K &, tstring_view>
+    tstring get(const K &key, const tchar *def = nullptr, const tchar *sect =
+	nullptr) const {
+	return getstr(tstring_view(key), def, sect);
     }
-    tstring get(const tstring &key) const { return get(key.c_str()); }
     tstring get(const tstring &key, const tstring &def) const {
 	return get(key.c_str(), def.c_str());
     }
@@ -106,118 +103,26 @@ public:
 	const {
 	return get(key.c_str(), def.c_str(), sect.c_str());
     }
-    bool get(const tchar *key, bool def, const tchar *sect = nullptr) const;
-    template<size_t N>
-    bool get(const tchar (&key)[N], bool def, const tchar *sect = nullptr)
+    template<typename K, typename T> requires (is_arithmetic_v<T> &&
+	is_convertible_v<const K &, tstring_view>)
+    __forceinline T get(const K &key, T def, const tchar *sect = nullptr)
 	const {
-	return get(tstring_view(key), def, sect);
-    }
-    double get(const tchar *key, double def, const tchar *sect = nullptr)
-	const {
-	return get_num(key, def, sect,
-	    [](const tchar *s, size_t) { return atod<double>(s); });
-    }
-    template<size_t N>
-    double get(const tchar (&key)[N], double def, const tchar *sect = nullptr)
-	const {
-	return get_num(tstring_view(key), def, sect,
-	    [](const tchar *s, size_t) { return atod<double>(s); });
-    }
-    float get(const tchar *key, float def, const tchar *sect = nullptr) const {
-	return (float)get(key, (double)def, sect);
-    }
-    template<size_t N>
-    float get(const tchar (&key)[N], float def, const tchar *sect = nullptr)
-	const {
-	return (float)get_num(tstring_view(key), (double)def, sect,
-	    [](const tchar *s, size_t) { return atod<double>(s); });
-    }
-    int get(const tchar *key, int def, const tchar *sect = nullptr) const {
-	return (int)get(key, (long)def, sect);
-    }
-    template<size_t N>
-    int get(const tchar (&key)[N], int def, const tchar *sect = nullptr) const {
-	return (int)get_num(tstring_view(key), (long)def, sect,
-	    atoin<long>);
-    }
-    long get(const tchar *key, long def, const tchar *sect = nullptr) const {
-	return get_num(key, def, sect, atoin<long>);
-    }
-    template<size_t N>
-    long get(const tchar (&key)[N], long def, const tchar *sect = nullptr)
-	const {
-	return get_num(tstring_view(key), def, sect, atoin<long>);
-    }
-    llong get(const tchar *key, llong def, const tchar *sect = nullptr) const {
-	return get_num(key, def, sect, atoin<llong>);
-    }
-    template<size_t N>
-    llong get(const tchar (&key)[N], llong def, const tchar *sect = nullptr)
-	const {
-	return get_num(tstring_view(key), def, sect, atoin<llong>);
-    }
-    short get(const tchar *key, short def, const tchar *sect = nullptr) const {
-	return (short)get(key, (long)def, sect);
-    }
-    template<size_t N>
-    short get(const tchar (&key)[N], short def, const tchar *sect = nullptr)
-	const {
-	return (short)get_num(tstring_view(key), (long)def, sect,
-	    atoin<long>);
-    }
-    tchar get(const tchar *key, tchar def, const tchar *sect = nullptr) const {
-	tchar buf[2];
+	tstring_view k(key);
 
-	buf[0] = def; buf[1] = '\0';
-
-	auto &&s = get(key, buf, sect);
-	return s.empty() ? def : s[0];
-    }
-    template<size_t N>
-    tchar get(const tchar (&key)[N], tchar def, const tchar *sect = nullptr)
-	const {
-	tchar buf[2];
-
-	buf[0] = def; buf[1] = '\0';
-
-	auto &&s = get(tstring_view(key), buf, sect);
-	return s.empty() ? def : s[0];
-    }
-    uint get(const tchar *key, uint def, const tchar *sect = nullptr) const {
-	return (uint)get(key, (ulong)def, sect);
-    }
-    template<size_t N>
-    uint get(const tchar (&key)[N], uint def, const tchar *sect = nullptr)
-	const {
-	return (uint)get_num(tstring_view(key), (ulong)def, sect,
-	    atoun<ulong>);
-    }
-    ulong get(const tchar *key, ulong def, const tchar *sect = nullptr) const {
-	return get_num(key, def, sect, atoun<ulong>);
-    }
-    template<size_t N>
-    ulong get(const tchar (&key)[N], ulong def, const tchar *sect = nullptr)
-	const {
-	return get_num(tstring_view(key), def, sect, atoun<ulong>);
-    }
-    ullong get(const tchar *key, ullong def, const tchar *sect = nullptr)
-	const {
-	return get_num(key, def, sect, atoun<ullong>);
-    }
-    template<size_t N>
-    ullong get(const tchar (&key)[N], ullong def, const tchar *sect = nullptr)
-	const {
-	return get_num(tstring_view(key), def, sect, atoun<ullong>);
-    }
-    ushort get(const tchar *key, ushort def, const tchar *sect = nullptr)
-	const {
-	return (ushort)get(key, (ulong)def, sect);
-    }
-    template<size_t N>
-    ushort get(const tchar (&key)[N], ushort def, const tchar *sect = nullptr)
-	const {
-	return (ushort)get_num(tstring_view(key), (ulong)def, sect,
-	    atoun<ulong>);
+	if constexpr (is_same_v<T, bool>)
+	    return get_num(k, def, sect, tobool);
+	else if constexpr (is_same_v<T, tchar>)
+	    return get_num(k, def, sect, [def](const tchar *s, size_t len) {
+		return len ? s[0] : def;
+	    });
+	else if constexpr (is_floating_point_v<T>)
+	    return get_num(k, def, sect, [](const tchar *s, size_t) {
+		return atod<T>(s);
+	    });
+	else if constexpr (is_signed_v<T>)
+	    return get_num(k, def, sect, atoin<T>);
+	else
+	    return get_num(k, def, sect, atoun<T>);
     }
     void prefix(const tchar *str) { pre = str ? str : T(""); }
     bool read(tistream &is, const tchar *pre = nullptr,
@@ -264,8 +169,8 @@ public:
     void unlock(void) { lck.unlock(); }
 
 protected:
-    static ulong open_file(const tstring &file, tifstream &is,
-	unique_ptr<tchar[]> &fbuf);
+    static bool open_file(const tstring &file, tifstream &is,
+	unique_ptr<tchar[]> &fbuf, ulong &sz);
 
 private:
     // key is stored after val
@@ -293,18 +198,19 @@ private:
 
     using kvmap = unordered_map<const tchar *, KV *, strhash, streq>;
 
+    static constexpr uint KEYSZ = 256;
+
     kvmap amap;
     mutable SpinRWLock lck;
     tstring pre;
     bool ini = false;
 
     void clear_locked(void);
-    bool expandkv(const KV *kv, tstring &val) const;
+    void expandkv(const KV *kv, tstring &val) const;
     void reserve(ulong sz) { amap.reserve(amap.size() + sz / 64); }
     const KV *getkv(const tchar *key, const tchar *sect) const;
     const KV *getkv(tstring_view key, const tchar *sect) const;
-    tstring get(tstring_view key, const tchar *def, const tchar *sect) const;
-    bool get(tstring_view key, bool def, const tchar *sect) const;
+    tstring getstr(tstring_view key, const tchar *def, const tchar *sect) const;
     template<typename K, typename T, typename F>
     __forceinline T get_num(K key, T def, const tchar *sect, F conv) const {
 	SpinRLocker lkr(lck);
@@ -314,8 +220,8 @@ private:
 	    if (LIKELY(!kv->expand))
 		return (T)conv(kv->val, kv->vlen);
 	    tstring s;
-	    if (expandkv(kv, s))
-		return (T)conv(s.c_str(), s.size());
+	    expandkv(kv, s);
+	    return (T)conv(s.c_str(), s.size());
 	}
 	return def;
     }
@@ -325,6 +231,13 @@ private:
     static void delkv(KV *kv) { delete [] (char *)kv; }
     static KV *newkv(const tchar *key, size_t klen, const tchar *val, size_t
 	vlen);
+    static tstring_view joinkey(tchar (&buf)[KEYSZ], tstring &str, const tchar
+	*sect, size_t slen, const tchar *key, size_t klen);
+    static bool tobool(const tchar *s, size_t) {
+	tchar c = (tchar)totlower(*s);
+
+	return c == 't' || c == 'y' || c == '1';
+    }
     static void trim(tstring_view &str);
 };
 

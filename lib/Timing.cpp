@@ -45,6 +45,17 @@ Timing::Stats *Timing::Stats::newstats(const tchar *k, uint klen, strhash_t
 
 Timing::~Timing() {
     clear();
+    release(flist.exchange(nullptr, memory_order_acquire));
+    release(prior);
+}
+
+void Timing::release(Stats *s) {
+    while (s) {
+	Stats *next = s->flist;
+
+	Stats::delstats(s);
+	s = next;
+    }
 }
 
 void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
@@ -83,23 +94,21 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
     stats->tot.fetch_add(diff, memory_order_relaxed);
 }
 
+// threads may still hold Stats pointers so defer freeing until the next clear
 void Timing::clear() {
     timingmap old;
-    Stats *s, *next;
 
     lck.lock();
     for (auto &entry : cache)
 	entry.store(nullptr, memory_order_relaxed);
     old.swap(tmap);
+    Stats *dead = prior;
+
+    prior = flist.exchange(nullptr, memory_order_acquire);
     lck.unlock();
+    release(dead);
     for (auto &[k, stats] : old)
-	Stats::delstats(stats);
-    s = flist.exchange(nullptr, memory_order_acquire);
-    while (s) {
-	next = s->flist;
-	Stats::delstats(s);
-	s = next;
-    }
+	defer(stats);
 }
 
 tstring Timing::data(bool sort_key, uint columns) const {
@@ -180,7 +189,7 @@ tstring Timing::data(bool sort_key, uint columns) const {
 
 		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key + (klen < bufsz
 		    - 19 ? 0 : klen - bufsz + 19), format(tot,
-		    sbuf), cbuf, format(tot / scnt, abuf));
+		    sbuf), cbuf, format(scnt ? tot / scnt : 0, abuf));
 	    } else {
 		constexpr size_t bufsz = sizeof (buf) / sizeof (buf[0]);
 
@@ -221,7 +230,7 @@ tstring Timing::data(bool sort_key, uint columns) const {
 	    } else if (cnt < 100) {
 		tsprintf(buf, T(" %3lu"), cnt);
 		s += buf;
-	    } else if (cnt == scnt) {
+	    } else if (cnt >= scnt) {
 		s += T("   *");
 	    } else {
 		tsprintf(buf, T(" %2u%%"), (uint)(cnt * 100 / scnt));
@@ -247,17 +256,22 @@ void Timing::erase(strhash_t hash) {
     }
     lck.unlock();
     if (stats) {
-	Stats *expected = stats, *s;
+	Stats *expected = stats;
 	uint idx = hash & (CACHESIZE - 1);
 
 	cache[idx].compare_exchange_strong(expected, nullptr,
 	    memory_order_relaxed);
-	s = flist.load(memory_order_relaxed);
-	do {
-	    stats->flist = s;
-	} while (!flist.compare_exchange_weak(s, stats, memory_order_release,
-	    memory_order_relaxed));
+	defer(stats);
     }
+}
+
+void Timing::defer(Stats *stats) {
+    Stats *s = flist.load(memory_order_relaxed);
+
+    do {
+	stats->flist = s;
+    } while (!flist.compare_exchange_weak(s, stats, memory_order_release,
+	memory_order_relaxed));
 }
 
 const tchar *Timing::format(timing_t t, tchar *buf) {
@@ -288,25 +302,13 @@ void Timing::record(void) {
 	return;
     }
 
-    const size_t entries = tlsd.entries.size() - 1;
     const auto &entry = tlsd.entries.back();
     const timing_t diff = now() - entry.start;
 
-    if (!entries) {
-	add(entry.caller, 0, entry.hash, diff);
-	tlsd.entries.pop_back();
-	return;
-    }
-    tstring &s(tlsd.path);
-
-    s.clear();
-    for (size_t i = 0; i < entries; ++i) {
-	s += tlsd.entries[i].caller;
-	s += T("->");
-    }
-    s += entry.caller;
-    add(s, diff);
+    if (entry.pathlen)
+	add(tlsd.path, diff);
     add(entry.caller, 0, entry.hash, diff);
+    tlsd.path.resize(entry.pathlen);
     tlsd.entries.pop_back();
 }
 
@@ -319,8 +321,12 @@ void Timing::restart() {
 
 void Timing::start(const tchar *key, strhash_t hash) {
     Tlsdata &tlsd(*tls);
+    size_t len = tlsd.path.size();
 
-    tlsd.entries.emplace_back(key, hash, now());
+    if (len)
+	tlsd.path += T("->");
+    tlsd.path += key;
+    tlsd.entries.emplace_back(key, hash, now(), len);
 }
 
 void Timing::stop() {
@@ -328,6 +334,8 @@ void Timing::stop() {
 
     if (tlsd.entries.empty())
 	dloge(Log::mod(T("Timing")), T("stack mismatch"));
-    else
+    else {
+	tlsd.path.resize(tlsd.entries.back().pathlen);
 	tlsd.entries.pop_back();
+    }
 }

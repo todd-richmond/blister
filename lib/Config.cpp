@@ -32,12 +32,29 @@
 #endif
 
 constexpr uint MINBUFSZ = 4 * 1024U;
-constexpr uint KEYSZ = 256;
 constexpr uint MAXEXPAND = 64;
 
+tstring_view Config::joinkey(tchar (&buf)[KEYSZ], tstring &str, const tchar
+    *sect, size_t slen, const tchar *key, size_t klen) {
+    size_t total = slen + 1 + klen;
+
+    if (LIKELY(total + 1 < KEYSZ)) {
+	tchar *p = buf;
+
+	memcpy(p, sect, slen * sizeof (tchar));
+	p += slen;
+	*p++ = (tchar)'.';
+	memcpy(p, key, klen * sizeof (tchar));
+	return tstring_view(buf, total);
+    }
+    str.reserve(total);
+    str.append(sect, slen).append(1, (tchar)'.').append(key, klen);
+    return str;
+}
+
 void Config::clear_locked(void) {
-    for (auto it = amap.begin(); it != amap.end(); ++it)
-	delkv(it->second);
+    for (const auto &[key, kv] : amap)
+	delkv(kv);
     amap.clear();
 }
 
@@ -48,26 +65,13 @@ void Config::clear(void) {
 }
 
 void Config::erase(const tchar *key, const tchar *sect) {
+    tchar buf[KEYSZ];
+    tstring str;
+    tstring_view fkey = sect && *sect ? joinkey(buf, str, sect, tstrlen(sect),
+	key, tstrlen(key)) : tstring_view(key);
     SpinWLocker lkr(lck);
 
-    if (sect && *sect) {
-	size_t klen = tstrlen(key);
-	size_t slen = tstrlen(sect);
-	tstring s;
-
-	s.reserve(slen + 1 + klen);
-	s.append(sect, slen).append(1, (tchar)'.').append(key, klen);
-	auto it = amap.find(s);
-
-	if (it != amap.end()) {
-	    KV *kv = it->second;
-
-	    amap.erase(it);
-	    delkv(kv);
-	}
-	return;
-    }
-    if (auto it = amap.find(key); it != amap.end()) {
+    if (auto it = amap.find(fkey); it != amap.end()) {
 	KV *kv = it->second;
 
 	amap.erase(it);
@@ -75,7 +79,7 @@ void Config::erase(const tchar *key, const tchar *sect) {
     }
 }
 
-bool Config::expandkv(const KV *kv, tstring &val) const {
+void Config::expandkv(const KV *kv, tstring &val) const {
     tstring::size_type epos, spos, search = 0;
     uint expansions = 0;
 
@@ -115,10 +119,9 @@ bool Config::expandkv(const KV *kv, tstring &val) const {
 	val.replace(spos, epos - spos + 1, repl, repllen);
 	search = spos;
     }
-    return !val.empty();
 }
 
-tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
+tstring Config::getstr(tstring_view key, const tchar *def, const tchar *sect)
     const {
     SpinRLocker lkr(lck);
     const KV *kv = getkv(key, sect);
@@ -127,63 +130,10 @@ tstring Config::get(const tchar *key, const tchar *def, const tchar *sect)
 	if (LIKELY(!kv->expand))
 	    return tstring(kv->val, kv->vlen);
 	tstring s;
-	if (expandkv(kv, s))
-	    return s;
+	expandkv(kv, s);
+	return s;
     }
     return def ? tstring(def) : tstring();
-}
-
-bool Config::get(const tchar *key, bool def, const tchar *sect) const {
-    SpinRLocker lkr(lck);
-    const KV *kv = getkv(key, sect);
-
-    if (LIKELY(kv)) {
-	tchar c;
-	if (LIKELY(!kv->expand)) {
-	    c = (tchar)totlower(kv->val[0]);
-	} else {
-	    tstring s;
-	    if (!expandkv(kv, s))
-		return def;
-	    c = (tchar)totlower(s[0]);
-	}
-	return c == 't' || c == 'y' || c == '1';
-    }
-    return def;
-}
-
-tstring Config::get(tstring_view key, const tchar *def, const tchar *sect)
-    const {
-    SpinRLocker lkr(lck);
-    const KV *kv = getkv(key, sect);
-
-    if (LIKELY(kv)) {
-	if (LIKELY(!kv->expand))
-	    return tstring(kv->val, kv->vlen);
-	tstring s;
-	if (expandkv(kv, s))
-	    return s;
-    }
-    return def ? tstring(def) : tstring();
-}
-
-bool Config::get(tstring_view key, bool def, const tchar *sect) const {
-    SpinRLocker lkr(lck);
-    const KV *kv = getkv(key, sect);
-
-    if (LIKELY(kv)) {
-	tchar c;
-	if (LIKELY(!kv->expand)) {
-	    c = (tchar)totlower(kv->val[0]);
-	} else {
-	    tstring s;
-	    if (!expandkv(kv, s))
-		return def;
-	    c = (tchar)totlower(s[0]);
-	}
-	return c == 't' || c == 'y' || c == '1';
-    }
-    return def;
 }
 
 const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
@@ -195,33 +145,11 @@ const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
 }
 
 const Config::KV *Config::getkv(tstring_view key, const tchar *sect) const {
-    kvmap::const_iterator it;
+    tchar buf[KEYSZ];
+    tstring str;
+    auto it = amap.find(sect && *sect ? joinkey(buf, str, sect, tstrlen(sect),
+	key.data(), key.size()) : key);
 
-    if (sect && *sect) {
-	size_t klen = key.size();
-	size_t slen = tstrlen(sect);
-	size_t total = slen + 1 + klen;
-
-	if (LIKELY(total + 1 < KEYSZ)) {
-	    tchar buf[KEYSZ];
-	    tchar *p = buf;
-
-	    memcpy(p, sect, slen * sizeof (tchar));
-	    p += slen;
-	    *p++ = (tchar)'.';
-	    memcpy(p, key.data(), klen * sizeof (tchar));
-	    it = amap.find(tstring_view(buf, total));
-	} else {
-	    tstring s;
-
-	    s.reserve(total);
-	    // NOLINTNEXTLINE
-	    s.append(sect, slen).append(1, (tchar)'.').append(key.data(), klen);
-	    it = amap.find(tstring_view(s.data(), s.size()));
-	}
-    } else {
-	it = amap.find(key);
-    }
     return it == amap.end() ? nullptr : it->second;
 }
 
@@ -274,18 +202,19 @@ Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     return kv;
 }
 
-ulong Config::open_file(const tstring &file, tifstream &is, unique_ptr<tchar[]>
-    &fbuf) {
+bool Config::open_file(const tstring &file, tifstream &is, unique_ptr<tchar[]>
+    &fbuf, ulong &sz) {
     struct stat sbuf;
-    uint sz;
+    uint bufsz;
 
     if (stat(tstringtoachar(file), &sbuf))
-	return 0;
-    sz = max((uint)sbuf.st_size + 1, MINBUFSZ);
-    fbuf.reset(new tchar[sz]);
-    is.rdbuf()->pubsetbuf(fbuf.get(), sz);
+	return false;
+    sz = (ulong)sbuf.st_size;
+    bufsz = max((uint)sbuf.st_size + 1, MINBUFSZ);
+    fbuf.reset(new tchar[bufsz]);
+    is.rdbuf()->pubsetbuf(fbuf.get(), bufsz);
     is.open(file.c_str());
-    return is ? (ulong)sbuf.st_size : 0;
+    return (bool)is;
 }
 
 bool Config::parse(tistream &is) {
@@ -338,7 +267,8 @@ bool Config::parse(tistream &is) {
 	case '=':
 	    break;
 	case '#':
-	    if (key.size() > 8 && !key.compare(1, 7, T("include"), 7)) {
+	    if (key.size() > 8 && key.substr(1, 7) == T("include") &&
+		istspace(key[8])) {
 		tstring file;
 		unique_ptr<tchar[]> fbuf;
 		tifstream iis;
@@ -347,8 +277,7 @@ bool Config::parse(tistream &is) {
 		key.remove_prefix(9);
 		trim(key);
 		file.assign(key);
-		sz = open_file(file, iis, fbuf);
-		if (!sz || !parse(iis))
+		if (!open_file(file, iis, fbuf, sz) || !parse(iis))
 		    return false;
 	    }
 	    break;
@@ -395,7 +324,7 @@ bool Config::parse(tistream &is) {
 		if (key.size() > pre.size() + 1 && key[pre.size()] == '.' &&
 		    key.starts_with(pre))
 		    key.remove_prefix(pre.size() + 1);
-		else if (key.find('.') != key.npos)
+		else if (key.contains('.'))
 		    continue;
 	    }
 	    set(key.data(), key.size(), val.data(), val.size(), sect.data(),
@@ -407,16 +336,30 @@ bool Config::parse(tistream &is) {
 }
 
 bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
-    SpinWLocker lkr(lck);
-
     if (!is)
 	return false;
-    prefix(str);
-    if (!app)
-	clear_locked();
+    if (app) {
+	SpinWLocker lkr(lck);
+
+	prefix(str);
+	if (sz)
+	    reserve(sz);
+	return parse(is);
+    }
+    // parse outside the lock so readers are not blocked by file I/O
+    Config tmp(str);
+
     if (sz)
-	reserve(sz);
-    return parse(is);
+	tmp.reserve(sz);
+    if (!tmp.parse(is))
+	return false;
+
+    SpinWLocker lkr(lck);
+
+    prefix(str);
+    ini |= tmp.ini;
+    amap.swap(tmp.amap);
+    return true;
 }
 
 Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
@@ -424,36 +367,12 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     KV *kv, *oldkv;
     tchar kbuf[KEYSZ];
     tstring kstr;
-    const tchar *fkey;
-    size_t fklen;
-
-    if (UNLIKELY(slen)) {
-	size_t total = slen + 1 + klen;
-
-	if (LIKELY(total + 1 < KEYSZ)) {
-	    tchar *p = kbuf;
-
-	    memcpy(p, sect, slen * sizeof (tchar));
-	    p += slen;
-	    *p++ = (tchar)'.';
-	    memcpy(p, key, (klen + 1) * sizeof (tchar));
-	    fkey = kbuf;
-	    fklen = total;
-	} else {
-	    kstr.reserve(total);
-	    kstr.append(sect, slen).append(1, (tchar)'.').append(key, klen);
-	    fkey = kstr.c_str();
-	    fklen = kstr.size();
-	}
-    } else {
-	fkey = key;
-	fklen = klen;
-    }
-
-    auto it = amap.find(tstring_view(fkey, fklen));
+    tstring_view fkey = UNLIKELY(slen) ? joinkey(kbuf, kstr, sect, slen, key,
+	klen) : tstring_view(key, klen);
+    auto it = amap.find(fkey);
 
     if (it == amap.end()) {
-	kv = newkv(fkey, fklen, val, vlen);
+	kv = newkv(fkey.data(), fkey.size(), val, vlen);
 	amap.emplace(kv->key(), kv);
 	return *this;
     }
@@ -474,7 +393,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	    s += oldkv->quote;
 	kv = newkv(oldkv->key(), oldkv->klen, s.c_str(), s.size());
     } else {
-	kv = newkv(fkey, fklen, val, vlen);
+	kv = newkv(fkey.data(), fkey.size(), val, vlen);
     }
     // reuse the map node rather than erase + emplace
     auto nh = amap.extract(it);
@@ -601,8 +520,7 @@ bool ConfigFile::read(const tchar *file, const tchar *_pre, bool app) {
 
     if (file)
 	path = file;
-    sz = open_file(path, is, fbuf);
-    return sz && read(is, _pre, app, sz);
+    return open_file(path, is, fbuf, sz) && read(is, _pre, app, sz);
 }
 
 bool ConfigFile::write(const tchar *file, bool inistyle) const {

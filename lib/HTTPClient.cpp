@@ -267,7 +267,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     if (ka)
 	req += "Pragma: Keep-Alive\r\nConnection: Keep-Alive\r\n";
     if (hstrm.size())
-	req += tchartoachar(hstrm.str());
+	req.append(tchartoachar(hstrm.str()), (size_t)hstrm.size());
     req += "\r\n";
     iov[0].iov_base = (char *)req.c_str();	// NOSONAR
     iov[0].iov_len = (iovlen_t)req.size();

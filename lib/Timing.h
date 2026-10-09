@@ -20,6 +20,7 @@
 
 #include <atomic>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "Thread.h"
 
@@ -144,7 +145,9 @@ public:
     }
     template<timing_key_ptr P>
     __forceinline void start(const P &key) { start(key, stringhash(key)); }
-    __forceinline void start(const tstring &key) { start(key.c_str()); }
+    __forceinline void start(const tstring &key) {
+	start(tls->keys.insert(key).first->c_str(), stringhash(key));
+    }
     void stop(void);
     static __forceinline timing_t now(void) { return uticks(); }
     static __forceinline timing_t start(void) { return now(); }
@@ -170,9 +173,11 @@ private:
 	    const tchar *caller;
 	    strhash_t hash;
 	    timing_t start;
+	    size_t pathlen;
 	};
 
 	vector<Entry> entries;
+	unordered_set<tstring> keys;
 	tstring path;
     };
 
@@ -180,6 +185,7 @@ private:
 
     atomic<Stats *> cache[CACHESIZE]{};
     atomic<Stats *> flist = nullptr;
+    Stats *prior = nullptr;
     mutable SpinRWLock lck;
     ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
@@ -187,6 +193,8 @@ private:
     friend class TimingEntry;
 
     void add(const tchar *key, uint klen, strhash_t hash, timing_t diff);
+    void defer(Stats *stats);
+    static void release(Stats *s);
     void start(const tchar *key, strhash_t hash);
     static const tchar *format(timing_t tot, tchar *buf);
 };
@@ -196,7 +204,7 @@ extern BLISTER Timing &dtiming;
 // time a code block
 class BLISTER TimingEntry: nocopy {
 public:
-    template<class C> __forceinline explicit TimingEntry(const C &k,
+    template<timing_key_ptr P> __forceinline explicit TimingEntry(const P &k,
 	Timing &t = dtiming): key(k), hash(stringhash(k)), start(t.start()),
 	timing(t) {}
     template<size_t N> __forceinline explicit TimingEntry(const tchar (&k)[N],
@@ -224,8 +232,12 @@ private:
 // time a stack call including destructors
 class BLISTER TimingFrame: nocopy {
 public:
-    template<class C> __forceinline explicit TimingFrame(const C &key,
+    template<timing_key_ptr P> __forceinline explicit TimingFrame(const P &key,
 	Timing &t = dtiming): timing(t) {
+	timing.start(key);
+    }
+    __forceinline explicit TimingFrame(const tstring &key, Timing &t =
+	dtiming): timing(t) {
 	timing.start(key);
     }
     template<size_t N> __forceinline explicit TimingFrame(const tchar (&key)[N],

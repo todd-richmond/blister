@@ -92,9 +92,7 @@ public:
 
     template<typename T>
     struct KV {
-	__forceinline KV(tstring_view k, const T &v): key(k), val(v) {}
-	template<size_t N>
-	constexpr KV(const tchar (&k)[N], const T &v): key(k), val(v) {}
+	__forceinline constexpr KV(tstring_view k, const T &v): key(k), val(v) {}
 
 	tstring_view key;
 	const T &val;
@@ -254,6 +252,7 @@ private:
 	explicit FlushThread(Log &lg): l(lg) {}
 
 	void quit(void) { qflag = true; }
+	void rearm(void) { qflag = false; }
 
     private:
 	Log &l;
@@ -382,7 +381,7 @@ private:
 	if (LIKELY(tlsd.clvl != None)) {
 	    if (tlsd.sep == '=') {
 		tlsd.sep = ' ';
-		if (UNLIKELY(!is_fundamental_v<T>)) {
+		if constexpr (!is_fundamental_v<T>) {
 		    if constexpr (is_enum_v<T>) {
 			tlsd.strm.write(
 			    (underlying_type_t<T>)val);
@@ -439,7 +438,6 @@ private:
 	    tlsd.clvl = l;
 	return *this;
     }
-    __forceinline void log(Tlsdata &) const {}
     template<typename T>
     Log &log(Tlsdata &tlsd, const KV<T> &val) {
 	if (LIKELY(tlsd.clvl != None)) {
@@ -452,13 +450,12 @@ private:
 	}
 	return *this;
     }
-    template<typename T, typename... U>
-    __forceinline void log(Tlsdata &tlsd, const T &first, const U&... rest) {
-	log(tlsd, first);
-	log(tlsd, rest...);	// recursive call using pack expansion
+    template<typename... T>
+    __forceinline void log(Tlsdata &tlsd, const T&... args) {
+	(log(tlsd, args), ...);
     }
-    __forceinline void write_str(Tlsdata &tlsd, const tchar *data,
-	streamsize sz) const {
+    __forceinline static void write_str(Tlsdata &tlsd, const tchar *data,
+	streamsize sz) {
 	if (LIKELY(sz > 0)) {
 	    if (tlsd.sep && tlsd.strm.size())
 		tlsd.strm.put(tlsd.sep);

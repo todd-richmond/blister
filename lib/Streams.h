@@ -18,7 +18,10 @@
 #ifndef Streams_h
 #define Streams_h
 
+#include <algorithm>
 #include <charconv>
+#include <climits>
+#include <memory>
 #include <sstream>
 #include <type_traits>
 
@@ -39,7 +42,6 @@ public:
 	fd(&c) {
 	faststreambuf::setbuf(p, sz);
     }
-    virtual ~faststreambuf() { if (alloced) delete [] buf; }
 
     void attach(const C &c) { fd = &c; }
     const char *str(void) const { return buf; }
@@ -48,13 +50,13 @@ public:
     streamsize read(void *in, streamsize sz) {
 	return xsgetn((char *)in, sz);
     }
-    template<class T> streamsize read(T &t) { return read(&t, sizeof (t)); }
+    template<class T> requires is_trivially_copyable_v<T>
+    streamsize read(T &t) { return read(&t, sizeof (t)); }
     streamsize write(const void *in, streamsize sz) {
 	return xsputn((const char *)in, sz);
     }
-    template<class T> streamsize write(const T &t) {
-	return write(&t, sizeof (t));
-    }
+    template<class T> requires is_trivially_copyable_v<T>
+    streamsize write(const T &t) { return write(&t, sizeof (t)); }
 
     void reset(void) {
 	if (buf) {
@@ -64,13 +66,10 @@ public:
     }
     streambuf *setbuf(char *p, streamsize sz) override {
 	if (p || !sz || bufsz < sz) {
-	    if (alloced) {
-		delete [] buf;
-		alloced = false;
-	    }
+	    owned.reset();
 	    if (!p && sz) {
-		p = new char[(size_t)sz];
-		alloced = true;
+		owned = make_unique_for_overwrite<char[]>((size_t)sz);
+		p = owned.get();
 	    }
 	    buf = p;
 	}
@@ -81,41 +80,28 @@ public:
     }
 
     int sync(void) override {
-	char *pb = pbase();
-	const char *pp = pptr();
-	streamsize sz = pp - pb;
-
-	if (LIKELY(sz > 0)) {
-	    if (UNLIKELY(!fd || fd->write(pb, (uint)sz) != (int)sz))
-		return -1;
-	    setp(pb, pb + bufsz);
-	}
-	return 0;
+	if (pptr() == pbase())
+	    return 0;
+	drain(nullptr, 0);
+	return pptr() == pbase() ? 0 : -1;
     }
 
     int underflow(void) override {
 	const char *gp = gptr();
 
-	if (UNLIKELY(gp == nullptr)) {
-	    uchar c;
-
-	    return fd->read((char *)&c, sizeof (c)) == (int)sizeof (c) ?
-		(int)c : -1;
-	}
-	if (LIKELY(gp < egptr()))
+	if (LIKELY(gp && gp < egptr()))
 	    return (uchar)*gp;
-
-	char *pb = pbase();
-	const char *pp = pptr();
-	streamsize left = pp - pb;
-
-	if (left > 0) {
-	    int sz = fd->write(pb, (uint)left);
-	    if (UNLIKELY(sz != left))
+	if (UNLIKELY(sync()))
+	    return -1;
+	if (UNLIKELY(!bufsz)) {
+	    if (fd->read(&ubuf, 1) != 1)
 		return -1;
-	    setp(pb, pb + bufsz);
+	    setg(&ubuf, &ubuf, &ubuf + 1);
+	    return (uchar)ubuf;
 	}
+
 	int sz = fd->read(buf, (uint)bufsz);
+
 	if (UNLIKELY(sz <= 0))
 	    return -1;
 	setg(buf, buf, buf + sz);
@@ -123,16 +109,12 @@ public:
     }
 
     int overflow(int i) override {
-	uchar c = (uchar)i;
+	if (i == traits_type::eof())
+	    return sync() ? i : 0;
 
-	if (pptr() == nullptr) {
-	    return i == -1 || fd->write((const char *)&c, sizeof (c)) ==
-		(int)sizeof (c) ? i : -1;
-	} else {
-	    int sz = i == -1 ? 0 : 1;
+	char c = (char)i;
 
-	    return xsputn((const char *)&c, sz) == sz ? i : -1;
-	}
+	return xsputn(&c, 1) == 1 ? i : traits_type::eof();
     }
 
     streamsize xsgetn(char *p, streamsize size) override {
@@ -145,25 +127,19 @@ public:
 	    gbump((int)size);
 	    return size;
 	}
-
+	if (UNLIKELY(sync()))
+	    return 0;
 	if (left > 0) {
 	    memcpy(p, gp, (size_t)left);
 	    p += left;
 	}
-	char *pb = pbase();
-	const char *pp = pptr();
-	streamsize sz = size - left;
-	streamsize outleft = pp - pb;
 
-	if (outleft) {				// flush output
-	    if (UNLIKELY(fd->write(pb, (uint)outleft) != (int)outleft))
-		return -1;
-	    setp(pb, pb + bufsz);
-	}
+	streamsize sz = size - left;
+
 	setg(buf, buf, buf);
 	if (sz >= bufsz || !bufsz) {		// read directly into user buf
 	    while (sz) {
-		int in = fd->read(p, (uint)sz);
+		int in = fd->read(p, chunk(sz));
 
 		if (UNLIKELY(in <= 0))
 		    return size - sz;
@@ -190,43 +166,66 @@ public:
     }
 
     streamsize xsputn(const char *p, streamsize sz) override {
-	long out;
-	char *pb = pbase();
-	char *pp = pptr();
-	streamsize used = pp - pb;
-	streamsize left = bufsz - used;
+	streamsize left = epptr() - pptr();
 
 	if (LIKELY(sz <= left)) {
 	    if (LIKELY(sz > 0)) {
-		memcpy(pp, p, (size_t)sz);
+		memcpy(pptr(), p, (size_t)sz);
 		pbump((int)sz);
-	    } else if (used > 0) {
-		if (UNLIKELY(fd->write(pb, (uint)used) != (int)used))
-		    return -1;
-		setp(pb, pb + bufsz);
 	    }
 	    return sz;
 	}
-	setp(pb, pb + bufsz);
-	if (!used) {
-	    out = fd->write(p, (uint)sz);
-	    return UNLIKELY(out == -1) ? -1 : (streamsize)out;
-	}
-	iovec iov[2]{};
-	iov[0].iov_base = pb;
-	iov[0].iov_len = (iovlen_t)used;
-	iov[1].iov_base = (char *)p;		// NOSONAR
-	iov[1].iov_len = (iovlen_t)sz;
-	out = fd->writev(iov, 2);
-	return UNLIKELY(out == -1 || (ulong)out < (ulong)used) ? -1 :
-	    (streamsize)out - (streamsize)used;
+	return drain(p, sz);
     }
 
 private:
-    bool alloced = false;
+    static uint chunk(streamsize n) {
+	return (uint)min<streamsize>(n, INT_MAX);
+    }
+
+    // write the put area followed by p[0,n), retrying partial writes
+    streamsize drain(const char *p, streamsize n) {
+	char *pb = pbase();
+	streamsize used = pptr() - pb;
+	streamsize done = 0;
+
+	if (UNLIKELY(!fd))
+	    return 0;
+	while (done < used + n) {
+	    long out;
+
+	    if (done >= used) {
+		out = fd->write(p + (done - used), chunk(n - (done - used)));
+	    } else if (!n) {
+		out = fd->write(pb + done, chunk(used - done));
+	    } else {
+		iovec iov[2]{};
+
+		iov[0].iov_base = pb + done;
+		iov[0].iov_len = (iovlen_t)(used - done);
+		iov[1].iov_base = (char *)p;		// NOSONAR
+		iov[1].iov_len = (iovlen_t)chunk(n);
+		out = fd->writev(iov, 2);
+	    }
+	    if (out <= 0)
+		break;
+	    done += out;
+	}
+
+	streamsize pending = done < used ? used - done : 0;
+
+	if (pending && done)
+	    memmove(pb, pb + done, (size_t)pending);
+	setp(pb, pb + bufsz);
+	pbump((int)pending);
+	return done > used ? done - used : 0;
+    }
+
     char *buf = nullptr;
     streamsize bufsz = 0;
     const C *fd = nullptr;
+    unique_ptr<char[]> owned;
+    char ubuf = 0;
 };
 
 /*
@@ -329,7 +328,17 @@ private:
 	streamsize pcount(void) const {
 	    return basic_stringbuf<C>::pptr() - basic_stringbuf<C>::pbase();
 	}
-	const C *buffer(void) const { return basic_stringbuf<C>::pbase(); }
+	const C *buffer(void) {
+	    C *pp = basic_stringbuf<C>::pptr();
+
+	    if (UNLIKELY(pp == basic_stringbuf<C>::epptr())) {
+		basic_stringbuf<C>::sputc(C());
+		basic_stringbuf<C>::pbump(-1);
+		pp = basic_stringbuf<C>::pptr();
+	    }
+	    *pp = C();
+	    return basic_stringbuf<C>::pbase();
+	}
 	C back(void) const { return *(basic_stringbuf<C>::pptr() - 1); }
 	void reset(void) {
 	    basic_stringbuf<C>::setp(basic_stringbuf<C>::pbase(),
@@ -357,7 +366,7 @@ private:
 	}
     };
 
-    bufferbuf sb{ios::out};   // NOSONAR
+    mutable bufferbuf sb{ios::out};   // NOSONAR
 };
 
 using tbufferstream = bufferstream<tchar>;

@@ -42,12 +42,11 @@ static constexpr const tchar *ZSubst = T("\002\002");
 
 const tstring_view Log::LevelStr[] = {
     T("none"), T("emrg"), T("alrt"), T("crit"), T("err "), T("warn"), T("note"),
-    T("info"), T("debg"), T("trce"), T("sprs")
+    T("info"), T("debg"), T("trce")
 };
 const tstring_view Log::LevelStr2[] = {
     T("nothing"), T("emergency"), T("alert"), T("critical"), T("error"),
-    T("warning"), T("notice"), T("information"), T("debug"), T("trace"),
-    T("suppress")
+    T("warning"), T("notice"), T("information"), T("debug"), T("trace")
 };
 
 // UNIX loaders may try to construct static objects > 1 time
@@ -115,14 +114,14 @@ int Log::FlushThread::onStart(void) {
 	    l.flushpaused = false;
 	    continue;
 	}
-	// wake on 1st buffered write, a pause request, or quit
-	l.cv.wait(INFINITE);
-	// cppcheck-suppress knownConditionTrueFalse
-	if (qflag || l.pauserequested)
+	// drainbuffers() unlocks for I/O so recheck for data added meanwhile
+	if (l.bufpending.empty() && l.bufcur->size() == 0) {
+	    l.cv.wait(INFINITE);
 	    continue;
+	}
 	// sleep for buffer time before flush
 	l.cv.wait(l.buftm);
-	if (l.pauserequested)
+	if (qflag || l.pauserequested)
 	    continue;
 	l.drainbuffers(true);
     }
@@ -423,14 +422,48 @@ void Log::LogFile::unlock(void) const {
 	(void)lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
 }
 
+// force all buffer threads into MainThreadGroup rather than whatever caller
+// started them to prevent deadlock waiting for them to quit during destruction
+struct FlushRegistry {
+    SpinLock lck;
+    vector<Log *> logs;
+};
+
+// constructed by Log::Log() so it outlives every Log destroyed at exit
+static FlushRegistry &flushreg(void) {
+    static FlushRegistry reg;
+
+    return reg;
+}
+
+static void flush_stop(void) {
+    FlushRegistry &reg(flushreg());
+    vector<Log *> logs;
+
+    {
+	SpinLocker lkr(reg.lck);
+
+	logs = reg.logs;
+    }
+    for (Log *l : logs)
+	l->stop();
+}
+
 WARN_PUSH_DISABLE(-Wstrict-overflow)
 Log::Log(Level level): cv(lck), ft(*this), lvl(level) {
+    (void)flushreg();
     format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
 }
 WARN_POP()
 
 Log::~Log() {
     stop();
+    {
+	FlushRegistry &reg(flushreg());
+	SpinLocker lkr(reg.lck);
+
+	erase(reg.logs, this);
+    }
     // prevent close -> flush from restarting FlushThread
     bufenable = false;
     (void)close();
@@ -555,7 +588,7 @@ void Log::endlog(Tlsdata &tlsd) {
     Level clvl = tlsd.clvl;
     bool aenabled = afd.enable && clvl <= afd.lvl;
     bool fenabled = ffd.enable && clvl <= ffd.lvl;
-    size_t lvllen, tmlen, taillvllen;
+    size_t tmlen, taillvllen;
     time_t now_sec;
     usec_t now_usec;
     tstring &strbuf(tlsd.strbuf);
@@ -663,22 +696,21 @@ void Log::endlog(Tlsdata &tlsd) {
 	    strbuf += ' ';
     }
     tmlen = strbuf.size();
-    // only direct writes need the full line - buffered writes append in place
-    if (aenabled || (fenabled && !bufenable))
+    if ((fenabled && !bufenable) || (aenabled && src.empty()))
 	strbuf += tailbuf;
-    lvllen = tmlen + taillvllen;
     if (aenabled) {
 	if (src.empty()) {
 	    afd.print(strbuf);
 	} else {
 	    tstring ss;
 
-	    ss.reserve(strbuf.size() + src.size() + 5);
-	    ss.append(strbuf, 0, lvllen);
+	    ss.reserve(tmlen + tailbuf.size() + src.size() + 5);
+	    ss.append(strbuf, 0, tmlen);
+	    ss.append(tailbuf, 0, taillvllen);
 	    ss += T("src=");
 	    ss += src;
 	    ss += ' ';
-	    ss.append(strbuf, lvllen, strbuf.npos);
+	    ss.append(tailbuf, taillvllen, tailbuf.npos);
 	    afd.print(ss);
 	}
 	afd.unlock();
@@ -697,9 +729,9 @@ void Log::endlog(Tlsdata &tlsd) {
 		    bufcur = buffree.back();
 		    buffree.pop_back();
 		}
-		cv.set();
+		cv.broadcast();
 	    } else if (b) {
-		cv.set();
+		cv.broadcast();
 	    }
 	} else {
 	    ffd.print(strbuf);
@@ -985,30 +1017,20 @@ void Log::setmp(bool b) {
     mp = ffd.mp = b;
 }
 
-// force all buffer threads into MainThreadGroup rather than whatever caller
-// started them to prevent deadlock waiting for them to quit during destruction
-static vector<Log *> flushlogs;
-static SpinLock flushlck;
-
-static void flush_stop(void) {
-    SpinLocker lkr(flushlck);
-
-    for (Log *l : flushlogs)
-	l->stop();
-}
-
 void Log::start(void) {
     Locker lkr(lck);
 
     if (bufenable && ft.getState() != Running) {
+	ft.rearm();
 	ft.start(16U * 1024, &ThreadGroup::MainThreadGroup);
 
-	SpinLocker slkr(flushlck);
+	FlushRegistry &reg(flushreg());
+	SpinLocker slkr(reg.lck);
 
-	if (ranges::find(flushlogs, this) == flushlogs.end()) {
-	    if (flushlogs.empty())
+	if (ranges::find(reg.logs, this) == reg.logs.end()) {
+	    if (reg.logs.empty())
 		atexit(flush_stop);
-	    flushlogs.push_back(this);
+	    reg.logs.push_back(this);
 	}
     }
 }
@@ -1018,7 +1040,7 @@ void Log::stop(void) {
 
     if (ft.getState() == Running) {
 	ft.quit();
-	cv.set();
+	cv.broadcast();
 	lkr.unlock();
 	ft.wait();
     }

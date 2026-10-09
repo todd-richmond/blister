@@ -1084,8 +1084,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
     msec_t tmt = 0;
     static constexpr dspflag_t ioarray[] = {
 	DSP_Readable | DSP_Closeable, DSP_Writeable | DSP_Closeable,
-	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable,
-	DSP_Writeable | DSP_Closeable, DSP_Closeable, 0, 0
+	DSP_Readable | DSP_Writeable | DSP_Closeable, DSP_Acceptable |
+	DSP_Readable, DSP_Writeable | DSP_Closeable, DSP_Closeable, 0, 0
     };
     static constexpr dspflag_t sarray[] = {
 	DSP_SelectRead, DSP_SelectWrite, DSP_SelectRead | DSP_SelectWrite,
@@ -1141,8 +1141,10 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 	    DispatchReadWrite))) {
 	    ds.flags &= ~(DSP_Readable | DSP_Scheduled);
 	    ds.msg = DispatchRead;
-	} else if (flags & DSP_Acceptable) {
-	    ds.flags &= ~(DSP_Acceptable | DSP_Scheduled);
+	// an accept edge that arrived while not polling is recorded as readable
+	} else if ((flags & DSP_Acceptable) || (m == DispatchAccept &&
+	    (flags & DSP_Readable))) {
+	    ds.flags &= ~(DSP_Acceptable | DSP_Readable | DSP_Scheduled);
 	    ds.msg = DispatchAccept;
 	} else if (flags & DSP_Closeable) {
 	    ds.flags &= ~(DSP_Closeable | DSP_Scheduled);
