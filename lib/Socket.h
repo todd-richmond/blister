@@ -23,6 +23,7 @@
 #pragma warning(disable: 4365 6386)
 #include <WinSock2.h>
 #include <WS2tcpip.h>
+#include <afunix.h>
 #pragma warning(pop)
 #pragma warning(disable: 4097)
 
@@ -133,9 +134,7 @@ public:
     operator const sockaddr *() const { return &addr.sa; }
     operator const sockaddr_in *() const { return &addr.sa4; }
     operator const sockaddr_in6 *() const { return &addr.sa6; }
-#ifndef _WIN32
     operator const sockaddr_un *() const { return &addr.sau; }
-#endif
 
     const void *address(void) const;
     void clear(void) { ZERO(addr); name.clear(); }
@@ -165,12 +164,10 @@ public:
 	}
 	return false;
     }
-#ifndef _WIN32
     const char *path(void) const {
 	return family() == AF_UNIX ? addr.sau.sun_path[0] == '\0' ?
 	    addr.sau.sun_path + 1 : addr.sau.sun_path : nullptr;
     }
-#endif
     ushort port(void) const;
     void port(ushort port);
     Proto proto(void) const;
@@ -218,9 +215,7 @@ private:
 	sockaddr sa;
 	sockaddr_in sa4;
 	sockaddr_in6 sa6;
-#ifndef _WIN32
 	sockaddr_un sau;
-#endif
     } sockaddr_any;
 
 #ifdef _WIN32

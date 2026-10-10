@@ -42,20 +42,16 @@ const void *Sockaddr::address(void) const {
     switch (family()) {
     case AF_INET: return &addr.sa4.sin_addr;
     case AF_INET6: return &addr.sa6.sin6_addr;
-#ifndef _WIN32
     case AF_UNIX: return &addr.sau;
-#endif
     default: return &addr.sa;
     }
 }
 
 const tstring &Sockaddr::host(void) const {
-#ifndef _WIN32
     if (family() == AF_UNIX && name.empty()) {
-	name = "unix:";
-	name += *addr.sau.sun_path ? addr.sau.sun_path : addr.sau.sun_path + 1;
+	name = T("unix:");
+	name += achartotstring(path());
     }
-#endif
     if (name.empty()) {
 	char buf[NI_MAXHOST];
 
@@ -162,9 +158,7 @@ Sockaddr::Proto Sockaddr::proto(void) const {
     switch (family()) {
     case AF_INET: return TCP4;
     case AF_INET6: return TCP6;
-#ifndef _WIN32
     case AF_UNIX: return UNIX;
-#endif
     default: return UNSPEC;
     }
 }
@@ -200,7 +194,7 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
     const tchar *p;
     tstring s;
 
-    if (host && !tstrncmp(host, "unix:", 5))
+    if (host && !tstrncmp(host, T("unix:"), 5))
 	return set(host, (const tchar *)nullptr, proto);
     if (!host) {
 	p = nullptr;
@@ -242,29 +236,28 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
     ZERO(addr);
     family(AF_UNSPEC);
     name.erase();
-#ifndef _WIN32
-    if (host && !tstrncmp(host, "unix:", 5)) {
+    if (host && !tstrncmp(host, T("unix:"), 5)) {
 	host += 5;
 	proto = UNIX;
     }
     if (host && (proto == UNIX || tstrchr(host, '/'))) {
 	const uint sz = sizeof (addr.sau.sun_path);
+	const string path = tchartoachar(host);
 #ifdef __linux__	// anonymous file support
 	const uint anon = !tstrchr(host, '/');
 #else
 	const uint anon = 0;
 #endif
 
-	if (tstrlen(host) + anon >= sz)
+	if (path.length() + anon >= sz)
 	    return false;
 	addr.sau.sun_family = AF_UNIX;
 #ifdef BSD_BASE
 	addr.sau.sun_len = (uint8_t)sizeof (addr.sau);
 #endif
-	strncpy(addr.sau.sun_path + anon, host, sz - anon - 1);
+	strncpy(addr.sau.sun_path + anon, path.c_str(), sz - anon - 1);
 	return true;
     }
-#endif
     addrinfo *ai = getaddrinfo(host, service, proto);
 
     if (!ai)
@@ -289,9 +282,7 @@ bool Sockaddr::set(const sockaddr &sa) {
     switch (sa.sa_family) {
     case AF_INET: tmp.sa4 = (const sockaddr_in &)sa; break;
     case AF_INET6: tmp.sa6 = (const sockaddr_in6 &)sa; break;
-#ifndef _WIN32
     case AF_UNIX: tmp.sau = (const sockaddr_un &)sa; break;
-#endif
     default: tmp.sa = sa; break;
     }
     addr = tmp;
@@ -323,9 +314,7 @@ ushort Sockaddr::size(ushort family) {
     switch (family) {
     case AF_INET: return sizeof (sockaddr_in);
     case AF_INET6: return sizeof (sockaddr_in6);
-#ifndef _WIN32
     case AF_UNIX: return sizeof (sockaddr_un);
-#endif
     default: return sizeof (sockaddr_any);
     }
 }
@@ -521,22 +510,39 @@ bool Socket::accept(Socket &sock, bool _cloexec, bool nonblock) {
     return false;
 }
 
+// socket file left behind by a crashed process
+static bool stalesock(const char *path) {
+#ifdef _WIN32
+#ifndef IO_REPARSE_TAG_AF_UNIX
+#define IO_REPARSE_TAG_AF_UNIX	0x80000023L
+#endif
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(path, &fd);
+
+    if (h == INVALID_HANDLE_VALUE)
+	return false;
+    FindClose(h);
+    return (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+	fd.dwReserved0 == (DWORD)IO_REPARSE_TAG_AF_UNIX;
+#else
+    struct stat st;
+
+    return !::stat(path, &st) && S_ISSOCK(st.st_mode);
+#endif
+}
+
 bool Socket::bind(const Sockaddr &sa, bool reuse) {
     if (!*this && !open(sa.family()))
 	return false;
-    if (reuse && !reuseaddr(true))
+    if (reuse && sa.proto() != Sockaddr::UNIX && !reuseaddr(true))
 	return false;
-#ifndef _WIN32
     if (sa.proto() == Sockaddr::UNIX &&
 	((const sockaddr_un *)sa)->sun_path[0]) {
-	struct stat st;
-
 	// remove a stale socket file left by a crashed process
-	if (!::stat(sa.path(), &st) && S_ISSOCK(st.st_mode))
+	if (stalesock(sa.path()))
 	    (void)::unlink(sa.path());
 	sbuf->unlink(sa.path());
     }
-#endif
     return check(::bind(sbuf->sock, sa, sa.size()));
 }
 

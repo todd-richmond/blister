@@ -45,7 +45,7 @@ tstring_view Config::joinkey(tchar (&buf)[KEYSZ], tstring &str, const tchar
 	p += slen;
 	*p++ = (tchar)'.';
 	memcpy(p, key, klen * sizeof (tchar));
-	return tstring_view(buf, total);
+	return {buf, total};
     }
     str.reserve(total);
     str.append(sect, slen).append(1, (tchar)'.').append(key, klen);
@@ -128,7 +128,7 @@ tstring Config::getstr(tstring_view key, const tchar *def, const tchar *sect)
 
     if (LIKELY(kv)) {
 	if (LIKELY(!kv->expand))
-	    return tstring(kv->val, kv->vlen);
+	    return {kv->val, kv->vlen};
 	tstring s;
 	expandkv(kv, s);
 	return s;
@@ -382,7 +382,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 
 	s.reserve(oldkv->vlen + vlen + (oldkv->quote ? 2 : 0));
 	if (oldkv->quote)
-	    s = oldkv->quote;
+	    s += oldkv->quote;
 	s.append(oldkv->val, oldkv->vlen);
 	if (vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen - 1] ==
 	    val[0])
