@@ -16,6 +16,8 @@
  */
 
 #include "stdapi.h"
+#include <algorithm>
+#include <array>
 #include <random>
 #include "Log.h"
 #include "SMTPClient.h"
@@ -1751,7 +1753,8 @@ bool RFC821Addr::parsedomain(size_t &pos) {
     bool sawspace = false;
     size_t esc = 0;			// end of the last escaped character
     auto finish = [&]() {
-	while (domain_buf.size() > esc && domain_buf.back() == '.')
+	while (!domain_buf.empty() && domain_buf.size() > esc &&
+	    domain_buf.back() == '.')
 	    domain_buf.pop_back();
 	if (domain_buf.empty()) {
 	    err = T("Invalid domain");
