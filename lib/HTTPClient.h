@@ -121,4 +121,6 @@ protected:
 	ulong datasz = 0);
 };
 
+time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);
+
 #endif // HTTPClient_h

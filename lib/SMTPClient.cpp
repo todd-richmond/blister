@@ -23,7 +23,786 @@
 
 #pragma warning(disable: 6328 6330)
 
+#define CMD_NOREPLY 0
+
 const char SMTPClient::crlf[] = "\r\n";
+
+static constexpr bool nonascii(tchar c) { return (tuchar)c > 0x7f; }
+
+// ---- base64 / uuencode / uudecode / high bit scanning ----
+// AVX2 versions are used when compiled with __AVX2__ (-march=native). A NEON
+// version can be added at the same #ifdef points for other platforms
+
+static bool highbit8(const char *p, size_t n) {
+    constexpr uint64_t mask = 0x8080808080808080ULL;
+
+#ifdef __AVX2__
+    if (n >= 64) {
+	const __m256i zero = _mm256_setzero_si256();
+
+	for (; n >= 128; p += 128, n -= 128) {
+	    __m256i v = _mm256_or_si256(
+		_mm256_or_si256(_mm256_loadu_si256((const __m256i *)p),
+		_mm256_loadu_si256((const __m256i *)(p + 32))),
+		_mm256_or_si256(_mm256_loadu_si256((const __m256i *)(p + 64)),
+		_mm256_loadu_si256((const __m256i *)(p + 96))));
+
+	    if (_mm256_movemask_epi8(_mm256_cmpgt_epi8(zero, v)))
+		return true;
+	}
+	for (; n >= 32; p += 32, n -= 32) {
+	    if (_mm256_movemask_epi8(_mm256_loadu_si256((const __m256i *)p)))
+		return true;
+	}
+	// final partial block - overlap the previous bytes rather than a loop
+	return n && _mm256_movemask_epi8(_mm256_loadu_si256(
+	    (const __m256i *)(p + n - 32)));
+    }
+#endif
+    for (; n >= 8; p += 8, n -= 8) {
+	uint64_t v;
+
+	memcpy(&v, p, 8);
+	if (v & mask)
+	    return true;
+    }
+    for (; n; ++p, --n) {
+	if ((uchar)*p > 0x7f)
+	    return true;
+    }
+    return false;
+}
+
+static bool highbit8(string_view s) { return highbit8(s.data(), s.size()); }
+
+static bool highbit(tstring_view s) {
+    if constexpr (sizeof (tchar) == 1)
+	return highbit8(string_view((const char *)s.data(), s.size()));
+    else
+	return ranges::any_of(s, nonascii);
+}
+
+// base64 and uuencode characters for 12 bit values
+struct Pair {
+    char c[2];
+};
+
+template<bool UU> static constexpr char codecchar(uint v) {
+    if (UU)
+	return v ? (char)(' ' + v) : '`';
+    return (char)(v < 26 ? 'A' + v : v < 52 ? 'a' + v - 26 : v < 62 ? '0' +
+	v - 52 : v == 62 ? '+' : '/');
+}
+
+template<bool UU> static constexpr array<Pair, 4096> makepairs() {
+    array<Pair, 4096> t {};
+
+    for (uint i = 0; i < 4096; ++i)
+	t[i] = { { codecchar<UU>(i >> 6), codecchar<UU>(i & 63) } };
+    return t;
+}
+
+static constexpr auto b64pairs = makepairs<false>();
+static constexpr auto uupairs = makepairs<true>();
+
+// base64 character to 6 bit value, 0xff if invalid
+static constexpr array<uchar, 256> b64values = [] {
+    array<uchar, 256> t {};
+
+    ranges::fill(t, (uchar)0xff);
+    for (uint i = 0; i < 64; ++i)
+	t[(uchar)codecchar<false>(i)] = (uchar)i;
+    return t;
+}();
+
+#ifdef __AVX2__
+// 24 bytes to 32 characters
+template<bool UU> static inline void encode24(const uchar *in,
+    char *out) {
+    __m256i v = _mm256_inserti128_si256(_mm256_castsi128_si256(
+	_mm_loadu_si128((const __m128i *)in)),
+	_mm_loadu_si128((const __m128i *)(in + 12)), 1);
+
+    // six bit values
+    v = _mm256_shuffle_epi8(v, _mm256_setr_epi8(1, 0, 2, 1, 4, 3, 5, 4, 7, 6,
+	8, 7, 10, 9, 11, 10, 1, 0, 2, 1, 4, 3, 5, 4, 7, 6, 8, 7, 10, 9, 11,
+	10));
+    v = _mm256_or_si256(_mm256_mulhi_epu16(_mm256_and_si256(v,
+	_mm256_set1_epi32(0x0fc0fc00)), _mm256_set1_epi32(0x04000040)),
+	_mm256_mullo_epi16(_mm256_and_si256(v, _mm256_set1_epi32(0x003f03f0)),
+	_mm256_set1_epi32(0x01000010)));
+    if (UU) {
+	v = _mm256_blendv_epi8(_mm256_add_epi8(v, _mm256_set1_epi8(' ')),
+	    _mm256_set1_epi8('`'), _mm256_cmpeq_epi8(v,
+	    _mm256_setzero_si256()));
+    } else {
+	const __m256i shift = _mm256_setr_epi8('a' - 26, '0' - 52, '0' - 52,
+	    '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52,
+	    '0' - 52, '0' - 52, '+' - 62, '/' - 63, 'A', 0, 0, 'a' - 26,
+	    '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52,
+	    '0' - 52, '0' - 52, '0' - 52, '0' - 52, '+' - 62, '/' - 63, 'A',
+	    0, 0);
+	__m256i idx = _mm256_subs_epu8(v, _mm256_set1_epi8(51));
+
+	idx = _mm256_or_si256(idx, _mm256_and_si256(_mm256_cmpgt_epi8(
+	    _mm256_set1_epi8(26), v), _mm256_set1_epi8(13)));
+	v = _mm256_add_epi8(v, _mm256_shuffle_epi8(shift, idx));
+    }
+    _mm256_storeu_si256((__m256i *)out, v);
+}
+
+#endif
+
+// Encode into out which must have room for the result: UU lines are prefixed
+// with a length character, wrap adds a CRLF after every 45 input bytes
+template<bool UU> static size_t encode(const uchar *in, size_t len, char *out,
+    bool wrap) {
+    const auto &tab = UU ? uupairs : b64pairs;
+    const char *start = out;
+    const char pad = UU ? '`' : '=';
+
+#ifdef __AVX2__
+    // whole lines (or blocks without line breaks) of input
+    if (!wrap) {
+	for (; len >= 28; in += 24, out += 32, len -= 24)
+	    encode24<UU>(in, out);
+    } else {
+	// each 45 byte line is two overlapping 24 byte blocks
+	for (; len >= 49; in += 45, len -= 45) {
+	    if (UU)
+		*out++ = 'M';
+	    encode24<UU>(in, out);
+	    encode24<UU>(in + 21, out + 28);
+	    out += 60;
+	    *out++ = '\r';
+	    *out++ = '\n';
+	}
+    }
+#endif
+    while (len) {
+	size_t n = wrap ? min(len, (size_t)45) : len;
+
+	len -= n;
+	if (UU)
+	    *out++ = codecchar<true>((uint)n);
+	for (; n >= 3; n -= 3, in += 3, out += 4) {
+	    uint v = (uint)in[0] << 16 | (uint)in[1] << 8 | in[2];
+
+	    memcpy(out, &tab[v >> 12], 2);
+	    memcpy(out + 2, &tab[v & 4095], 2);
+	}
+	if (n) {
+	    uint v = (uint)in[0] << 16 | (n == 2 ? (uint)in[1] << 8 : 0);
+
+	    in += n;
+	    memcpy(out, &tab[v >> 12], 2);
+	    out[2] = n == 2 ? tab[v & 4095].c[0] : pad;
+	    out[3] = pad;
+	    out += 4;
+	}
+	if (wrap) {
+	    *out++ = '\r';
+	    *out++ = '\n';
+	}
+    }
+    return (size_t)(out - start);
+}
+
+// base64 without line breaks
+static string base64line(string_view in) {
+    string s((in.size() + 2) / 3 * 4, '\0');
+
+    encode<false>((const uchar *)in.data(), in.size(), s.data(), false);
+    return s;
+}
+
+bool base64encode(const void *in, size_t len, char *&out, size_t &outsz) {
+    out = new char[(len + 2) / 3 * 4 + (len + 44) / 45 * 2 + 1];
+    outsz = encode<false>((const uchar *)in, len, out, true);
+    out[outsz] = '\0';
+    return true;
+}
+
+bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
+    size_t &outsz) {
+    static constexpr char begin[] = "begin 644 ";
+    static constexpr char end[] = "\r\nend\r\n";
+    string filestr = tchartoachar(file);
+
+    out = new char[sizeof (begin) + filestr.size() + 2 + (len + 2) / 3 * 4 +
+	(len + 44) / 45 * 3 + 1 + sizeof (end) + 32];
+    memcpy(out, begin, sizeof (begin) - 1);
+    outsz = sizeof (begin) - 1;
+    memcpy(out + outsz, filestr.data(), filestr.size());
+    outsz += filestr.size();
+    out[outsz++] = '\r';
+    out[outsz++] = '\n';
+    outsz += encode<true>((const uchar *)in, len, out + outsz, true);
+    out[outsz++] = '`';
+    memcpy(out + outsz, end, sizeof (end));
+    outsz += sizeof (end) - 1;
+    return true;
+}
+
+bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
+    void *&out, size_t &outsz) {
+    const uchar *p = (const uchar *)in;
+    const uchar *end = p + sz;
+    const uchar *name;
+    uchar *o;
+    auto skipspace = [&] {
+	while (p < end && isspace(*p))
+	    ++p;
+    };
+    auto dec = [](uchar c) { return (uint)((c - ' ') & 077); };
+
+    outsz = 0;
+    skipspace();
+    // cppcheck-suppress knownConditionTrueFalse
+    if (end - p < 6 || strnicmp((const char *)p, "begin ", 6) != 0)
+	return false;
+    p += 5;
+    skipspace();
+    name = p;
+    perm = 0;
+    while (p < end && *p >= '0' && *p <= '7')
+	perm = perm * 8 + (uint)(*p++ - '0');
+    if (p == name || p >= end || !isspace(*p))
+	return false;
+    skipspace();
+    name = p;
+    while (p < end && *p && !isspace(*p))
+	++p;
+    file.assign(name, p);
+    if (p >= end)
+	return false;
+    o = new uchar[(size_t)(end - p) * 3 / 4 + 8];
+    out = o;
+    for (;;) {
+	skipspace();
+	if (p == end)
+	    break;
+
+	uint n = dec(*p++);
+
+	if (!n)
+	    break;
+#ifdef __AVX2__
+	if (n == 45 && end - p >= 60) {
+	    // 60 characters to 45 bytes in two 32 character blocks that overlap
+	    for (uint i = 0; i < 2; ++i) {
+		__m256i v = _mm256_loadu_si256((const __m256i *)(p + i * 28));
+
+		v = _mm256_and_si256(_mm256_sub_epi8(v, _mm256_set1_epi8(' ')),
+		    _mm256_set1_epi8(63));
+		v = _mm256_maddubs_epi16(v, _mm256_set1_epi32(0x01400140));
+		v = _mm256_madd_epi16(v, _mm256_set1_epi32(0x00011000));
+		v = _mm256_shuffle_epi8(v, _mm256_setr_epi8(2, 1, 0, 6, 5, 4,
+		    10, 9, 8, 14, 13, 12, -1, -1, -1, -1, 2, 1, 0, 6, 5, 4, 10,
+		    9, 8, 14, 13, 12, -1, -1, -1, -1));
+		v = _mm256_permutevar8x32_epi32(v, _mm256_setr_epi32(0, 1, 2,
+		    4, 5, 6, -1, -1));
+		_mm_storeu_si128((__m128i *)(o + i * 21),
+		    _mm256_castsi256_si128(v));
+		_mm_storel_epi64((__m128i *)(o + i * 21 + 16),
+		    _mm256_extracti128_si256(v, 1));
+	    }
+	    p += 60;
+	    o += 45;
+	    continue;
+	}
+#endif
+	// full groups of 4 characters
+	for (; n >= 3 && end - p >= 4; n -= 3, p += 4, o += 3) {
+	    uint v = dec(p[0]) << 18 | dec(p[1]) << 12 | dec(p[2]) << 6 |
+		dec(p[3]);
+
+	    o[0] = (uchar)(v >> 16);
+	    o[1] = (uchar)(v >> 8);
+	    o[2] = (uchar)v;
+	}
+	if (n) {
+	    // final partial group of 1 or 2 bytes needs n + 1 characters
+	    if (n >= 3 || end - p < (ptrdiff_t)(n + 1)) {
+		delete [] (uchar *)out;
+		out = nullptr;
+		return false;
+	    }
+
+	    uint v = dec(p[0]) << 18 | dec(p[1]) << 12 | (n > 1 ?
+		dec(p[2]) << 6 : 0);
+
+	    *o++ = (uchar)(v >> 16);
+	    if (n > 1)
+		*o++ = (uchar)(v >> 8);
+	    // the encoder pads the group to 4 characters
+	    p += min((ptrdiff_t)4, end - p);
+	}
+    }
+    outsz = (size_t)(o - (uchar *)out);
+    *o = '\0';
+    skipspace();
+    // cppcheck-suppress knownConditionTrueFalse
+    if (end - p < 3 || memcmp(p, "end", 3) != 0) {
+	delete [] (uchar *)out;
+	out = nullptr;
+	return false;
+    }
+    return true;
+}
+
+bool base64decode(const char *in, size_t sz, void *&out, size_t &outsz) {
+    const uchar *p = (const uchar *)in;
+    const uchar *end = p + sz;
+    uchar *o = new uchar[sz * 3 / 4 + 8];
+    const uchar *start = o;
+    uint acc = 0, bits = 0;
+
+    out = o;
+    for (;;) {
+	if (!bits) {
+	    // whole groups of valid characters
+	    while (end - p >= 4) {
+		uint a = b64values[p[0]], b = b64values[p[1]];
+		uint c = b64values[p[2]], d = b64values[p[3]];
+
+		if ((a | b | c | d) > 63)
+		    break;
+		a = a << 18 | b << 12 | c << 6 | d;
+		o[0] = (uchar)(a >> 16);
+		o[1] = (uchar)(a >> 8);
+		o[2] = (uchar)a;
+		p += 4;
+		o += 3;
+	    }
+	}
+	if (p == end)
+	    break;
+
+	uint v = b64values[*p++];
+
+	if (v > 63) {
+	    // skip anything invalid like whitespace until the pad
+	    if (p[-1] == '=')
+		break;
+	    continue;
+	}
+	acc = acc << 6 | v;
+	if ((bits += 6) == 24) {
+	    o[0] = (uchar)(acc >> 16);
+	    o[1] = (uchar)(acc >> 8);
+	    o[2] = (uchar)acc;
+	    o += 3;
+	    acc = bits = 0;
+	}
+    }
+    // 12 bits is one byte and 18 bits is two bytes
+    if (bits >= 12) {
+	if (bits == 12) {
+	    *o++ = (uchar)(acc >> 4);
+	} else {
+	    *o++ = (uchar)(acc >> 10);
+	    *o++ = (uchar)(acc >> 2);
+	}
+    }
+    outsz = (size_t)(o - start);
+    *o = '\0';
+    return true;
+}
+
+// quoted-printable characters that need no encoding: tab, space and printable
+// ASCII except '='
+static constexpr array<bool, 256> qpplain = [] {
+    array<bool, 256> t {};
+
+    for (uint i = 0; i < 256; ++i)
+	t[i] = i == '\t' || (i >= ' ' && i < 127 && i != '=');
+    return t;
+}();
+
+// hex digit to 4 bit value, 0xff if invalid
+static constexpr array<uchar, 256> hexvalues = [] {
+    array<uchar, 256> t {};
+
+    ranges::fill(t, (uchar)0xff);
+    for (uint i = 0; i < 10; ++i)
+	t['0' + i] = (uchar)i;
+    for (uint i = 0; i < 6; ++i)
+	t['A' + i] = t['a' + i] = (uchar)(10 + i);
+    return t;
+}();
+
+// RFC 2045 quoted-printable with CRLF line breaks and lines of at most 76
+// characters. CRLF and bare LF are line breaks, a bare CR is encoded and so
+// is whitespace that would end a line
+bool qpencode(const void *in, size_t len, char *&out, size_t &outsz) {
+    static constexpr char hex[] = "0123456789ABCDEF";
+    const uchar *p = (const uchar *)in;
+    const uchar *end = p + len;
+    char *o = out = new char[len * 3 + len / 8 + 8];
+    size_t col = 0;
+
+    while (p < end) {
+	uchar c = *p;
+
+	if (c == '\n' || (c == '\r' && end - p > 1 && p[1] == '\n')) {
+	    p += c == '\r' ? 2 : 1;
+	    *o++ = '\r';
+	    *o++ = '\n';
+	    col = 0;
+	    continue;
+	}
+	if (col == 75) {
+	    memcpy(o, "=\r\n", 3);
+	    o += 3;
+	    col = 0;
+	}
+
+	// run of characters that need no encoding and fit on the line
+	size_t n = 0, avail = min((size_t)(end - p), 75 - col);
+
+#ifdef __AVX2__
+	for (; n + 32 <= avail; n += 32) {
+	    __m256i v = _mm256_loadu_si256((const __m256i *)(p + n));
+	    __m256i ok = _mm256_andnot_si256(_mm256_cmpeq_epi8(v,
+		_mm256_set1_epi8('=')), _mm256_and_si256(_mm256_cmpgt_epi8(v,
+		_mm256_set1_epi8(31)), _mm256_cmpgt_epi8(_mm256_set1_epi8(127),
+		v)));
+	    uint m;
+
+	    _mm256_storeu_si256((__m256i *)(o + n), v);
+	    ok = _mm256_or_si256(ok, _mm256_cmpeq_epi8(v, _mm256_set1_epi8('\t')));
+	    m = (uint)_mm256_movemask_epi8(ok);
+	    if (m != ~0U) {
+		// the table loop below stops at this character
+		n += (size_t)countr_zero(~m);
+		break;
+	    }
+	}
+#endif
+	for (; n < avail && qpplain[p[n]]; ++n)
+	    o[n] = (char)p[n];
+	// trailing whitespace would be lost
+	if (n && (p[n - 1] == ' ' || p[n - 1] == '\t') && (p + n == end ||
+	    p[n] == '\r' || p[n] == '\n'))
+	    --n;
+	if (n) {
+	    p += n;
+	    o += n;
+	    col += n;
+	    continue;
+	}
+	if (col > 72) {
+	    memcpy(o, "=\r\n", 3);
+	    o += 3;
+	    col = 0;
+	}
+	o[0] = '=';
+	o[1] = hex[c >> 4];
+	o[2] = hex[c & 15];
+	o += 3;
+	col += 3;
+	++p;
+    }
+    outsz = (size_t)(o - out);
+    *o = '\0';
+    return true;
+}
+
+// Lenient quoted-printable decode: soft line breaks are removed, whitespace
+// before a hard line break is dropped unless it was encoded, and an '=' that
+// is not part of a valid escape is kept. Line breaks are preserved
+bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz) {
+    const uchar *p = (const uchar *)in;
+    const uchar *end = p + sz;
+    uchar *o = new uchar[sz + 1];
+    const uchar *start = o;
+    // decoded whitespace that must not be removed
+    const uchar *keep = o;
+
+    out = o;
+    while (p < end) {
+	// copy characters that need no decoding
+	size_t n = 0, avail = (size_t)(end - p);
+
+#ifdef __AVX2__
+	for (; n + 32 <= avail; n += 32) {
+	    __m256i v = _mm256_loadu_si256((const __m256i *)(p + n));
+	    uint m = (uint)_mm256_movemask_epi8(_mm256_or_si256(
+		_mm256_cmpeq_epi8(v, _mm256_set1_epi8('=')), _mm256_or_si256(
+		_mm256_cmpeq_epi8(v, _mm256_set1_epi8('\r')),
+		_mm256_cmpeq_epi8(v, _mm256_set1_epi8('\n')))));
+
+	    _mm256_storeu_si256((__m256i *)(o + n), v);
+	    if (m) {
+		// the loop below stops at this character
+		n += (size_t)countr_zero(m);
+		break;
+	    }
+	}
+#endif
+	for (; n < avail && p[n] != '=' && p[n] != '\r' && p[n] != '\n'; ++n)
+	    o[n] = p[n];
+	p += n;
+	o += n;
+	if (p == end)
+	    break;
+
+	uchar c = *p++;
+
+	if (c == '=') {
+	    uint h = end - p >= 2 ? hexvalues[p[0]] : 0xff;
+	    uint l = h < 16 ? hexvalues[p[1]] : 0xff;
+
+	    if ((h | l) < 16) {
+		*o++ = (uchar)(h << 4 | l);
+		keep = o;
+		p += 2;
+		continue;
+	    }
+
+	    // soft line break after optional whitespace, also at the end
+	    const uchar *q = p;
+
+	    while (q < end && (*q == ' ' || *q == '\t'))
+		++q;
+	    if (q == end || *q == '\n') {
+		p = q + (q < end);
+	    } else if (*q == '\r' && (q + 1 == end || q[1] == '\n')) {
+		p = q + 1 + (q + 1 < end);
+	    } else {
+		*o++ = '=';
+	    }
+	} else if (c == '\n' || (p < end && *p == '\n')) {
+	    // hard line break
+	    while (o > keep && (o[-1] == ' ' || o[-1] == '\t'))
+		--o;
+	    if (c == '\r') {
+		*o++ = '\r';
+		++p;
+	    }
+	    *o++ = '\n';
+	} else {
+	    // lone CR
+	    *o++ = c;
+	}
+    }
+    outsz = (size_t)(o - start);
+    *o = '\0';
+    return true;
+}
+
+// strictly decode UTF-8 into code points
+static bool utf8decode(string_view s, vector<char32_t> &cp) {
+    for (size_t i = 0; i < s.size();) {
+	uchar c = (uchar)s[i];
+	char32_t v;
+	size_t n;
+
+	if (c < 0x80) {
+	    v = c;
+	    n = 0;
+	} else if ((c & 0xe0) == 0xc0) {
+	    v = c & 0x1f;
+	    n = 1;
+	} else if ((c & 0xf0) == 0xe0) {
+	    v = c & 0x0f;
+	    n = 2;
+	} else if ((c & 0xf8) == 0xf0) {
+	    v = c & 0x07;
+	    n = 3;
+	} else {
+	    return false;
+	}
+	if (i + n >= s.size())
+	    return false;
+	for (size_t k = 1; k <= n; ++k) {
+	    uchar b = (uchar)s[i + k];
+
+	    if ((b & 0xc0) != 0x80)
+		return false;
+	    v = (v << 6) | (b & 0x3f);
+	}
+	// reject overlong encodings, surrogates and out of range values
+	if ((n == 1 && v < 0x80) || (n == 2 && v < 0x800) ||
+	    (n == 3 && v < 0x10000) || v > 0x10ffff ||
+	    (v >= 0xd800 && v <= 0xdfff))
+	    return false;
+	cp.push_back(v);
+	i += n + 1;
+    }
+    return true;
+}
+
+// RFC 3492 punycode encoder
+static bool punycode(const vector<char32_t> &in, string &out) {
+    static constexpr uint32_t base = 36, tmin = 1, tmax = 26, skew = 38;
+    static constexpr uint32_t damp = 700, initial_bias = 72, initial_n = 128;
+    auto digit = [](uint32_t d) {
+	return (char)(d < 26 ? 'a' + d : '0' + d - 26);
+    };
+    auto adapt = [](uint32_t delta, uint32_t points, bool first) {
+	uint32_t k = 0;
+
+	delta = first ? delta / damp : delta / 2;
+	delta += delta / points;
+	for (; delta > ((base - tmin) * tmax) / 2; k += base)
+	    delta /= base - tmin;
+	return k + (base - tmin + 1) * delta / (delta + skew);
+    };
+    uint32_t n = initial_n, delta = 0, bias = initial_bias;
+    size_t h = (size_t)ranges::count_if(in, [](char32_t c) {
+	return c < 0x80;
+    });
+    const size_t b = h;
+
+    for (char32_t c : in) {
+	if (c < 0x80)
+	    out += (char)c;
+    }
+    if (b)
+	out += '-';
+    while (h < in.size()) {
+	uint32_t m = UINT32_MAX;
+
+	for (char32_t c : in) {
+	    if (c >= n && c < m)
+		m = c;
+	}
+	if (m - n > (UINT32_MAX - delta) / (uint32_t)(h + 1))
+	    return false;
+	delta += (m - n) * (uint32_t)(h + 1);
+	n = m;
+	for (char32_t c : in) {
+	    if (c < n && ++delta == 0)
+		return false;
+	    if (c != n)
+		continue;
+	    uint32_t q = delta;
+
+	    for (uint32_t k = base;; k += base) {
+		uint32_t t = k <= bias ? tmin : k >= bias + tmax ? tmax :
+		    k - bias;
+
+		if (q < t)
+		    break;
+		out += digit(t + (q - t) % (base - t));
+		q = (q - t) / (base - t);
+	    }
+	    out += digit(q);
+	    bias = adapt(delta, (uint32_t)(h + 1), h == b);
+	    delta = 0;
+	    ++h;
+	}
+	++delta;
+	++n;
+    }
+    return true;
+}
+
+// IDNA encode a UTF-8 domain name label by label. ASCII labels are copied
+// as is and ASCII is lower cased within encoded labels, but no Unicode
+// normalization or mapping is done (U+00DF stays as is, per IDNA2008) - the
+// name must already be normalized
+static bool idna(string_view domain, string &out) {
+    for (size_t pos = 0; pos <= domain.size();) {
+	size_t end = min(domain.find('.', pos), domain.size());
+	string_view label = domain.substr(pos, end - pos);
+	vector<char32_t> cp;
+
+	if (!utf8decode(label, cp))
+	    return false;
+	if (ranges::all_of(cp, [](char32_t c) { return c < 0x80; })) {
+	    out += label;
+	} else {
+	    size_t start = out.size();
+
+	    for (char32_t &c : cp) {
+		if (c >= 'A' && c <= 'Z')
+		    c += 'a' - 'A';
+	    }
+	    out += "xn--";
+	    if (!punycode(cp, out) || out.size() - start > 63)
+		return false;
+	}
+	if (end < domain.size())
+	    out += '.';
+	pos = end + 1;
+    }
+    return true;
+}
+
+// RFC 2047 encoded-words for UTF-8 text, folded and split on character
+// boundaries so that no encoded-word exceeds 75 characters
+static void encodedwords(string &out, string_view text) {
+    static constexpr size_t maxbytes = 45;	// 60 base64 characters
+
+    for (size_t pos = 0; pos < text.size();) {
+	size_t end = min(pos + maxbytes, text.size());
+
+	while (end < text.size() && end > pos + 1 &&
+	    ((uchar)text[end] & 0xc0) == 0x80)
+	    --end;
+	if (pos)
+	    out += "\r\n ";
+	out += "=?UTF-8?B?";
+	out += base64line(text.substr(pos, end - pos));
+	out += "?=";
+	pos = end;
+    }
+}
+
+// RFC 2047 encode the words of unstructured header text that contain UTF-8.
+// Adjacent encoded words are merged because the whitespace between them
+// would be dropped by a decoder
+static string encodewords(string_view text) {
+    static constexpr const char *ws = " \t\r\n";
+    string out;
+    auto wordend = [&](size_t p) {
+	size_t e = text.find_first_of(ws, p);
+
+	return e == text.npos ? text.size() : e;
+    };
+
+    out.reserve(text.size() * 2);
+    for (size_t pos = 0; pos < text.size();) {
+	size_t start = text.find_first_not_of(ws, pos);
+
+	if (start == text.npos)
+	    start = text.size();
+	out.append(text, pos, start - pos);
+	if (start == text.size())
+	    break;
+
+	size_t end = wordend(start);
+
+	if (!highbit8(text.substr(start, end - start))) {
+	    out.append(text, start, end - start);
+	    pos = end;
+	    continue;
+	}
+	for (;;) {
+	    size_t next = text.find_first_not_of(ws, end);
+
+	    if (next == text.npos || text.substr(end, next - end).find_first_of(
+		"\r\n") != text.npos)
+		break;
+
+	    size_t nend = wordend(next);
+
+	    if (!highbit8(text.substr(next, nend - next)))
+		break;
+	    end = nend;
+	}
+	encodedwords(out, text.substr(start, end - start));
+	pos = end;
+    }
+    return out;
+}
+
+static tstring numstr(size_t n) {
+    return astringtotstring(to_string(n));
+}
 
 SMTPClient::SMTPClient(): sstrm(sock), datasent(false), lmtp(false),
     mime(false) {}
@@ -34,15 +813,19 @@ bool SMTPClient::add(vector<tstring> &v, const RFC822Addr &addrs) {
     if (!addrs.size())
 	return false;
     for (uint u = 0; u < addrs.size(); u++) {
-	ret = cmd(T("RCPT TO:"), addrs.address(u).c_str()) && ret;
-	v.emplace_back(addrs.address(u, true));
+	tstring orig = addrs.address(u), sent = orig;
+
+	ret = rcptcmd(sent) && ret;
+	v.push_back(hdraddr(addrs, u, orig, sent));
     }
     return ret;
 }
 
 bool SMTPClient::add(vector<tstring> &v, const tchar *id) {
-    bool ret = cmd(T("RCPT TO:"), id);
-    v.emplace_back(id);
+    tstring sent(id);
+    bool ret = rcptcmd(sent);
+
+    v.push_back(std::move(sent));
     return ret;
 }
 
@@ -54,76 +837,71 @@ void SMTPClient::attribute(const tchar *attr, const tchar *val) {
     hdrv.emplace_back(std::move(s));
 }
 
+static tstring sasl64(const string &in) {
+    return astringtotstring(base64line(in));
+}
+
 bool SMTPClient::auth(const tchar *id, const tchar *pass) {
-    size_t uusz;
-    char *uubuf;
-    bool ret = false;
+    string aid(tchartoachar(id)), apass(tchartoachar(pass));
 
     if (exts.find(T("AUTH ")) == exts.npos) {
 	// return "success" if server is open and does not allow auth
-	ret = true;
+	return true;
     } else if (exts.find(T(" PLAIN")) != exts.npos) {
-	size_t idlen = tstrlen(id) + 1;
-	size_t passlen = tstrlen(pass) + 1;
-	char *buf = new char[idlen + passlen + 1];
-
-	buf[0] = '\0';
-	memcpy(buf + 1, tchartoachar(id), idlen);
-	memcpy(buf + 1 + idlen, tchartoachar(pass), passlen);
-	base64encode(buf, idlen + passlen + 1, uubuf, uusz);
-	while (uusz && isspace(uubuf[uusz - 1]))
-	    uubuf[--uusz] = '\0';
-	ret = cmd(T("AUTH PLAIN"), achartotchar(uubuf), 235);
-	delete [] buf;
-	delete [] uubuf;
+	// RFC 4616: [authzid] NUL authcid NUL passwd
+	return cmd(T("AUTH PLAIN"), sasl64('\0' + aid + '\0' + apass).c_str(),
+	    235);
     } else if (exts.find(T(" LOGIN")) != exts.npos) {
-	const char *aid = tchartoachar(id);
-
-	base64encode(aid, strlen(aid), uubuf, uusz);
-	while (uusz && isspace(uubuf[uusz - 1]))
-	    uubuf[--uusz] = '\0';
-	ret = cmd(T("AUTH LOGIN"), achartotchar(uubuf), 334);
-	delete [] uubuf;
-	if (ret) {
-	    const char *apass = tchartoachar(pass);
-
-	    if ((ret = base64encode(apass, strlen(apass), uubuf, uusz)) == true) {
-		while (uusz && isspace(uubuf[uusz - 1]))
-		    uubuf[--uusz] = '\0';
-		ret = cmd(achartotchar(uubuf), nullptr, 235);
-		delete[] uubuf;
-	    }
-	}
+	return cmd(T("AUTH LOGIN"), sasl64(aid).c_str(), 334) &&
+	    cmd(sasl64(apass).c_str(), nullptr, 235);
     }
-    return ret;
+    return false;
 }
 
 bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
     string asts;
 
     multi.erase();
+    if (fstrm) {
+	multi = sts = numstr((size_t)retcode);
+	return true;
+    }
     if (s1) {
 	const char *as1 = tchartoachar(s1);
 	size_t s1len = strlen(as1);
 
+	// prevent SMTP command injection via CR/LF in addresses
+	if (strpbrk(as1, "\r\n") || (s2 && strpbrk(tchartoachar(s2), "\r\n"))) {
+	    sts = T("501 5.5.2 Invalid character in command");
+	    return false;
+	}
+	strm->write(as1, (streamsize)s1len);
 	if (s2) {
 	    const char *as2 = tchartoachar(s2);
-	    bool addbracket = as1[s1len - 1] != ':' && as2[0] != '<';
-	    char sep = addbracket ? '<' : ' ';
+	    bool colon = as1[s1len - 1] == ':';
+	    bool addbracket = colon && as2[0] != '<';
 
-	    sstrm.write(as1, (streamsize)s1len);
-	    sstrm.write(&sep, 1);
-	    sstrm.write(as2, (streamsize)strlen(as2));
-	    if (addbracket) {
-		static constexpr char rb[] = ">\r\n";
-		sstrm.write(rb, 3);
-	    } else {
-		sstrm.write(crlf, 2);
-	    }
-	} else {
-	    sstrm.write(as1, (streamsize)s1len);
-	    sstrm.write(crlf, 2);
+	    if (addbracket)
+		strm->put('<');
+	    else if (!colon)
+		strm->put(' ');
+	    strm->write(as2, (streamsize)strlen(as2));
+	    if (addbracket)
+		strm->put('>');
 	}
+	strm->write(crlf, 2);
+    }
+    if (pipelined || retcode == CMD_NOREPLY) {
+	// do not wait for a reply - PIPELINING, BDAT
+	if (!strm->good()) {
+	    sock.close();
+	    sts = T("000 socket disconnect");
+	    dlogd(Log::mod(T("smtp")), Log::kv(T("action"), T("disconnect")));
+	    return false;
+	}
+	if (pipelined && retcode != CMD_NOREPLY)
+	    resultsv.push_back(numstr((size_t)retcode));
+	return true;
     }
     do {
 	sts.erase();
@@ -159,6 +937,8 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 bool SMTPClient::connect(const Sockaddr &addr, uint to) {
     bool ret;
 
+    if (fstrm)
+	return true;
     sock.close();
     if (!addr.port()) {
 	Sockaddr tmp(addr);
@@ -169,9 +949,13 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
 	ret = sock.connect(addr, to);
     }
     if (!ret) {
+	sts = T("000 socket connect failed: ") + sock.errstr();
 	sock.close();
 	return false;
     }
+    sock.nodelay(true);
+    exts.erase();
+    ext_chunking = ext_smtputf8 = false;
     timeout(3 * 60 * 1000, 5 * 60 * 1000);
     sstrm.clear();
     sstrm.rdbuf()->str(nullptr, 4096);
@@ -182,57 +966,65 @@ bool SMTPClient::ehlo(const tchar *domain) {
     if (!domain)
 	domain = Sockaddr::hostname().c_str();
     if (cmd(T("EHLO"), domain)) {
-	exts = multi;
+	// skip the greeting line (npos + 1 == 0 when there is only one line)
+	exts = multi.substr(multi.find('\n') + 1);
+	ext_chunking = exts_find(T("CHUNKING"));
+	ext_smtputf8 = exts_find(T("SMTPUTF8"));
+	dlogd(Log::mod(T("smtp")), Log::cmd(T("ehlo")), Log::kv(T("exts"),
+	    exts), Log::kv(T("chunking"), ext_chunking), Log::kv(T("smtputf8"),
+	    ext_smtputf8));
 	return true;
     } else {
 	return false;
     }
 }
 
-bool SMTPClient::from(const tchar *id) {
+bool SMTPClient::from(const tchar *id, const tchar *parms) {
+    tstring sent(id), s;
+
     tov.clear();
     ccv.clear();
     bccv.clear();
     hdrv.clear();
+    resultsv.clear();
     sub.erase();
-    sstrm.flush();
-    sstrm.clear();
+    frm.erase();
+    strm->flush();
+    strm->clear();
     datasent = false;
     mime = false;
-    if (!*id)
-	id = T("<>");
-    frm = id;
-    return cmd(T("MAIL FROM:"), id);
+    if (!envarg(T("from"), sent, parms, true, true, s))
+	return false;
+    frm = sent.empty() ? T("<>") : sent;
+    return cmd(T("MAIL FROM:"), s.c_str());
 }
 
 bool SMTPClient::xclient(const tchar *xclient_cmd) {
     return cmd(T("XCLIENT"), xclient_cmd);
 }
 
-bool SMTPClient::from(const RFC822Addr &addr) {
-    tov.clear();
-    ccv.clear();
-    bccv.clear();
-    hdrv.clear();
-    sub.erase();
-    sstrm.flush();
-    sstrm.clear();
-    datasent = false;
-    mime = false;
+bool SMTPClient::from(const RFC822Addr &addr, const tchar *parms) {
     if (!addr.size())
 	return false;
-    frm = addr.address(0, true);
-    return cmd(T("MAIL FROM:"), addr.address().c_str());
+
+    tstring orig = addr.address();
+    bool ret = from(orig.c_str(), parms);
+
+    frm = hdraddr(addr, 0, orig, frm.empty() ? orig : frm);
+    return ret;
 }
 
 bool SMTPClient::helo(const tchar *domain) {
     exts.erase();
+    ext_chunking = ext_smtputf8 = false;
     return cmd(T("HELO"), domain ? domain : Sockaddr::hostname().c_str());
 }
 
 bool SMTPClient::lhlo(const tchar *domain) {
     if (cmd(T("LHLO"), domain ? domain : Sockaddr::hostname().c_str())) {
 	exts = multi;
+	ext_chunking = exts_find(T("CHUNKING"));
+	ext_smtputf8 = exts_find(T("SMTPUTF8"));
 	lmtp = true;
 	return true;
     } else {
@@ -248,20 +1040,138 @@ bool SMTPClient::quit() {
 }
 
 bool SMTPClient::rcpt(const tchar *id) {
-    RFC822Addr addr(id);
-
-    return cmd(T("RCPT TO:"), addr.address().c_str());
+    return rcpt(RFC822Addr(id, true));
 }
 
-bool SMTPClient::vrfy(const tchar *id) {
-    RFC822Addr addr(id);
+bool SMTPClient::rcpt(const RFC822Addr &addr) {
+    if (!addr.size())
+	return false;
 
-    return cmd(T("VRFY"), addr.address(0, false, false).c_str());
+    tstring id = addr.address();
+
+    return rcptcmd(id);
+}
+
+// id is replaced with the address sent to the server
+bool SMTPClient::rcptcmd(tstring &id) {
+    return downgrade(T("rcpt"), id) && cmd(T("RCPT TO:"), id.c_str());
+}
+
+// Without server SMTPUTF8 support an internationalized domain is IDNA encoded.
+// A UTF-8 local part cannot be encoded so the address is rejected
+bool SMTPClient::downgrade(const tchar *c, tstring &id) {
+    if (canutf8() || !highbit(id))
+	return true;
+
+    RFC821Addr a(id.c_str(), true);
+    string puny;
+
+    if (!a.error().empty()) {
+	sts = T("501 5.1.3 Invalid address");
+    } else if (highbit(a.local())) {
+	sts = T("550 5.6.7 SMTPUTF8 required but unavailable");
+    } else if (!idna(tstringtoastring(a.domain()), puny)) {
+	sts = T("501 5.1.2 Invalid internationalized domain name");
+    } else {
+	bool brkt = id[0] == '<';
+
+	a.setDomain(astringtotstring(puny).c_str());
+	id = a.address();
+	if (brkt)
+	    id = '<' + id + '>';
+	dlogt(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("downgrade"), id));
+	return true;
+    }
+    dlogd(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("id"), id),
+	Log::kv(T("exts"), exts), Log::status(sts));
+    return false;
+}
+
+// build a MAIL FROM / VRFY argument: [<]id[>] [parms] [SMTPUTF8]
+// id is replaced with the address sent to the server. SMTPUTF8 is always
+// requested if available when always is set so the headers and body that
+// follow do not have to be known in advance
+bool SMTPClient::envarg(const tchar *c, tstring &id, const tchar *parms,
+    bool brkt, bool always, tstring &arg) {
+    static constexpr tstring_view token = T("SMTPUTF8");
+    static const auto eq = [](tchar a, tchar b) {
+	return totupper(a) == totupper(b);
+    };
+    bool hasparm = !ranges::search(tstring_view(parms ? parms : T("")), token,
+	eq).empty();
+
+    if (hasparm && !canutf8()) {
+	sts = T("550 5.6.7 SMTPUTF8 required but unavailable");
+	dlogd(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("exts"), exts),
+	    Log::status(sts));
+	return false;
+    }
+    if (!downgrade(c, id))
+	return false;
+    if (!brkt || (!id.empty() && id[0] == '<')) {
+	arg = id;
+    } else {
+	arg = '<';
+	arg += id;
+	arg += '>';
+    }
+    if (parms && *parms) {
+	arg += ' ';
+	arg += parms;
+    }
+    // an address is only still UTF-8 if the server supports SMTPUTF8
+    if ((always || highbit(id)) && canutf8() && !hasparm)
+	arg += T(" SMTPUTF8");
+    dlogt(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("arg"), arg));
+    return true;
+}
+
+// header text - without SMTPUTF8 any UTF-8 is RFC 2047 encoded
+string SMTPClient::hdrtext(const tchar *s) const {
+    string a(tchartoachar(s));
+
+    return canutf8() || !highbit8(a) ? a : encodewords(a);
+}
+
+// header form of an envelope address: the address matches the (possibly
+// downgraded) envelope address and without SMTPUTF8 a UTF-8 display name is
+// RFC 2047 encoded
+tstring SMTPClient::hdraddr(const RFC822Addr &addr, uint u, const tstring &orig,
+    const tstring &sent) const {
+    tstring phrase = addr.phrase(u);
+
+    if (!canutf8() && highbit(phrase)) {
+	string enc;
+
+	encodedwords(enc, tstringtoastring(phrase));
+	return astringtotstring(enc) + ' ' + sent;
+    }
+
+    tstring hdr = addr.address(u, true);
+
+    if (sent != orig)
+	hdr.replace(hdr.size() - orig.size(), orig.size(), sent);
+    return hdr;
+}
+
+bool SMTPClient::vrfy(const tchar *id, const tchar *parms) {
+    return vrfy(RFC822Addr(id, true), parms);
+}
+
+bool SMTPClient::vrfy(const RFC822Addr &addr, const tchar *parms) {
+    tstring id, arg;
+
+    pipelined = false;
+    if (!addr.size())
+	return false;
+    id = addr.address(0, false, false);
+    return envarg(T("vrfy"), id, parms, false, false, arg) &&
+	cmd(T("VRFY"), arg.c_str());
 }
 
 bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
     if (!datasent) {
-	if (!cmd(T("DATA"), nullptr, 354))
+	if (!startdata())
 	    return false;
 	datasent = true;
     }
@@ -270,9 +1180,9 @@ bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
     } else if (dotstuff) {
 	return stuff(start, sz);
     } else {
-	sstrm.write(start, (streamsize)sz);
-	sstrm.write(crlf, 2);
-	return sstrm.good();
+	strm->write((const char *)start, (streamsize)sz);
+	strm->write(crlf, 2);
+	return strm->good();
     }
 }
 
@@ -287,14 +1197,14 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     tm tmbuf{};
 
     mime = m;
-    if (!cmd(T("DATA"), nullptr, 354))
+    if (!startdata())
 	return false;
     memcpy(buf, &pid, 4);
     memcpy(buf + 4, &mid, 8);
     if (!base64encode(buf, 12, encbuf, encbufsz))
 	return false;
     encbuf[encbufsz - 2] = '\0';
-    sstrm << "Message-ID: <" << encbuf << '@' <<
+    *strm << "Message-ID: <" << encbuf << '@' <<
 	tstringtoastring(Sockaddr::hostname()) << '>' << crlf;
     delete [] encbuf;
     if (localtime_r(&now, &tmbuf) == nullptr)
@@ -305,177 +1215,345 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     const long gmtoff = tmbuf.tm_gmtoff;
 #endif
     const auto off_min = (int)(gmtoff / 60);
-    sstrm << "Date: " << format("{:%a, %d %b %Y %H:%M:%S}",
+    *strm << "Date: " << format("{:%a, %d %b %Y %H:%M:%S}",
 	chrono::system_clock::from_time_t(now) +
 	chrono::seconds(gmtoff)) << ' ' << format("{:+03d}{:02d}",
 	off_min / 60, abs(off_min % 60)) << crlf;
-    sstrm << "From: " << tstringtoastring(frm) << crlf;
+    *strm << "From: " << tstringtoastring(frm) << crlf;
     recip(T("To: "), tov);
     recip(T("Cc: "), ccv);
-    sstrm << "Subject: " << tstringtoastring(sub) << crlf;
+    *strm << "Subject: " << hdrtext(sub.c_str()) << crlf;
     for (auto it = hdrv.begin(); it != hdrv.end(); ++it)
-	sstrm << tstringtoastring(*it) << crlf;
+	*strm << hdrtext(it->c_str()) << crlf;
+
+    // Only this text is scanned - the caller of the raw data() overloads is
+    // responsible for content that is valid for the server
+    string_view body;
+    string enc;
+    const char *cte = nullptr;
+#ifdef UNICODE
+    string as;
+
+    if (txt) {
+	as = wchartoastring(txt);
+	body = as;
+    }
+#else
+    if (txt)
+	body = txt;
+#endif
+
+    size_t hicnt = (size_t)ranges::count_if(body, [](char c) {
+	return (uchar)c > 0x7f;
+    });
+
+    if (hicnt) {
+	if (canutf8()) {
+	    // SMTPUTF8 implies 8BITMIME
+	    cte = "8bit";
+	} else if (hicnt * 4 > body.size()) {
+	    char *out;
+	    size_t outsz;
+
+	    if (!base64encode(body.data(), body.size(), out, outsz))
+		return false;
+	    enc.assign(out, outsz);
+	    delete [] out;
+	    cte = "base64";
+	} else {
+	    char *out;
+	    size_t outsz;
+
+	    qpencode(body.data(), body.size(), out, outsz);
+	    enc.assign(out, outsz);
+	    delete [] out;
+	    cte = "quoted-printable";
+	}
+	if (!enc.empty())
+	    body = enc;
+    }
     if (mime) {
 	thread_local mt19937 rng(random_device {}());
 	thread_local uniform_int_distribution<uint> dist;
 
 	sprintf(buf, "--%x%x%x%x", dist(rng), dist(rng), dist(rng), dist(rng));
 	boundary = buf;
-	sstrm << "MIME-Version: 1.0" << crlf;
-	sstrm << "Content-Type: multipart/mixed; boundary=\"" << boundary <<
+	*strm << "MIME-Version: 1.0" << crlf;
+	*strm << "Content-Type: multipart/mixed; boundary=\"" << boundary <<
 	    '"' << crlf << crlf <<
 	    "This is a multi-part message in MIME format." << crlf << crlf;
 	if (txt) {
-	    sstrm << "--" << boundary << crlf;
-	    sstrm << "Content-Type: " << "text/plain" << crlf << crlf;
+	    *strm << "--" << boundary << crlf;
+	    *strm << "Content-Type: text/plain" << (cte ? "; charset=utf-8" :
+		"") << crlf;
+	    if (cte)
+		*strm << "Content-Transfer-Encoding: " << cte << crlf;
+	    strm->write(crlf, 2);
 	}
     } else {
-	sstrm.write(crlf, 2);
+	if (cte) {
+	    *strm << "MIME-Version: 1.0" << crlf <<
+		"Content-Type: text/plain; charset=utf-8" << crlf <<
+		"Content-Transfer-Encoding: " << cte << crlf;
+	}
+	strm->write(crlf, 2);
     }
-    if (txt) {
-#ifdef UNICODE
-	string as(wchartoastring(txt));
-
-	stuff(as.c_str(), as.size());
-#else
-	stuff(txt, strlen(txt));
-#endif
-	if (mime)
-	    sstrm << crlf << "--" << boundary << "--" << crlf;
-    }
-    return sstrm.good();
+    if (txt)
+	stuff(body.data(), body.size());
+    // enddata() closes the multipart so attachments can follow the text
+    return strm->good();
 }
 
 bool SMTPClient::data(const void *p, uint sz, const tchar *type,
     const tchar *desc, const tchar *encoding, const tchar *disp,
     const tchar *name) {
     if (mime)
-	sstrm << "--" << boundary << crlf;
+	*strm << "--" << boundary << crlf;
     if (type && *type)
-	sstrm << "Content-Type: " << tchartoachar(type) << crlf;
+	*strm << "Content-Type: " << tchartoachar(type) << crlf;
     if (desc && *desc)
-	sstrm << "Content-Description: " << tchartoachar(desc) << crlf;
+	*strm << "Content-Description: " << hdrtext(desc) << crlf;
     if (encoding && *encoding)
-	sstrm << "Content-Transfer-Encoding: " << tchartoachar(encoding) << crlf;
-    sstrm << "Content-Disposition: " << tchartoachar(disp && *disp ? disp :
+	*strm << "Content-Transfer-Encoding: " << tchartoachar(encoding) <<
+	    crlf;
+    *strm << "Content-Disposition: " << tchartoachar(disp && *disp ? disp :
 	T("inline"));
-    if (name && *name)
-	sstrm << "; filename=" << tchartoachar(name);
-    sstrm << crlf << crlf;
+    if (name && *name) {
+	string aname(tchartoachar(name));
+
+	if (canutf8() || !highbit8(aname)) {
+	    *strm << "; filename=" << aname;
+	} else {
+	    // RFC 2231 extended parameter value
+	    static constexpr const char hex[] = "0123456789ABCDEF";
+
+	    *strm << "; filename*=UTF-8''";
+	    for (char ch : aname) {
+		uchar c = (uchar)ch;
+
+		if (isalnum(c) || strchr("!#$&+-.^_`|~", c)) {
+		    strm->put(ch);
+		} else {
+		    strm->put('%');
+		    strm->put(hex[c >> 4]);
+		    strm->put(hex[c & 15]);
+		}
+	    }
+	}
+    }
+    *strm << crlf << crlf;
     stuff(p, sz);
-    return sstrm.good();
+    return strm->good();
+}
+
+// send DATA and, if pipelining, validate the queued replies
+bool SMTPClient::startdata() {
+    if (!cmd(T("DATA"), nullptr, 354))
+	return false;
+    if (!pipelined)
+	return true;
+    pipelined = false;
+    for (auto &r : resultsv) {
+	string asts;
+
+	do {
+	    if (!getline(sstrm, asts)) {
+		sock.close();
+		sts = T("000 socket disconnect");
+		dlogd(Log::mod(T("smtp")), Log::kv(T("action"),
+		    T("disconnect")));
+		return false;
+	    }
+	    sts = astringtotstring(asts);
+	    auto trim = sts.find_last_not_of(T(" \t\r\n"));
+	    if (trim != sts.npos)
+		sts.erase(trim + 1);
+	} while (sts.length() > 3 && sts[3] == '-');
+	if (sts.compare(0, 3, r)) {
+	    dlogd(Log::mod(T("smtp")), Log::kv(T("expected"), r),
+		Log::kv(T("reply"), sts));
+	    return false;
+	}
+	r = sts;
+    }
+    return code() == 354;
+}
+
+bool SMTPClient::bdat(const void *start, size_t sz, bool last) {
+    tstring c(T("BDAT ") + numstr(sz));
+
+    if (last)
+	c += T(" LAST");
+    if (!ext_chunking && !fstrm) {
+	sts = T("550 5.6.7 CHUNKING required but unavailable");
+	dlogd(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("exts"), exts),
+	    Log::status(sts));
+	return false;
+    }
+    if (!cmd(c.c_str(), nullptr, CMD_NOREPLY))
+	return false;
+    if (start && sz)
+	strm->write((const char *)start, (streamsize)sz);
+    return cmd(nullptr, nullptr, 250);
 }
 
 bool SMTPClient::enddata() {
     if (mime)
-	sstrm << "--" << boundary << "--" << crlf;
+	*strm << "--" << boundary << "--" << crlf;
     return cmd(T("."));
 }
 
 void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
     if (v.empty())
 	return;
-    sstrm << tchartoachar(hdr);
+    *strm << tchartoachar(hdr);
     for (auto it = v.begin(); it != v.end(); ++it) {
 	const tstring &s = *it;
 
 	if (it != v.begin())
-	    sstrm << ",\r\n\t";
-	sstrm << tstringtoachar(s);
+	    *strm << ",\r\n\t";
+	*strm << tstringtoachar(s);
     }
-    sstrm.write(crlf, 2);
+    strm->write(crlf, 2);
+}
+
+// Next position at or after p that needs fixing: a '.' at the start of a line
+// or an LF that does not follow a CR. start is the start of a line
+static const char *stuffscan(const char *p, const char *end,
+    const char *start) {
+#ifdef __AVX2__
+    if (p == start && p < end) {
+	if (*p == '.' || *p == '\n')
+	    return p;
+	++p;
+    }
+    const __m256i cr = _mm256_set1_epi8('\r');
+    const __m256i dot = _mm256_set1_epi8('.');
+    const __m256i lf = _mm256_set1_epi8('\n');
+
+    for (; end - p >= 32; p += 32) {
+	__m256i v = _mm256_loadu_si256((const __m256i *)p);
+	__m256i prev = _mm256_loadu_si256((const __m256i *)(p - 1));
+	__m256i bare = _mm256_andnot_si256(_mm256_cmpeq_epi8(prev, cr),
+	    _mm256_cmpeq_epi8(v, lf));
+	__m256i bol = _mm256_and_si256(_mm256_cmpeq_epi8(prev, lf),
+	    _mm256_cmpeq_epi8(v, dot));
+	uint m = (uint)_mm256_movemask_epi8(_mm256_or_si256(bare, bol));
+
+	if (m)
+	    return p + __builtin_ctz(m);
+    }
+#endif
+    while (p < end) {
+	if (*p == '.' && (p == start || p[-1] == '\n'))
+	    return p;
+
+	const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
+
+	if (!nl)
+	    break;
+	if (nl == start || nl[-1] != '\r')
+	    return nl;
+	p = nl + 1;
+    }
+    return end;
 }
 
 bool SMTPClient::stuff(const void *data, size_t sz) {
-    if (!sz)
-	return sstrm.good();
-
     const char *start = (const char *)data;
-    const char *p, *pp;
-    const char *end = start + sz - 1;
+    const char *end = start + sz;
+    const char *p = start, *pp = start;
 
-    for (p = pp = start; p <= end; p++) {
-	if (*p == '.' && (p == start || p[-1] == '\n')) {
-	    sstrm.write(pp, p - pp);
-	    sstrm.write("..", 2);
-	    pp = p + 1;
-	} else if (*p == '\n' && (p == start || p[-1] != '\r')) {
-	    sstrm.write(pp, p - pp);
-	    sstrm.write(crlf, 2);
-	    pp = p + 1;
-	}
+    if (!sz)
+	return strm->good();
+    while ((p = stuffscan(p, end, start)) != end) {
+	strm->write(pp, p - pp);
+	strm->write(*p == '.' ? ".." : crlf, 2);
+	pp = ++p;
     }
-    sstrm.write(pp, p - pp);
-    if (*end != '\n')
-	sstrm.write(crlf, 2);
-    return sstrm.good();
+    strm->write(pp, end - pp);
+    if (end[-1] != '\n')
+	strm->write(crlf, 2);
+    return strm->good();
 }
-
-#define IS_ATEXT(c) (chartraits[(uchar)(c)] & (1 + 2 + 8))
-#define IS_DIGIT(c) (chartraits[(uchar)(c)] & 8)
-#define IS_DOMAIN(c) (chartraits[(uchar)(c)] & (2 + 4 + 8))
-
-static constexpr uchar chartraits[] = {
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0x0..0x7
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0x8..0xf
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0x10..0x17
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0x18..0x1f
-    0,    1,    0,  1+4,    1,    1,    1,    1, 	// 0x20..0x27
-    0,    0,    1,    1,    0,  1+4,    4,    1, 	// 0x28..0x2f
-    8,    8,    8,    8,    8,    8,    8,    8, 	// 0x30..0x37
-    8,    8,    4,    0,    0,    1,    0,    1, 	// 0x38..0x3f
-    0,    2,    2,    2,    2,    2,    2,    2, 	// 0x40..0x47
-    2,    2,    2,    2,    2,    2,    2,    2, 	// 0x48..0x4f
-    2,    2,    2,    2,    2,    2,    2,    2, 	// 0x50..0x57
-    2,    2,    2,    4,    0,    4,    1,  1+4, 	// 0x58..0x5f
-    1,    2,    2,    2,    2,    2,    2,    2, 	// 0x60..0x67
-    2,    2,    2,    2,    2,    2,    2,    2, 	// 0x68..0x6f
-    2,    2,    2,    2,    2,    2,    2,    2, 	// 0x70..0x77
-    2,    2,    2,    1,    1,    1,    1,    0, 	// 0x78..0x7f
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0x80..0x87
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0x88..0x8f
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0x90..0x97
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0x98..0x9f
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xa0..0xa7
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xa8..0xaf
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xb0..0xb7
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xb8..0xbf
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xc0..0xc7
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xc8..0xcf
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xd0..0xd7
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xd8..0xdf
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xe0..0xe7
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xe8..0xef
-    0,    0,    0,    0,    0,    0,    0,    0, 	// 0xf0..0xf7
-    0,    0,    0,    0,    0,    0,    0,    0 	// 0xf8..0xff
-};
 
 static constexpr const tchar *NonASCII = T("Non-ASCII character");
 
-void RFC821Addr::parseaddr(const tchar *&input) {
-    uint angledepth = 0;
-    tstring::size_type anglelast = tstring::npos;
-    uint parendepth = 0;
-    bool saw_colon = false;
+// a local part is quoted unless it is dot-atom text: RFC 5322 atext (alnum and
+// !#$%&'*+-/=?^_`{|}~) or UTF-8 separated by single interior dots
+static void append_local(tstring &out, tstring_view s) {
+    static constexpr tstring_view atext = T("!#$%&'*+-/=?^_`{|}~");
+    bool quote = false;
 
-    addr.erase();
-    domain_buf.erase();
-    err.erase();
-    local_part.erase();
+    for (size_t i = 0; i < s.size() && !quote; ++i) {
+	tchar c = s[i];
+
+	if (c == '.')
+	    quote = i == 0 || i + 1 == s.size() || s[i + 1] == '.';
+	else
+	    quote = !(isalnum((tuchar)c) || nonascii(c) ||
+		atext.find(c) != atext.npos);
+    }
+    if (!quote) {
+	out += s;
+	return;
+    }
+    out += '"';
+    for (tchar c : s) {
+	if (c == '"' || c == '\\')
+	    out += '\\';
+	out += c;
+    }
+    out += '"';
+}
+
+void RFC821Addr::parseaddr(const tchar *&input, bool smtputf8) {
+    addr.clear();
+    domain_buf.clear();
+    err.clear();
+    local_part.clear();
+    utf8 = false;
     while (istspace(*input))
 	++input;
-    // Pass 1
+    addr.reserve(tstrlen(input));
+    if (!scan(input, smtputf8) || !split()) {
+	addr.clear();
+	domain_buf.clear();
+	local_part.clear();
+    }
+}
+
+// pass 1: copy the address into addr, dropping comments and angle brackets
+bool RFC821Addr::scan(const tchar *&input, bool smtputf8) {
+    uint angledepth = 0;
+    size_t anglelast = tstring::npos;
+    // high bit characters are only legal with SMTPUTF8
+    auto bad = [&](tchar c) {
+	if (!nonascii(c) || smtputf8)
+	    return false;
+	err = NonASCII;
+	return true;
+    };
+
     for (;;) {
 	tchar c = *input++;
 
-	if ((tuchar)c & 0x80) {
-	    err = NonASCII;
-	    goto fail;
-	}
+	if (bad(c))
+	    return false;
 	switch (c) {
-	default:
+	default: {
+	    // append the run of ordinary characters at once
+	    size_t n = tstrcspn(input, T("\"()<>\\ \t\v\f\r\n"));
+
+	    if (!smtputf8 && highbit(tstring_view(input, n))) {
+		err = NonASCII;
+		return false;
+	    }
 	    addr += c;
+	    addr.append(input, n);
+	    input += n;
 	    break;
+	}
 	case '"':
 	    for (;;) {
 		addr += c;
@@ -487,66 +1565,63 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		    addr += c;
 		    break;
 		}
-		if ((tuchar)c & 0x80) {
-		    err = NonASCII;
-		    goto fail;
-		}
+		if (bad(c))
+		    return false;
 		if (!c) {
 		    err = T("Unbalanced '\"'");
-		    goto fail;
+		    return false;
+		}
+		if (c == '\r' || c == '\n') {
+		    err = T("Invalid character");
+		    return false;
 		}
 	    }
 	    break;
 	case '(':
-	    addr += ' ';
-	    parendepth = 1;
-	    do {
+	    for (uint depth = 1; depth;) {
 		c = *input++;
 		if (c == '(') {
-		    ++parendepth;
+		    ++depth;
 		} else if (c == ')') {
-		    --parendepth;
+		    --depth;
 		} else if (c == '\\') {
 		    c = *input++;
 		}
-		if ((tuchar)c & 0x80) {
-		    err = NonASCII;
-		    goto fail;
-		}
+		if (bad(c))
+		    return false;
 		if (!c) {
 		    err = T("Unbalanced '('");
-		    goto fail;
+		    return false;
 		}
-	    } while (parendepth);
+	    }
+	    addr += ' ';
 	    break;
 	case ')':
 	    err = T("Unbalanced ')'");
-	    goto fail;
+	    return false;
 	case '<':
-	    addr.erase();
-	    anglelast = string::npos;
+	    addr.clear();
+	    anglelast = tstring::npos;
 	    ++angledepth;
 	    break;
 	case '>':
 	    if (!angledepth--) {
 		err = T("Unbalanced '>'");
-		goto fail;
+		return false;
 	    }
-	    if (anglelast == string::npos)
+	    if (anglelast == tstring::npos)
 		anglelast = addr.length();
 	    break;
 	case '\\':
 	    c = *input++;
-	    if ((tuchar)c & 0x80) {
-		err = NonASCII;
-		goto fail;
-	    }
-	    if (c && !isspace(c)) {
+	    if (bad(c))
+		return false;
+	    if (c && !istspace(c)) {
 		addr += '\\';
 		addr += c;
 		break;
 	    }
-	    /* fall-thru */
+	    [[fallthrough]];
 	case ' ':
 	case '\t':
 	case '\v':
@@ -557,61 +1632,63 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 		addr += ' ';
 		break;
 	    }
-	    /* fall-thru */
+	    [[fallthrough]];
 	case '\0':
 	    --input;
-	    goto pass1done;
+	    if (angledepth) {
+		err = T("Unbalanced '<'");
+		return false;
+	    }
+	    if (anglelast != tstring::npos)
+		addr.erase(anglelast);
+	    return true;
 	}
     }
+}
 
-    pass1done:
-    if (angledepth) {
-	err = T("Unbalanced '<'");
-	goto fail;
-    }
-    if (anglelast != string::npos)
-	addr.erase(anglelast);
-    // Pass 2
-    for (tstring::size_type pos = 0; pos < addr.length();) {
+// pass 2: split addr into local part and domain, stripping any source route
+bool RFC821Addr::split() {
+    bool saw_colon = false;
+
+    for (size_t pos = 0; pos < addr.length();) {
 	tchar c = addr[pos++];
 
 	switch (c) {
 	case '@':
-	    parsedomain(pos);
-	    if (!err.empty())
-		goto fail;
-	    if (pos == addr.length()) {
-		if (domain_buf.empty()) {
-		    err = T("Hostname required");
-		    goto fail;
-		}
-		goto pass2done;
-	    }
+	    if (!parsedomain(pos))
+		return false;
+	    if (pos == addr.length())
+		continue;
 	    switch (addr[pos++]) {
-	    case ',':
 	    case '@':
+		err = T("Invalid route address");
+		return false;
+	    case ',':
 		if (!local_part.empty()) {
 		    err = T("Invalid route address");
-		    goto fail;
+		    return false;
 		}
-		/* fall-thru */
+		[[fallthrough]];
 	    case ':':
 		// Strip route-address
-		local_part.erase();
-		domain_buf.erase();
+		local_part.clear();
+		domain_buf.clear();
 		continue;
 	    default:
 		err = T("Invalid domain");
-		goto fail;
+		return false;
 	    }
-	    break;
 	case '"':
+	    if (pos == addr.length()) {
+		err = T("Unbalanced '\"'");
+		return false;
+	    }
 	    while ((c = addr[pos++]) != '"') {
 		if (pos != addr.length() && c == '\\')
 		    c = addr[pos++];
 		if (pos == addr.length()) {
 		    err = T("Unbalanced '\"'");
-		    goto fail;
+		    return false;
 		}
 		local_part += c;
 	    }
@@ -633,43 +1710,55 @@ void RFC821Addr::parseaddr(const tchar *&input) {
 	    if (saw_dot || (!local_part.empty() && pos < addr.length() &&
 		addr[pos] != '@'))
 		local_part += '.';
-	    }
 	    continue;
+	}
 	case ';':
 	    if (saw_colon) {
 		err = T("List:; syntax illegal");
-		goto fail;
+		return false;
 	    }
-	    /* fall-thru */
-	default:    // NOSONAR
 	    local_part += c;
 	    continue;
 	case ',':
 	    err = T("Invalid route address");
-	    goto fail;
+	    return false;
 	case ':':
 	    saw_colon = true;
-	    local_part.erase();
+	    local_part.clear();
+	    continue;
+	default: {
+	    // append the run of ordinary characters at once
+	    size_t end = addr.find_first_of(T("@\"\\ .;,:"), pos);
+
+	    if (end == tstring::npos)
+		end = addr.length();
+	    local_part += c;
+	    local_part.append(addr, pos, end - pos);
+	    pos = end;
 	    continue;
 	}
+	}
     }
-
-    pass2done:
     if (local_part.empty()) {
 	err = T("User address required");
-	goto fail;
+	return false;
     }
     make_address();
-    return;
-
-    fail:
-    addr.erase();
-    domain_buf.erase();
-    local_part.erase();
+    return true;
 }
 
-void RFC821Addr::parsedomain(tstring::size_type &pos) {
+bool RFC821Addr::parsedomain(size_t &pos) {
     bool sawspace = false;
+    size_t esc = 0;			// end of the last escaped character
+    auto finish = [&]() {
+	while (domain_buf.size() > esc && domain_buf.back() == '.')
+	    domain_buf.pop_back();
+	if (domain_buf.empty()) {
+	    err = T("Invalid domain");
+	    return false;
+	}
+	return true;
+    };
 
     while (pos < addr.length()) {
 	tchar c = addr[pos++];
@@ -680,15 +1769,12 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 		sawspace = false;
 		continue;
 	    }
-	    if (domain_buf.empty() || domain_buf[domain_buf.length() - 1] ==
-		'.')
-		goto done;
+	    if (domain_buf.empty() || domain_buf.back() == '.')
+		return finish();
 	    domain_buf += c;
-	    sawspace = false;
 	    continue;
 	case ' ':
-	    if (!domain_buf.empty() && domain_buf[domain_buf.length() - 1] !=
-		'.') {
+	    if (!domain_buf.empty() && domain_buf.back() != '.') {
 		domain_buf += '.';
 		sawspace = true;
 	    }
@@ -699,26 +1785,23 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 	    for (;;) {
 		if (pos == addr.length()) {
 		    err = T("Invalid domain");
-		    return;
+		    return false;
 		}
 		c = addr[pos++];
 		if (c == ']') {
 		    domain_buf += c;
 		    break;
 		}
+		if (c == ' ')		// comment placeholder
+		    continue;
 		if (c == '\\') {
 		    if (pos == addr.length()) {
 			err = T("Invalid domain");
-			return;
+			return false;
 		    }
 		    c = addr[pos++];
-		    if (c == '\\' || c == '[' || c == ']') {
+		    if (c == '\\' || c == '[' || c == ']')
 			domain_buf += '\\';
-		    }
-		}
-		if ((tuchar)c & 0x80) {
-		    err = NonASCII;
-		    return;
 		}
 		domain_buf += c;
 	    }
@@ -727,37 +1810,32 @@ void RFC821Addr::parsedomain(tstring::size_type &pos) {
 	    sawspace = false;
 	    if (pos == addr.length()) {
 		err = T("Invalid domain");
-		return;
-	    }
-	    c = addr[pos++];
-	    if ((tuchar)c & 0x80) {
-		err = NonASCII;
-		return;
+		return false;
 	    }
 	    domain_buf += '\\';
-	    domain_buf += c;
+	    domain_buf += addr[pos++];
+	    esc = domain_buf.size();
 	    continue;
 	case ':':
 	case ',':
 	case '@':
 	case ';':
 	    --pos;
-	    goto done;
-	default:
+	    return finish();
+	default: {
+	    size_t end = addr.find_first_of(T(".[\\:,@; "), pos);
+
+	    if (end == tstring::npos)
+		end = addr.length();
 	    sawspace = false;
-	    if ((tuchar)c & 0x80) {
-		err = NonASCII;
-		return;
-	    }
 	    domain_buf += c;
+	    domain_buf.append(addr, pos, end - pos);
+	    pos = end;
 	    continue;
 	}
+	}
     }
-    done:
-    while (!domain_buf.empty() && domain_buf[domain_buf.length() - 1] == '.')
-	domain_buf.erase(domain_buf.length() - 1);
-    if (domain_buf.empty())
-	err = T("Invalid domain");
+    return finish();
 }
 
 void RFC821Addr::setDomain(const tchar *domain) {
@@ -771,116 +1849,119 @@ void RFC821Addr::setLocal(const tchar *local) {
 }
 
 void RFC821Addr::make_address() {
-    tstring::size_type pos;
-
-    for (pos = 0; pos < local_part.length(); ++pos) {
-	tchar c = local_part[pos];
-
-	if (c == '.') {
-	    if (pos == 0 || pos == local_part.length() - 1 || local_part[pos +
-		1] == '.')
-		break;
-	} else if (!IS_ATEXT(c)) {
-	    break;
-	}
-    }
-    if (pos < local_part.length()) {
-	addr = '"';
-	for (pos = 0; pos < local_part.length(); ++pos) {
-	    tchar c = local_part[pos];
-
-	    if (c == '"' || c == '\\')
-		addr += '\\';
-	    addr += c;
-	}
-	addr += '"';
-    } else {
-	addr = local_part;
-    }
+    addr.clear();
+    append_local(addr, local_part);
     if (!domain_buf.empty()) {
 	addr += '@';
 	addr += domain_buf;
     }
+    // only the mailbox and domain determine whether SMTPUTF8 is required
+    utf8 = highbit(local_part) || highbit(domain_buf);
 }
 
-uint RFC822Addr::parse(const tchar *addrs) {
-    tchar *d, *m, *n, *r, *unused;
-    size_t len = tstrlen(addrs) + 1;
-    tchar *phrase, *s;
-    int tok = ' ';
+static tstring_view view(const tchar *p) {
+    return p ? tstring_view(p) : tstring_view();
+}
 
-    if (buf) {
-	delete [] buf;
-	buf = nullptr;
-	domains.clear();
-	locals.clear();
-	phrases.clear();
-	routes.clear();
-    }
-    s = buf = new tchar[len];
-    memcpy(s, addrs, len);
-    while (tok) {
-	tok = parse_phrase(s, phrase, T(",@<;:"));
+uint RFC822Addr::parse(const tchar *addrs, bool smtputf8) {
+    size_t len = tstrlen(addrs) + 1;
+    tchar *s;
+    auto append = [this](const tchar *p, const tchar *r, const tchar *l,
+	const tchar *d) {
+	entries.push_back({ view(d), view(l), view(p), view(r) });
+    };
+    // flag UTF-8 in a mailbox and, unless allowed, mask it
+    auto mailbox = [&](tchar *p, bool hi) {
+	if (!hi)
+	    return;
+	utf8 = true;
+	if (!smtputf8) {
+	    for (; *p; ++p) {
+		if (nonascii(*p))
+		    *p = '=';
+	    }
+	}
+    };
+
+    // release the previous parse and copy the input into the arena
+    entries = std::pmr::vector<Entry>(&arena);
+    arena.release();
+    s = (tchar *)arena.allocate(len * sizeof (tchar), alignof(tchar));
+    memcpy(s, addrs, len * sizeof (tchar));
+    utf8 = false;
+    for (int tok = ' '; tok;) {
+	tchar *d, *m, *n, *phrase, *r;
+	bool hi = false;
+
+	// display names and comments may always contain UTF-8
+	tok = parse_phrase(s, phrase, T(",@<;:"), true, hi);
 	switch (tok) {			// NOLINT NOSONAR
 	case ',':
 	case '\0':
 	case ';':
 	    // include local mbox
-	    if (phrase && *phrase)
-		parse_append(nullptr, nullptr, phrase, nullptr);
+	    if (*phrase) {
+		mailbox(phrase, hi);
+		append(nullptr, nullptr, phrase, nullptr);
+	    }
 	    continue;
 	case ':':
 	    // ignore group prefix and only return real addresses
-	    // parse_append(nullptr, nullptr, phrase, nullptr);
 	    continue;
 	case '@':
-	    tok = parse_domain(s, d, n);
-	    parse_append(n, nullptr, phrase, d);
+	    mailbox(phrase, hi);
+	    tok = parse_domain(s, d, n, smtputf8);
+	    append(n, nullptr, phrase, d);
 	    continue;
 	case '<':
-	    tok = parse_phrase(s, m, T("@>"));
+	    hi = false;			// ignore display name
+	    tok = parse_phrase(s, m, T("@>"), smtputf8, hi);
 	    if (tok == '@') {
-		r = 0;
+		r = nullptr;
 		if (!*m) {
 		    *--s = '@';
-		    tok = parse_route(s, r);
+		    tok = parse_route(s, r, smtputf8);
 		    if (tok != ':') {
-			parse_append(phrase, r, T(""), T(""));
+			append(phrase, r, T(""), T(""));
 			while (tok && tok != '>')
 			    tok = (int)(uchar)*s++;
 			continue;
 		    }
-		    tok = parse_phrase(s, m, T("@>"));
+		    hi = false;
+		    tok = parse_phrase(s, m, T("@>"), smtputf8, hi);
 		    if (tok != '@') {
-			parse_append(phrase, r, m, T(""));
+			utf8 |= hi;
+			append(phrase, r, m, T(""));
 			continue;
 		    }
 		}
-		tok = parse_domain(s, d, unused);
-		parse_append(phrase, r, m, d);
+		utf8 |= hi;
+		tok = parse_domain(s, d, n, smtputf8);
+		append(phrase, r, m, d);
 		while (tok && tok != '>')
 		    tok = (int)(uchar)*s++;
 		continue;		// effectively inserts a comma
-	    } else {
-		parse_append(phrase, nullptr, m, T(""));
 	    }
+	    utf8 |= hi;
+	    append(phrase, nullptr, m, T(""));
 	}
     }
-    return (uint)locals.size();
+    return (uint)entries.size();
 }
 
-void RFC822Addr::parse_append(const tchar *p, const tchar *r, const tchar *l,
-    const tchar *d) {
-    domains.emplace_back(d ? d : T(""));
-    locals.emplace_back(l ? l : T(""));
-    phrases.emplace_back(p ? p : T(""));
-    routes.emplace_back(r ? r : T(""));
-}
-
+// copy a phrase or mailbox - hi is set if any high bit characters were seen
 int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
-    *specials) {
+    *specials, bool smtputf8, bool &hi) {
     tchar c;
     tchar *dst, *src = in;
+    auto put = [&](tchar ch) {
+	if (nonascii(ch)) {
+	    hi = true;
+	    if (!smtputf8)
+		ch = '=';
+	}
+	*dst++ = ch;
+    };
 
     skip_whitespace(src);
     phrase = dst = src;
@@ -902,7 +1983,9 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
 			break;
 		    src++;
 		}
-		*dst++ = c;
+		// bare CR/LF would allow header/command injection
+		if (c != '\r' && c != '\n')
+		    put(c);
 	    }
 	} else if (!c || tstrchr(specials, c)) {
 	    if (dst > phrase && dst[-1] == ' ')
@@ -911,13 +1994,14 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
 	    in = src;
 	    break;
 	} else {
-	    *dst++ = c;
+	    put(c);
 	}
     }
     return (int)(uint)c;
 }
 
-int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
+int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt,
+    bool smtputf8) {
     tchar c;
     tchar *dst;
     tchar *src = in;
@@ -930,8 +2014,12 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
 	    c = '\0';
 	else
 	    c = *src++;
-	if (isalnum(c) || c == '-' || c == '_' || c == '[' || c == ']' || c ==
-	    ':') {
+	if (nonascii(c)) {
+	    utf8 = true;
+	    *dst++ = smtputf8 ? c : '=';
+	    cmt = nullptr;
+	} else if (istalnum(c) || c == '-' || c == '_' || c == '[' ||
+	    c == ']' || c == ':') {
 	    *dst++ = c;
 	    cmt = nullptr;
 	} else if (c == '.') {
@@ -967,7 +2055,7 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt) {
     return (int)(uint)c;
 }
 
-int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
+int RFC822Addr::parse_route(tchar *&in, tchar *&rte, bool smtputf8) {
     tchar c;
     tchar *dst, *src = in;
 
@@ -976,8 +2064,11 @@ int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
     for (;;) {
 	skip_whitespace(src);
 	c = *src++;
-	if (isalnum(c) || c == '-' || c == '[' || c == ']' || c == ',' ||
-	    c == '@') {
+	if (nonascii(c)) {
+	    utf8 = true;
+	    *dst++ = smtputf8 ? c : '=';
+	} else if (istalnum(c) || c == '-' || c == '[' || c == ']' ||
+	    c == ',' || c == '@') {
 	    *dst++ = c;
 	} else if (c == '.') {
 	    if (dst > rte && dst[-1] != '.')
@@ -995,12 +2086,12 @@ int RFC822Addr::parse_route(tchar *&in, tchar *&rte) {
 }
 
 bool RFC822Addr::skip_whitespace(tchar *&in) {
-    tchar c;
     tchar *s = in;
 
-    while ((c = *s) != 0) {
+    for (tchar c; (c = *s) != 0; ++s) {
 	if (c == '(') {
 	    uint cmt = 1;
+
 	    ++s;
 	    while (cmt && (c = *s) != 0 && !(c == '\n' && s[1] != ' ' && s[1] !=
 		'\t')) {
@@ -1013,12 +2104,9 @@ bool RFC822Addr::skip_whitespace(tchar *&in) {
 		    --cmt;
 	    }
 	    --s;
-	} else if (!istspace((uchar)c)) {
-	    break;
-	} else if (c == '\n' && s[1] != ' ' && s[1] != '\t') {
+	} else if (!istspace(c) || (c == '\n' && s[1] != ' ' && s[1] != '\t')) {
 	    break;
 	}
-	++s;
     }
     if (s == in)
 	return false;
@@ -1027,588 +2115,39 @@ bool RFC822Addr::skip_whitespace(tchar *&in) {
 }
 
 tstring RFC822Addr::address(uint u, bool n, bool b) const {
-    tchar c;
-    uint pos = 0;
     tstring s;
 
-    if (locals.empty())
+    if (u >= entries.size())
 	return s;
-    if (n && *phrases[u]) {
+
+    const Entry &e = entries[u];
+
+    s.reserve(e.phrase.size() + e.route.size() + e.local.size() +
+	e.domain.size() + 8);
+    if (n && !e.phrase.empty()) {
 	s += '"';
-	s += phrases[u];
+	for (tchar c : e.phrase) {
+	    // phrases may come from comments - never emit bare CR/LF
+	    if (c == '\r' || c == '\n')
+		continue;
+	    if (c == '"' || c == '\\')
+		s += '\\';
+	    s += c;
+	}
 	s += T("\" ");
     }
     if (n || b)
 	s += '<';
-    if (*routes[u]) { // TFR
-	s += routes[u];
+    if (!e.route.empty()) {
+	s += e.route;
 	s += ':';
     }
-    while ((c = locals[u][pos]) != (tchar)0) {
-	if (c == '.') {
-	    if (pos == 0 || !locals[u][pos + 1] || locals[u][pos + 1] == '.')
-		break;
-	} else if (!IS_ATEXT(c)) {
-	    break;
-	}
-	++pos;
-    }
-    if (locals[u][pos]) {
-	s += '"';
-	for (pos = 0; (c = locals[u][pos]) != (tchar)0; ++pos) {
-	    if (c == '"' || c == '\\') {
-		s += '\\';
-	    }
-	    s += c;
-	}
-	s += '"';
-    } else {
-	s += locals[u];
-    }
-    if (*domains[u]) {
+    append_local(s, e.local);
+    if (!e.domain.empty()) {
 	s += '@';
-	s += domains[u];
+	s += e.domain;
     }
     if (n || b)
 	s += '>';
     return s;
-}
-
-static constexpr uint maxlen = 45;
-
-#define	DEC(c) (((c) - ' ') & 077)
-#define ENC(c) (char)(table[(c) & 077])
-
-static inline void encode(const void *input, size_t len, void *output, size_t
-    &outsz, const uchar *table, bool base64) {
-    const char *in = (const char *)input;
-    size_t n = 0;
-    char *out = (char *)output;
-
-    while (len) {
-	n = len < maxlen ? len : maxlen;
-	if (!base64) {
-	    *out++ = ENC(n);
-	    outsz++;
-	}
-	len -= n;
-	while (n >= 3) {
-	    out[0] = ENC(in[0] >> 2);
-	    out[1] = ENC(((in[0] << 4) & 060) | ((in[1] >> 4) & 017));
-	    out[2] = ENC(((in[1] << 2) & 074) | ((in[2] >> 6) & 03));
-	    out[3] = ENC(in[2]);
-	    out += 4;
-	    outsz += 4;
-	    in += 3;
-	    n -= 3;
-	}
-	if (!n) {
-	    *out++ = '\r';
-	    *out++ = '\n';
-	    outsz += 2;
-	}
-    }
-    if (n) {
-	char c1 = in[0];
-	char c2 = n == 1 ? '\0' : in[1];
-
-	out[0] = ENC(c1 >> 2);
-	out[1] = ENC(((c1 << 4) & 060) | ((c2 >> 4) & 017));
-	if (n == 1)
-	    out[2] = base64 ? '=' : ENC('\0');
-	else
-	    out[2] = ENC((c2 << 2) & 074);
-	out[3] = base64 ? '=' : ENC('\0');
-	out[4] = '\r';
-	out[5] = '\n';
-	outsz += 6;
-	out += 6;
-    }
-    *out = '\0';
-}
-
-bool base64encode(const void *input, size_t len, char *&out, size_t &outsz) {
-    static constexpr uchar table[64] = {
-	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
-	'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b',
-	'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
-	'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3',
-	'4', '5', '6', '7', '8', '9', '+', '/'
-    };
-
-    outsz = 0;
-    if ((out = new char[(len + 2) * 4 / 3 + (len / maxlen * 2) + 8]) ==
-	nullptr) // -V668
-	return false;
-    encode(input, len, out, outsz, table, true);
-    return true;
-}
-
-bool uuencode(const tchar *file, const void *input, size_t len, char *&out,
-    size_t &outsz) {
-    string filestr = tchartoachar(file);
-    static constexpr char begin[] = "begin 644 ";
-    static constexpr char end[] = "\r\nend\r\n";
-    static constexpr uchar table[64] = {
-	'`', '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-',
-	'.', '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';',
-	'<', '=', '>', '?', '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
-	'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
-	'X', 'Y', 'Z', '[', '\\', ']', '^', '_'
-    };
-
-    outsz = (size_t)filestr.size();
-    if ((out = new char[len * 4 / 3 + (len / maxlen * 2) + outsz + 32]) ==
-	nullptr) // -V668
-	return false;
-    memcpy(out, begin, sizeof (begin) - 1);
-    memcpy(out + sizeof (begin) - 1, filestr.c_str(), outsz);
-    outsz += sizeof (begin) - 1;
-    out[outsz++] = '\r';
-    out[outsz++] = '\n';
-    encode(input, len, out + outsz, outsz, table, false);
-    out[outsz++] = ENC('\0');
-    memcpy(out + outsz, end, sizeof (end));
-    outsz += sizeof (end) - 1;
-    return true;
-}
-
-bool uudecode(const char *input, size_t sz, uint &perm, tstring &file,
-    void *&output, size_t &outsz) {
-    char *out;
-    const char *p = input;
-    const char *end = input + sz;
-    const char *digits;
-
-    outsz = 0;
-    while (p < end && isspace(*p))
-	p++;
-    // cppcheck-suppress knownConditionTrueFalse
-    if (end - p < 6 || strnicmp(p, "begin ", 6) != 0)
-	return false;
-    p += 5;
-    while (p < end && isspace(*p))
-	p++;
-    digits = p;
-    perm = 0;
-    while (p < end && *p >= '0' && *p <= '7')
-	perm = perm * 8 + (uint)(*p++ - '0');
-    if (p == digits || p >= end || !isspace(*p))
-	return false;
-    while (p < end && isspace(*p))
-	p++;
-    file.erase();
-    while (p < end && *p && *p != '\r' && *p != '\n' && !isspace(*p))
-	file.append(1, *p++);
-    if (p >= end)
-	return false;
-    sz -= (size_t)(p - input);
-    if ((output = out = new char[sz * 3 / 4 + 8]) == nullptr)
-	return false;
-    while (sz) {
-	if (isspace(*p)) {
-	    p++;
-	    sz--;
-	    continue;
-	}
-	int n = DEC(*p++);
-
-	if (n <= 0)
-	    break;
-	for (; n > 0; p += 4, n -= 3) {
-	    if (n >= 3) {
-		if (sz < 4) {
-		    delete [] (char *)output;
-		    return false;
-		}
-		out[0] = (char)(DEC(p[0]) << 2 | DEC(p[1]) >> 4);
-		out[1] = (char)(DEC(p[1]) << 4 | DEC(p[2]) >> 2);
-		out[2] = (char)(DEC(p[2]) << 6 | DEC(p[3]));
-		out += 3;
-		outsz += 3;
-		sz -= 4;
-	    } else {
-		if (sz < 2) {
-		    delete [] (char *)output;
-		    return false;
-		}
-		out[0] = (char)(DEC(p[0]) << 2 | DEC(p[1]) >> 4);
-		if (n >= 2) {
-		    if (sz < 3) {
-			delete [] (char *)output;
-			return false;
-		    }
-		    out[1] = (char)(DEC(p[1]) << 4 | DEC(p[2]) >> 2);
-		    outsz += 2;
-		    sz -= 3;
-		} else {
-		    outsz++;
-		    sz -= 2;
-		}
-	    }
-	}
-    }
-    out[0] = '\0';
-    while (p < end && isspace(*p))
-	p++;
-    // cppcheck-suppress knownConditionTrueFalse
-    if (end - p < 3 || memcmp(p, "end", 3) != 0) {
-	delete [] (char *)output;
-	return false;
-    }
-    return true;
-}
-
-bool base64decode(const char *input, size_t sz, void *&output, size_t &outsz) {
-    char *out;
-    uint out_bits = 0, out_byte = 0;
-    static constexpr uchar table[256] = {
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*000-007*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*010-017*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*020-027*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*030-037*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*040-047*/
-	'\177', '\177', '\177', '\76',  '\177', '\177', '\177', '\77',  /*050-057*/
-	'\64',  '\65',  '\66',  '\67',  '\70',  '\71',  '\72',  '\73',  /*060-067*/
-	'\74',  '\75',  '\177', '\177', '\177', '\100', '\177', '\177', /*070-077*/
-	'\177', '\0',   '\1',   '\2',   '\3',   '\4',   '\5',   '\6',   /*100-107*/
-	'\7',   '\10',  '\11',  '\12',  '\13',  '\14',  '\15',  '\16',  /*110-117*/
-	'\17',  '\20',  '\21',  '\22',  '\23',  '\24',  '\25',  '\26',  /*120-127*/
-	'\27',  '\30',  '\31',  '\177', '\177', '\177', '\177', '\177', /*130-137*/
-	'\177', '\32',  '\33',  '\34',  '\35',  '\36',  '\37',  '\40',  /*140-147*/
-	'\41',  '\42',  '\43',  '\44',  '\45',  '\46',  '\47',  '\50',  /*150-157*/
-	'\51',  '\52',  '\53',  '\54',  '\55',  '\56',  '\57',  '\60',  /*160-167*/
-	'\61',  '\62',  '\63',  '\177', '\177', '\177', '\177', '\177', /*170-177*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*200-207*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*210-217*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*220-227*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*230-237*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*240-247*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*250-257*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*260-267*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*270-277*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*300-307*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*310-317*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*320-327*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*330-337*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*340-347*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*350-357*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*360-367*/
-	'\177', '\177', '\177', '\177', '\177', '\177', '\177', '\177', /*370-377*/
-    };
-
-    outsz = 0;
-    if ((out = new char[sz * 3 / 4 + 8]) == nullptr)
-	return false;
-    output = out;
-    while (sz > 0) {
-	uchar add_bits = table[(uchar)*input++];
-
-	sz--;
-	if (add_bits >= 64) {
-	    if (input[-1] == '=')
-		break;
-	    continue;
-	}
-	out_byte = (out_byte << 6) + add_bits;
-	out_bits += 6;	// -V127
-	if (out_bits == 24) {
-	    out[0] = (char)((out_byte & 0xFF0000) >> 16);
-	    out[1] = (char)((out_byte & 0x00FF00) >> 8);
-	    out[2] = (char)(out_byte & 0x0000FF);
-	    out_bits = 0;
-	    out_byte = 0;
-	    out += 3;
-	    outsz += 3;
-	}
-    }
-    while (out_bits >= 8) {
-	if (out_bits == 8) {
-	    *out++ = (char)out_byte;
-	    out_byte = 0;
-	} else {
-	    uint mask = 0xFFU << (out_bits - 8);
-
-	    *out++ = (char)((out_byte & mask) >> (out_bits - 8));
-	    out_byte &= ~mask;
-	}
-	outsz++;
-	out_bits -= 8;
-    }
-    out[0] = '\0';
-    return true;
-}
-
-static void parse_rfc822space(const tchar *&s) {
-    uint cmt = 0;
-    const tchar *p = s;
-
-    if (!p)
-	return;
-    while (*p && (isspace(*p) || *p == '(')) {
-	if (*p == '\n') {
-	    p++;
-	    if (*p != ' ' && *p != '\t') {
-		s = nullptr;
-		return;
-	    }
-	} else if (*p == '(') {
-	    p++;
-	    cmt++;
-	    while (cmt) {
-		switch (*p) {
-		case '\n':
-		    p++;
-		    if (*p == ' ' || *p == '\t')
-			break;
-		    /* fall-thru */
-		case '\0':
-		    s = nullptr;
-		    return;
-		case '\\':
-		    p++;
-		    break;
-		case '(':
-		    cmt++;
-		    break;
-		case ')':
-		    cmt--;
-		    break;
-		default:
-		    break;
-		}
-		p++;
-	    }
-	} else {
-	    p++;
-	}
-    }
-    s = *p ? p : nullptr;
-}
-
-static int tmcomp(const tm *const atmp, const tm *const btmp) {
-    int result;
-
-    if ((result = (atmp->tm_year - btmp->tm_year)) == 0 &&
-	(result = (atmp->tm_mon - btmp->tm_mon)) == 0 &&
-	(result = (atmp->tm_mday - btmp->tm_mday)) == 0 &&
-	(result = (atmp->tm_hour - btmp->tm_hour)) == 0 &&
-	(result = (atmp->tm_min - btmp->tm_min)) == 0)
-	result = atmp->tm_sec - btmp->tm_sec;
-    return result;
-}
-
-time_t mkgmtime(const tm *tmp) {
-    int bits;
-    int seconds;
-    time_t t;
-    tm orgtm, tmbuf;
-
-    orgtm = *tmp;
-    seconds = orgtm.tm_sec;
-    orgtm.tm_sec = 0;
-    /*
-     * Calculate the number of magnitude bits in a time_t
-     * If time_t is signed, then 0 is the median value,
-     * if time_t is unsigned, then 1 << bits is median.
-     */
-    for (bits = 0, t = 1; t > 0; ++bits, t <<= 1)
-	;
-    t = (t < 0) ? 0 : ((time_t)1 << bits);
-    while (true) {
-	int dir;
-	const tm *newtm = gmtime_r(&t, &tmbuf);
-
-	if (newtm == nullptr)	// cppcheck-suppress knownConditionTrueFalse
-	    return 0;
-	dir = tmcomp(newtm, &orgtm);
-	if (dir != 0) {
-	    if (bits-- < 0)
-		return -1;
-	    if (bits < 0)
-		--t;
-	    else if (dir > 0)
-		t -= (time_t)1 << bits;
-	    else
-		t += (time_t)1 << bits;
-	    continue;
-	}
-	break;
-    }
-    t += seconds;
-    return t;
-}
-
-time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {
-    int hour = 0, min = 0;
-    tchar month[4];
-    tchar *p;
-    bool rfcerr = false;
-    tm tm;
-    time_t t;
-    static constexpr const tchar *monthname[] = {
-	T("jan"), T("feb"), T("mar"), T("apr"), T("may"), T("jun"), T("jul"),
-	T("aug"), T("sep"), T("oct"), T("nov"), T("dec")
-    };
-
-    ZERO(tm);
-    parse_rfc822space(hdr);
-    if (!hdr)
-	return 0;
-    if (istalpha(*hdr)) {
-	// skip day name
-	hdr++;
-	if (!istalpha(*hdr))
-	    return 0;
-	hdr++;
-	if (!istalpha(*hdr))
-	    return 0;
-	hdr++;
-	parse_rfc822space(hdr);
-	if (!hdr)
-	    return 0;
-	if (*hdr == ',')
-	    hdr++;
-	parse_rfc822space(hdr);
-	if (!hdr)
-	    return 0;
-    }
-    if (istdigit(*hdr)) {
-	tm.tm_mday = *hdr++ - '0';
-	if (istdigit(*hdr))
-	    tm.tm_mday = tm.tm_mday * 10 + *hdr++ - '0';
-    } else {
-	rfcerr = true;
-    }
-    // parse month
-    parse_rfc822space(hdr);
-    if (!hdr)
-	return 0;
-    month[0] = *hdr++;
-    if (!istalpha(month[0]))
-	return 0;
-    month[1] = *hdr++;
-    if (!istalpha(month[1]))
-	return 0;
-    month[2] = *hdr++;
-    if (!istalpha(month[2]))
-	return 0;
-    month[3] = '\0';
-    for (p = month; *p; p++)
-	*p = (char)tolower(*p);
-    for (tm.tm_mon = 0; tm.tm_mon < 12; tm.tm_mon++) {
-	if (!tstrcmp(month, monthname[tm.tm_mon]))
-	    break;
-    }
-    if (tm.tm_mon == 12)
-	return 0;
-    if (rfcerr) {
-	parse_rfc822space(hdr);
-	if (!hdr || !istdigit(*hdr))
-	    return 0;
-	tm.tm_mday = *hdr++ - '0';
-	if (istdigit(*hdr))
-	    tm.tm_mday = tm.tm_mday * 10 + *hdr++ - '0';
-	parse_rfc822space(hdr);
-	if (!hdr)
-	    return 0;
-	if (*hdr == ',')
-	    hdr++;
-    }
-    // parse year
-    parse_rfc822space(hdr);
-    if (!hdr || !istdigit(*hdr))
-	return 0;
-    tm.tm_year = *hdr++ - '0';
-    if (!istdigit(*hdr))
-	return 0;
-    tm.tm_year = tm.tm_year * 10 + *hdr++ - '0';
-    if (istdigit(*hdr)) {
-	if (tm.tm_year < 19)
-	    return 0;
-	tm.tm_year -= 19;
-	tm.tm_year = tm.tm_year * 10 + *hdr++ - '0';
-	if (!istdigit(*hdr))
-	    return 0;
-	tm.tm_year = tm.tm_year * 10 + *hdr++ - '0';
-    } else if (tm.tm_year < 70) {
-	tm.tm_year += 100;
-    }
-    tm.tm_isdst = -1;
-    tm.tm_hour = 12;
-    /* Parse time if available */
-    parse_rfc822space(hdr);
-    if (!hdr)
-	goto gmt;
-    if (!istdigit(*hdr))
-	goto gmt;
-    tm.tm_hour = *hdr++ - '0';
-    if (istdigit(*hdr))
-	tm.tm_hour = tm.tm_hour * 10 + *hdr++ - '0';
-    hdr++;
-    if (!istdigit(*hdr))
-	goto gmt;
-    tm.tm_min = *hdr++ - '0';
-    if (istdigit(*hdr))
-	tm.tm_min = tm.tm_min * 10 + *hdr++ - '0';
-    hdr++;
-    if (isdigit(*hdr)) {
-	tm.tm_sec = *hdr++ - '0';
-	if (isdigit(*hdr))
-	    tm.tm_sec = tm.tm_sec * 10 + *hdr++ - '0';
-    } else {
-	parse_rfc822space(hdr);
-	if (hdr && toupper(hdr[1]) == 'M') {
-	    if (toupper(*hdr) == 'P' && tm.tm_hour < 12)
-		tm.tm_hour += 12;
-	    hdr += 2;
-	}
-    }
-    parse_rfc822space(hdr);
-    // parse GMT offset
-    if (!hdr) {
-	goto gmt;
-    } else if (istdigit(*hdr) || *hdr == '-' || *hdr == '+') {
-	bool neg = *hdr == '-';
-
-	if (!istdigit(*hdr))
-	    hdr++;
-	if (!istdigit(hdr[0]) || !istdigit(hdr[1]) || !istdigit(hdr[2]))
-	    goto gmt;
-	hour = *hdr++ - '0';
-	if (istdigit(hdr[2]))
-	    hour = hour * 10 + *hdr++ - '0';
-	min = (*hdr++ - '0') * 10;
-	min += *hdr - '0';
-	if (neg) {
-	    hour *= -1;
-	    min *= -1;
-	}
-    } else if (istalpha(*hdr) && (istspace(hdr[1]) || hdr[1] == '\0')) {
-	char zone = (char)toupper(*hdr);
-
-	/* military time */
-	if (zone < 'J')
-	    hour = zone - 'A' + 1;
-	else if (zone < 'N')
-	    hour = zone - 'A';
-	else if (zone < 'Z')
-	    hour = (zone - 'M') * -1;
-    } else if (!tstrnicmp(hdr, T("EDT"), 3)) {
-	hour = -4;
-    } else if (!tstrnicmp(hdr, T("EST"), 3) || !tstrnicmp(hdr, T("CDT"), 3)) {
-	hour = -5;
-    } else if (!tstrnicmp(hdr, T("CST"), 3) || !tstrnicmp(hdr, T("MDT"), 3)) {
-	hour = -6;
-    } else if (!tstrnicmp(hdr, T("MST"), 3) || !tstrnicmp(hdr, T("PDT"), 3)) {
-	hour = -7;
-    } else if (!tstrnicmp(hdr, T("PST"), 3)) {
-	hour = -8;
-    }
-    tm.tm_min = tm.tm_min - min + adjmin;
-    tm.tm_hour = tm.tm_hour - hour + adjhr;
-
-gmt:
-    t = mkgmtime(&tm);
-    return t == (time_t)-1 ? 0 : t;
 }

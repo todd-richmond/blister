@@ -398,3 +398,107 @@ done:
     return ret;
 }
 
+time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {
+    static constexpr tstring_view months =
+	T("janfebmaraprmayjunjulaugsepoctnovdec");
+    static constexpr struct { tstring_view name; int hour; } zones[] = {
+	{ T("EDT"), -4 }, { T("EST"), -5 }, { T("CDT"), -5 }, { T("CST"), -6 },
+	{ T("MDT"), -6 }, { T("MST"), -7 }, { T("PDT"), -7 }, { T("PST"), -8 }
+    };
+    int day = 0, mon = 0, year = -1, hour = 12, min = 0, sec = 0, off = 0;
+    bool timed = false;
+    auto num = [](const tchar *&p) {
+	int n = 0;
+
+	for (; istdigit(*p); ++p)
+	    n = n < 100000 ? n * 10 + *p - '0' : n;
+	return n;
+    };
+
+    // accept RFC 1123/822, RFC 850 and asctime dates: fields are recognized
+    // by type so day names, commas, dashes and comments are simply skipped
+    for (const tchar *p = hdr; *p; ) {
+	const tchar *s = p;
+
+	if (istdigit(*p)) {
+	    int n = num(p);
+	    size_t len = (size_t)(p - s);
+
+	    if (*p == ':' && !timed) {
+		timed = true;
+		hour = n;
+		min = num(++p);
+		if (*p == ':')
+		    sec = num(++p);
+	    } else if (!day) {
+		day = n;
+	    } else if (year < 0) {
+		year = len >= 4 ? n : len == 3 || n >= 70 ? n + 1900 : n + 2000;
+	    }
+	} else if (istalpha(*p)) {
+	    while (istalpha(*p))
+		++p;
+
+	    size_t len = (size_t)(p - s);
+	    if (!mon && len >= 3) {
+		for (size_t i = 0; i < months.size(); i += 3) {
+		    if (!tstrnicmp(s, months.data() + i, 3)) {
+			mon = (int)i / 3 + 1;
+			break;
+		    }
+		}
+	    }
+	    if (!timed)
+		continue;
+	    if (len == 2 && (!tstrnicmp(s, T("AM"), 2) ||
+		!tstrnicmp(s, T("PM"), 2))) {
+		if (hour <= 12)
+		    hour = hour % 12 + (toupper(*s) == 'P' ? 12 : 0);
+	    } else if (len == 1) {
+		// military zone
+		tchar z = (tchar)toupper(*s);
+
+		off = (z < 'J' ? z - 'A' + 1 : z < 'N' ? z - 'A' : z < 'Z' ?
+		    'M' - z : 0) * 60;
+	    } else {
+		for (const auto &z : zones) {
+		    if (len == 3 && !tstrnicmp(s, z.name.data(), 3))
+			off = z.hour * 60;
+		}
+	    }
+	} else if (timed && (*p == '+' || *p == '-') && istdigit(p[1])) {
+	    bool neg = *p++ == '-';
+
+	    s = p;
+	    off = num(p);
+	    off = p - s <= 2 ? off * 60 : off / 100 * 60 + off % 100;
+	    if (neg)
+		off = -off;
+	} else if (*p == '(') {
+	    // skip nested comment
+	    for (int depth = 0; *p; ) {
+		if (*p == '(')
+		    ++depth;
+		else if (*p == ')')
+		    --depth;
+		++p;
+		if (!depth)
+		    break;
+	    }
+	} else {
+	    ++p;
+	}
+    }
+    if (!day || !mon || year < 0 || year > 9999)
+	return 0;
+
+    namespace chr = std::chrono;
+    chr::year_month_day ymd(chr::year(year) / chr::month((uint)mon) /
+	chr::day((uint)day));
+
+    if (!ymd.ok())
+	return 0;
+    return (chr::sys_days(ymd) + chr::hours(hour + adjhr) +
+	chr::minutes(min - off + adjmin) + chr::seconds(sec)).
+	time_since_epoch().count();
+}

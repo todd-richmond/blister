@@ -24,7 +24,6 @@
 #include "HTTPClient.h"
 #include "HTTPServer.h"
 #include "Log.h"
-#include "SMTPClient.h"
 
 static constexpr uint RTimeout = 30 * 1000;
 static constexpr uint WTimeout = 150 * 1000;

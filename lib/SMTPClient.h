@@ -19,16 +19,18 @@
 #define SMTPClient_h
 
 #include <time.h>
+#include <fstream>
+#include <memory_resource>
 #include "Socket.h"
 
 class BLISTER RFC821Addr: nocopy {
 public:
-    explicit RFC821Addr(const tchar *address = nullptr) {
+    explicit RFC821Addr(const tchar *address = nullptr, bool smtputf8 = false) {
 	if (address)
-	    parse(address);
+	    parse(address, smtputf8);
     }
-    RFC821Addr(const tchar *&address, tstring &reterr) {
-	parseaddr(address);
+    RFC821Addr(const tchar *&address, tstring &reterr, bool smtputf8 = false) {
+	parseaddr(address, smtputf8);
 	reterr = err;
     }
 
@@ -36,57 +38,72 @@ public:
     const tstring &domain(void) const { return domain_buf; }
     const tstring &error(void) const { return err; }
     const tstring &local(void) const { return local_part; }
+    bool smtputf8(void) const { return utf8; }
 
-    bool parse(const tchar *address) { parseaddr(address); return err.empty(); }
+    bool parse(const tchar *address, bool smtputf8 = false) {
+	parseaddr(address, smtputf8);
+	return err.empty();
+    }
     void setDomain(const tchar *domain);
     void setLocal(const tchar *local);
 
 private:
     tstring addr, domain_buf, local_part;
     tstring err;
+    bool utf8 = false;
 
-    void parseaddr(const tchar *&addr);
-    void parsedomain(tstring::size_type &pos);
+    void parseaddr(const tchar *&addr, bool smtputf8);
+    bool scan(const tchar *&addr, bool smtputf8);
+    bool split(void);
+    bool parsedomain(size_t &pos);
     void make_address(void);
 };
 
 class BLISTER RFC822Addr: nocopy {
 public:
-    explicit RFC822Addr(const tchar *addrs = nullptr) {
+    explicit RFC822Addr(const tchar *addrs = nullptr, bool smtputf8 = false) {
 	if (addrs)
-	    parse(addrs);
+	    parse(addrs, smtputf8);
     }
-    explicit RFC822Addr(const tstring &addrs) {
-	parse(addrs.c_str());
+    explicit RFC822Addr(const tstring &addrs, bool smtputf8 = false) {
+	parse(addrs.c_str(), smtputf8);
     }
-    ~RFC822Addr() { delete [] buf; }
 
     tstring address(uint u = 0, bool name = false, bool brkt = true) const;
-    tstring domain(uint u = 0) const {
-	return domains.empty() ? T("") : domains[u];
-    }
-    tstring local(uint u = 0) const {
-	return locals.empty() ? T("") : locals[u];
-    }
-    tstring phrase(uint u = 0) const {
-	return phrases.empty() ? T("") : phrases[u];
-    }
-    tstring route(uint u = 0) const {
-	return routes.empty() ? T("") : routes[u];
-    }
-    size_t size(void) const { return locals.size(); }
+    tstring domain(uint u = 0) const { return tstring(at(u).domain); }
+    tstring local(uint u = 0) const { return tstring(at(u).local); }
+    tstring phrase(uint u = 0) const { return tstring(at(u).phrase); }
+    tstring route(uint u = 0) const { return tstring(at(u).route); }
+    size_t size(void) const { return entries.size(); }
+    bool smtputf8(void) const { return utf8; }
 
-    uint parse(const tchar *addrs);
+    uint parse(const tchar *addrs, bool smtputf8 = false);
 
 private:
-    tchar *buf = nullptr;
-    vector<const tchar *> domains, locals, phrases, routes;
+    // views into buf
+    struct Entry {
+	tstring_view domain, local, phrase, route;
+    };
 
+    // the parsed copy of the input and the entries live in an inline arena
+    // so typical addresses need no heap allocation
+    alignas(Entry) std::byte space[280];
+    std::pmr::monotonic_buffer_resource arena{space, sizeof (space)};
+    std::pmr::vector<Entry> entries{&arena};
+    bool utf8 = false;
+
+    const Entry &at(uint u) const {
+	static constexpr Entry none;
+
+	return u < entries.size() ? entries[u] : none;
+    }
     void parse_append(const tchar *name, const tchar *route, const tchar
 	*mailbox, const tchar *domain);
-    int parse_domain(tchar *&in, tchar *&domain, tchar *&comment);
-    int parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials);
-    int parse_route(tchar *&in, tchar *&route);
+    int parse_domain(tchar *&in, tchar *&domain, tchar *&comment,
+	bool smtputf8);
+    int parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials,
+	bool smtputf8, bool &hi);
+    int parse_route(tchar *&in, tchar *&route, bool smtputf8);
     static bool skip_whitespace(tchar *&in);
 };
 
@@ -104,6 +121,7 @@ public:
     const tstring &message_multi(void) const { return multi; }
     bool multi_find(const tchar *s) const { return multi.find(s) != multi.npos; }
     const tstring &result(void) const { return sts; }
+    const vector<tstring> &results(void) const { return resultsv; }
 
     bool connect(const Sockaddr &addr, uint timeout = SOCK_INFINITE);
     bool connect(const tchar *hostport, uint timeout = SOCK_INFINITE) {
@@ -116,9 +134,16 @@ public:
     bool lhlo(const tchar *domain = nullptr);
     bool auth(const tchar *id, const tchar *passwd);
     bool xclient(const tchar *xclient_cmd);
-    bool from(const tchar *id);
-    bool from(const RFC822Addr &addrs);
+    bool pipeline(void) {
+	if (!exts_find(T("PIPELINING")))
+	    return false;
+	pipelined = true;
+	return true;
+    }
+    bool from(const tchar *id, const tchar *parms = nullptr);
+    bool from(const RFC822Addr &addrs, const tchar *parms = nullptr);
     bool rcpt(const tchar *id);
+    bool rcpt(const RFC822Addr &addr);
     bool bcc(const tchar *id) { return add(bccv, id); }
     bool bcc(const RFC822Addr &addrs) { return add(bccv, addrs); }
     bool cc(const tchar *id) { return add(ccv, id); }
@@ -142,42 +167,60 @@ public:
     bool data(const void *p, uint sz, const tchar *type,
 	const tchar *desc = nullptr, const tchar *encoding = nullptr,
 	const tchar *disp = nullptr, const tchar *name = nullptr);
+    bool bdat(const void *p, size_t sz, bool last = true);
     bool enddata(void);
     bool quit(void);
-    bool rset(void) { return cmd(T("RSET")); }
+    bool rset(void) { pipelined = false; return cmd(T("RSET")); }
     void timeout(uint rto, uint wto = SOCK_INFINITE) {
 	sock.rtimeout(rto);
 	sock.wtimeout(wto);
     }
-    bool vrfy(const tchar *id);
+    void use_fstream(fstream *fs = nullptr) {
+	fstrm = fs;
+	strm = fs ? static_cast<iostream *>(fs) : &sstrm;
+    }
+    bool vrfy(const tchar *id, const tchar *parms = nullptr);
+    bool vrfy(const RFC822Addr &addr, const tchar *parms = nullptr);
     static const tchar *section(void) { return T("smtp"); }
 
 protected:
     tstring exts, multi, sts;
     Socket sock;
     sockstream sstrm;
+    fstream *fstrm = nullptr;
+    iostream *strm = &sstrm;
+    bool ext_chunking = false, ext_smtputf8 = false;
     static const char crlf[];
 
 private:
     bool add(vector<tstring> &v, const tchar *id);
     bool add(vector<tstring> &v, const RFC822Addr &addrs);
     void recip(const tchar *hdr, const vector<tstring> &v);
+    bool downgrade(const tchar *cmd, tstring &id);
+    bool canutf8(void) const { return ext_smtputf8 || fstrm; }
+    bool envarg(const tchar *cmd, tstring &id, const tchar *parms, bool brkt,
+	bool always, tstring &arg);
+    string hdrtext(const tchar *s) const;
+    tstring hdraddr(const RFC822Addr &addr, uint u, const tstring &orig,
+	const tstring &sent) const;
+    bool rcptcmd(tstring &id);
+    bool startdata(void);
     bool stuff(const void *p, size_t sz);
 
     string boundary;
     tstring frm, sub;
     bool datasent, lmtp, mime;
-    vector<tstring> tov, ccv, bccv, hdrv;
+    bool pipelined = false;
+    vector<tstring> tov, ccv, bccv, hdrv, resultsv;
 };
 
 bool base64encode(const void *in, size_t len, char *&out, size_t &outsz);
 bool base64decode(const char *in, size_t sz, void *&out, size_t &outsz);
+bool qpencode(const void *in, size_t len, char *&out, size_t &outsz);
+bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz);
 bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
     size_t &outsz);
-bool uudecode(const char *in, size_t sz, uint &perm, tstring &file, void
-    *&out, size_t &outsz);
-
-time_t mkgmtime(const struct tm *tmp);
-time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);
+bool uudecode(const char *in, size_t sz, uint &perm, tstring &file, void *&out,
+    size_t &outsz);
 
 #endif // SMTPClient_h
