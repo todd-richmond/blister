@@ -1333,6 +1333,7 @@ void Dispatcher::removeReady(DispatchObj &obj) {
 	}
     } else if (obj.flags & DSP_ReadyGroup) {
 	obj.flags &= ~DSP_ReadyGroup;
+	// NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
 	obj.group->glist.pop(obj);
     }
 }

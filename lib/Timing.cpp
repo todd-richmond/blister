@@ -332,9 +332,9 @@ void Timing::start(const tchar *key, strhash_t hash) {
 void Timing::stop() {
     Tlsdata &tlsd(*tls);
 
-    if (tlsd.entries.empty())
+    if (tlsd.entries.empty()) {
 	dloge(Log::mod(T("Timing")), T("stack mismatch"));
-    else {
+    } else {
 	tlsd.path.resize(tlsd.entries.back().pathlen);
 	tlsd.entries.pop_back();
     }

@@ -292,7 +292,7 @@ bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
 #ifdef __AVX2__
 	if (n == 45 && end - p >= 60) {
 	    // 60 characters to 45 bytes in two 32 character blocks that overlap
-	    for (uint i = 0; i < 2; ++i) {
+	    for (size_t i = 0; i < 2; ++i) {
 		__m256i v = _mm256_loadu_si256((const __m256i *)(p + i * 28));
 
 		v = _mm256_and_si256(_mm256_sub_epi8(v, _mm256_set1_epi8(' ')),
@@ -325,7 +325,7 @@ bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
 	}
 	if (n) {
 	    // final partial group of 1 or 2 bytes needs n + 1 characters
-	    if (n >= 3 || end - p < (ptrdiff_t)(n + 1)) {
+	    if (n >= 3 || end - p < (ptrdiff_t)n + 1) {
 		delete [] (uchar *)out;
 		out = nullptr;
 		return false;
@@ -580,10 +580,10 @@ bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz) {
 	    while (o > keep && (o[-1] == ' ' || o[-1] == '\t'))
 		--o;
 	    if (c == '\r') {
-		*o++ = '\r';
+		*o++ = '\r';	// NOLINT
 		++p;
 	    }
-	    *o++ = '\n';
+	    *o++ = '\n';	// NOLINT
 	} else {
 	    // lone CR
 	    *o++ = c;
@@ -1443,7 +1443,7 @@ static const char *stuffscan(const char *p, const char *end,
 	uint m = (uint)_mm256_movemask_epi8(_mm256_or_si256(bare, bol));
 
 	if (m)
-	    return p + __builtin_ctz(m);
+	    return p + std::countr_zero(m);
     }
 #endif
     while (p < end) {
@@ -1752,7 +1752,7 @@ bool RFC821Addr::split() {
 bool RFC821Addr::parsedomain(size_t &pos) {
     bool sawspace = false;
     size_t esc = 0;			// end of the last escaped character
-    auto finish = [&]() {
+    auto finish = [&] {
 	while (!domain_buf.empty() && domain_buf.size() > esc &&
 	    domain_buf.back() == '.')
 	    domain_buf.pop_back();

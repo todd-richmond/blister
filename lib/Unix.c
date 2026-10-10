@@ -68,18 +68,17 @@ usec_t uticks(void) {
 int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test) {
     struct flock fl;
+    int ret;
+
 
     ZERO(fl);
     fl.l_type = type;
     fl.l_whence = whence;
     fl.l_start = (off_t)start;
     fl.l_len = (off_t)len;
-
-    int ret;
-
-    do
+    do {
 	ret = fcntl(fd, test ? F_SETLK : F_SETLKW, &fl);
-    while (ret == -1 && errno == EINTR && !test);
+    } while (ret == -1 && errno == EINTR && !test);
     return ret;
 }
 

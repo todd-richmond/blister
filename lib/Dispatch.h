@@ -206,6 +206,7 @@ public:
 
     void cancel(void) override;
     void erase(void) override;
+    // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
     bool close(void);
     int read(void *buf, uint len) {
 	return drained(Socket::read(buf, len), len);
