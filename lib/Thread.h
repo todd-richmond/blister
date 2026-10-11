@@ -1030,7 +1030,7 @@ public:
 
     int exitStatus(void) const { return retval; }
     thread_hdl_t getHandle(void) const { return hdl; }
-    thread_id_t getId(void) const { FastLocker lkr(lck); return id; }
+    thread_id_t getId(void) const { return id.load(memory_order_acquire); }
     ThreadState getState(void) const {
 	return state.load(memory_order_acquire);
     }
@@ -1040,7 +1040,7 @@ public:
 
     explicit operator thread_hdl_t(void) const { return hdl; }
     friend bool operator ==(const Thread &a, const Thread &b) {
-	return THREAD_EQUAL(a.id, b.id);
+	return THREAD_EQUAL(a.getId(), b.getId());
     }
 
     bool priority(int pri = 0);			// -20 -> 20
@@ -1048,6 +1048,7 @@ public:
 	false, bool autoterm = false);
     bool start(ThreadRoutine main, void *data = nullptr, uint stacksz = 0,
 	ThreadGroup *tg = nullptr, bool suspend = false, bool autoterm = false);
+    bool resume(void);
     bool stop(void);
     bool terminate(void);
     bool wait(ulong timeout = INFINITE);
@@ -1067,13 +1068,16 @@ private:
     bool autoterm;
     ThreadGroup *group;
     thread_hdl_t hdl;
-    thread_id_t id;
+    atomic<thread_id_t> id;
     ThreadRoutine main;
     int retval;
     atomic<ThreadState> state;
+    uint stacksize = 0;
+    FastSemaphore started;
     static ThreadLocal<ThreadLocalMap *> flocal;
 
     void clear(void);
+    bool launch(Locker &lkr);
     void setState(ThreadState s) { state.store(s, memory_order_release); }
     void thread_cleanup(void);
     static int init(void *thisp);
@@ -1097,7 +1101,7 @@ public:
     }
     thread_id_t getId(void) const { return id; }
     const Thread &getMainThread(void) const { return master; }
-    size_t size(void) const { return threads.size(); }
+    size_t size(void) const { Locker lkr(cvlck); return threads.size(); }
 
     friend bool operator ==(const ThreadGroup &a, const ThreadGroup &b) {
 	return a.id == b.id;
@@ -1105,7 +1109,8 @@ public:
 
     void priority(int pri = 0);
     void remove(Thread &thread);
-    bool start(uint stacksz = 0, bool suspend = false, bool autoterm = false);
+    bool resume(void) { return master.resume(); }
+    bool start(uint stacksz = 0, bool suspend = false);
     void stop(void) { onStop(); control(Terminated, &Thread::stop); }
     void terminate(void) { control(Terminated, &Thread::terminate); }
     // only the caller may delete returned Thread
@@ -1123,15 +1128,13 @@ protected:
     virtual void onSuspend(void) {}
 
 private:
-    Lock cvlck;
+    mutable Lock cvlck;
     Condvar cv;
     bool autoterm;
     thread_id_t id;
     atomic<ThreadState> state;
     set<Thread *> threads;
     Thread master;
-    static Lock grouplck;
-    static set<ThreadGroup *> groups;
     static atomic_ulong next_id;
 
     void setState(ThreadState s) { state.store(s, memory_order_release); }

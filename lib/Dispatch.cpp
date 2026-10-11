@@ -76,7 +76,7 @@ static constexpr dspflag_t DSP_PostCB = DSP_Freed | DSP_Ready;
 static constexpr dspflag_t DSP_SelectAll = DSP_SelectAccept | DSP_SelectRead |
     DSP_SelectWrite | DSP_SelectClose;
 
-Dispatcher::Dispatcher(const Config &config): cfg(config),
+Dispatcher::Dispatcher(const Config &config): ThreadGroup(false), cfg(config),
     maxthreads(0), polling(false), shutdown(true), zpending(false),
     scanning(0), workers(0), cache(0), due(DispatchTimer::DSP_NEVER_DUE),
 #ifdef DSP_WIN32_ASYNC
@@ -875,7 +875,7 @@ void Dispatcher::reset(void) {
 bool Dispatcher::start(uint mthreads, uint stack) {
     maxthreads = mthreads;
     stacksz = stack ? stack : 128 * 1024;
-    if (ThreadGroup::start(mthreads ? 8 * 1024 : stacksz, false, false)) {
+    if (ThreadGroup::start(mthreads ? 8 * 1024 : stacksz)) {
 	olock.lock();
 	while (shutdown && getMainThread().getState() == Running) {
 	    olock.unlock();

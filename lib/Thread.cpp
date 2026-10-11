@@ -19,9 +19,8 @@
 #include "Thread.h"
 
 static const thread_id_t NOID = (thread_id_t)-1;
+static thread_local ThreadGroup *curgroup;
 
-Lock ThreadGroup::grouplck;
-set<ThreadGroup *> ThreadGroup::groups;
 atomic_ulong ThreadGroup::next_id;
 ThreadLocal<Thread::ThreadLocalMap *> Thread::flocal;
 ThreadGroup ThreadGroup::MainThreadGroup(false);
@@ -63,7 +62,7 @@ Process Process::start(tchar *const *args, const int *fds) {
 	if (*args)
 	    cmd += ' ';
     }
-    if (CreateProcess(NULL, (tchar *)cmd.c_str(), NULL, NULL, TRUE, // NOSONAR
+    if (CreateProcess(NULL, cmd.data(), NULL, NULL, TRUE, // NOSONAR
 	0, NULL, NULL, &si, &proc)) {
 	CloseHandle(proc.hThread);
     } else {
@@ -78,6 +77,7 @@ Process Process::start(tchar *const *args, const int *fds) {
 #else
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 
 bool SharedSemaphore::open(const tchar *name, uint init, bool exclusive) {
@@ -89,6 +89,16 @@ bool SharedSemaphore::open(const tchar *name, uint init, bool exclusive) {
 	if (exclusive)
 	    return false;
     } else {
+#ifdef __linux__
+	// new semaphores start at 0 so adding cannot clobber a racing opener
+	if (init <= SHRT_MAX) {
+	    sembuf op{0, (short)init, 0};
+
+	    if (init)
+		::semop(hdl, &op, 1);
+	    return true;
+	}
+#endif
 	semctl(hdl, 0, SETVAL, init);
 	return true;
     }
@@ -124,7 +134,7 @@ bool DLLibrary::open(const tchar *dll) {
 	file.erase();
     }
 #endif
-    return hdl != 0;
+    return hdl != nullptr;
 }
 
 bool DLLibrary::close() {
@@ -136,11 +146,13 @@ bool DLLibrary::close() {
 	dlclose(hdl);
 #endif
     file.erase();
-    hdl = 0;
+    hdl = nullptr;
     return true;
 }
 
 void *DLLibrary::get(const tchar *symbol) const {
+    if (!hdl)
+	return nullptr;
 #ifdef _WIN32
     return GetProcAddress((HMODULE)hdl, tchartoachar(symbol));
 #else
@@ -188,7 +200,7 @@ ullong Processor::affinity(void) {
 
 bool Processor::affinity(ullong mask) {
 #ifdef _WIN32
-    return SetProcessAffinityMask(GetCurrentProcess(), (uint32_t)mask) != 0;
+    return SetProcessAffinityMask(GetCurrentProcess(), (DWORD_PTR)mask) != 0;
 #elif defined(__linux__)
     cpu_set_t cset;
 
@@ -234,7 +246,7 @@ Thread::Thread(void): cv(lck), argument(nullptr), autoterm(false), group(nullptr
 }
 
 Thread::~Thread() {
-    if (hdl && id != NOID) {
+    if (hdl && getId() != NOID) {
 	if (autoterm)
 	    terminate();
 	else
@@ -246,26 +258,24 @@ Thread::~Thread() {
 	thread_cleanup();
 }
 
-// set state and notify threadgroup
+// set state and notify threadgroup before hdl clears so wait() cannot release
+// the Thread or its group while notify() is still running
 void Thread::clear(void) {
-    ThreadGroup *g;
-
     thread_cleanup();
     lck.lock();
-    if (id != NOID) {
+    if (getId() != NOID) {
 #ifdef _WIN32
 	CloseHandle(hdl);
 #else
 	pthread_detach(hdl);
 #endif
-	id = NOID;
+	id.store(NOID, memory_order_release);
     }
-    g = group;
     setState(Terminated);
+    group->notify(*this);
     hdl = 0;
     cv.broadcast();
     lck.unlock();
-    g->notify(*this);
 }
 
 // exit thread cleanly - called by itself
@@ -311,10 +321,19 @@ bool Thread::priority(int pri) {	// NOLINT
 	return false;
     mn = sched_get_priority_min(policy);
     mx = sched_get_priority_max(policy);
-    if (pri < -20)
-	pri = -20;
-    else if (pri > 20)
-	pri = 20;
+    pri = clamp(pri, -20, 20);
+#ifdef __linux__
+    if (mn == mx) {			// SCHED_OTHER only supports nice
+	thread_id_t tid = getId();
+
+	if (tid == NOID) {		// wrapped thread - only caller is valid
+	    if (!pthread_equal(hdl, pthread_self()))
+		return false;
+	    tid = 0;
+	}
+	return setpriority(PRIO_PROCESS, (id_t)tid, -pri) == 0;
+    }
+#endif
     sched.sched_priority = mn + (mx - mn) * (pri + 20) / 41;
     return pthread_setschedparam(hdl, policy, &sched) == 0;
 #endif
@@ -334,15 +353,14 @@ void Thread::thread_cleanup(void) {
 // setup thread and call it's main routine
 THREAD_FUNC Thread::thread_init(void *arg) {
     Thread *thread = (Thread *)arg;
+    thread_id_t self = THREAD_ID();
 
-    thread->id = THREAD_ID();
-    thread->lck.lock();
+    curgroup = thread->group;
+    thread->id.store(self, memory_order_release);
 #ifdef _WIN32
-    srand((uint)((ulong)uticks() ^ (ulong)(usec_t)thread->id));	// NOSONAR
+    srand((uint)((ulong)uticks() ^ (ulong)(usec_t)self));	// NOSONAR
 #endif
-    thread->setState(Running);
-    thread->cv.set();
-    thread->lck.unlock();
+    thread->started.release();
     thread->retval = thread->main(thread->argument);
     thread->clear();
     return 0;
@@ -354,6 +372,7 @@ bool Thread::start(uint stacksz, ThreadGroup *tg, bool suspend, bool aterm) {
 }
 
 // create Thread and start it running at a given function
+// a suspended Thread has no OS thread until resume()
 bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     bool suspend, bool aterm) {
     ThreadGroup *g = ThreadGroup::add(*this, tg);
@@ -369,15 +388,24 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     argument = arg;
     autoterm = aterm;
     main = func;
-    if (suspend)
+    stacksize = stacksz;
+    if (suspend) {
 	setState(Suspended);
-    else
-	setState(Running);
+	return true;
+    }
+    return launch(lkr);
+}
+
+// create the OS thread
+bool Thread::launch(Locker &lkr) {
+    setState(Running);
 #ifdef _WIN32
-    hdl = (HANDLE)_beginthreadex(NULL, stacksz, thread_init, this, 0,
-	(uint *)&id);
+    uint tid;
+
+    hdl = (HANDLE)_beginthreadex(NULL, stacksize, thread_init, this, 0, &tid);
 #else
     pthread_attr_t attr;
+    uint stacksz = stacksize;
 
     pthread_attr_init(&attr);
     if (stacksz) {
@@ -394,25 +422,37 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     pthread_attr_destroy(&attr);
 #endif
     if (hdl) {
-	cv.wait();
-	if (suspend)
-	    msleep(100);		    // wait for thread to sleep
+	started.acquire();
 	return true;
-    } else {
-	setState(Init);
-	group = nullptr;
-	lkr.unlock();
-	g->remove(*this);
-	return false;
     }
+    ThreadGroup *g = group;
+
+    setState(Init);
+    group = nullptr;
+    lkr.unlock();
+    g->remove(*this);
+    return false;
+}
+
+// start a Thread created suspended
+bool Thread::resume(void) {
+    Locker lkr(lck);
+
+    return getState() == Suspended && launch(lkr);
 }
 
 bool Thread::stop(void) {
     Locker lkr(lck);
 
     if (getState() != Terminated) {
+	bool suspended = getState() == Suspended;
+
 	onStop();
 	setState(Terminated);
+	if (suspended) {		// no thread exists to report exit
+	    group->notify(*this);
+	    cv.broadcast();
+	}
     }
     return true;
 }
@@ -422,7 +462,13 @@ bool Thread::terminate(void) {
     bool ret = false;
     Locker lkr(lck);
 
-    if (getState() == Running || getState() == Suspended) {
+    if (getState() == Suspended) {
+	retval = -2;
+	setState(Terminated);
+	group->notify(*this);
+	cv.broadcast();
+	ret = true;
+    } else if (getState() == Running) {
 #ifdef _WIN32
 #pragma warning(disable: 6258)
 	if (hdl && hdl != GetCurrentThread())
@@ -432,21 +478,18 @@ bool Thread::terminate(void) {
 #endif
 	if (ret) {
 	    retval = -2;
-	    thread_cleanup();
-	    if (id != NOID) {
+	    if (getId() != NOID) {
 #ifdef _WIN32
 		CloseHandle(hdl);
 #else
 		pthread_detach(hdl);
 #endif
-		id = NOID;
+		id.store(NOID, memory_order_release);
 	    }
-	    ThreadGroup *g = group;
 	    setState(Terminated);
+	    group->notify(*this);
 	    hdl = 0;
 	    cv.broadcast();
-	    lkr.unlock();
-	    g->notify(*this);
 	}
     } else if (getState() == Terminated) {
 	ret = true;
@@ -458,43 +501,45 @@ bool Thread::terminate(void) {
 bool Thread::wait(ulong timeout) {
     Locker lkr(lck);
 
-    if (getState() == Init) {
+    if (getState() == Init || getState() == Suspended)
 	return true;
-    } else if (getState() == Terminated) {
-	msec_t end = mticks() + timeout;
-
-	while (hdl) {
-	    msec_t now = mticks();
-
-	    if (timeout != INFINITE) {
-		if (now >= end)
-		    return false;
-		cv.wait((ulong)(end - now));
-	    } else {
-		cv.wait();
-	    }
-	}
-	return true;
-    } else if (id == NOID) {
+    if (getState() == Running && getId() == NOID) {	// wrapped thread
 	lkr.unlock();
 #ifdef _WIN32
 	return WaitForSingleObject(hdl, timeout) == WAIT_OBJECT_0;
-#else
-	// pthreads do not support a timeout
+#elif defined(__linux__)
 	if (timeout == INFINITE)
-	    return pthread_join(hdl, NULL) == 0;
+	    return pthread_join(hdl, nullptr) == 0;
+
+	timespec ts;
+
+	clock_gettime(CLOCK_REALTIME, &ts);
+	time_adjust_msec(&ts, timeout);
+	return pthread_timedjoin_np(hdl, nullptr, &ts) == 0;
+#else
+	// other pthreads do not support a timeout
+	return timeout == INFINITE && pthread_join(hdl, nullptr) == 0;
 #endif
-    } else {
-	return cv.wait(timeout);
     }
-    return false;
+
+    msec_t end = mticks() + timeout;
+
+    while (hdl) {
+	if (timeout == INFINITE) {
+	    cv.wait();
+	} else {
+	    msec_t now = mticks();
+
+	    if (now >= end)
+		return false;
+	    cv.wait((ulong)(end - now));
+	}
+    }
+    return true;
 }
 
 ThreadGroup::ThreadGroup(bool aterm): cv(cvlck), autoterm(aterm), state(Init) {
-    grouplck.lock();
     id = (thread_id_t)++next_id;
-    groups.insert(this);
-    grouplck.unlock();
 }
 
 ThreadGroup::~ThreadGroup() {
@@ -502,38 +547,11 @@ ThreadGroup::~ThreadGroup() {
 	terminate();
     wait(INFINITE, true);
     waitForMain(INFINITE);
-    grouplck.lock();
-    groups.erase(this);
-    grouplck.unlock();
 }
 
 ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
-    if (!tg) {
-	grouplck.lock();
-	for (auto *const group : groups) {
-	    tg = group;
-	    if (THREAD_ISSELF(tg->master.id)) {
-		break;
-	    } else {
-		tg->cvlck.lock();
-		auto found = false;
-		for (auto *const t : tg->threads) {
-		    if (THREAD_ISSELF(t->id)) {
-			found = true;
-			break;
-		    }
-		}
-		tg->cvlck.unlock();
-		if (!found)
-		    tg = nullptr;
-		else
-		    break;
-	    }
-	}
-	grouplck.unlock();
-	if (tg == nullptr)
-	    tg = &MainThreadGroup;
-    }
+    if (!tg)
+	tg = curgroup ? curgroup : &MainThreadGroup;
     if (&thread != &tg->master) {
 	tg->cvlck.lock();
 	tg->threads.insert(&thread);
@@ -550,7 +568,7 @@ void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
 
     setState(ts);
     for (auto *thread : threads) {
-	if (!THREAD_ISSELF(thread->id))
+	if (!THREAD_ISSELF(thread->getId()))
 	    snapshot.push_back(thread);
     }
     lck.unlock();
@@ -583,10 +601,9 @@ void ThreadGroup::remove(Thread &thread) {
     threads.erase(&thread);
 }
 
-bool ThreadGroup::start(uint stacksz, bool suspend, bool aterm) {
+bool ThreadGroup::start(uint stacksz, bool suspend) {
     if (master.getState() != Init && master.getState() != Terminated)
 	return false;
-    autoterm = aterm;
     return master.start(init, this, stacksz, this, suspend, autoterm);
 }
 
