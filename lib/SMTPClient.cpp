@@ -32,8 +32,21 @@ const char SMTPClient::crlf[] = "\r\n";
 static constexpr bool nonascii(tchar c) { return (tuchar)c > 0x7f; }
 
 // ---- base64 / uuencode / uudecode / high bit scanning ----
-// AVX2 versions are used when compiled with __AVX2__ (-march=native). A NEON
-// version can be added at the same #ifdef points for other platforms
+// AVX2 versions are used when compiled with __AVX2__ (-march=native), NEON
+// versions when compiled with __ARM_NEON. Both are selected at the same #if
+// points
+
+#ifdef __ARM_NEON
+static inline uint8x16_t load16(const void *p) {
+    return vld1q_u8((const uint8_t *)p);
+}
+
+// 4 bits per byte of a comparison result, first byte in the low bits
+static inline uint64_t nibmask(uint8x16_t v) {
+    return vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(
+	vreinterpretq_u16_u8(v), 4)), 0);
+}
+#endif
 
 static bool highbit8(const char *p, size_t n) {
     constexpr uint64_t mask = 0x8080808080808080ULL;
@@ -59,6 +72,22 @@ static bool highbit8(const char *p, size_t n) {
 	// final partial block - overlap the previous bytes rather than a loop
 	return n && _mm256_movemask_epi8(_mm256_loadu_si256(
 	    (const __m256i *)(p + n - 32)));
+    }
+#elif defined(__ARM_NEON)
+    if (n >= 16) {
+	for (; n >= 64; p += 64, n -= 64) {
+	    uint8x16_t v = vorrq_u8(vorrq_u8(load16(p), load16(p + 16)),
+		vorrq_u8(load16(p + 32), load16(p + 48)));
+
+	    if (vmaxvq_u8(v) & 0x80)
+		return true;
+	}
+	for (; n >= 16; p += 16, n -= 16) {
+	    if (vmaxvq_u8(load16(p)) & 0x80)
+		return true;
+	}
+	// final partial block - overlap the previous bytes rather than a loop
+	return n && (vmaxvq_u8(load16(p + n - 16)) & 0x80);
     }
 #endif
     for (; n >= 8; p += 8, n -= 8) {
@@ -153,6 +182,46 @@ template<bool UU> static inline void encode24(const uchar *in,
     _mm256_storeu_si256((__m256i *)out, v);
 }
 
+#elif defined(__ARM_NEON)
+// 12 bytes to 16 characters, reads 16 bytes
+template<bool UU> static inline void encode12(const uchar *in, char *out) {
+    static constexpr uchar order[16] = { 1, 0, 2, 1, 4, 3, 5, 4, 7, 6, 8, 7,
+	10, 9, 11, 10 };
+    static constexpr int16_t right[8] = { -10, -6, -10, -6, -10, -6, -10, -6 };
+    static constexpr int16_t left[8] = { 4, 8, 4, 8, 4, 8, 4, 8 };
+    uint16x8_t v = vreinterpretq_u16_u8(vqtbl1q_u8(load16(in),
+	vld1q_u8(order)));
+
+    // six bit values
+    v = vorrq_u16(vshlq_u16(vandq_u16(v, vreinterpretq_u16_u32(
+	vdupq_n_u32(0x0fc0fc00))), vld1q_s16(right)), vshlq_u16(vandq_u16(v,
+	vreinterpretq_u16_u32(vdupq_n_u32(0x003f03f0))), vld1q_s16(left)));
+
+    uint8x16_t b = vreinterpretq_u8_u16(v);
+
+    if (UU) {
+	b = vbslq_u8(vceqzq_u8(b), vdupq_n_u8('`'), vaddq_u8(b,
+	    vdupq_n_u8(' ')));
+    } else {
+	static constexpr char shift[16] = { 'a' - 26, '0' - 52, '0' - 52,
+	    '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52,
+	    '0' - 52, '0' - 52, '+' - 62, '/' - 63, 'A', 0, 0 };
+	uint8x16_t idx = vqsubq_u8(b, vdupq_n_u8(51));
+
+	idx = vorrq_u8(idx, vandq_u8(vcltq_u8(b, vdupq_n_u8(26)),
+	    vdupq_n_u8(13)));
+	b = vaddq_u8(b, vqtbl1q_u8(load16(shift), idx));
+    }
+    vst1q_u8((uint8_t *)out, b);
+}
+
+// 24 bytes to 32 characters
+template<bool UU> static inline void encode24(const uchar *in,
+    char *out) {
+    encode12<UU>(in, out);
+    encode12<UU>(in + 12, out + 16);
+}
+
 #endif
 
 // Encode into out which must have room for the result: UU lines are prefixed
@@ -163,7 +232,7 @@ template<bool UU> static size_t encode(const uchar *in, size_t len, char *out,
     const char *start = out;
     const char pad = UU ? '`' : '=';
 
-#ifdef __AVX2__
+#if defined(__AVX2__) || defined(__ARM_NEON)
     // whole lines (or blocks without line breaks) of input
     if (!wrap) {
 	for (; len >= 28; in += 24, out += 32, len -= 24)
@@ -308,6 +377,38 @@ bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
 		    _mm256_castsi256_si128(v));
 		_mm_storel_epi64((__m128i *)(o + i * 21 + 16),
 		    _mm256_extracti128_si256(v, 1));
+	    }
+	    p += 60;
+	    o += 45;
+	    continue;
+	}
+#elif defined(__ARM_NEON)
+	if (n == 45 && end - p >= 60) {
+	    // 60 characters to 45 bytes in four 16 character blocks, the last
+	    // of which overlaps the previous one
+	    static constexpr uchar order[16] = { 2, 1, 0, 6, 5, 4, 10, 9, 8, 14,
+		13, 12, 255, 255, 255, 255 };
+	    const uint8x16_t tbl = vld1q_u8(order);
+
+	    for (size_t i = 0; i < 4; ++i) {
+		size_t c = i < 3 ? i * 16 : 44, b = i < 3 ? i * 12 : 33;
+		uint16x8_t h = vreinterpretq_u16_u8(vandq_u8(vsubq_u8(
+		    load16(p + c), vdupq_n_u8(' ')), vdupq_n_u8(63)));
+
+		// 6 bit pairs to 12 bits, then 12 bit pairs to 24
+		h = vsraq_n_u16(vshlq_n_u16(vandq_u16(h, vdupq_n_u16(0xff)), 6),
+		    h, 8);
+
+		uint32x4_t q = vreinterpretq_u32_u16(h);
+
+		q = vsraq_n_u32(vshlq_n_u32(vandq_u32(q, vdupq_n_u32(0xffff)),
+		    12), q, 16);
+
+		uint8x16_t r = vqtbl1q_u8(vreinterpretq_u8_u32(q), tbl);
+		uint32_t w = vgetq_lane_u32(vreinterpretq_u32_u8(r), 2);
+
+		vst1_u8(o + b, vget_low_u8(r));
+		memcpy(o + b + 8, &w, 4);
 	    }
 	    p += 60;
 	    o += 45;
@@ -481,6 +582,21 @@ bool qpencode(const void *in, size_t len, char *&out, size_t &outsz) {
 		break;
 	    }
 	}
+#elif defined(__ARM_NEON)
+	for (; n + 16 <= avail; n += 16) {
+	    uint8x16_t v = load16(p + n);
+	    uint8x16_t ok = vorrq_u8(vbicq_u8(vandq_u8(vcgeq_u8(v,
+		vdupq_n_u8(32)), vcltq_u8(v, vdupq_n_u8(127))), vceqq_u8(v,
+		vdupq_n_u8('='))), vceqq_u8(v, vdupq_n_u8('\t')));
+	    uint64_t m = nibmask(ok);
+
+	    vst1q_u8((uint8_t *)o + n, v);
+	    if (m != ~0ULL) {
+		// the table loop below stops at this character
+		n += (size_t)countr_zero(~m) / 4;
+		break;
+	    }
+	}
 #endif
 	for (; n < avail && qpplain[p[n]]; ++n)
 	    o[n] = (char)p[n];
@@ -539,6 +655,20 @@ bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz) {
 	    if (m) {
 		// the loop below stops at this character
 		n += (size_t)countr_zero(m);
+		break;
+	    }
+	}
+#elif defined(__ARM_NEON)
+	for (; n + 16 <= avail; n += 16) {
+	    uint8x16_t v = load16(p + n);
+	    uint64_t m = nibmask(vorrq_u8(vceqq_u8(v, vdupq_n_u8('=')),
+		vorrq_u8(vceqq_u8(v, vdupq_n_u8('\r')), vceqq_u8(v,
+		vdupq_n_u8('\n')))));
+
+	    vst1q_u8(o + n, v);
+	    if (m) {
+		// the loop below stops at this character
+		n += (size_t)countr_zero(m) / 4;
 		break;
 	    }
 	}
@@ -1423,12 +1553,14 @@ void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
 // or an LF that does not follow a CR. start is the start of a line
 static const char *stuffscan(const char *p, const char *end,
     const char *start) {
-#ifdef __AVX2__
+#if defined(__AVX2__) || defined(__ARM_NEON)
     if (p == start && p < end) {
 	if (*p == '.' || *p == '\n')
 	    return p;
 	++p;
     }
+#endif
+#ifdef __AVX2__
     const __m256i cr = _mm256_set1_epi8('\r');
     const __m256i dot = _mm256_set1_epi8('.');
     const __m256i lf = _mm256_set1_epi8('\n');
@@ -1444,6 +1576,20 @@ static const char *stuffscan(const char *p, const char *end,
 
 	if (m)
 	    return p + std::countr_zero(m);
+    }
+#elif defined(__ARM_NEON)
+    const uint8x16_t cr = vdupq_n_u8('\r');
+    const uint8x16_t dot = vdupq_n_u8('.');
+    const uint8x16_t lf = vdupq_n_u8('\n');
+
+    for (; end - p >= 16; p += 16) {
+	uint8x16_t v = load16(p);
+	uint8x16_t prev = load16(p - 1);
+	uint64_t m = nibmask(vorrq_u8(vbicq_u8(vceqq_u8(v, lf), vceqq_u8(prev,
+	    cr)), vandq_u8(vceqq_u8(prev, lf), vceqq_u8(v, dot))));
+
+	if (m)
+	    return p + std::countr_zero(m) / 4;
     }
 #endif
     while (p < end) {

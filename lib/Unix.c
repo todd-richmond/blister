@@ -102,6 +102,7 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	psbuf->utime = (ulong)tinfo.user_time.seconds * 1000 +
 	    (ulong)tinfo.user_time.microseconds / 1000;
     }
+    // NOLINTNEXTLINE(readability-suspicious-call-argument)
     mach_port_deallocate(mach_task_self(), task);
 #elif defined(sun)
     // TODO incomplete
