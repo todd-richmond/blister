@@ -206,6 +206,21 @@ private:
     bool rcptcmd(tstring &id);
     bool startdata(void);
     bool stuff(const void *p, size_t sz);
+    static string base64line(string_view in);
+    static void encodedwords(string &out, string_view text);
+    static string encodewords(string_view text);
+    static bool idna(string_view domain, string &out);
+    static tstring numstr(size_t n);
+    static bool punycode(const vector<char32_t> &in, string &out);
+    static tstring sasl64(const string &in);
+#ifdef __AVX2__
+    static __m256i stuffhits(const char *p);
+#elif defined(__ARM_NEON)
+    static uint8x16_t stuffhits(const char *p);
+#endif
+    static const char *stuffscan(const char *p, const char *end,
+	const char *start);
+    static bool utf8decode(string_view s, vector<char32_t> &cp);
 
     string boundary;
     tstring frm, sub;

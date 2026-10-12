@@ -1694,6 +1694,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     } else {
 	ret = Service::onStart(argc, argv);
 	snprintf(buf, sizeof (buf), "%lu", (ulong)sigpid);
+	buf[sizeof (buf) - 1] = '\0';
 	if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) < 0 || write(lckfd,
 	    buf, (uint)strlen(buf)) < 1)
 	    ret = 0;

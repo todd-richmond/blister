@@ -31,11 +31,7 @@ const char SMTPClient::crlf[] = "\r\n";
 
 static constexpr bool nonascii(tchar c) { return (tuchar)c > 0x7f; }
 
-// ---- base64 / uuencode / uudecode / high bit scanning ----
-// AVX2 versions are used when compiled with __AVX2__ (-march=native), NEON
-// versions when compiled with __ARM_NEON. Both are selected at the same #if
-// points
-
+// AVX2 and NEON optimized base64 / uuencode / uudecode / high bit scanning
 #ifdef __ARM_NEON
 static inline uint8x16_t load16(const void *p) {
     return vld1q_u8((const uint8_t *)p);
@@ -280,11 +276,169 @@ template<bool UU> static size_t encode(const uchar *in, size_t len, char *out,
 }
 
 // base64 without line breaks
-static string base64line(string_view in) {
+string SMTPClient::base64line(string_view in) {
     string s((in.size() + 2) / 3 * 4, '\0');
 
     encode<false>((const uchar *)in.data(), in.size(), s.data(), false);
     return s;
+}
+
+#ifdef __AVX2__
+static constexpr ptrdiff_t b64block = 32;
+
+// 32 characters to 24 bytes, false if any is not a base64 character
+static inline bool decodeblock(const uchar *in, uchar *out) {
+    // the nibbles of a valid character share no bit in these tables, and the
+    // high nibble (adjusted for '/') selects the offset to its 6 bit value
+    const __m256i lutlo = _mm256_setr_epi8(0x15, 0x11, 0x11, 0x11, 0x11, 0x11,
+	0x11, 0x11, 0x11, 0x11, 0x13, 0x1a, 0x1b, 0x1b, 0x1b, 0x1a, 0x15, 0x11,
+	0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x13, 0x1a, 0x1b, 0x1b,
+	0x1b, 0x1a);
+    const __m256i luthi = _mm256_setr_epi8(0x10, 0x10, 0x01, 0x02, 0x04, 0x08,
+	0x04, 0x08, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+	0x01, 0x02, 0x04, 0x08, 0x04, 0x08, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+	0x10, 0x10);
+    const __m256i roll = _mm256_setr_epi8(0, 16, 19, 4, -65, -65, -71, -71, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 16, 19, 4, -65, -65, -71, -71, 0, 0, 0, 0, 0, 0,
+	0, 0);
+    const __m256i m2f = _mm256_set1_epi8(0x2f);
+    __m256i v = _mm256_loadu_si256((const __m256i *)in);
+    __m256i hi = _mm256_and_si256(_mm256_srli_epi32(v, 4), m2f);
+    __m256i bad = _mm256_and_si256(_mm256_shuffle_epi8(lutlo,
+	_mm256_and_si256(v, m2f)), _mm256_shuffle_epi8(luthi, hi));
+
+    if (!_mm256_testz_si256(bad, bad))
+	return false;
+    v = _mm256_add_epi8(v, _mm256_shuffle_epi8(roll, _mm256_add_epi8(
+	_mm256_cmpeq_epi8(v, m2f), hi)));
+    v = _mm256_maddubs_epi16(v, _mm256_set1_epi32(0x01400140));
+    v = _mm256_madd_epi16(v, _mm256_set1_epi32(0x00011000));
+    v = _mm256_shuffle_epi8(v, _mm256_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14,
+	13, 12, -1, -1, -1, -1, 2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1,
+	-1, -1));
+    v = _mm256_permutevar8x32_epi32(v, _mm256_setr_epi32(0, 1, 2, 4, 5, 6, -1,
+	-1));
+    _mm_storeu_si128((__m128i *)out, _mm256_castsi256_si128(v));
+    _mm_storel_epi64((__m128i *)(out + 16), _mm256_extracti128_si256(v, 1));
+    return true;
+}
+
+// 76 characters to 57 bytes in three blocks, the last two overlapping
+static inline bool decodeline(const uchar *in, uchar *out) {
+    return decodeblock(in, out) && decodeblock(in + 32, out + 24) &&
+	decodeblock(in + 44, out + 33);
+}
+#elif defined(__ARM_NEON)
+static constexpr ptrdiff_t b64block = 16;
+
+// 16 characters to 12 bytes, false if any is not a base64 character
+static inline bool decodeblock(const uchar *in, uchar *out) {
+    static constexpr uchar order[16] = { 2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13,
+	12, 255, 255, 255, 255 };
+    const uint8x16_t v = load16(in);
+    // values for characters 0-63 then 64-127, anything else stays 0xff
+    uint8x16_t s = vqtbx4q_u8(vdupq_n_u8(0xff), vld1q_u8_x4(b64values.data()),
+	v);
+
+    s = vqtbx4q_u8(s, vld1q_u8_x4(b64values.data() + 64), vsubq_u8(v,
+	vdupq_n_u8(64)));
+    if (vmaxvq_u8(s) > 63)
+	return false;
+
+    // 6 bit pairs to 12 bits, then 12 bit pairs to 24
+    uint16x8_t h = vreinterpretq_u16_u8(s);
+
+    h = vsraq_n_u16(vshlq_n_u16(vandq_u16(h, vdupq_n_u16(0xff)), 6), h, 8);
+
+    uint32x4_t q = vreinterpretq_u32_u16(h);
+
+    q = vsraq_n_u32(vshlq_n_u32(vandq_u32(q, vdupq_n_u32(0xffff)), 12), q, 16);
+
+    uint8x16_t r = vqtbl1q_u8(vreinterpretq_u8_u32(q), vld1q_u8(order));
+    uint32_t w = vgetq_lane_u32(vreinterpretq_u32_u8(r), 2);
+
+    vst1_u8(out, vget_low_u8(r));
+    memcpy(out + 8, &w, 4);
+    return true;
+}
+
+// 76 characters to 57 bytes in five blocks, the last overlapping the previous
+static inline bool decodeline(const uchar *in, uchar *out) {
+    return decodeblock(in, out) && decodeblock(in + 16, out + 12) &&
+	decodeblock(in + 32, out + 24) && decodeblock(in + 48, out + 36) &&
+	decodeblock(in + 60, out + 45);
+}
+#endif
+
+bool base64decode(const char *in, size_t sz, void *&out, size_t &outsz) {
+    const uchar *p = (const uchar *)in;
+    const uchar *end = p + sz;
+    uchar *o = new uchar[sz * 3 / 4 + 8];
+    const uchar *start = o;
+    uint acc = 0, bits = 0;
+
+    out = o;
+    for (;;) {
+	if (!bits) {
+#if defined(__AVX2__) || defined(__ARM_NEON)
+	    // MIME lines are 76 characters plus CRLF
+	    while (end - p >= 78 && p[76] == '\r' && p[77] == '\n' &&
+		decodeline(p, o)) {
+		p += 78;
+		o += 57;
+	    }
+	    while (end - p >= b64block && decodeblock(p, o)) {
+		p += b64block;
+		o += b64block / 4 * 3;
+	    }
+#endif
+	    // whole groups of valid characters
+	    while (end - p >= 4) {
+		uint a = b64values[p[0]], b = b64values[p[1]];
+		uint c = b64values[p[2]], d = b64values[p[3]];
+
+		if ((a | b | c | d) > 63)
+		    break;
+		a = a << 18 | b << 12 | c << 6 | d;
+		o[0] = (uchar)(a >> 16);
+		o[1] = (uchar)(a >> 8);
+		o[2] = (uchar)a;
+		p += 4;
+		o += 3;
+	    }
+	}
+	if (p == end)
+	    break;
+
+	uint v = b64values[*p++];
+
+	if (v > 63) {
+	    // skip anything invalid like whitespace until the pad
+	    if (p[-1] == '=')
+		break;
+	    continue;
+	}
+	acc = acc << 6 | v;
+	if ((bits += 6) == 24) {
+	    o[0] = (uchar)(acc >> 16);
+	    o[1] = (uchar)(acc >> 8);
+	    o[2] = (uchar)acc;
+	    o += 3;
+	    acc = bits = 0;
+	}
+    }
+    // 12 bits is one byte and 18 bits is two bytes
+    if (bits >= 12) {
+	if (bits == 12) {
+	    *o++ = (uchar)(acc >> 4);
+	} else {
+	    *o++ = (uchar)(acc >> 10);
+	    *o++ = (uchar)(acc >> 2);
+	}
+    }
+    outsz = (size_t)(o - start);
+    *o = '\0';
+    return true;
 }
 
 bool base64encode(const void *in, size_t len, char *&out, size_t &outsz) {
@@ -294,26 +448,219 @@ bool base64encode(const void *in, size_t len, char *&out, size_t &outsz) {
     return true;
 }
 
-bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
-    size_t &outsz) {
-    static constexpr char begin[] = "begin 644 ";
-    static constexpr char end[] = "\r\nend\r\n";
-    string filestr = tchartoachar(file);
+// hex digit to 4 bit value, 0xff if invalid
+static constexpr array<uchar, 256> hexvalues = [] {
+    array<uchar, 256> t {};
 
-    out = new char[sizeof (begin) + filestr.size() + 2 + (len + 2) / 3 * 4 +
-	(len + 44) / 45 * 3 + 1 + sizeof (end) + 32];
-    memcpy(out, begin, sizeof (begin) - 1);
-    outsz = sizeof (begin) - 1;
-    memcpy(out + outsz, filestr.data(), filestr.size());
-    outsz += filestr.size();
-    out[outsz++] = '\r';
-    out[outsz++] = '\n';
-    outsz += encode<true>((const uchar *)in, len, out + outsz, true);
-    out[outsz++] = '`';
-    memcpy(out + outsz, end, sizeof (end));
-    outsz += sizeof (end) - 1;
+    ranges::fill(t, (uchar)0xff);
+    for (uint i = 0; i < 10; ++i)
+	t['0' + i] = (uchar)i;
+    for (uint i = 0; i < 6; ++i)
+	t['A' + i] = t['a' + i] = (uchar)(10 + i);
+    return t;
+}();
+
+// Lenient quoted-printable decode: soft line breaks are removed, whitespace
+// before a hard line break is dropped unless it was encoded, and an '=' that
+// is not part of a valid escape is kept. Line breaks are preserved
+bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz) {
+    const uchar *p = (const uchar *)in;
+    const uchar *end = p + sz;
+    uchar *o = new uchar[sz + 1];
+    const uchar *start = o;
+    // decoded whitespace that must not be removed
+    const uchar *keep = o;
+
+    out = o;
+    while (p < end) {
+	// copy characters that need no decoding
+	size_t n = 0, avail = (size_t)(end - p);
+
+#ifdef __AVX2__
+	for (; n + 32 <= avail; n += 32) {
+	    __m256i v = _mm256_loadu_si256((const __m256i *)(p + n));
+	    uint m = (uint)_mm256_movemask_epi8(_mm256_or_si256(
+		_mm256_cmpeq_epi8(v, _mm256_set1_epi8('=')), _mm256_or_si256(
+		_mm256_cmpeq_epi8(v, _mm256_set1_epi8('\r')),
+		_mm256_cmpeq_epi8(v, _mm256_set1_epi8('\n')))));
+
+	    _mm256_storeu_si256((__m256i *)(o + n), v);
+	    if (m) {
+		// the loop below stops at this character
+		n += (size_t)countr_zero(m);
+		break;
+	    }
+	}
+#elif defined(__ARM_NEON)
+	for (; n + 16 <= avail; n += 16) {
+	    uint8x16_t v = load16(p + n);
+	    uint64_t m = nibmask(vorrq_u8(vceqq_u8(v, vdupq_n_u8('=')),
+		vorrq_u8(vceqq_u8(v, vdupq_n_u8('\r')), vceqq_u8(v,
+		vdupq_n_u8('\n')))));
+
+	    vst1q_u8(o + n, v);
+	    if (m) {
+		// the loop below stops at this character
+		n += (size_t)countr_zero(m) / 4;
+		break;
+	    }
+	}
+#endif
+	for (; n < avail && p[n] != '=' && p[n] != '\r' && p[n] != '\n'; ++n)
+	    o[n] = p[n];
+	p += n;
+	o += n;
+	if (p == end)
+	    break;
+
+	uchar c = *p++;
+
+	if (c == '=') {
+	    uint h = end - p >= 2 ? hexvalues[p[0]] : 0xff;
+	    uint l = h < 16 ? hexvalues[p[1]] : 0xff;
+
+	    if ((h | l) < 16) {
+		*o++ = (uchar)(h << 4 | l);
+		keep = o;
+		p += 2;
+		continue;
+	    }
+
+	    // soft line break after optional whitespace, also at the end
+	    const uchar *q = p;
+
+	    while (q < end && (*q == ' ' || *q == '\t'))
+		++q;
+	    if (q == end || *q == '\n') {
+		p = q + (q < end);
+	    } else if (*q == '\r' && (q + 1 == end || q[1] == '\n')) {
+		p = q + 1 + (q + 1 < end);
+	    } else {
+		*o++ = '=';
+	    }
+	} else if (c == '\n' || (p < end && *p == '\n')) {
+	    // hard line break
+	    while (o > keep && (o[-1] == ' ' || o[-1] == '\t'))
+		--o;
+	    if (c == '\r') {
+		*o++ = '\r';	// NOLINT
+		++p;
+	    }
+	    *o++ = '\n';	// NOLINT
+	} else {
+	    // lone CR
+	    *o++ = c;
+	}
+    }
+    outsz = (size_t)(o - start);
+    *o = '\0';
     return true;
 }
+
+// quoted-printable characters that need no encoding: tab, space and printable
+// ASCII except '='
+static constexpr array<bool, 256> qpplain = [] {
+    array<bool, 256> t {};
+
+    for (uint i = 0; i < 256; ++i)
+	t[i] = i == '\t' || (i >= ' ' && i < 127 && i != '=');
+    return t;
+}();
+
+// RFC 2045 quoted-printable with CRLF line breaks and lines of at most 76
+// characters. CRLF and bare LF are line breaks, a bare CR is encoded and so
+// is whitespace that would end a line
+bool qpencode(const void *in, size_t len, char *&out, size_t &outsz) {
+    static constexpr char hex[] = "0123456789ABCDEF";
+    const uchar *p = (const uchar *)in;
+    const uchar *end = p + len;
+    char *o = out = new char[len * 3 + len / 8 + 8];
+    size_t col = 0;
+
+    while (p < end) {
+	uchar c = *p;
+
+	if (c == '\n' || (c == '\r' && end - p > 1 && p[1] == '\n')) {
+	    p += c == '\r' ? 2 : 1;
+	    *o++ = '\r';
+	    *o++ = '\n';
+	    col = 0;
+	    continue;
+	}
+	if (col == 75) {
+	    memcpy(o, "=\r\n", 3);
+	    o += 3;
+	    col = 0;
+	}
+
+	// run of characters that need no encoding and fit on the line
+	size_t n = 0, avail = min((size_t)(end - p), 75 - col);
+
+#ifdef __AVX2__
+	for (; n + 32 <= avail; n += 32) {
+	    __m256i v = _mm256_loadu_si256((const __m256i *)(p + n));
+	    __m256i ok = _mm256_andnot_si256(_mm256_cmpeq_epi8(v,
+		_mm256_set1_epi8('=')), _mm256_and_si256(_mm256_cmpgt_epi8(v,
+		_mm256_set1_epi8(31)), _mm256_cmpgt_epi8(_mm256_set1_epi8(127),
+		v)));
+	    uint m;
+
+	    _mm256_storeu_si256((__m256i *)(o + n), v);
+	    ok = _mm256_or_si256(ok, _mm256_cmpeq_epi8(v, _mm256_set1_epi8('\t')));
+	    m = (uint)_mm256_movemask_epi8(ok);
+	    if (m != ~0U) {
+		// the table loop below stops at this character
+		n += (size_t)countr_zero(~m);
+		break;
+	    }
+	}
+#elif defined(__ARM_NEON)
+	for (; n + 16 <= avail; n += 16) {
+	    uint8x16_t v = load16(p + n);
+	    uint8x16_t ok = vorrq_u8(vbicq_u8(vandq_u8(vcgeq_u8(v,
+		vdupq_n_u8(32)), vcltq_u8(v, vdupq_n_u8(127))), vceqq_u8(v,
+		vdupq_n_u8('='))), vceqq_u8(v, vdupq_n_u8('\t')));
+	    uint64_t m = nibmask(ok);
+
+	    vst1q_u8((uint8_t *)o + n, v);
+	    if (m != ~0ULL) {
+		// the table loop below stops at this character
+		n += (size_t)countr_zero(~m) / 4;
+		break;
+	    }
+	}
+#endif
+	WARN_PUSH_DISABLE(6386)
+	for (; n < avail && qpplain[p[n]]; ++n)
+	    o[n] = (char)p[n];
+	WARN_POP()
+	// trailing whitespace would be lost
+	if (n && (p[n - 1] == ' ' || p[n - 1] == '\t') && (p + n == end ||
+	    p[n] == '\r' || p[n] == '\n'))
+	    --n;
+	if (n) {
+	    p += n;
+	    o += n;
+	    col += n;
+	    continue;
+	}
+	if (col > 72) {
+	    memcpy(o, "=\r\n", 3);
+	    o += 3;
+	    col = 0;
+	}
+	o[0] = '=';
+	o[1] = hex[c >> 4];
+	o[2] = hex[c & 15];
+	o += 3;
+	col += 3;
+	++p;
+    }
+    outsz = (size_t)(o - out);
+    *o = '\0';
+    return true;
+}
+
 
 bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
     void *&out, size_t &outsz) {
@@ -454,278 +801,29 @@ bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
     return true;
 }
 
-bool base64decode(const char *in, size_t sz, void *&out, size_t &outsz) {
-    const uchar *p = (const uchar *)in;
-    const uchar *end = p + sz;
-    uchar *o = new uchar[sz * 3 / 4 + 8];
-    const uchar *start = o;
-    uint acc = 0, bits = 0;
+bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
+    size_t &outsz) {
+    static constexpr char begin[] = "begin 644 ";
+    static constexpr char end[] = "\r\nend\r\n";
+    string filestr = tchartoachar(file);
 
-    out = o;
-    for (;;) {
-	if (!bits) {
-	    // whole groups of valid characters
-	    while (end - p >= 4) {
-		uint a = b64values[p[0]], b = b64values[p[1]];
-		uint c = b64values[p[2]], d = b64values[p[3]];
-
-		if ((a | b | c | d) > 63)
-		    break;
-		a = a << 18 | b << 12 | c << 6 | d;
-		o[0] = (uchar)(a >> 16);
-		o[1] = (uchar)(a >> 8);
-		o[2] = (uchar)a;
-		p += 4;
-		o += 3;
-	    }
-	}
-	if (p == end)
-	    break;
-
-	uint v = b64values[*p++];
-
-	if (v > 63) {
-	    // skip anything invalid like whitespace until the pad
-	    if (p[-1] == '=')
-		break;
-	    continue;
-	}
-	acc = acc << 6 | v;
-	if ((bits += 6) == 24) {
-	    o[0] = (uchar)(acc >> 16);
-	    o[1] = (uchar)(acc >> 8);
-	    o[2] = (uchar)acc;
-	    o += 3;
-	    acc = bits = 0;
-	}
-    }
-    // 12 bits is one byte and 18 bits is two bytes
-    if (bits >= 12) {
-	if (bits == 12) {
-	    *o++ = (uchar)(acc >> 4);
-	} else {
-	    *o++ = (uchar)(acc >> 10);
-	    *o++ = (uchar)(acc >> 2);
-	}
-    }
-    outsz = (size_t)(o - start);
-    *o = '\0';
-    return true;
-}
-
-// quoted-printable characters that need no encoding: tab, space and printable
-// ASCII except '='
-static constexpr array<bool, 256> qpplain = [] {
-    array<bool, 256> t {};
-
-    for (uint i = 0; i < 256; ++i)
-	t[i] = i == '\t' || (i >= ' ' && i < 127 && i != '=');
-    return t;
-}();
-
-// hex digit to 4 bit value, 0xff if invalid
-static constexpr array<uchar, 256> hexvalues = [] {
-    array<uchar, 256> t {};
-
-    ranges::fill(t, (uchar)0xff);
-    for (uint i = 0; i < 10; ++i)
-	t['0' + i] = (uchar)i;
-    for (uint i = 0; i < 6; ++i)
-	t['A' + i] = t['a' + i] = (uchar)(10 + i);
-    return t;
-}();
-
-// RFC 2045 quoted-printable with CRLF line breaks and lines of at most 76
-// characters. CRLF and bare LF are line breaks, a bare CR is encoded and so
-// is whitespace that would end a line
-bool qpencode(const void *in, size_t len, char *&out, size_t &outsz) {
-    static constexpr char hex[] = "0123456789ABCDEF";
-    const uchar *p = (const uchar *)in;
-    const uchar *end = p + len;
-    char *o = out = new char[len * 3 + len / 8 + 8];
-    size_t col = 0;
-
-    while (p < end) {
-	uchar c = *p;
-
-	if (c == '\n' || (c == '\r' && end - p > 1 && p[1] == '\n')) {
-	    p += c == '\r' ? 2 : 1;
-	    *o++ = '\r';
-	    *o++ = '\n';
-	    col = 0;
-	    continue;
-	}
-	if (col == 75) {
-	    memcpy(o, "=\r\n", 3);
-	    o += 3;
-	    col = 0;
-	}
-
-	// run of characters that need no encoding and fit on the line
-	size_t n = 0, avail = min((size_t)(end - p), 75 - col);
-
-#ifdef __AVX2__
-	for (; n + 32 <= avail; n += 32) {
-	    __m256i v = _mm256_loadu_si256((const __m256i *)(p + n));
-	    __m256i ok = _mm256_andnot_si256(_mm256_cmpeq_epi8(v,
-		_mm256_set1_epi8('=')), _mm256_and_si256(_mm256_cmpgt_epi8(v,
-		_mm256_set1_epi8(31)), _mm256_cmpgt_epi8(_mm256_set1_epi8(127),
-		v)));
-	    uint m;
-
-	    _mm256_storeu_si256((__m256i *)(o + n), v);
-	    ok = _mm256_or_si256(ok, _mm256_cmpeq_epi8(v, _mm256_set1_epi8('\t')));
-	    m = (uint)_mm256_movemask_epi8(ok);
-	    if (m != ~0U) {
-		// the table loop below stops at this character
-		n += (size_t)countr_zero(~m);
-		break;
-	    }
-	}
-#elif defined(__ARM_NEON)
-	for (; n + 16 <= avail; n += 16) {
-	    uint8x16_t v = load16(p + n);
-	    uint8x16_t ok = vorrq_u8(vbicq_u8(vandq_u8(vcgeq_u8(v,
-		vdupq_n_u8(32)), vcltq_u8(v, vdupq_n_u8(127))), vceqq_u8(v,
-		vdupq_n_u8('='))), vceqq_u8(v, vdupq_n_u8('\t')));
-	    uint64_t m = nibmask(ok);
-
-	    vst1q_u8((uint8_t *)o + n, v);
-	    if (m != ~0ULL) {
-		// the table loop below stops at this character
-		n += (size_t)countr_zero(~m) / 4;
-		break;
-	    }
-	}
-#endif
-	for (; n < avail && qpplain[p[n]]; ++n)
-	    o[n] = (char)p[n];
-	// trailing whitespace would be lost
-	if (n && (p[n - 1] == ' ' || p[n - 1] == '\t') && (p + n == end ||
-	    p[n] == '\r' || p[n] == '\n'))
-	    --n;
-	if (n) {
-	    p += n;
-	    o += n;
-	    col += n;
-	    continue;
-	}
-	if (col > 72) {
-	    memcpy(o, "=\r\n", 3);
-	    o += 3;
-	    col = 0;
-	}
-	o[0] = '=';
-	o[1] = hex[c >> 4];
-	o[2] = hex[c & 15];
-	o += 3;
-	col += 3;
-	++p;
-    }
-    outsz = (size_t)(o - out);
-    *o = '\0';
-    return true;
-}
-
-// Lenient quoted-printable decode: soft line breaks are removed, whitespace
-// before a hard line break is dropped unless it was encoded, and an '=' that
-// is not part of a valid escape is kept. Line breaks are preserved
-bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz) {
-    const uchar *p = (const uchar *)in;
-    const uchar *end = p + sz;
-    uchar *o = new uchar[sz + 1];
-    const uchar *start = o;
-    // decoded whitespace that must not be removed
-    const uchar *keep = o;
-
-    out = o;
-    while (p < end) {
-	// copy characters that need no decoding
-	size_t n = 0, avail = (size_t)(end - p);
-
-#ifdef __AVX2__
-	for (; n + 32 <= avail; n += 32) {
-	    __m256i v = _mm256_loadu_si256((const __m256i *)(p + n));
-	    uint m = (uint)_mm256_movemask_epi8(_mm256_or_si256(
-		_mm256_cmpeq_epi8(v, _mm256_set1_epi8('=')), _mm256_or_si256(
-		_mm256_cmpeq_epi8(v, _mm256_set1_epi8('\r')),
-		_mm256_cmpeq_epi8(v, _mm256_set1_epi8('\n')))));
-
-	    _mm256_storeu_si256((__m256i *)(o + n), v);
-	    if (m) {
-		// the loop below stops at this character
-		n += (size_t)countr_zero(m);
-		break;
-	    }
-	}
-#elif defined(__ARM_NEON)
-	for (; n + 16 <= avail; n += 16) {
-	    uint8x16_t v = load16(p + n);
-	    uint64_t m = nibmask(vorrq_u8(vceqq_u8(v, vdupq_n_u8('=')),
-		vorrq_u8(vceqq_u8(v, vdupq_n_u8('\r')), vceqq_u8(v,
-		vdupq_n_u8('\n')))));
-
-	    vst1q_u8(o + n, v);
-	    if (m) {
-		// the loop below stops at this character
-		n += (size_t)countr_zero(m) / 4;
-		break;
-	    }
-	}
-#endif
-	for (; n < avail && p[n] != '=' && p[n] != '\r' && p[n] != '\n'; ++n)
-	    o[n] = p[n];
-	p += n;
-	o += n;
-	if (p == end)
-	    break;
-
-	uchar c = *p++;
-
-	if (c == '=') {
-	    uint h = end - p >= 2 ? hexvalues[p[0]] : 0xff;
-	    uint l = h < 16 ? hexvalues[p[1]] : 0xff;
-
-	    if ((h | l) < 16) {
-		*o++ = (uchar)(h << 4 | l);
-		keep = o;
-		p += 2;
-		continue;
-	    }
-
-	    // soft line break after optional whitespace, also at the end
-	    const uchar *q = p;
-
-	    while (q < end && (*q == ' ' || *q == '\t'))
-		++q;
-	    if (q == end || *q == '\n') {
-		p = q + (q < end);
-	    } else if (*q == '\r' && (q + 1 == end || q[1] == '\n')) {
-		p = q + 1 + (q + 1 < end);
-	    } else {
-		*o++ = '=';
-	    }
-	} else if (c == '\n' || (p < end && *p == '\n')) {
-	    // hard line break
-	    while (o > keep && (o[-1] == ' ' || o[-1] == '\t'))
-		--o;
-	    if (c == '\r') {
-		*o++ = '\r';	// NOLINT
-		++p;
-	    }
-	    *o++ = '\n';	// NOLINT
-	} else {
-	    // lone CR
-	    *o++ = c;
-	}
-    }
-    outsz = (size_t)(o - start);
-    *o = '\0';
+    out = new char[sizeof (begin) + filestr.size() + 2 + (len + 2) / 3 * 4 +
+	(len + 44) / 45 * 3 + 1 + sizeof (end) + 32];
+    memcpy(out, begin, sizeof (begin) - 1);
+    outsz = sizeof (begin) - 1;
+    memcpy(out + outsz, filestr.data(), filestr.size());
+    outsz += filestr.size();
+    out[outsz++] = '\r';
+    out[outsz++] = '\n';
+    outsz += encode<true>((const uchar *)in, len, out + outsz, true);
+    out[outsz++] = '`';
+    memcpy(out + outsz, end, sizeof (end));
+    outsz += sizeof (end) - 1;
     return true;
 }
 
 // strictly decode UTF-8 into code points
-static bool utf8decode(string_view s, vector<char32_t> &cp) {
+bool SMTPClient::utf8decode(string_view s, vector<char32_t> &cp) {
     for (size_t i = 0; i < s.size();) {
 	uchar c = (uchar)s[i];
 	char32_t v;
@@ -767,7 +865,7 @@ static bool utf8decode(string_view s, vector<char32_t> &cp) {
 }
 
 // RFC 3492 punycode encoder
-static bool punycode(const vector<char32_t> &in, string &out) {
+bool SMTPClient::punycode(const vector<char32_t> &in, string &out) {
     static constexpr uint32_t base = 36, tmin = 1, tmax = 26, skew = 38;
     static constexpr uint32_t damp = 700, initial_bias = 72, initial_n = 128;
     auto digit = [](uint32_t d) {
@@ -836,7 +934,7 @@ static bool punycode(const vector<char32_t> &in, string &out) {
 // as is and ASCII is lower cased within encoded labels, but no Unicode
 // normalization or mapping is done (U+00DF stays as is, per IDNA2008) - the
 // name must already be normalized
-static bool idna(string_view domain, string &out) {
+bool SMTPClient::idna(string_view domain, string &out) {
     for (size_t pos = 0; pos <= domain.size();) {
 	size_t end = min(domain.find('.', pos), domain.size());
 	string_view label = domain.substr(pos, end - pos);
@@ -866,7 +964,7 @@ static bool idna(string_view domain, string &out) {
 
 // RFC 2047 encoded-words for UTF-8 text, folded and split on character
 // boundaries so that no encoded-word exceeds 75 characters
-static void encodedwords(string &out, string_view text) {
+void SMTPClient::encodedwords(string &out, string_view text) {
     static constexpr size_t maxbytes = 45;	// 60 base64 characters
 
     for (size_t pos = 0; pos < text.size();) {
@@ -887,7 +985,7 @@ static void encodedwords(string &out, string_view text) {
 // RFC 2047 encode the words of unstructured header text that contain UTF-8.
 // Adjacent encoded words are merged because the whitespace between them
 // would be dropped by a decoder
-static string encodewords(string_view text) {
+string SMTPClient::encodewords(string_view text) {
     static constexpr const char *ws = " \t\r\n";
     string out;
     auto wordend = [&](size_t p) {
@@ -932,7 +1030,7 @@ static string encodewords(string_view text) {
     return out;
 }
 
-static tstring numstr(size_t n) {
+tstring SMTPClient::numstr(size_t n) {
     return astringtotstring(to_string(n));
 }
 
@@ -969,7 +1067,7 @@ void SMTPClient::attribute(const tchar *attr, const tchar *val) {
     hdrv.emplace_back(std::move(s));
 }
 
-static tstring sasl64(const string &in) {
+tstring SMTPClient::sasl64(const string &in) {
     return astringtotstring(base64line(in));
 }
 
@@ -1549,9 +1647,33 @@ void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
     strm->write(crlf, 2);
 }
 
+#ifdef __AVX2__
+// bare LFs and leading dots in the 32 bytes at p, p[-1] must be readable
+inline __m256i SMTPClient::stuffhits(const char *p) {
+    __m256i v = _mm256_loadu_si256((const __m256i *)p);
+    __m256i prev = _mm256_loadu_si256((const __m256i *)(p - 1));
+
+    return _mm256_or_si256(_mm256_andnot_si256(_mm256_cmpeq_epi8(prev,
+	_mm256_set1_epi8('\r')), _mm256_cmpeq_epi8(v, _mm256_set1_epi8('\n'))),
+	_mm256_and_si256(_mm256_cmpeq_epi8(prev, _mm256_set1_epi8('\n')),
+	_mm256_cmpeq_epi8(v, _mm256_set1_epi8('.'))));
+}
+#elif defined(__ARM_NEON)
+// bare LFs and leading dots in the 16 bytes at p, p[-1] must be readable
+inline uint8x16_t SMTPClient::stuffhits(const char *p) {
+    uint8x16_t v = load16(p);
+    uint8x16_t prev = load16(p - 1);
+    const uint8x16_t lf = vdupq_n_u8('\n');
+
+    return vorrq_u8(vbicq_u8(vceqq_u8(v, lf), vceqq_u8(prev,
+	vdupq_n_u8('\r'))), vandq_u8(vceqq_u8(prev, lf), vceqq_u8(v,
+	vdupq_n_u8('.'))));
+}
+#endif
+
 // Next position at or after p that needs fixing: a '.' at the start of a line
 // or an LF that does not follow a CR. start is the start of a line
-static const char *stuffscan(const char *p, const char *end,
+const char *SMTPClient::stuffscan(const char *p, const char *end,
     const char *start) {
 #if defined(__AVX2__) || defined(__ARM_NEON)
     if (p == start && p < end) {
@@ -1561,32 +1683,32 @@ static const char *stuffscan(const char *p, const char *end,
     }
 #endif
 #ifdef __AVX2__
-    const __m256i cr = _mm256_set1_epi8('\r');
-    const __m256i dot = _mm256_set1_epi8('.');
-    const __m256i lf = _mm256_set1_epi8('\n');
+    // mail is mostly clean, test 4 blocks at a time and find the hit below
+    for (; end - p >= 128; p += 128) {
+	__m256i h = _mm256_or_si256(_mm256_or_si256(stuffhits(p),
+	    stuffhits(p + 32)), _mm256_or_si256(stuffhits(p + 64),
+	    stuffhits(p + 96)));
 
+	if (!_mm256_testz_si256(h, h))
+	    break;
+    }
     for (; end - p >= 32; p += 32) {
-	__m256i v = _mm256_loadu_si256((const __m256i *)p);
-	__m256i prev = _mm256_loadu_si256((const __m256i *)(p - 1));
-	__m256i bare = _mm256_andnot_si256(_mm256_cmpeq_epi8(prev, cr),
-	    _mm256_cmpeq_epi8(v, lf));
-	__m256i bol = _mm256_and_si256(_mm256_cmpeq_epi8(prev, lf),
-	    _mm256_cmpeq_epi8(v, dot));
-	uint m = (uint)_mm256_movemask_epi8(_mm256_or_si256(bare, bol));
+	uint m = (uint)_mm256_movemask_epi8(stuffhits(p));
 
 	if (m)
 	    return p + std::countr_zero(m);
     }
 #elif defined(__ARM_NEON)
-    const uint8x16_t cr = vdupq_n_u8('\r');
-    const uint8x16_t dot = vdupq_n_u8('.');
-    const uint8x16_t lf = vdupq_n_u8('\n');
+    // mail is mostly clean, test 4 blocks at a time and find the hit below
+    for (; end - p >= 64; p += 64) {
+	uint8x16_t h = vorrq_u8(vorrq_u8(stuffhits(p), stuffhits(p + 16)),
+	    vorrq_u8(stuffhits(p + 32), stuffhits(p + 48)));
 
+	if (vmaxvq_u8(h))
+	    break;
+    }
     for (; end - p >= 16; p += 16) {
-	uint8x16_t v = load16(p);
-	uint8x16_t prev = load16(p - 1);
-	uint64_t m = nibmask(vorrq_u8(vbicq_u8(vceqq_u8(v, lf), vceqq_u8(prev,
-	    cr)), vandq_u8(vceqq_u8(prev, lf), vceqq_u8(v, dot))));
+	uint64_t m = nibmask(stuffhits(p));
 
 	if (m)
 	    return p + std::countr_zero(m) / 4;

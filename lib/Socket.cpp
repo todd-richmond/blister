@@ -255,7 +255,7 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 #ifdef BSD_BASE
 	addr.sau.sun_len = (uint8_t)sizeof (addr.sau);
 #endif
-	strncpy(addr.sau.sun_path + anon, path.c_str(), sz - anon - 1);
+	memcpy(addr.sau.sun_path + anon, path.c_str(), path.length());
 	return true;
     }
     addrinfo *ai = getaddrinfo(host, service, proto);
