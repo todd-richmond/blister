@@ -1084,16 +1084,30 @@ bool Service::update(Status status) {
 
 bool Service::install(const char *file, const char *desc,
     const char * const *depend, bool manual) {
+    int fd;
+    bool ret;
+
     (void)desc; (void)depend; (void)manual;
     if (!file)
 	file = path.c_str();
-    return chown(file, getuid(), getgid()) == -1 && chmod(file,
-	S_ISUID | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != -1;
+    if ((fd = ::open(file, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)) == -1)
+	return false;
+    ret = !fchown(fd, getuid(), getgid()) && !fchmod(fd,
+	S_ISUID | S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH);
+    ::close(fd);
+    return ret;
 }
 
 bool Service::uninstall() {
+    int fd;
+    bool ret;
+
     stop();
-    return chmod(path.c_str(), S_IRWXU | S_IRGRP | S_IXGRP) != -1;
+    if ((fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW)) == -1)
+	return false;
+    ret = !fchmod(fd, S_IRWXU | S_IRGRP | S_IXGRP);
+    ::close(fd);
+    return ret;
 }
 
 int Service::start(int argc, const tchar * const *argv) {

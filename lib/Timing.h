@@ -93,7 +93,7 @@ public:
 
     template<size_t N>
     __forceinline void add(const tchar (&key)[N], timing_t diff) {
-	add(key, (uint)tstrlen(key), stringhash(key), diff);
+	add(key, (uint)strview(key).size(), stringhash(key), diff);
     }
     template<timing_key_ptr P>
     __forceinline void add(const P &key, timing_t diff) {
@@ -122,7 +122,7 @@ public:
     __forceinline timing_t record(const tchar (&key)[N], timing_t begin) {
 	timing_t n = now();
 
-	add(key, (uint)tstrlen(key), stringhash(key), n - begin);
+	add(key, (uint)strview(key).size(), stringhash(key), n - begin);
 	return n;
     }
     template<timing_key_ptr P>
