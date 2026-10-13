@@ -102,6 +102,9 @@ public:
     }
     DispatchMsg reason(void) const { return msg; }
 
+    bool grouped(const DispatchObj &obj) const {
+	return group && obj.group == group;
+    }
     void detach(void) { flags |= DSP_Detached; }
     void ready(DispatchObjCB cb = nullptr, bool hipri = false, DispatchMsg reason =
 	DispatchNone);
@@ -445,7 +448,8 @@ private:
     };
 
     friend class DispatchObj;
-    void addReady(DispatchObj &obj, bool hipri, DispatchMsg reason);
+    void addReady(DispatchObj &obj, DispatchObj::DispatchObjCB cb, bool hipri,
+	DispatchMsg reason);
     void cancelReady(DispatchObj &ob, bool del = false);
     void removeReady(DispatchObj &obj);
     void ready(DispatchObj &obj, bool hipri = false);
@@ -469,11 +473,12 @@ private:
 	timers.set(dt, DispatchTimer::DSP_NEVER_DUE);
 	tlock.unlock();
     }
-    void setTimer(DispatchTimer &dt, ulong tm);
+    void setTimer(DispatchTimer &dt, DispatchObj::DispatchObjCB cb, ulong tm);
 
     friend class DispatchSocket;
     void cancelSocket(DispatchSocket &ds, bool del = false);
-    void pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg msg);
+    void pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
+	ulong timeout, DispatchMsg msg);
     void unmapSocket(DispatchSocket &ds, socket_t fd);
 
     void cleanup(void);
@@ -577,8 +582,7 @@ inline void DispatchObj::cancel(void) { dspr.cancelReady(*this); }
 inline void DispatchObj::erase(void) { dspr.cancelReady(*this, true); }
 inline void DispatchObj::ready(DispatchObjCB cb, bool hipri, DispatchMsg
     reason) {
-    callback(cb);
-    dspr.addReady(*this, hipri, reason);
+    dspr.addReady(*this, cb, hipri, reason);
 }
 
 inline void DispatchTimer::cancel(void) { dspr.cancelTimer(*this); }
@@ -586,10 +590,9 @@ inline void DispatchTimer::erase(void) { dspr.cancelTimer(*this, true); }
 inline DispatchTimer::~DispatchTimer() { dspr.eraseTimer(*this); }
 inline void DispatchTimer::init(void) { dspr.addTimer(*this); }
 inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
-    callback(cb);
     if (msec != DSP_PREVIOUS)
 	to = msec;
-    dspr.setTimer(*this, to);
+    dspr.setTimer(*this, cb, to);
 }
 
 inline void DispatchSocket::cancel(void) { dspr.cancelSocket(*this); }
@@ -600,10 +603,9 @@ inline bool DispatchSocket::close(void) {
 inline void DispatchSocket::erase(void) { dspr.cancelSocket(*this, true); }
 inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg
     reason) {
-    callback(cb);
     if (msec != DSP_PREVIOUS)
 	to = msec;
-    dspr.pollSocket(*this, to, reason);
+    dspr.pollSocket(*this, cb, to, reason);
 }
 
 /*

@@ -18,29 +18,49 @@
 #ifndef HTTPClient_h
 #define HTTPClient_h
 
+#include <deque>
 #include <unordered_map>
-#include "Socket.h"
+#include "Dispatch.h"
+#include "Timing.h"
+
+#ifdef _WIN32
+struct msghdr;
+#endif
 
 class BLISTER URL {
 public:
     explicit URL(const tchar *url = nullptr) { set(url); }
-    URL(const URL &url) = default;
-    ~URL() = default;
 
-    tstring host, path, prot, query;
+    tstring host, prot;
     ushort port = 80;
-
-    URL &operator =(const URL &url) = default;
 
     friend auto operator <=>(const URL &a, const URL &b) = default;
 
     tstring fullpath(void) const;
+    // path and query are stored escaped so they are always wire-correct
+    tstring path(void) const {
+	tstring s(rpath);
+
+	unescape(s, false);
+	return s;
+    }
+    tstring query(void) const {
+	tstring s(rquery);
+
+	unescape(s);
+	return s;
+    }
+    const tstring &rawpath(void) const { return rpath; }
+    const tstring &rawquery(void) const { return rquery; }
     constexpr tstring relpath(void) const {
-	return query.empty() ? path : path + T("?") + query;
+	return rquery.empty() ? rpath : rpath + T("?") + rquery;
     }
     bool set(const tchar *url);
     static void unescape(tchar *str, bool plus = true);
     static void unescape(tstring &str, bool plus = true);
+
+private:
+    tstring rpath = T("/"), rquery;
 };
 
 class BLISTER HTTPClient: nocopy {
@@ -48,19 +68,19 @@ public:
     using attrmap = unordered_multimap<tstring, tstring, strihash, strieq>;
 
     HTTPClient();
-    ~HTTPClient() { delete [] result; }
 
     friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
-	os << hc.sts << endl;
+	os << hc.sts << '\n';
 	for (const auto &[key, value] : hc.reshdrs)
-	    os << key << ": " << value << endl;
-	os.write(achartotchar(hc.result), (streamsize)hc.ressz);
-	os << endl;
+	    os << key << ": " << value << '\n';
+	os.write(achartotchar(hc.data()), (streamsize)hc.ressz);
+	os << '\n';
 	return os;
     }
 
     const Sockaddr &address(void) const { return addr; }
-    const char *data(void) const { return result; }
+    const Socket &socket(void) const { return sock; }
+    const char *data(void) const { return result ? result.get() : ""; }
     int err(void) const { return sock.err(); }
     bool keepalive(void) const { return ka; }
     uint rtimeout(void) const { return rto; }
@@ -71,30 +91,32 @@ public:
     bool close(void) { return sock.close(); }
     bool connect(const Sockaddr &sa, bool keepalive = false, uint timeout =
 	SOCK_INFINITE);
+    // adopt an already connected socket (shares its fd with the caller)
+    bool connect(Socket &s, bool keepalive = false);
     bool connect(const tchar *host, ushort port = 80, bool keepalive = false,
 	uint timeout = SOCK_INFINITE) {
 	return connect(Sockaddr(host, port), keepalive, timeout);
     }
     template<typename C>
-    void header(const tchar *hdr, const C &val) {
+    void header(tstring_view hdr, const C &val) {
 	hstrm << hdr << T(": ") << val << T("\r\n");
     }
-    template<typename C>
-    void header(const tstring &hdr, const C &val) {
-	hstrm << hdr << T(": ") << val << T("\r\n");
-    }
-    void headers(const tstring &headers) { hstrm << headers; }
+    void headers(tstring_view headers) { hstrm << headers; }
     bool cmd(const tchar *cmd, const tchar *path) { return send(cmd, path); }
     bool del(const tchar *path) { return send(T("DELETE"), path); }
     bool get(const tchar *path) { return send(T("GET"), path); }
     bool head(const tchar *path) { return send(T("HEAD"), path); }
-    bool post(const tchar *path, const void *data, ulong len) {
-	return send(T("POST"), path, data, len);
+    // msgh (optional) sends on an adopted socket with ancillary data
+    bool post(const tchar *path, const void *data, ulong len, msghdr *msgh =
+	nullptr) {
+	return send(T("POST"), path, data, len, msgh);
     }
-    bool put(const tchar *path, const void *data, ulong len) {
-	return send(T("PUT"), path, data, len);
+    // msgh (optional) sends on an adopted socket with ancillary data
+    bool put(const tchar *path, const void *data, ulong len, msghdr *msgh =
+	nullptr) {
+	return send(T("PUT"), path, data, len, msgh);
     }
-    const tchar *response(const tstring &name) const {
+    const tchar *response(tstring_view name) const {
 	auto it = reshdrs.find(name);
 	return it == reshdrs.end() ? nullptr : it->second.c_str();
     }
@@ -108,19 +130,29 @@ protected:
     Sockaddr addr;
     bufferstream<tchar> hstrm;
     Socket sock;
-    bool ka;
+    bool ka = true;
     attrmap reshdrs;
-    ulong ressz;
-    char *result;
-    uint rto, wto;
+    ulong ressz = 0;
+    unique_ptr<char[]> result;
+    uint rto = 90 * 1000;
+    uint wto = 60 * 1000;
     sockstream sstrm;
-    uint sts;
-    ulong sz;
+    uint sts = 0;
+    ulong sz = 0;
 
     bool send(const tchar *op, const tchar *path, const void *data = nullptr,
-	ulong datasz = 0);
+	ulong datasz = 0, msghdr *msgh = nullptr);
+
+private:
+    void setup(void);
+    bool transmit(const string &req, const void *data, ulong datasz,
+	msghdr *msgh);
+    void grow(ulong need);
+    bool readbody(bool head, bool &keep);
+    bool readchunked(void);
+    bool readhdrs(string &line, bool &http11);
 };
 
-time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);
+BLISTER time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);
 
 #endif // HTTPClient_h

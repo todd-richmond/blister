@@ -124,13 +124,15 @@ bool Dispatcher::exec() {
 	    group->active = true;
 	}
 	for (;;) {
+	    const auto cb = obj->dcb;
+
 	    obj->flags = (flags & ~DSP_Ready) | DSP_Active;
 	    olock.unlock();
 	    if (counted) {
 		scanning.fetch_sub(1, memory_order_seq_cst);
 		counted = false;
 	    }
-	    obj->dcb(obj);
+	    cb(obj);
 	    olock.lock();
 	    flags = obj->flags &= ~DSP_Active;
 	    group = obj->group;
@@ -934,7 +936,8 @@ void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
     cancelReady(dt, del);
 }
 
-void Dispatcher::setTimer(DispatchTimer &dt, ulong msec) {
+void Dispatcher::setTimer(DispatchTimer &dt, DispatchObj::DispatchObjCB cb,
+    ulong msec) {
     if (LIKELY(msec)) {
 	msec_t now, tmt;
 
@@ -949,6 +952,8 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong msec) {
 	}
 	// flag first so an expiry racing the set below is not dropped
 	olock.lock();
+	if (cb)
+	    dt.dcb = cb;
 	dt.flags |= DSP_Scheduled;
 	olock.unlock();
 	tlock.lock();
@@ -963,6 +968,8 @@ void Dispatcher::setTimer(DispatchTimer &dt, ulong msec) {
     } else {
 	removeTimer(dt);
 	olock.lock();
+	if (cb)
+	    dt.dcb = cb;
 	ready(dt);
     }
 }
@@ -1077,7 +1084,8 @@ void Dispatcher::unmapSocket(DispatchSocket &ds, socket_t fd) {
 #endif
 }
 
-void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
+void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
+    ulong timeout, DispatchMsg m) {
     bool b;
     dspflag_t flags;
     msec_t now = 0;
@@ -1126,6 +1134,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 #endif
     }
     olock.lock();
+    if (cb)
+	ds.dcb = cb;
     flags = ds.flags;
     if (UNLIKELY(flags & (DSP_ReadyAll | DSP_Freed))) {
 	olock.unlock();
@@ -1289,8 +1299,11 @@ void Dispatcher::pollSocket(DispatchSocket &ds, ulong timeout, DispatchMsg m) {
 #endif
 }
 
-void Dispatcher::addReady(DispatchObj &obj, bool hipri, DispatchMsg reason) {
+void Dispatcher::addReady(DispatchObj &obj, DispatchObj::DispatchObjCB cb,
+    bool hipri, DispatchMsg reason) {
     olock.lock();
+    if (cb)
+	obj.dcb = cb;
     if (!(obj.flags & DSP_ReadyAll))
 	obj.msg = reason;
     ready(obj, hipri);

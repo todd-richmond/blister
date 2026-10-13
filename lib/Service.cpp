@@ -690,10 +690,13 @@ void ServiceData::add(uint size, uint type, uint level) {
 
 #include <pwd.h>
 #include <sys/file.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 #include <sys/resource.h>
 #include <sys/wait.h>
 
-Service::Timer::Timer(ulong msec): timer(0) {
+Service::Timer::Timer(ulong msec): timer((timer_t)-1) {
 #ifdef BSD_BASE
     (void)msec;
 #elif defined(__linux__)
@@ -713,18 +716,18 @@ Service::Timer::Timer(ulong msec): timer(0) {
     its.it_value.tv_nsec = (long)((msec % 1000) * 1000000);
     if (timer_settime(timer, 0, &its, nullptr)) {
 	timer_delete(timer);
-	timer = 0;
+	timer = (timer_t)-1;
     }
 #endif
 }
 
 void Service::Timer::cancel() {
-    if (timer) {
+    if (timer != (timer_t)-1) {
 #ifdef BSD_BASE
 #elif defined(__linux__)
 	timer_delete(timer);
 #endif
-	timer = 0;
+	timer = (timer_t)-1;
     }
 }
 
@@ -1685,6 +1688,9 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		(void)lockfile(lckfd, F_WRLCK, SEEK_SET, 0, qflag ? Stopping :
 		    Starting, 0);
 	    } else {
+#ifdef __linux__
+		prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
 		(void)lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 0);
 		if (!first) {
 		    dlog.note(Log::mod(name), Log::cmd(T("start")),
@@ -1702,6 +1708,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    tunlink(lckfile.c_str());
 	    (void)lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 	    ::close(lckfd);
+	    lckfd = -1;
 	    exit(ret);
 	}
 #endif
@@ -1784,7 +1791,7 @@ void Daemon::onSigusr1(void) {
 }
 
 #ifndef _WIN32
-void Daemon::watch_handler(int sig, siginfo_t *, void *) {
+void Daemon::watch_handler(int sig, siginfo_t *si, void *) {
     Daemon *daemon = (Daemon *)service;
 
     if (!daemon->child)
@@ -1795,6 +1802,16 @@ void Daemon::watch_handler(int sig, siginfo_t *, void *) {
 	daemon->qflag = Slow;
     else if (sig == SIGTERM)
 	daemon->qflag = Fast;
+#ifdef __linux__
+    // pass the original sender to the child for ctrl_handler() to log
+    sigval val;
+
+    ZERO(val);
+    val.sival_int = (int)((uint)si->si_uid << 16 | ((uint)si->si_pid & 0xffff));
+    sigqueue(daemon->child, sig, val);
+#else
+    (void)si;
     kill(daemon->child, sig);
+#endif
 }
 #endif

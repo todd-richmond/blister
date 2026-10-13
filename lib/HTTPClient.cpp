@@ -16,383 +16,552 @@
  */
 
 #include "stdapi.h"
+#include <array>
 #include <ctype.h>
 #include <time.h>
 #include "HTTPClient.h"
 #include "Log.h"
 
 static constexpr int StreamSize = 3 * 1460;
+static constexpr size_t MaxHdrs = 64 * 1024;		// status + header bytes
+static constexpr ulong MaxBody = 256UL * 1024 * 1024;
 
-// Hex lookup table for fast parsing (0xFF = invalid)
-static constexpr uchar hex_lut[256] = {
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-      0,   1,   2,   3,   4,   5,   6,   7,   8,   9, 255, 255,
-    255, 255, 255, 255, 255,  10,  11,  12,  13,  14,  15, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255,  10,  11,  12,  13,  14,  15, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    255, 255, 255, 255, 255, 255, 255, 255
-};
+static constexpr auto hex_lut = [] {
+    array<uchar, 256> t{};
+
+    t.fill(255);
+    for (size_t i = 0; i < 10; i++)
+	t['0' + i] = (uchar)i;
+    for (size_t i = 0; i < 6; i++)
+	t['a' + i] = t['A' + i] = (uchar)(10 + i);
+    return t;
+}();
+
+static constexpr uchar hexval(tuchar c) {
+    return c < hex_lut.size() ? hex_lut[c] : (uchar)255;
+}
+
+static constexpr int hexbyte(tuchar hi, tuchar lo) {
+    const uchar h = hexval(hi), l = hexval(lo);
+
+    return (h | l) > 15 ? -1 : (h << 4) | l;
+}
+
+static tstring totstring(string_view sv) {
+#ifdef UNICODE
+    return achartotstring(string(sv).c_str());
+#else
+    return tstring(sv);
+#endif
+}
+
+static bool readline(streambuf *sb, string &s, size_t &left) {
+    s.clear();
+    for (int c; (c = sb->sbumpc()) != EOF; ) {
+	if (c == '\n') {
+	    if (!s.empty() && s.back() == '\r')
+		s.pop_back();
+	    return true;
+	}
+	if (!left)
+	    return false;
+	left--;
+	s += (char)c;
+    }
+    return false;
+}
+
+static bool hastoken(tstring_view list, tstring_view token) {
+    while (!list.empty()) {
+	size_t pos = list.find(T(','));
+	tstring_view v = list.substr(0, pos);
+
+	list = pos == tstring_view::npos ? tstring_view() :
+	    list.substr(pos + 1);
+	while (!v.empty() && (v.front() == ' ' || v.front() == '\t'))
+	    v.remove_prefix(1);
+	while (!v.empty() && (v.back() == ' ' || v.back() == '\t'))
+	    v.remove_suffix(1);
+	if (stringieq(v, token))
+	    return true;
+    }
+    return false;
+}
+
+static bool parsestatus(string_view line, uint &sts, bool &http11) {
+    size_t pos = line.find(' ');
+    auto digit = [&](size_t i) { return (uchar)(line[i] - '0') < 10; };
+
+    if (!line.starts_with("HTTP/") || pos == string_view::npos ||
+	(pos = line.find_first_not_of(" \t", pos)) == string_view::npos ||
+	line.size() < pos + 3 || !digit(pos) || !digit(pos + 1) ||
+	!digit(pos + 2))
+	return false;
+    http11 = line.compare(5, 3, "1.1") == 0;
+    sts = (uint)(line[pos] - '0') * 100 + (uint)(line[pos + 1] - '0') * 10 +
+	(uint)(line[pos + 2] - '0');
+    return sts != 0;
+}
+
+static void addhdr(HTTPClient::attrmap &hdrs, string_view hdr) {
+    size_t colon = hdr.find(':');
+
+    // folded headers are not supported
+    if (!colon || colon == string_view::npos || hdr[0] == ' ' || hdr[0] == '\t')
+	return;
+
+    string_view name = hdr.substr(0, colon);
+    string_view val = hdr.substr(colon + 1);
+
+    while (!name.empty() && (name.back() == ' ' || name.back() == '\t'))
+	name.remove_suffix(1);
+    while (!val.empty() && (val.front() == ' ' || val.front() == '\t'))
+	val.remove_prefix(1);
+    while (!val.empty() && (val.back() == ' ' || val.back() == '\t'))
+	val.remove_suffix(1);
+    hdrs.emplace(totstring(name), totstring(val));
+}
+
+static bool parsenum(string_view s, ulong &n, bool hex) {
+    const ulong base = hex ? 16 : 10;
+
+    n = 0;
+    if (s.empty())
+	return false;
+    for (char c : s) {
+	const ulong d = hex ? hexval((tuchar)c) : (ulong)(c - '0');
+
+	if (d >= base || n > (MaxBody - d) / base)
+	    return false;
+	n = n * base + d;
+    }
+    return true;
+}
+
+// request line injection protection
+static bool badtoken(const tchar *s) {
+    if (!*s)
+	return true;
+    for (; *s; s++) {
+	if ((tuchar)*s <= ' ' || *s == 0x7f)
+	    return true;
+    }
+    return false;
+}
+
+static string buildreq(const tchar *op, const tchar *path, const Sockaddr &addr,
+    bool ka, ulong datasz, tstring_view hdrs) {
+    char buf[24];
+    tstring host = addr.str();		// never does a reverse DNS lookup
+    string req;
+
+    req.reserve(256 + hdrs.size());
+    req = tchartoachar(op);
+    req += ' ';
+    req += tchartoachar(path);
+    req += " HTTP/1.1\r\nHost: ";
+    if (addr.proto() == Sockaddr::UNIX)
+	host = T("localhost");
+    else if (addr.port() == 80)
+	host.resize(host.size() - 3);	// strip ":80"
+    req += tstringtoastring(host);
+    req += "\r\n";
+    if (datasz || !tstrcmp(op, T("POST")) || !tstrcmp(op, T("PUT"))) {
+	req += "Content-Length: ";
+	req.append(buf, to_chars(buf, buf + sizeof (buf), datasz).ptr);
+	req += "\r\n";
+    }
+    req += ka ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
+    if (!hdrs.empty())
+	req.append(tchartoachar(hdrs.data()), hdrs.size());
+    req += "\r\n";
+    return req;
+}
 
 tstring URL::fullpath(void) const {
-    tstring s;
-    tstring rp(relpath());
-    s.reserve(prot.length() + host.length() + rp.length() + 20);
+    tstring s(prot);
 
-    s += prot;
+    s.reserve(prot.length() + host.length() + rpath.length() +
+	rquery.length() + 16);
     s += T("://");
-
-    if (port && port != 80 && !(port == 443 && prot == T("https"))) {
-	tchar buf[8];
-
-	buf[0] = ':';
-	to_str(buf + 1, buf + 8, port);
-	s += host;
-	s += buf;
-    } else if (!port && (prot == T("http+unix") || prot == T("https+unix"))) {
-	s.reserve(s.capacity() + host.length() * 3); // Worst case for URL encoding
-	for (tchar c : host) {
+    if (!port) {
+	for (tchar c : host) {		// unix socket path
 	    if (c == '/')
 		s += T("%2F");
 	    else
 		s += c;
 	}
     } else {
+	const bool v6 = host.contains(':');
+
+	if (v6)
+	    s += '[';
 	s += host;
+	if (v6)
+	    s += ']';
+	if (port != (prot == T("https") ? 443 : 80)) {
+	    tchar buf[8];
+
+	    buf[0] = ':';
+	    to_str(buf + 1, buf + 8, port);
+	    s += buf;
+	}
     }
-    s += rp;
+    s += rpath;
+    if (!rquery.empty()) {
+	s += '?';
+	s += rquery;
+    }
     return s;
 }
 
 bool URL::set(const tchar *url) {
-    const tchar *p, *pp;
-
-    query.erase();
     if (!url) {
 	prot = T("http");
 	host = T("localhost");
 	port = 80;
-	path = T("/");
+	rpath = T("/");
+	rquery.erase();
 	return true;
     }
-    p = tstrchr(url, ':');
-    if (p && p[1] == '/' && p[2] == '/') {
-	prot.assign(url, (tstring::size_type)(p - url));
-	url = p + 3;
-	p = tstrchr(url, ':');
-    } else if (p && !istdigit(p[1])) {
-	return false;
-    } else {
-	prot = T("http");
-    }
-    pp = tstrchr(url, '/');
-    if (p && (!pp || p < pp)) {
-	port = atoi<ushort>(p + 1);
-	if (!port)
+
+    tstring_view u(url), auth, rest;
+    tstring p(T("http")), h;
+    size_t pos = u.find(T("://"));
+    ushort pt;
+
+    if (pos != tstring_view::npos && pos < u.find_first_of(T("/?#"))) {
+	if (!pos)
 	    return false;
-	host.assign(url, (tstring::size_type)(p - url));
-	p = tstrchr(p, '/');
-    } else {
-	if (pp && pp != url)
-	    host.assign(url, (tstring::size_type)(pp - url));
-	else if (pp)
-	    host = T("localhost");
-	else
-	    host = url;
-	if (prot == T("http+unix") || prot == T("https+unix")) {
-	    unescape(host);
-	    port = 0;
-	} else {
-	    port = (prot == T("https")) ? 443 : 80;
-	}
-	p = pp;
+	p.assign(u.substr(0, pos));
+	for (tchar &c : p)
+	    c = (tchar)totlower(c);
+	u.remove_prefix(pos + 3);
     }
-    if (p) {
-	pp = tstrchr(p, '?');
-	if (pp) {
-	    path.assign(p, (tstring::size_type)(pp - p));
-	    query = pp + 1;
-	    unescape(query);
-	} else {
-	    path = p;
-	}
-	unescape(path);
+    pos = u.find_first_of(T("/?#"));
+    auth = u.substr(0, pos);
+    rest = pos == tstring_view::npos ? tstring_view() : u.substr(pos);
+    if (p == T("http+unix") || p == T("https+unix")) {
+	h.assign(auth);
+	unescape(h, false);
+	pt = 0;
     } else {
-	path = T("/");
+	tstring_view portstr;
+
+	pt = p == T("https") ? 443 : 80;
+	if (!auth.empty() && auth.front() == '[') {
+	    pos = auth.find(']');
+	    if (pos == tstring_view::npos)
+		return false;
+	    h.assign(auth.substr(1, pos - 1));
+	    portstr = auth.substr(pos + 1);
+	} else {
+	    pos = auth.find(':');
+	    h.assign(auth.substr(0, pos));
+	    portstr = pos == tstring_view::npos ? tstring_view() :
+		auth.substr(pos);
+	}
+	if (!portstr.empty()) {
+	    uint n = 0;
+
+	    if (portstr.front() != ':')
+		return false;
+	    portstr.remove_prefix(1);
+	    if (portstr.empty() || portstr.size() > 5)
+		return false;
+	    for (tchar c : portstr) {
+		if (!istdigit(c))
+		    return false;
+		n = n * 10 + (uint)(c - '0');
+	    }
+	    if (!n || n > 65535)
+		return false;
+	    pt = (ushort)n;
+	}
+	if (h.empty())
+	    h = T("localhost");
     }
+    if (pos = rest.find('#'); pos != tstring_view::npos)
+	rest = rest.substr(0, pos);
+    pos = rest.find('?');
+    prot = std::move(p);
+    host = std::move(h);
+    port = pt;
+    rpath.assign(rest.substr(0, pos));
+    if (rpath.empty())
+	rpath = T("/");
+    rquery.assign(pos == tstring_view::npos ? tstring_view() :
+	rest.substr(pos + 1));
     return true;
 }
 
 void URL::unescape(tchar *str, bool plus) {
-    for (const tuchar *p = (const tuchar *)str; *p; p++) {
-	if (*p == '%' && *(p + 1) && *(p + 2)) {
-	    tuchar hex;
-	    tuchar hex_val1 = hex_lut[*++p];
-	    tuchar hex_val2 = hex_lut[*++p];
+    tchar *d = str;
 
-	    if (hex_val1 > 15 || hex_val2 > 15) {
-		// Invalid hex digit
-		*str++ = '%';
-		*str++ = (tchar)*(p - 1);
-		if (hex_val1 <= 15)
-		    *str++ = (tchar)*p;
-		continue;
-	    }
-	    hex = (tuchar)((hex_val1 << 4) | hex_val2);
-	    *str++ = (tchar)hex;
+    for (const tuchar *p = (const tuchar *)str; *p; p++) {
+	int v;
+
+	if (*p == '%' && p[1] && p[2] && (v = hexbyte(p[1], p[2])) >= 0) {
+	    *d++ = (tchar)v;
+	    p += 2;
 	} else if (*p == '+' && plus) {
-	    *str++ = ' ';
+	    *d++ = ' ';
 	} else {
-	    *str++ = (tchar)*p;
+	    *d++ = (tchar)*p;
 	}
     }
-    *str = '\0';
+    *d = '\0';
 }
 
 void URL::unescape(tstring &str, bool plus) {
-    uint i, j;
+    size_t i = 0;
 
-    for (i = 0, j = 0; j < str.size(); j++) {
-	tchar p = str[j];
+    for (size_t j = 0; j < str.size(); j++, i++) {
+	tchar c = str[j];
+	int v;
 
-	if (p == '%') {
-	    uchar hex;
-
-	    if (j + 2 >= str.size()) {
-		// Invalid % sequence
-		str[i++] = p;
-		while (++j < str.size())
-		    str[i++] = str[j];
-		break;
-	    }
-
-	    uchar hex_val1 = hex_lut[(uchar)str[++j]];
-	    uchar hex_val2 = hex_lut[(uchar)str[++j]];
-
-	    if (hex_val1 > 15 || hex_val2 > 15) {
-		// Invalid hex digit
-		str[i++] = '%';
-		str[i++] = str[j - 1];
-		if (hex_val1 <= 15)
-		    str[i++] = str[j];
-		continue;
-	    }
-
-	    hex = (uchar)((hex_val1 << 4) | hex_val2);
-	    str[i] = (tchar)hex;
-	} else if (p == '+' && plus) {
-	    str[i] = ' ';
-	} else if (i != j) {
-	    str[i] = p;
+	if (c == '%' && j + 2 < str.size() &&
+	    (v = hexbyte((tuchar)str[j + 1], (tuchar)str[j + 2])) >= 0) {
+	    c = (tchar)v;
+	    j += 2;
+	} else if (c == '+' && plus) {
+	    c = ' ';
 	}
-	i++;
+	str[i] = c;
     }
     str.erase(i);
 }
 
-HTTPClient::HTTPClient(): ka(true), ressz(0), result(0), rto(90 * 1000),
-    wto(60 * 1000), sstrm(StreamSize), sts(0), sz(0) {}
+HTTPClient::HTTPClient(): sstrm(StreamSize) {}
 
-bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
-    if (sock.open() && sa == addr)
-	return true;
-    addr = sa;
-    sock.close();
-    ka = keepalive;
-    if (!sock.connect(addr, to)) {
-	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
-	    addr.str()), Log::error(sock.errstr()));
-	sock.close();
-	return false;
-    }
+void HTTPClient::setup(void) {
     sock.nodelay(true);
     sock.rtimeout(rto);
     sock.wtimeout(wto);
     sstrm.rdbuf()->attach(sock);
     sstrm.rdbuf()->reset();
     sstrm.clear(sstrm.rdstate() & ~(ios::badbit | ios::eofbit | ios::failbit));
+}
+
+bool HTTPClient::connect(Socket &s, bool keepalive) {
+    Sockaddr sa(Sockaddr::UNSPEC);
+
+    if (!s.open() || !s.peername(sa))
+	return false;
+    ka = keepalive;
+    addr = sa;
+    sock = s;
+    setup();
+    dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("fd"),
+	s.fd()));
+    return true;
+}
+
+bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
+    ka = keepalive;
+    if (sock.open() && sa == addr)
+	return true;
+    addr = sa;
+    sock.close();
+    if (!sock.connect(addr, to)) {
+	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
+	    addr.str()), Log::error(sock.errstr()));
+	sock.close();
+	return false;
+    }
+    setup();
     dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
 	addr.ipstr()));
     return true;
 }
 
-bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
-    ulong datasz) {
-    char buf[64];
-    bool first = true;
-    iovec iov[2]{};
-    bool keep = false;
-    const char *p, *pp;
+void HTTPClient::grow(ulong need) {
+    if (need <= sz)
+	return;
+    need = max(need, min(sz * 2, MaxBody));
+
+    auto p = make_unique_for_overwrite<char[]>((size_t)need + 1);
+
+    if (ressz)
+	memcpy(p.get(), result.get(), ressz);
+    result = std::move(p);
+    sz = need;
+}
+
+bool HTTPClient::readhdrs(string &line, bool &http11) {
+    size_t left = MaxHdrs - line.size();
+
+    if (!parsestatus(line, sts, http11))
+	return false;
+    for (;;) {
+	if (!readline(sstrm.rdbuf(), line, left))
+	    return false;
+	if (line.empty())
+	    return true;
+	addhdr(reshdrs, line);
+    }
+}
+
+bool HTTPClient::readchunked(void) {
+    string line;
+    size_t left;
+
+    for (;;) {
+	ulong n;
+
+	left = 1024;
+	if (!readline(sstrm.rdbuf(), line, left) ||
+	    !parsenum(string_view(line).substr(0, line.find_first_of("; \t")),
+	    n, true) || n > MaxBody - ressz)
+	    return false;
+	if (!n)
+	    break;
+	grow(ressz + n);
+
+	streamsize in = sstrm.read(result.get() + ressz, (streamsize)n);
+
+	if (in > 0)
+	    ressz += (ulong)in;
+	left = 2;
+	if ((ulong)in != n || !readline(sstrm.rdbuf(), line, left) ||
+	    !line.empty())
+	    return false;
+    }
+    left = MaxHdrs;				// discard trailers
+    while (readline(sstrm.rdbuf(), line, left)) {
+	if (line.empty())
+	    return true;
+    }
+    return false;
+}
+
+bool HTTPClient::readbody(bool head, bool &keep) {
     const tchar *resp;
+
+    if (head || sts == 204 || sts == 304 || sts / 100 == 1)
+	return true;
+    if ((resp = response(T("Transfer-Encoding"))) != nullptr &&
+	hastoken(resp, T("chunked")))
+	return readchunked();
+    if ((resp = response(T("Content-Length"))) != nullptr) {
+	ulong len;
+
+	if (!parsenum(tchartoachar(resp), len, false))
+	    return false;
+	if (len) {
+	    grow(len);
+
+	    streamsize in = sstrm.read(result.get(), (streamsize)len);
+
+	    if (in > 0)
+		ressz = (ulong)in;
+	    return (ulong)in == len;
+	}
+	return true;
+    }
+
+    keep = false;
+    for (;;) {
+	if (ressz == sz) {
+	    if (sz >= MaxBody)
+		return false;
+	    grow(max(sz + 1, 12UL * 1024));
+	}
+
+	streamsize room = (streamsize)(sz - ressz);
+	streamsize in = sstrm.read(result.get() + ressz, room);
+
+	if (in > 0)
+	    ressz += (ulong)in;
+	if (in < room)
+	    return sock.err() == EOF;
+    }
+}
+
+bool HTTPClient::transmit(const string &req, const void *data, ulong datasz,
+    msghdr *msgh) {
+    const streamsize rsz = (streamsize)req.size();
+    streamsize off = 0;
+
+    if (msgh) {
+#ifndef _WIN32
+	iovec iov[2] = { { (void *)req.data(), req.size() },
+	    { (void *)data, datasz } };
+
+	msgh->msg_iov = iov;
+	msgh->msg_iovlen = datasz ? 2 : 1;
+	off = (streamsize)sock.sendmsg(*msgh, MSG_NOSIGNAL);
+	if (off <= 0)
+	    return false;
+	// ancillary data is sent with the first byte so only finish the stream
+	if (off == rsz + (streamsize)datasz)
+	    return true;
+#else
+	return false;
+#endif
+    }
+    if (off < rsz && sstrm.write(req.data() + off, rsz - off) != rsz - off)
+	return false;
+    if (datasz) {
+	const streamsize doff = off > rsz ? off - rsz : 0;
+
+	if (sstrm.write((const char *)data + doff, (streamsize)datasz - doff) !=
+	    (streamsize)datasz - doff)
+	    return false;
+    }
+    return bool(sstrm.flush());
+}
+
+bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
+    ulong datasz, msghdr *msgh) {
+    bool keep = false;
     bool ret = false;
-    string req, s;
-    bool sent;
-    msec_t start;
-    static constexpr tchar connection[] = T("Connection");
-    static constexpr tchar contentlen[] = T("Content-Length");
-    static constexpr tchar keep_alive[] = T("Keep-Alive");
-    static constexpr tchar pragma[] = T("Pragma");
 
     sts = 0;
-    s.reserve(128);
+    ressz = 0;
     reshdrs.clear();
-    req.reserve(256);
-    req = tchartoachar(op);
-    req += ' ';
-    req += tchartoachar(path);
-    req += " HTTP/1.1\r\nHost: ";
-    req += tstringtoastring(addr.host());
-    if (addr.port() != 80) {
-	snprintf(buf, sizeof (buf), ":%u", addr.port());
-	req += buf;
-    }
-    req += "\r\n";
-    if (datasz) {
-	snprintf(buf, sizeof (buf), "Content-Length: %lu\r\n", (ulong)datasz);
-	req += buf;
-    }
-    if (ka)
-	req += "Pragma: Keep-Alive\r\nConnection: Keep-Alive\r\n";
-    if (hstrm.size())
-	req.append(tchartoachar(hstrm.str()), (size_t)hstrm.size());
-    req += "\r\n";
-    iov[0].iov_base = (char *)req.c_str();	// NOSONAR
-    iov[0].iov_len = (iovlen_t)req.size();
-    iov[1].iov_base = (char *)data;		// NOSONAR
-    iov[1].iov_len = datasz;
-loop:
-    if (!connect(addr, ka))
-	goto done;
-    start = mticks();
-    sent = (ulong)sock.writev(iov, 2) == (ulong)(req.size() + datasz);
-    if (!sent ||
-	// shutdown causes huge cpu spikes on NT - not sure why
-	// (!ka && !sock.shutdown(false, true)) ||
-	!getline(sstrm, s)) {
-	sock.close();
-	if (first && ka && (!sent || rto > (mticks() - start) + 200)) {
-	    dlogd(Log::mod(T("http")), Log::cmd(T("reconnect")),
-		Log::kv(T("addr"), addr.ipstr()));
-	    first = false;
-	    goto loop;
-	} else {
+    if (!badtoken(op) && !badtoken(path)) {
+	const bool head = !tstrcmp(op, T("HEAD"));
+	string line;
+	const string req = buildreq(op, path, addr, ka, datasz,
+	    tstring_view(hstrm.str(), (size_t)hstrm.size()));
+
+	for (bool first = true; msgh ? sock.open() : connect(addr, ka);
+	    first = false) {
+	    size_t left = MaxHdrs;
+	    const msec_t start = mticks();
+	    const bool sent = transmit(req, data, datasz, msgh);
+
+	    if (sent && readline(sstrm.rdbuf(), line, left)) {
+		bool http11 = false;
+
+		if (readhdrs(line, http11)) {
+		    const tchar *resp = response(T("Connection"));
+
+		    dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
+			Log::kv(T("path"), path), Log::kv(T("sts"), sts));
+		    keep = ka && !(resp && hastoken(resp, T("close"))) &&
+			(http11 || (resp && hastoken(resp, T("keep-alive"))));
+		    ret = readbody(head, keep);
+		}
+		break;
+	    }
+	    sock.close();
+	    // retry once if a stale keep-alive connection failed quickly
+	    if (first && ka && !msgh &&
+		(!sent || rto > (mticks() - start) + 200)) {
+		dlogd(Log::mod(T("http")), Log::cmd(T("reconnect")),
+		    Log::kv(T("addr"), addr.ipstr()));
+		continue;
+	    }
 	    dlogn(Log::mod(T("http")), Log::cmd(T("disconnect")),
 		Log::kv(T("addr"), addr.ipstr()));
-	    iov[0].iov_base = (char *)nullptr;
-	    goto done;
-	}
-    }
-    iov[0].iov_base = (char *)nullptr;
-    p = s.c_str();
-    while (*p && *p != ' ' && *p != '\t')
-	p++;
-    while (*p == ' ' || *p == '\t')
-	p++;
-    sts = (uint)strtoul(p, NULL, 10);
-    dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
-	Log::kv(T("path"), path), Log::kv(T("sts"), sts));
-    while (getline(sstrm, s)) {		    // does not support folded hdrs
-	p = s.c_str();
-	while (*p == ' ' || *p == '\t')
-	    p++;
-	if (*p == '\r' || !*p)
 	    break;
-	if ((pp = strchr(p, ':')) == nullptr)
-	    continue;
-
-	// Use string_view-like approach to avoid substr allocations
-	size_t name_len = (size_t)(pp - p);
-	const char *val_end;
-	size_t val_len = 0;
-
-	pp++;
-	while (*pp && (*pp == '\r' || *pp == ' ' || *pp == '\t'))
-	    pp++;
-	val_end = strchr(pp, '\r');
-	if (!val_end)
-	    val_end = pp + strlen(pp);
-	val_len = (size_t)(val_end - pp);
-
-	tstring header_name(achartotchar(p), name_len);
-	tstring header_val(achartotchar(pp), val_len);
-
-	reshdrs.emplace(std::move(header_name), std::move(header_val));
-    }
-    if (!sstrm)
-	goto done;
-    if (ka) {
-	if ((resp = response(connection)) != nullptr &&
-	    !tstrnicmp(resp, keep_alive, sizeof (keep_alive) - 1))
-	    keep = true;
-	else if ((resp = response(pragma)) != nullptr &&
-	    !tstrnicmp(resp, keep_alive, sizeof (keep_alive) - 1))
-	    keep = true;
-    }
-    if (sts == 204 || sts == 304)
-	ressz = 0;
-    else if ((resp = response(contentlen)) != nullptr)
-	ressz = atoi<ulong>(resp);
-    else
-	ressz = (ulong)-1;
-    if (ressz && ressz != (ulong)-1) {
-	if (ressz > sz) {
-	    char *new_result = new char[(size_t)ressz + 1];
-
-	    delete [] result;
-	    result = new_result;
-	    sz = ressz;
 	}
-	ret = (ulong)sstrm.read(result, (streamsize)ressz) == ressz;
-    } else if (ressz) {
-	ulong room = sz;
-
-	keep = false;
-	ressz = 0;
-	for (;;) {
-	    streamsize in;
-	    char *newres;
-
-	    if (!room) {
-		// Use exponential growth to reduce reallocations
-		ulong new_size = ressz ? ressz * 2 : 12UL * 1024;
-
-		if (new_size < 12UL * 1024)
-		    new_size = 12UL * 1024;
-		room = new_size - ressz;
-		sz = new_size;
-		newres = new char[(size_t)sz + 1];
-		memcpy(newres, result, ressz);
-		delete [] result;
-		result = newres;
-	    }
-	    if ((in = sstrm.read(result + ressz, (streamsize)room)) > 0) {
-		ressz += (ulong)in;
-		ret = true;
-	    }
-	    if (in == -1 || (ulong)in < room)
-		break;
-	    room -= (ulong)in;
-	}
-    } else {
-	ret = true;
     }
-done:
-    if (!keep || !ret)
+    if ((!keep && !msgh) || !ret)
 	sock.close();
-    if (ret && result)
+    if (result)
 	result[ressz] = '\0';
     hstrm.reset();
     return ret;
@@ -453,10 +622,10 @@ time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {
 	    if (len == 2 && (!tstrnicmp(s, T("AM"), 2) ||
 		!tstrnicmp(s, T("PM"), 2))) {
 		if (hour <= 12)
-		    hour = hour % 12 + (toupper(*s) == 'P' ? 12 : 0);
+		    hour = hour % 12 + (totupper(*s) == 'P' ? 12 : 0);
 	    } else if (len == 1) {
 		// military zone
-		tchar z = (tchar)toupper(*s);
+		tchar z = (tchar)totupper(*s);
 
 		off = (z < 'J' ? z - 'A' + 1 : z < 'N' ? z - 'A' : z < 'Z' ?
 		    'M' - z : 0) * 60;
@@ -489,7 +658,8 @@ time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {
 	    ++p;
 	}
     }
-    if (!day || !mon || year < 0 || year > 9999)
+    if (!day || !mon || year < 0 || year > 9999 || hour > 23 || min > 59 ||
+	sec > 60)
 	return 0;
 
     namespace chr = std::chrono;
