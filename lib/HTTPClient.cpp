@@ -1013,7 +1013,7 @@ AsyncHTTPClient::Flow AsyncHTTPClient::reserve(Request &r, ulong need) {
     if (r.result && r.cap >= cap)
 	return Flow::Ok;
     if (r.phase != Request::Length)
-	cap = max({ cap, min(r.cap * 2, MaxBody + 1), 12UL * 1024 });
+	cap = (max)({ cap, min(r.cap * 2, MaxBody + 1), 12UL * 1024 });
     r.cap = cap;
     growing = inreserve = true;
     r.result_grow(IOSocket::ongrown, sock, r.result, (uint)r.sz, (uint)cap);
