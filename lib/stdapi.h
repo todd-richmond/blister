@@ -993,7 +993,7 @@ auto to_chars(wchar_t *first, wchar_t *last, T value) {
 
     for (char *p = buf; p != char_end && r.ptr != last; ++p)
 	*r.ptr++ = (wchar_t)(uchar)*p;
-    if (r.ptr == last && char_ec == errc{})
+    if (r.ptr == last && char_ec == errc())
 	r.ec = errc::value_too_large;
     return r;
 }
@@ -1447,10 +1447,11 @@ __forceinline constexpr strhash_t stringhash(const T &s) {
 // case folding of the wide character bernstein_hash
 template<typename T>
 constexpr auto ifold = [] {
-    if constexpr (is_same_v<T, wchar>)
+    if constexpr (is_same_v<T, wchar>) {
 	return unicode_fold;
-    else
+    } else {
 	return ascii_fold<T>;
+    }
 }();
 
 template<typename T>

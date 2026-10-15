@@ -69,7 +69,7 @@ class BLISTER HTTPClient: nocopy {
 public:
     using attrmap = unordered_multimap<tstring, tstring, strihash, strieq>;
 
-    HTTPClient(): sstrm(3 * 1460) {}
+    HTTPClient(): sstrm(3L * 1460) {}
 
     friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
 	os << hc.sts << '\n';

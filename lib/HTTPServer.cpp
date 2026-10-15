@@ -249,7 +249,7 @@ void HTTPServerSocket::readpost() {
 		error(413, true);
 		return;
 	    }
-	    if (ec != errc{} || (e < lf && !strchr("\r; \t", *e))) {
+	    if (ec != errc() || (e < lf && !strchr("\r; \t", *e))) {
 		error(400, true);
 		return;
 	    }
@@ -425,12 +425,12 @@ void HTTPServerSocket::parse(void) {
     } else if ((val = attr("content-length")) != nullptr) {
 	auto [e, ec] = from_chars(val, val + strlen(val), postsz);
 
-	if (ec == errc::result_out_of_range || (ec == errc{} && postsz >
+	if (ec == errc::result_out_of_range || (ec == errc() && postsz >
 	    MaxBody)) {
 	    error(413, true);
 	    return;
 	}
-	if (ec != errc{} || *e) {
+	if (ec != errc() || *e) {
 	    error(400, true);
 	    return;
 	}

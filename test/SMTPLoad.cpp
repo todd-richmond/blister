@@ -758,8 +758,8 @@ int tmain(int argc, tchar *argv[]) {
     dlog.level(Log::None);
     if (fs.is_open())
 	fs.close();
-    while ((thread = (SMTPLoad *)(ThreadGroup::MainThreadGroup.wait(
-	3000))) != nullptr)
+    while ((thread = (SMTPLoad *)ThreadGroup::MainThreadGroup.wait(3000)) !=
+	nullptr)
 	delete thread;
     SMTPLoad::uninit();
     return 0;

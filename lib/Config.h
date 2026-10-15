@@ -143,7 +143,7 @@ public:
 	auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
 	SpinWLocker lkr(lck);
 
-	if (UNLIKELY(ec != errc{}))
+	if (UNLIKELY(ec != errc()))
 	    ptr = buf;
 	*ptr = '\0';
 	return set(key, tstrlen(key), buf, (size_t)(ptr - buf), sect, sect ?

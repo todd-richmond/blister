@@ -441,11 +441,10 @@ bool base64decode(const char *in, size_t sz, void *&out, size_t &outsz) {
     return true;
 }
 
-bool base64encode(const void *in, size_t len, char *&out, size_t &outsz) {
+void base64encode(const void *in, size_t len, char *&out, size_t &outsz) {
     out = new char[(len + 2) / 3 * 4 + (len + 44) / 45 * 2 + 1];
     outsz = encode<false>((const uchar *)in, len, out, true);
     out[outsz] = '\0';
-    return true;
 }
 
 // hex digit to 4 bit value, 0xff if invalid
@@ -570,7 +569,7 @@ static constexpr array<bool, 256> qpplain = [] {
 // RFC 2045 quoted-printable with CRLF line breaks and lines of at most 76
 // characters. CRLF and bare LF are line breaks, a bare CR is encoded and so
 // is whitespace that would end a line
-bool qpencode(const void *in, size_t len, char *&out, size_t &outsz) {
+void qpencode(const void *in, size_t len, char *&out, size_t &outsz) {
     static constexpr char hex[] = "0123456789ABCDEF";
     const uchar *p = (const uchar *)in;
     const uchar *end = p + len;
@@ -658,7 +657,6 @@ bool qpencode(const void *in, size_t len, char *&out, size_t &outsz) {
     }
     outsz = (size_t)(o - out);
     *o = '\0';
-    return true;
 }
 
 
@@ -801,7 +799,7 @@ bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
     return true;
 }
 
-bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
+void uuencode(const tchar *file, const void *in, size_t len, char *&out,
     size_t &outsz) {
     static constexpr char begin[] = "begin 644 ";
     static constexpr char end[] = "\r\nend\r\n";
@@ -819,7 +817,6 @@ bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
     out[outsz++] = '`';
     memcpy(out + outsz, end, sizeof (end));
     outsz += sizeof (end) - 1;
-    return true;
 }
 
 // strictly decode UTF-8 into code points
@@ -904,6 +901,7 @@ bool SMTPClient::punycode(const vector<char32_t> &in, string &out) {
 	delta += (m - n) * (uint32_t)(h + 1);
 	n = m;
 	for (char32_t c : in) {
+	    // cppcheck-suppress knownConditionTrueFalse
 	    if (c < n && ++delta == 0)
 		return false;
 	    if (c != n)
@@ -1431,8 +1429,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	return false;
     memcpy(buf, &pid, 4);
     memcpy(buf + 4, &mid, 8);
-    if (!base64encode(buf, 12, encbuf, encbufsz))
-	return false;
+    base64encode(buf, 12, encbuf, encbufsz);
     encbuf[encbufsz - 2] = '\0';
     *strm << "Message-ID: <" << encbuf << '@' <<
 	tstringtoastring(Sockaddr::hostname()) << '>' << crlf;
@@ -1485,8 +1482,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	    char *out;
 	    size_t outsz;
 
-	    if (!base64encode(body.data(), body.size(), out, outsz))
-		return false;
+	    base64encode(body.data(), body.size(), out, outsz);
 	    enc.assign(out, outsz);
 	    delete [] out;
 	    cte = "base64";

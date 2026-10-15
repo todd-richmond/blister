@@ -282,7 +282,7 @@ public:
 	    char buf[40];
 	    auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
 
-	    if (LIKELY(ec == errc{})) {
+	    if (LIKELY(ec == errc())) {
 		wchar wbuf[40];
 		wchar *d = wbuf;
 
@@ -296,7 +296,7 @@ public:
 	    char buf[40];
 	    auto [end, ec] = to_chars(buf, buf + sizeof (buf), val);
 
-	    if (LIKELY(ec == errc{}))
+	    if (LIKELY(ec == errc()))
 		write(buf, end - buf);
 	    else
 		*this << val;

@@ -229,11 +229,11 @@ private:
     vector<tstring> tov, ccv, bccv, hdrv, resultsv;
 };
 
-bool base64encode(const void *in, size_t len, char *&out, size_t &outsz);
+void base64encode(const void *in, size_t len, char *&out, size_t &outsz);
 bool base64decode(const char *in, size_t sz, void *&out, size_t &outsz);
-bool qpencode(const void *in, size_t len, char *&out, size_t &outsz);
+void qpencode(const void *in, size_t len, char *&out, size_t &outsz);
 bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz);
-bool uuencode(const tchar *file, const void *in, size_t len, char *&out,
+void uuencode(const tchar *file, const void *in, size_t len, char *&out,
     size_t &outsz);
 bool uudecode(const char *in, size_t sz, uint &perm, tstring &file, void *&out,
     size_t &outsz);

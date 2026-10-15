@@ -34,7 +34,7 @@ target_link_libraries(hashtest blister)
 
 if(LIBUV_INCLUDE_DIR AND LIBUV_LIBRARY)
     add_executable(uvechotest UVEchoTest.cpp)
-    target_include_directories(uvechotest PRIVATE ${LIBUV_INCLUDE_DIR})
+    target_include_directories(uvechotest SYSTEM PRIVATE ${LIBUV_INCLUDE_DIR})
     target_link_libraries(uvechotest blister ${LIBUV_LIBRARY})
     if(COMPILE_PCH)
 	target_precompile_headers(uvechotest REUSE_FROM cfg)

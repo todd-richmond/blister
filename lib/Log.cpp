@@ -121,6 +121,7 @@ int Log::FlushThread::onStart(void) {
 	}
 	// sleep for buffer time before flush
 	l.cv.wait(l.buftm);
+	// cppcheck-suppress knownConditionTrueFalse
 	if (qflag || l.pauserequested)
 	    continue;
 	l.drainbuffers(true);

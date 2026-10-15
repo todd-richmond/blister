@@ -558,7 +558,9 @@ public:
 	return true;
     }
     bool listen(const tchar *host = nullptr, bool enable = true) {
-	tstring s(dspr.config().get(T("host"), host, C::section()));
+	// cppcheck-suppress nullPointerDefaultArg
+	tstring s(dspr.config().get(T("host"), host,	// NOSONAR: null ok
+	    C::section()));
 
 	return listen(Sockaddr(s.c_str()), enable);
     }

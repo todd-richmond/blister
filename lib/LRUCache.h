@@ -74,7 +74,7 @@ public:
     }
     C get(const void *data, ulong sz) {
 	C entry(data, sz);
-	lru_list freed;
+	lru_list freed;		// NOSONAR: destroyed after lkr unlocks
 	msec_t now = LIKELY(maxtm) ? mticks() : 0;
 	FastSpinLocker lkr(lock);
 

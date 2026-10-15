@@ -23,7 +23,7 @@
 #include "Log.h"
 
 static constexpr ulong MaxBody = 256UL * 1024 * 1024;
-static constexpr size_t MaxHdrs = 64 * 1024;		// status + header bytes
+static constexpr size_t MaxHdrs = 64UL * 1024;		// status + header bytes
 static constexpr size_t MaxPipeline = 16;
 static constexpr size_t MinRead = 512;
 
@@ -39,7 +39,11 @@ static constexpr auto hex_lut = [] {
 }();
 
 static constexpr uchar hexval(tuchar c) {
-    return c < hex_lut.size() ? hex_lut[c] : (uchar)255;
+    if constexpr (sizeof (tuchar) > 1) {
+	if (c >= hex_lut.size())
+	    return 255;
+    }
+    return hex_lut[c];
 }
 
 static tstring totstring(string_view sv) {
@@ -367,12 +371,13 @@ bool HTTPClient::readbody(bool head, bool &keep) {
 	hastoken(resp, T("chunked")))
 	return readchunked();
     if ((resp = response(T("Content-Length"))) != nullptr) {
-	streamsize in;
 	ulong len;
 
 	if (!parsenum(tchartoachar(resp), len, false))
 	    return false;
 	if (len) {
+	    streamsize in;
+
 	    grow(len);
 	    in = sstrm.read(result.get(), (streamsize)len);
 	    if (in > 0)
@@ -446,6 +451,7 @@ bool HTTPClient::readhdrs(string &line, bool &http11) {
 }
 
 bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
+    // cppcheck-suppress constParameterPointer
     ulong datasz, msghdr *msgh) {
     bool keep = false;
     bool ret = false;
@@ -487,9 +493,13 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 	    }
 	    // ancillary data goes with the first byte so only finish the stream
 	    if (sent && off < total) {
+		// cppcheck-suppress knownConditionTrueFalse
 		const streamsize doff = off > rsz ? off - rsz : 0;
 		const streamsize dleft = (streamsize)datasz - doff;
+		// cppcheck-suppress knownConditionTrueFalse
 		const streamsize rleft = off < rsz ? rsz - off : 0;
+
+		// cppcheck-suppress knownConditionTrueFalse
 
 		if (rleft)
 		    sent = sstrm.write(req.data() + off, rleft) == rleft;
@@ -1008,6 +1018,7 @@ AsyncHTTPClient::Flow AsyncHTTPClient::reserve(Request &r, ulong need) {
     growing = inreserve = true;
     r.result_grow(IOSocket::ongrown, sock, r.result, (uint)r.sz, (uint)cap);
     inreserve = false;
+    // cppcheck-suppress knownConditionTrueFalse
     if (growing)
 	return Flow::Wait;			// subclass is allocating
     if (r.result)
