@@ -11,7 +11,7 @@ The Blister library. Link against `libblister`.
 - `Log` — rolling, multi-process-safe logging with syslog and mail alerts.
 - `Timing` — low-overhead call-duration profiling.
 - `Service` — one API for Windows services and Unix daemons.
-- `HTTPClient` — blocking HTTP client, URL parser and HTTP date parsing.
+- `HTTPClient` — blocking HTTP client, non-blocking pipelining `AsyncHTTPClient`, URL parser and HTTP date parsing.
 - `HTTPServer` — HTTP/1.x server on the reactor with keep-alive, chunking and file replies.
 - `MPHTTPServer` — multi-process supervision for `HTTPServer`: prefork workers, rolling restarts, health and metrics endpoints.
 - `SMTPClient` — blocking SMTP/LMTP client with SMTPUTF8, pipelining and BDAT, RFC 821/822 address parsers, and base64, quoted-printable and uuencode codecs with AVX2 paths.

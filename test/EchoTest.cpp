@@ -411,8 +411,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	tcerr << T("echo: unable to start ") << host << endl;
 	return 1;
     }
-    if (server && !et.listen(sa, tmt))
+    if (server && !et.listen(sa, tmt)) {
+	et.stop();
 	return 1;
+    }
     etp = &et;
     if (client) {
 	dlogi(Log::mod(T("echo")), Log::cmd(T("echo")), Log::kv(T("addr"),

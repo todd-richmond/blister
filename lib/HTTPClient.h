@@ -20,6 +20,7 @@
 
 #include <deque>
 #include <unordered_map>
+#include <vector>
 #include "Dispatch.h"
 #include "Timing.h"
 
@@ -106,18 +107,17 @@ public:
     bool del(const tchar *path) { return send(T("DELETE"), path); }
     bool get(const tchar *path) { return send(T("GET"), path); }
     bool head(const tchar *path) { return send(T("HEAD"), path); }
-    // msgh (optional) sends on an adopted socket with ancillary data
     bool post(const tchar *path, const void *data, ulong len, msghdr *msgh =
 	nullptr) {
 	return send(T("POST"), path, data, len, msgh);
     }
-    // msgh (optional) sends on an adopted socket with ancillary data
     bool put(const tchar *path, const void *data, ulong len, msghdr *msgh =
 	nullptr) {
 	return send(T("PUT"), path, data, len, msgh);
     }
     const tchar *response(tstring_view name) const {
 	auto it = reshdrs.find(name);
+
 	return it == reshdrs.end() ? nullptr : it->second.c_str();
     }
     const attrmap &responses(void) const { return reshdrs; }
@@ -129,29 +129,240 @@ public:
 protected:
     Sockaddr addr;
     bufferstream<tchar> hstrm;
-    Socket sock;
     bool ka = true;
     attrmap reshdrs;
     ulong ressz = 0;
     unique_ptr<char[]> result;
     uint rto = 90 * 1000;
-    uint wto = 60 * 1000;
+    Socket sock;
     sockstream sstrm;
     uint sts = 0;
     ulong sz = 0;
+    uint wto = 60 * 1000;
 
     bool send(const tchar *op, const tchar *path, const void *data = nullptr,
 	ulong datasz = 0, msghdr *msgh = nullptr);
 
 private:
-    void setup(void);
-    bool transmit(const string &req, const void *data, ulong datasz,
-	msghdr *msgh);
     void grow(ulong need);
     bool readbody(bool head, bool &keep);
     bool readchunked(void);
     bool readhdrs(string &line, bool &http11);
+    void setup(void);
+    bool transmit(const string &req, const void *data, ulong datasz,
+	msghdr *msgh);
 };
+
+/*
+ * Non-blocking client pipelining requests over one keep-alive connection. It
+ * must outlive its Requests, which also cannot be destroyed while in flight
+ */
+class BLISTER AsyncHTTPClient: nocopy {
+public:
+    using attrmap = HTTPClient::attrmap;
+    using DispatchObjCB = DispatchObj::DispatchObjCB;
+
+    class BLISTER Request: public DispatchObj {
+    public:
+	explicit Request(Dispatcher &d): DispatchObj(d) {}
+	explicit Request(DispatchObj &parent): DispatchObj(child, parent) {}
+	~Request() override { free(result); }
+
+	const char *data(void) const { return result ? result : ""; }
+	int err(void) const { return sockerr; }
+	tstring errstr(void) const {
+	    return sockerr == EOF ? T("socket EOF") :
+		tstring(tstrerror(sockerr));
+	}
+	ulong size(void) const { return sz; }
+	uint status(void) const { return sts; }
+	const tchar *response(tstring_view name) const {
+	    auto it = reshdrs.find(name);
+
+	    return it == reshdrs.end() ? nullptr : it->second.c_str();
+	}
+	const attrmap &responses(void) const { return reshdrs; }
+
+	template<typename C>
+	void header(tstring_view hdr, const C &val) {
+	    hstrm << hdr << T(": ") << val << T("\r\n");
+	}
+	void headers(tstring_view hdrs) { hstrm << hdrs; }
+	virtual void reset(void);
+	// data must remain valid until the callback is called
+	void send(DispatchObjCB cb, DispatchObj &co, AsyncHTTPClient &client,
+	    const tchar *op, const tchar *path, const void *data = nullptr,
+	    ulong datasz = 0);
+	void set_logprefix(const tchar *prefix) { logprefix = prefix; }
+
+    protected:
+	// set result to newsize bytes keeping keepsize of old
+	virtual void result_grow(DispatchObjCB cb, DispatchObj &co, char *old,
+	    uint keepsize, uint newsize);
+
+	bool setup(DispatchObjCB cb, DispatchObj &co, AsyncHTTPClient &client,
+	    const tchar *op, const tchar *path, const void *data, ulong datasz);
+	void queue(void) { client->enqueue(*this); }
+
+	attrmap reshdrs;
+	tbufferstream hstrm;
+	tstring logprefix;
+	char *result = nullptr;
+	int sockerr = 0;
+	ulong sz = 0;
+	uint sts = 0;
+
+    private:
+	friend class AsyncHTTPClient;
+	enum Phase: uchar {
+	    Status, Headers, Length, Eof, ChunkSize, ChunkData, ChunkEnd,
+	    Trailers, Done
+	};
+
+	void rewind(void);
+
+	AsyncHTTPClient *client = nullptr;
+	DispatchObj *caller = nullptr;
+	DispatchObjCB done = nullptr;
+	const void *datap = nullptr;
+	string req;
+	ulong cap = 0, datasz = 0, remain = 0, written = 0;
+	timing_t start = 0;
+	size_t hdrleft = 0;
+	Phase phase = Status;
+	uchar attempts = 0;
+	bool head = false, http11 = false, keep = false;
+    };
+
+    // a client built on a Dispatcher has its own dispatch group so clients
+    // run in parallel while one built on a parent shares the parent's group
+    AsyncHTTPClient(Dispatcher &d, const Sockaddr &sa, Timing *tm = nullptr):
+	AsyncHTTPClient(new IOSocket(d, *this), sa, tm) {}
+    AsyncHTTPClient(DispatchObj &parent, const Sockaddr &sa, Timing *tm =
+	nullptr): AsyncHTTPClient(new IOSocket(parent, *this), sa, tm) {}
+    ~AsyncHTTPClient() {
+	intake.erase();
+	sock.erase();
+    }
+
+    const Sockaddr addr;
+
+    uint numPending(void) const { return rcnt + wcnt; }
+    void status(tostream &out, uint indent) const;
+    void timeout(uint connect, uint io) { cto = connect; rto = io; }
+
+private:
+    class IOSocket: public DispatchClientSocket {
+    public:
+	IOSocket(Dispatcher &d, AsyncHTTPClient &c): DispatchClientSocket(d),
+	    client(c) {}
+	IOSocket(DispatchObj &parent, AsyncHTTPClient &c):
+	    DispatchClientSocket(parent), client(c) {}
+
+	// true if the last read emptied the socket so another would only block
+	bool drained(void) const { return rdrain; }
+
+	DSP_DECLARE(IOSocket, ongrown) { client.grown(); }
+	DSP_DECLARE(IOSocket, onio) { client.io(); }
+
+    protected:
+	void onConnect(void) override { client.connected(); }
+
+    private:
+	AsyncHTTPClient &client;
+    };
+
+    // relays requests from any thread into the client's dispatch group
+    class Intake: public DispatchObj {
+    public:
+	Intake(DispatchObj &parent, AsyncHTTPClient &c):
+	    DispatchObj(child, parent), client(c) {}
+
+	DSP_DECLARE(Intake, drain) { client.drain(); }
+
+    private:
+	AsyncHTTPClient &client;
+    };
+
+    AsyncHTTPClient(IOSocket *s, const Sockaddr &sa, Timing *tm);
+
+    // Fail: fail all requests, Retry: connection broke so resend requests that
+    // were sent once, Resend: resend all that were not answered
+    enum class Down { Fail, Retry, Resend };
+    enum class Flow { Ok, Wait, Stop };
+    enum State: uchar { Closed, Connecting, Open };
+
+    Flow advance(Request &r);
+    Flow bad(int err);
+    Flow broke(int err) {
+	down(err, Down::Retry);
+	return Flow::Stop;
+    }
+    Flow endhdrs(Request &r);
+    Flow finish(Request &r);
+    Flow nextline(string_view &line, size_t &left);
+    Flow readall(void);
+    Flow reserve(Request &r, ulong need);
+    Flow writeall(void);
+    int fill(void);
+    long take(Request &r, ulong want);
+    void complete(Request &r, int err);
+    void connected(void);
+    void count(void) {
+	rcnt = (uint)rq.size();
+	wcnt = (uint)wq.size();
+    }
+    void dial(void);
+    void down(int err, Down how);
+    void drain(void);
+    void enqueue(Request &r);
+    void grown(void);
+    void io(bool event = true);
+    void submit(Request &r);
+
+    tstring ckey;
+    atomic<ulong> connects = 0;
+    timing_t cstart = 0;
+    atomic<uint> cto = 30 * 1000;
+    bool growing = false, idle = false, inreserve = false;
+    vector<Request *> inbox;
+    SpinLock inlock;
+    Intake &intake;
+    atomic<uint> rcnt = 0;
+    unique_ptr<char[]> rdbuf;
+    size_t rdcap = 0, rdend = 0, rdpos = 0;
+    atomic<ulong> requests = 0;
+    tstring rkey;
+    deque<Request *> rq;
+    atomic<uint> rto = 90 * 1000;
+    IOSocket &sock;
+    atomic<State> state = Closed;
+    Timing *timing;
+    atomic<uint> wcnt = 0;
+    tstring wkey;
+    deque<Request *> wq;
+};
+
+// true if a comma separated header token list contains token (case-insensitive)
+template<typename A, typename B>
+bool hastoken(const A &l, const B &t) {
+    auto list = strview(l);
+    const auto token = strview(t);
+
+    while (!list.empty()) {
+	size_t pos = list.find(',');
+	auto v = list.substr(0, pos);
+
+	list = pos == list.npos ? decltype(list)() : list.substr(pos + 1);
+	while (!v.empty() && (v.front() == ' ' || v.front() == '\t'))
+	    v.remove_prefix(1);
+	while (!v.empty() && (v.back() == ' ' || v.back() == '\t'))
+	    v.remove_suffix(1);
+	if (stringieq(v, token))
+	    return true;
+    }
+    return false;
+}
 
 BLISTER time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);
 

@@ -17,39 +17,102 @@
 
 #include "stdapi.h"
 #include <ctime>
-#include <ctype.h>
 #include <time.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#ifndef _WIN32
+#include <sys/mman.h>
+#endif
 #include "HTTPClient.h"
 #include "HTTPServer.h"
 #include "Log.h"
 
-static constexpr uint RTimeout = 30 * 1000;
-static constexpr uint WTimeout = 150 * 1000;
+static constexpr ulong MaxHdrs = 64UL * 1024;	// request + header bytes
+static constexpr size_t MaxHdrCount = 100;
+static constexpr ulong MaxBody = 256UL * 1024 * 1024;
 static constexpr char CRLF[] = "\r\n";
 
 bool HTTPServerSocket::date;
+atomic_bool HTTPServerSocket::paused;
 
-HTTPServerSocket::HTTPServerSocket(Dispatcher &d, Socket &sock):
-    DispatchServerSocket(d, sock), path(nullptr), prot(nullptr),
-    postdata(nullptr), postsz(0), chunkin(0), chunktrailer(false),
-    postchunking(false), cmd(nullptr), data(nullptr), datasz(0), sz(0),
-    fmap(nullptr), ka(false), nagleon(true), postdatasz(0), postin(0),
-    rto(RTimeout), wto(WTimeout), savechar(0), _status(0) {
-    ZERO(iov);
+static const char *statusmsg(uint sts) {
+    switch (sts) {
+    case 200: return "OK";
+    case 201: return "Created";
+    case 202: return "Accepted";
+    case 203: return "Non-Authoritative Information";
+    case 204: return "No Content";
+    case 205: return "Reset Content";
+    case 206: return "Partial Content";
+    case 300: return "Multiple Choices";
+    case 301: return "Moved Permanently";
+    case 302: return "Found";
+    case 303: return "See Other";
+    case 304: return "Not Modified";
+    case 305: return "Use Proxy";
+    case 306: return "Reserved";
+    case 307: return "Temporary Redirect";
+    case 308: return "Permanent Redirect";
+    case 400: return "Bad Request";
+    case 401: return "Unauthorized";
+    case 402: return "Payment Required";
+    case 403: return "Forbidden";
+    case 404: return "Not Found";
+    case 405: return "Method Not Allowed";
+    case 406: return "Not Acceptable";
+    case 407: return "Proxy Authentication Required";
+    case 408: return "Request Timeout";
+    case 409: return "Conflict";
+    case 410: return "Gone";
+    case 411: return "Length Required";
+    case 412: return "Precondition Failed";
+    case 413: return "Request Entity Too Large";
+    case 414: return "Request-URI Too Long";
+    case 415: return "Unsupported Media Type";
+    case 416: return "Requested Range Not Satisfiable";
+    case 417: return "Expectation Failed";
+    case 431: return "Request Header Fields Too Large";
+    case 500: return "Internal Server Error";
+    case 501: return "Not Implemented";
+    case 502: return "Bad Gateway";
+    case 503: return "Service Unavailable";
+    case 504: return "Gateway Timeout";
+    case 505: return "HTTP Version Not Supported";
+    default: return sts < 300 ? "OK" : "HTTP error";
+    }
+}
+
+// read exactly len bytes: a single read() is short for large or slow files
+static bool readfull(int fd, char *buf, size_t len) {
+    while (len) {
+	long n = (long)::read(fd, buf, (uint)min(len, (size_t)1 << 30));
+
+	if (n > 0) {
+	    buf += n;
+	    len -= (size_t)n;
+	} else if (n == 0 || errno != EINTR) {
+	    return false;
+	}
+    }
+    return true;
 }
 
 HTTPServerSocket::~HTTPServerSocket(void) {
     delete [] data;
-#ifdef _WIN32
-    if (fmap)
-	UnmapViewOfFile(fmap);
-#else
-    delete [] fmap;
-#endif
+    unmap();
     if (postdatasz)
 	delete [] postdata;
+}
+
+void HTTPServerSocket::unmap(void) {
+    if (fmap) {
+#ifdef _WIN32
+	UnmapViewOfFile(fmap);
+#else
+	munmap(fmap, fmapsz);
+#endif
+	fmap = nullptr;
+    }
 }
 
 void HTTPServerSocket::postdata_grow(DispatchObjCB cb, ulong keepsize, ulong
@@ -72,9 +135,17 @@ void HTTPServerSocket::readhdrs() {
 	return;
     }
     if (room <= 1) {
+	if (sz > MaxHdrs) {
+	    cmd = "BADCMD";
+	    path = "/";
+	    prot = "HTTP/1.0";
+	    error(431, true);
+	    return;
+	}
+
 	char *old = data;
 
-	sz = sz < 1000 ? 1000 : sz * 2;
+	sz = min(sz < 1000 ? 1000UL : sz * 2, MaxHdrs + 1);
 	room = (uint)(sz - datasz);
 	data = new char[sz];
 	memcpy(data, old, datasz);
@@ -101,43 +172,35 @@ void HTTPServerSocket::readhdrs() {
 
 void HTTPServerSocket::readpost() {
     ulong in = 0;
-    ulong room = postdatasz ? postdatasz - postin : sz - datasz;
-    ulong left = room > 100 && postsz == (ulong)-1 ? room : postsz - postin;
-    static constexpr char chunkmap[256] = {
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2, -1, -1, -2, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -2, -1, -1, -1, -1,
-	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    };
+    // chunked or read until close: size unknown so always use own buffer
+    bool chunky = postsz == (ulong)-1;
+    ulong room = postdatasz ? postdatasz - postin : chunky ? 0 : sz - datasz;
+    ulong left = chunky ? room : postsz - postin;
 
     if (msg == DispatchTimeout) {
 	disconnect();
 	return;
     }
-    if (msg != DispatchClose && room < left + 1 && (!postdatasz || postsz ==
-	(ulong)-1)) {
-	if (postsz == (ulong)-1)
+    if (msg != DispatchClose && (chunky ? room <= 100 : !postdatasz && room <
+	left + 1)) {
+	if (chunky) {
 	    in = postin < 8UL * 1024 ? 16UL * 1024 : postin * 2;
-	else
+	    if (in > MaxBody)
+		in = MaxBody;
+	    if (in <= postin + 100) {
+		error(413, true);
+		return;
+	    }
+	} else {
 	    in = postsz;
+	}
 	postdata_grow(readpost, postin, in + 1);
 	postdatasz = in;
 	return;
     }
     if (msg == DispatchClose || (in = (ulong)read(postdata + postin,
 	(uint)left)) == (ulong)-1) {
-	if (postsz == (ulong)-1 && !postchunking) {
+	if (chunky && !postchunking) {
 	    left = in = 0;
 	    postsz = postin;
 	} else {
@@ -149,51 +212,64 @@ void HTTPServerSocket::readpost() {
 	datasz += in;
     postin += in;
     left -= in;
-    if (postchunking) {
-	while (chunkin < postin) {
-	    // skip over terminating CRLF of previous chunk
-	    ulong pos = chunkin + (chunkin && !chunktrailer ? 2 : 0);
+    // decode chunks in place: [0, chunkin) is decoded body
+    while (postchunking && chunkin < postin) {
+	ulong chunksize = 0;
+	ulong pos = chunkin;
 
-	    if (postin <= pos)
+	// skip over terminating CRLF of previous chunk
+	if (chunkin && !chunktrailer) {
+	    if (postin < chunkin + 2)
 		break;
-
-	    ulong chunksize = 0;
-	    const char *lf = (const char *)memchr(postdata + pos, '\n', postin -
-		pos);
-
-	    if (!lf)
-		break;
-	    if (chunktrailer) {
-		if (postdata[pos] == '\r' || postdata[pos] == '\n') {
-		    // final CRLF
-		    postsz = chunkin;
-		    left = 0;
-		}
-	    } else {
-		char c;
-
-		while ((c = chunkmap[(uchar)postdata[pos]]) >= 0) {
-		    chunksize = chunksize * 16 + (ulong)c;
-		    if (++pos == postin)
-			break;
-		}
-		if (c != -2 || pos == chunkin) {
-		    error(400);
-		    return;
-		}
+	    if (postdata[chunkin] != '\r' || postdata[chunkin + 1] != '\n') {
+		error(400, true);
+		return;
 	    }
-	    ++lf;
-	    memmove(postdata + chunkin, lf, (size_t)(postdata + postin - lf));
-	    postin -= (ulong)(lf - (postdata + chunkin));
-	    if (!postdatasz)
-		datasz -= (ulong)(lf - (postdata + chunkin));
-	    if (postsz != (ulong)-1)
-		break;
-	    else if (chunksize == 0)
-		chunktrailer = true;
-	    else
-		chunkin += chunksize;
+	    pos += 2;
 	}
+	if (postin <= pos)
+	    break;
+
+	const char *lf = (const char *)memchr(postdata + pos, '\n', postin -
+	    pos);
+
+	if (!lf)
+	    break;
+	if (chunktrailer) {
+	    if (postdata[pos] == '\r' || postdata[pos] == '\n') {
+		// final CRLF
+		postsz = chunkin;
+		left = 0;
+	    }
+	} else {
+	    const char *b = postdata + pos;
+	    auto [e, ec] = from_chars(b, lf, chunksize, 16);
+
+	    if (ec == errc::result_out_of_range) {
+		error(413, true);
+		return;
+	    }
+	    if (ec != errc{} || (e < lf && !strchr("\r; \t", *e))) {
+		error(400, true);
+		return;
+	    }
+	    if (chunksize > MaxBody - chunkin) {
+		error(413, true);
+		return;
+	    }
+	}
+	++lf;
+
+	ulong used = (ulong)(lf - (postdata + chunkin));
+
+	memmove(postdata + chunkin, lf, (size_t)(postdata + postin - lf));
+	postin -= used;
+	if (postsz != (ulong)-1)
+	    break;
+	else if (chunksize == 0)
+	    chunktrailer = true;
+	else
+	    chunkin += chunksize;
     }
     if (left || postsz == (ulong)-1) {
 	readable(readpost, rto);
@@ -205,75 +281,38 @@ void HTTPServerSocket::readpost() {
 }
 
 void HTTPServerSocket::scan(char *buf, ulong len, bool append) {
-    while (len > 0) {
-	char *p = (char *)memchr(buf, '\r', len);
-	char *q = (char *)memchr(buf, '\n', len);
+    size_t pos = string_view(buf, len).find("\r\n\r\n");
 
-	if (!p && !q)
-	    break;
-	if (!p || (q && q < p)) {
-	    p = q;
-	    ulong off = (ulong)(p - buf);
-	    len -= off + 1;
-	    buf = p;
-	    if (len < 2) {
-		readable(readhdrs, rto);
-		return;
-	    } else if (buf[1] == '\n') {
-		postdata = buf + 2;
-		buf[0] = '\r';
-		buf[1] = '\0';
-		parse();
-		return;
-	    } else if (buf[1] == '\r' && len > 2 && buf[2] == '\n') {
-		postdata = buf + 3;
-		buf[0] = '\r';
-		buf[1] = '\0';
-		parse();
-		return;
-	    }
-	    buf++;
-	    len--;
-	} else {
-	    ulong off = (ulong)(p - buf);
-	    len -= off;
-	    buf = p;
-	    if (len < 4) {
-		readable(readhdrs, rto);
-		return;
-	    } else if (!memcmp(buf, "\r\n\r\n", 4)) {
-		postdata = buf + 4;
-		buf[1] = '\0';
-		if (append)
-		    ready(parse);
-		else
-		    parse();
-		return;
-	    } else {
-		buf += 2;
-		len -= 2;
-	    }
-	}
+    if (pos == string_view::npos) {
+	readable(readhdrs, rto);
+	return;
     }
-    readable(readhdrs, rto);
+    buf += pos;
+    postdata = buf + 4;
+    buf[1] = '\0';
+    if (append)
+	ready(parse);
+    else
+	parse();
 }
 
 #pragma warning(disable: 26430)
 void HTTPServerSocket::parse(void) {
-    char *p, *pp, *start, *end;
+    char *p, *pp, *end;
     char *buf = data;
     const char *val;
     bool noprot;
 
     path = "/";
     prot = "HTTP/1.0";
+    postsz = 0;
     while (*buf == ' ' || *buf == '\t')
 	buf++;
     for (cmd = p = buf; *p != ' ' && *p != '\t' && *p != '\r'; p++)
 	continue;
     if (*p == '\r') {
 	cmd = "BADCMD";
-	error(400);
+	error(400, true);
 	return;
     }
     *p++ = '\0';
@@ -284,6 +323,7 @@ void HTTPServerSocket::parse(void) {
     noprot = (*p == '\r');
     *p++ = '\0';
     if ((pp = strchr(pp, '?')) == nullptr) {
+	argdata.clear();
 	args.clear();
     } else {
 	*pp++ = '\0';
@@ -297,10 +337,10 @@ void HTTPServerSocket::parse(void) {
 	    continue;
 	*p++ = '\0';
     }
-    if (strnicmp(prot, "HTTP/1.", 7) != 0 || !prot[7] || prot[8] ||
-	!isdigit((int)prot[7])) {
+    if (strnicmp(prot, "HTTP/1.", 7) != 0 || prot[7] < '0' || prot[7] > '9' ||
+	prot[8]) {
 	prot = "HTTP/1.0";
-	error(400);
+	error(400, true);
 	return;
     } else if (prot[7] > '1') {
 	prot = "HTTP/1.1";
@@ -318,13 +358,10 @@ void HTTPServerSocket::parse(void) {
 	} else if (end[1] != '\n') {
 	    crlf = false;
 	}
-	while (end[0] && end[1] && (end[2] == ' ' || end[2] == '\t')) {
-	    for (start = end + 2; *start == ' ' || *start == '\t'; start++)
-		continue;
-	    if ((p = strchr(start, '\r')) == nullptr)
-		p = start + strlen(start);
-	    memmove(end, start, (size_t)(p - start));
-	    end = p;
+	// obsolete line folding is a request smuggling vector
+	if (crlf && (end[2] == ' ' || end[2] == '\t')) {
+	    error(400, true);
+	    return;
 	}
 	while (*buf == ' ' || *buf == '\t')
 	    buf++;
@@ -342,67 +379,100 @@ void HTTPServerSocket::parse(void) {
 	    p = pp;
 	    while (*p == ' ' || *p == '\t')
 		p++;
-	    attrs[buf] = p;
+
+	    if (attrs.size() >= MaxHdrCount) {
+		error(431, true);
+		return;
+	    }
+
+	    auto [it, added] = attrs.try_emplace(buf, p);
+
+	    if (!added) {
+		if (stringieq(buf, "content-length") ||
+		    stringieq(buf, "transfer-encoding")) {
+		    error(400, true);
+		    return;
+		}
+		it->second = p;
+	    }
 	}
 	if (!crlf || !end[1])
 	    break;
 	buf = end + 2;
     }
     val = attr("transfer-encoding");
-    if (val && !strncasecmp(val, "chunked", 7)) {
+    postchunking = false;
+    if (val) {
+	string_view tv(val);
+	size_t comma = tv.rfind(',');
+
+	// only the final coding matters: earlier ones are passed through
+	if (comma != tv.npos)
+	    tv.remove_prefix(comma + 1);
+	while (!tv.empty() && (tv.front() == ' ' || tv.front() == '\t'))
+	    tv.remove_prefix(1);
+	if (attr("content-length")) {
+	    error(400, true);
+	    return;
+	} else if (!stringieq(tv, "chunked")) {
+	    error(501, true);
+	    return;
+	}
 	postchunking = true;
 	chunktrailer = false;
 	chunkin = 0;
 	postsz = (ulong)-1;
-    } else {
-	postchunking = false;
-	val = attr("content-length");
-	if (val) {
-	    unsigned long long clval = strtoull(val, NULL, 10);
+    } else if ((val = attr("content-length")) != nullptr) {
+	auto [e, ec] = from_chars(val, val + strlen(val), postsz);
 
-	    if (clval >= (unsigned long long)(ulong)(-1)) {
-		error(413, true);
-		return;
-	    }
-	    postsz = (ulong)clval;
-	} else if (!stricmp(cmd, "POST") || !stricmp(cmd, "PUT")) {
-	    postsz = (ulong)-1;
-	} else {
-	    postsz = 0;
+	if (ec == errc::result_out_of_range || (ec == errc{} && postsz >
+	    MaxBody)) {
+	    error(413, true);
+	    return;
 	}
+	if (ec != errc{} || *e) {
+	    error(400, true);
+	    return;
+	}
+    } else if (stringieq(cmd, "POST") || stringieq(cmd, "PUT")) {
+	postsz = (ulong)-1;
     }
-    if (postsz) {
-	postin = datasz - (ulong)(postdata - data);
-	if (postin > postsz)
-	    postin = postsz;
-	if (postin == postsz) {
-	    savechar = postdata[postsz];
-	    postdata[postsz] = '\0';
-	    exec();
-	} else {
-	    postpre(readpost);
+    postin = min(datasz - (ulong)(postdata - data), postsz);
+    if (postin < postsz) {
+	if (prot[7] == '1' && (val = attr("expect")) != nullptr &&
+	    stringieq(val, "100-continue")) {
+	    static constexpr char cont[] = "HTTP/1.1 100 Continue\r\n\r\n";
+
+	    // best effort: the client sends the body after a timeout anyway
+	    (void)write(cont, (uint)sizeof (cont) - 1);
 	}
+	postpre(readpost);
     } else {
+	savechar = postdata[postsz];
+	postdata[postsz] = '\0';
 	exec();
     }
 }
 
 void HTTPServerSocket::exec(void) {
-    if (LIKELY(!stricmp(cmd, "GET"))) {
+    if (paused.load(memory_order_relaxed)) {
+	error(503);
+    } else if (LIKELY(stringieq(cmd, "GET"))) {
 	get(false);
-    } else if (!stricmp(cmd, "HEAD")) {
+    } else if (stringieq(cmd, "HEAD")) {
 	get(true);
-    } else if (!stricmp(cmd, "POST")) {
+    } else if (stringieq(cmd, "POST")) {
 	const char *val = attr("content-type");
 
-	if (val != nullptr && !stricmp(val, "application/x-www-form-urlencoded"))
+	if (val != nullptr &&
+	    stringieq(val, "application/x-www-form-urlencoded"))
 	    urldecode(postdata, postargs);
 	else
 	    postargs.clear();
 	post();
-    } else if (!stricmp(cmd, "PUT")) {
+    } else if (stringieq(cmd, "PUT")) {
 	put();
-    } else if (!stricmp(cmd, "DELETE")) {
+    } else if (stringieq(cmd, "DELETE")) {
 	del();
     } else {
 	error(405);
@@ -410,52 +480,55 @@ void HTTPServerSocket::exec(void) {
 }
 
 void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
-    char *p = buf, *pp;
+    auto unescape = [](char *s) {
+#ifdef UNICODE
+	tstring t(achartotchar(s));
+
+	URL::unescape(t);
+	strcpy(s, tstringtoachar(t));
+#else
+	URL::unescape(s);
+#endif
+    };
 
     amap.clear();
-    while (p) {
-	while (*p == ' ' || *p == '\t')
-	    p++;
-	buf = p;
-	if ((p = strchr(p, '&')) != nullptr)
-	    *p++ = '\0';
-#ifdef UNICODE
-	tstring s(achartotchar(buf));
+    while (buf) {
+	char *rest = strchr(buf, '&');
+	char *eq;
 
-	URL::unescape(s);
-	strcpy(buf, tstringtoachar(s));
-#else
-	URL::unescape(buf);
-#endif
-	if ((pp = strchr(buf, '=')) == nullptr) {
-	    amap[buf] = "";
-	} else {
-	    *pp++ = '\0';
-	    amap[buf] = pp;
+	if (rest)
+	    *rest++ = '\0';
+	while (*buf == ' ' || *buf == '\t')
+	    buf++;
+	if (*buf) {
+	    // split before unescaping so an encoded '=' stays in its field
+	    if ((eq = strchr(buf, '=')) != nullptr)
+		*eq++ = '\0';
+	    unescape(buf);
+	    if (eq)
+		unescape(eq);
+	    amap[buf] = eq ? eq : "";
 	}
+	buf = rest;
     }
 }
 
 void HTTPServerSocket::keepalive(void) {
-    const char *p = "Pragma";
-    const char *val = attr(p);
-    static constexpr char keep[] = "keep-alive";
+    const char *val = attr("Pragma");
 
     ka = prot[7] == '1';		// HTTP 1.1
-    if (val != nullptr && !stricmp(val, keep)) {
+    if (val != nullptr && stringieq(val, "keep-alive")) {
 	ka = true;
-    } else {
-	p = "Connection";
-	if ((val = attr(p)) != nullptr) {
-	    if (!strnicmp(val, keep, 10))
-		ka = true;
-	    else if (!stricmp(val, "close"))
-		ka = false;
-	}
+    } else if ((val = attr("Connection")) != nullptr) {
+	if (hastoken(val, "close"))
+	    ka = false;
+	else if (hastoken(val, "keep-alive"))
+	    ka = true;
     }
-    if (ka) {
+    if (ka)
 	hdrs.write("Connection: keep-alive\r\n", 24);
-    }
+    else if (prot[7] == '1')
+	hdrs.write("Connection: close\r\n", 19);
 }
 
 void HTTPServerSocket::send(void) {
@@ -470,32 +543,28 @@ void HTTPServerSocket::send(void) {
 	nagleon = false;
     }
     out = (ulong)writev(iov, 3);
-    if (out != (ulong)-1 &&
-	out != (ulong)(iov[0].iov_len + iov[1].iov_len + iov[2].iov_len)) {
-	ulong ul = out < (ulong)iov[0].iov_len ? out : (ulong)iov[0].iov_len;
+    if (out != (ulong)-1) {
+	ulong total = 0;
 
-	iov[0].iov_len -= ul;
-	iov[0].iov_base = (char *)iov[0].iov_base + ul;
-	out -= ul;
-	ul = out < (ulong)iov[1].iov_len ? out : (ulong)iov[1].iov_len;
-	iov[1].iov_len -= ul;
-	iov[1].iov_base = (char *)iov[1].iov_base + ul;
-	out -= ul;
-	iov[2].iov_len -= out;
-	iov[2].iov_base = (char *)iov[2].iov_base + out;
-	writeable(send, wto);
-	return;
+	for (const auto &v : iov)
+	    total += (ulong)v.iov_len;
+	if (out != total) {
+	    for (auto &v : iov) {
+		ulong n = min(out, (ulong)v.iov_len);
+
+		v.iov_len -= (iovlen_t)n;
+		v.iov_base = (char *)v.iov_base + n;
+		out -= n;
+	    }
+	    writeable(send, wto);
+	    return;
+	}
     }
-    if (fmap) {
-#ifdef _WIN32
-	UnmapViewOfFile(fmap);
-#else
-	delete [] fmap;
-#endif
-	fmap = nullptr;
-    }
+    unmap();
     if (ka && out != (ulong)-1) {
-	datasz -= postdatasz ? datasz : postsz + (ulong)(postdata - data);
+	// own body buffer may hold pipelined bytes read past a chunked body
+	datasz = postdatasz ? postin - postsz : datasz - postsz -
+	    (ulong)(postdata - data);
 	replydone(senddone);
     } else {
 	disconnect();
@@ -504,29 +573,32 @@ void HTTPServerSocket::send(void) {
 
 void HTTPServerSocket::senddone() {
     _status = 0;
-    if (datasz) {
-	postdata[postsz] = savechar;
-	memmove(data, postdata + postsz, datasz);
-	scan(data, datasz, true);
-    } else {
-	if (postdatasz) {
-	    postdata_free();
-	    postdatasz = 0;
+    postdata[postsz] = savechar;
+    if (postdatasz) {
+	// move pipelined bytes from the body buffer to the header buffer
+	if (datasz >= sz) {
+	    delete [] data;
+	    sz = datasz + 1000;
+	    data = new char[sz];
 	}
-	readable(readhdrs, rto);
+	memcpy(data, postdata + postsz, datasz);
+	postdata_free();
+	postdatasz = 0;
+    } else if (datasz) {
+	memmove(data, postdata + postsz, datasz);
     }
+    if (datasz)
+	scan(data, datasz, true);
+    else
+	readable(readhdrs, rto);
 }
 
 void HTTPServerSocket::reply(const char *p, ulong len) {
-    char buf[64];
-
     if (len == (ulong)-1)
 	len = p ? (ulong)strlen(p) : 0;
-    memcpy(buf, "Content-Length: ", 16);	// NOLINT
-    auto [end, ec] = to_chars(buf + 16, buf + sizeof (buf) - 4,
-	(ulong)ss.size() + len);
-    memcpy(end, "\r\n\r\n", 4);
-    hdrs.write(buf, (streamsize)(end - buf + 4));
+    hdrs.write("Content-Length: ", 16);
+    hdrs.write((ulong)ss.size() + len);
+    hdrs.write("\r\n\r\n", 4);
     iov[0].iov_base = (char *)hdrs.str();	// NOSONAR
     iov[0].iov_len = (iovlen_t)hdrs.size();
     iov[1].iov_base = (char *)ss.str();		// NOSONAR
@@ -542,12 +614,8 @@ void HTTPServerSocket::reply(int fd, ulong len) {
     char buf[2048];
 
     if (len <= sizeof (buf)) {
-#ifdef _FORTIFY_SOURCE
-	if ((long)::read(fd, buf, sizeof (buf)) < (long)len) {
-#else
-	if ((ulong)::read(fd, buf, (uint)len) != len) {
-#endif
-	    error(404);
+	if (!readfull(fd, buf, len)) {
+	    error(500);
 	    return;
 	}
 	ss.write(buf, (streamsize)len);
@@ -569,15 +637,15 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 	}
 	CloseHandle(hdl);
 #else
-	// gcc false positive due to array new overflow check codegen (PR100696)
-	WARN_PUSH_DISABLE(-Wduplicated-branches)
-	fmap = new (nothrow) char[len];
-	WARN_POP()
-	if (fmap == nullptr || (ulong)::read(fd, fmap, len) != len) {
-	    error(404);
+	void *p = mmap(nullptr, len, PROT_READ, MAP_PRIVATE, fd, 0);
+
+	if (p == MAP_FAILED) {
+	    error(500);
 	    return;
 	}
+	fmap = (char *)p;
 #endif
+	fmapsz = len;
     }
     // coverity[string_null : FALSE ]
     reply(fmap, len);
@@ -585,24 +653,19 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 
 void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     char *str, bool close) {
-    char buf[128];
-    size_t pl = strlen(prot);
-    const char *reason = str ? str : sts < 300 ? "OK" : "ERR";
-    size_t rl = strlen(reason);
-
+    if (!str)
+	str = statusmsg(sts);
     hdrs.reset();
     ss.reset();
-    memcpy(buf, prot, pl);
-    buf[pl] = ' ';
-    auto [nend, nec] = to_chars(buf + pl + 1, buf + pl + 5, sts);
-    *nend++ = ' ';
-    memcpy(nend, reason, rl);
-    nend[rl] = '\r';
-    nend[rl + 1] = '\n';
-    hdrs.write(buf, (streamsize)((size_t)(nend - buf) + rl + 2));
+    hdrs.write(prot, (streamsize)strlen(prot));
+    hdrs.write(' ');
+    hdrs.write(sts);
+    hdrs.write(' ');
+    hdrs.write(str, (streamsize)strlen(str));
+    hdrs.write(CRLF, 2);
     if (date) {
-	auto hdr = format("Date: {:%a, %d %b %Y %H:%M:%S} UTC\r\n",
-	    chrono::system_clock::now());
+	auto hdr = format("Date: {:%a, %d %b %Y %H:%M:%S} GMT\r\n",
+	    chrono::floor<chrono::seconds>(chrono::system_clock::now()));
 
 	hdrs.write(hdr.c_str(), (streamsize)hdr.size());
     }
@@ -612,8 +675,8 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 	hdrs.write(CRLF, 2);
     }
     if (mtime) {
-	auto hdr = format("Last-Modified: {:%a, %d %b %Y %H:%M:%S} UTC\r\n",
-	    chrono::system_clock::from_time_t(mtime));
+	auto hdr = format("Last-Modified: {:%a, %d %b %Y %H:%M:%S} GMT\r\n",
+	    chrono::sys_seconds(chrono::seconds(mtime)));
 
 	hdrs.write(hdr.c_str(), (streamsize)hdr.size());
     }
@@ -634,61 +697,15 @@ void HTTPServerSocket::header(const char *attr, const char *val) {
 }
 
 void HTTPServerSocket::error(uint sts, bool close) {
-    char nbuf[8];
-    const char *p;
-    static constexpr const char *err2xx[] = {
-	"OK", "Created", "Accepted", "Non-Authoritative Information",
-	"No Content", "Reset Content", "Partial Content"
-    };
-    static constexpr const char *err3xx[] = {
-	"Multiple Choices", "Moved Permanently", "Found", "See Other",
-	"Not Modified", "Use Proxy", "Reserved", "Temporary Redirect"
-    };
-    static constexpr const char *err4xx[] = {
-	"Bad Request", "Unauthorized", "Payment required", "Forbidden",
-	"Not Found", "Method Not Allowed", "Not Acceptable",
-	"Proxy Authentication Required", "Request Timeout", "Conflict",
-	"Gone", "Length Required", "Precondition Failed",
-	"Request Entity Too Large", "Request-URI Too Long",
-	"Unsupported Media Type", "Requested Range Not Satisfiable",
-	"Expectation Failed"
-    };
-    static constexpr const char *err5xx[] = {
-	"Internal Server Error", "Not Implemented", "Bad Gateway",
-	"Service Unavailable", "Gateway Timeout",
-	"HTTP Version Not Supported"
-    };
-    if (sts >= 200 && sts < 200 + (sizeof (err2xx) / sizeof (char *)))
-	p = err2xx[sts - 200];
-    else if (sts >= 300 && sts < 300 + (sizeof (err3xx) / sizeof (char *)))
-	p = err3xx[sts - 300];
-    else if (sts >= 400 && sts < 400 + (sizeof (err4xx) / sizeof (char *)))
-	p = err4xx[sts - 400];
-    else if (sts >= 500 && sts < 500 + (sizeof (err5xx) / sizeof (char *)))
-	p = err5xx[sts - 500];
-    else
-	p = "HTTP error";
-    status(sts, "text/plain", 0, nullptr, close);
-    auto [nend, nec] = to_chars(nbuf, nbuf + sizeof (nbuf), sts);
-    ss.write(nbuf, nend - nbuf);
-    ss.write(" ", 1);
-    ss.write(p, (streamsize)strlen(p));
-    ss.write(CRLF, 2);
-    _status = sts;
-    reply();
+    error(sts, statusmsg(sts), close);
 }
 
 void HTTPServerSocket::error(uint sts, const char *errstr, bool close) {
     status(sts, "text/plain", 0, errstr, close);
-    {
-	char nbuf[8];
-	auto [nend, nec] = to_chars(nbuf, nbuf + sizeof (nbuf), sts);
-	ss.write(nbuf, nend - nbuf);
-    }
-    ss.write(" ", 1);
+    ss.write(sts);
+    ss.write(' ');
     ss.write(errstr, (streamsize)strlen(errstr));
     ss.write(CRLF, 2);
-    _status = sts;
     reply();
 }
 
@@ -697,36 +714,36 @@ void HTTPServerSocket::done() {
 }
 
 void HTTPServerSocket::get(bool head) {
-    const char *ext = nullptr;
+    const char *ext, *val;
     int fd;
-    string s;
+    string s(1, '.');
+    time_t since;
     struct stat statbuf;
     uint sts = 200;
-    const char *val;
 
-    for (const char *pp = path; (pp = strstr(pp, "/..")) != nullptr; pp += 3) {
+#ifdef _WIN32
+    if (strchr(path, '\\')) {
+	error(403);
+	return;
+    }
+#endif
+    if (*path != '/')
+	s += '/';
+    if (path[0] == '/' && !path[1])
+	s += "/default.html";		    // deal w/ language later
+    else
+	s += path;
+    for (const char *pp = s.c_str(); (pp = strstr(pp, "/..")) != nullptr;
+	pp += 3) {
 	if (pp[3] == '/' || pp[3] == '\0') {
 	    error(403);
 	    return;
 	}
     }
-    if (*path == '/')
-	s = '.';
-    else
-	s = "./";
-    if (path[1])
-	s += path;
-    else
-	s += "/default.html";		    // deal w/ language later
-    if ((ext = strrchr(s.c_str(), '.')) != nullptr) {
+    // s always contains a '/' so only dots in the file name are extensions
+    if ((ext = strrchr(strrchr(s.c_str(), '/'), '.')) != nullptr)
 	ext++;
-	if (!stricmp(ext, "./")) {
-	    error(403);
-	    return;
-	}
-    }
-    if ((fd = ::open(s.c_str(), O_RDONLY | O_CLOEXEC | O_SEQUENTIAL, 0666)) ==
-	-1) {
+    if ((fd = ::open(s.c_str(), O_RDONLY | O_CLOEXEC | O_SEQUENTIAL)) == -1) {
 	error(404);
 	return;
     }
@@ -735,16 +752,18 @@ void HTTPServerSocket::get(bool head) {
 	error(404);
 	return;
     }
+    if ((statbuf.st_mode & S_IFMT) != S_IFREG) {
+	::close(fd);
+	error(403);
+	return;
+    }
     if ((val = attr("if-modified-since")) != nullptr &&
 	parse_date(achartotchar(val)) >= statbuf.st_mtime)
 	sts = 304;
     else if ((val = attr("if-unmodified-since")) != nullptr &&
-	parse_date(achartotchar(val)) < statbuf.st_mtime)
+	(since = parse_date(achartotchar(val))) != 0 &&
+	since < statbuf.st_mtime)
 	sts = 412;
-    if (val != nullptr && (val = strchr(val, ';')) != nullptr &&
-	!strnicmp(val + 1, "length=", 7) &&
-	strtoul(val + 8, NULL, 10) != (ulong)statbuf.st_size)
-	sts = 200;
     status(sts, mimetype(ext), statbuf.st_mtime);
     if (sts == 200 && !head)
 	reply(fd, (ulong)statbuf.st_size);
@@ -754,39 +773,47 @@ void HTTPServerSocket::get(bool head) {
 }
 
 const char *HTTPServerSocket::mimetype(const char *ext) const {
-    static const struct mimemap {
-	const char *ext;
-	const char *mime;
-    } mime[] = {
+    static const unordered_map<string_view, const char *, strihash, strieq>
+	mime = {
 	{ "avi", "video/x-msvideo" },
 	{ "bmp", "image/bmp" },
 	{ "css", "text/css" },
 	{ "gif", "image/gif" },
 	{ "htm", "text/html" },
 	{ "html", "text/html" },
+	{ "ico", "image/vnd.microsoft.icon" },
 	{ "jpeg", "image/jpeg" },
 	{ "jpg", "image/jpeg" },
-	{ "js", "application/x-javascript" },
+	{ "js", "text/javascript" },
+	{ "json", "application/json" },
 	{ "mov", "video/quicktime" },
+	{ "mp4", "video/mp4" },
 	{ "mpeg", "video/mpeg" },
 	{ "mpg", "video/mpeg" },
+	{ "pdf", "application/pdf" },
+	{ "png", "image/png" },
 	{ "rtf", "application/rtf" },
+	{ "svg", "image/svg+xml" },
 	{ "text", "text/plain" },
 	{ "tiff", "image/tiff" },
 	{ "tif", "image/tiff" },
 	{ "txt", "text/plain" },
 	{ "vcf", "text/x-vcard" },
+	{ "wasm", "application/wasm" },
 	{ "wav", "audio/x-wav" },
+	{ "webp", "image/webp" },
+	{ "woff", "font/woff" },
+	{ "woff2", "font/woff2" },
 	{ "xbm", "image/x-bitmap" },
-	{ "zip", "application/x-zip-compressed" },
-	{ NULL, NULL }
+	{ "xml", "application/xml" },
+	{ "zip", "application/x-zip-compressed" }
     };
 
     if (ext) {
-	for (uint u = 0; mime[u].ext; ++u) {
-	    if (!stricmp(ext, mime[u].ext))
-		return mime[u].mime;
-	}
+	auto it = mime.find(string_view(ext));
+
+	if (it != mime.end())
+	    return it->second;
     }
     return "application/octet-stream";
 }

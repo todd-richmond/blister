@@ -399,15 +399,11 @@ public:
     uint rtimeout(void) const { return sbuf->rto; }
     bool rtimeout(uint msec) { sbuf->rto = msec; return true; }
     bool rtimeout(const timeval &tv) {
-	if (!setsockopt(SOL_SOCKET, SO_RCVTIMEO, tv))
-	    return false;
 	return rtimeout((uint)(tv.tv_sec * 1000 + tv.tv_usec / 1000));
     }
     uint wtimeout(void) const { return sbuf->wto; }
     bool wtimeout(uint msec) { sbuf->wto = msec; return true; }
     bool wtimeout(const timeval &tv) {
-	if (!setsockopt(SOL_SOCKET, SO_SNDTIMEO, tv))
-	    return false;
 	return wtimeout((uint)(tv.tv_sec * 1000 + tv.tv_usec / 1000));
     }
 
@@ -444,6 +440,7 @@ protected:
 	    return false;
 	}
 	bool __no_sanitize_thread close(void) {
+	    krto = kwto = SOCK_INFINITE;
 	    if (sock == SOCK_INVALID) {
 		err = EINVAL;
 	    } else {
@@ -468,6 +465,7 @@ protected:
 	    err = 0;
 	    own = false;
 	    rto = wto = SOCK_INFINITE;
+	    krto = kwto = SOCK_INFINITE;
 	    sock = s;
 	    type = t;
 	    reference();
@@ -479,6 +477,7 @@ protected:
 	mutable int err = 0;
 	string path;
 	uint rto = SOCK_INFINITE, wto = SOCK_INFINITE;
+	uint krto = SOCK_INFINITE, kwto = SOCK_INFINITE;
 	socket_t sock;
 	int type;
 
@@ -488,6 +487,16 @@ protected:
     bool __forceinline check(int ret) const { return sbuf->check(ret); }
     long rdret(long in) const;
     bool iowait(bool out) const;
+    bool __forceinline iotimeo(bool out) const {
+	return LIKELY(out ? sbuf->wto == sbuf->kwto : sbuf->rto == sbuf->krto) ||
+	    ktimeo(out);
+    }
+    bool ktimeo(bool out) const;
+    // an expired kernel timeout is an error, not an empty read or write
+    bool timedout(bool out) const {
+	return (out ? sbuf->wto : sbuf->rto) != SOCK_INFINITE && sbuf->blck &&
+	    sbuf->err == EAGAIN;
+    }
 
     SocketBuf *sbuf;
 };

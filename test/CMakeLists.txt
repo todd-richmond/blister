@@ -16,6 +16,9 @@ target_link_libraries(dtiming blister)
 add_executable(echotest EchoTest.cpp)
 target_link_libraries(echotest blister)
 
+add_executable(httptest HTTPTest.cpp)
+target_link_libraries(httptest blister)
+
 add_executable(httpload HTTPLoad.cpp)
 target_link_libraries(httpload blister_static)
 
@@ -48,6 +51,7 @@ if(COMPILE_PCH)
     target_precompile_headers(dtiming REUSE_FROM cfg)
     target_precompile_headers(echotest REUSE_FROM cfg)
     target_precompile_headers(httpload REUSE_FROM cfg)
+    target_precompile_headers(httptest REUSE_FROM cfg)
     target_precompile_headers(smtpload REUSE_FROM cfg)
     target_precompile_headers(uhttpd REUSE_FROM cfg)
     target_precompile_headers(hashtest REUSE_FROM cfg)

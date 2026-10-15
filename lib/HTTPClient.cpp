@@ -71,23 +71,6 @@ static bool readline(streambuf *sb, string &s, size_t &left) {
     return false;
 }
 
-static bool hastoken(tstring_view list, tstring_view token) {
-    while (!list.empty()) {
-	size_t pos = list.find(T(','));
-	tstring_view v = list.substr(0, pos);
-
-	list = pos == tstring_view::npos ? tstring_view() :
-	    list.substr(pos + 1);
-	while (!v.empty() && (v.front() == ' ' || v.front() == '\t'))
-	    v.remove_prefix(1);
-	while (!v.empty() && (v.back() == ' ' || v.back() == '\t'))
-	    v.remove_suffix(1);
-	if (stringieq(v, token))
-	    return true;
-    }
-    return false;
-}
-
 static bool parsestatus(string_view line, uint &sts, bool &http11) {
     size_t pos = line.find(' ');
     auto digit = [&](size_t i) { return (uchar)(line[i] - '0') < 10; };
@@ -295,41 +278,44 @@ bool URL::set(const tchar *url) {
     return true;
 }
 
-void URL::unescape(tchar *str, bool plus) {
-    tchar *d = str;
+// in place decode returning the new length: skip to each escape with
+// strcspn, which is vectorized, as most input has few or none
+static size_t unescape(tchar *str, bool plus) {
+    const tchar *set = plus ? T("%+") : T("%");
+    tchar *d = str + tstrcspn(str, set);
 
-    for (const tuchar *p = (const tuchar *)str; *p; p++) {
+    for (const tuchar *p = (const tuchar *)d; *p; ) {
 	int v;
 
 	if (*p == '%' && p[1] && p[2] && (v = hexbyte(p[1], p[2])) >= 0) {
 	    *d++ = (tchar)v;
-	    p += 2;
-	} else if (*p == '+' && plus) {
-	    *d++ = ' ';
+	    p += 3;
 	} else {
-	    *d++ = (tchar)*p;
+	    *d++ = *p == '+' ? ' ' : (tchar)*p;
+	    p++;
 	}
+
+	// adjacent escapes are common in dense input: avoid the scan
+	if (*p == '%' || (plus && *p == '+'))
+	    continue;
+
+	size_t n = tstrcspn((const tchar *)p, set);
+
+	if (d != (const tchar *)p)
+	    memmove(d, p, n * sizeof (tchar));
+	d += n;
+	p += n;
     }
     *d = '\0';
+    return (size_t)(d - str);
+}
+
+void URL::unescape(tchar *str, bool plus) {
+    ::unescape(str, plus);
 }
 
 void URL::unescape(tstring &str, bool plus) {
-    size_t i = 0;
-
-    for (size_t j = 0; j < str.size(); j++, i++) {
-	tchar c = str[j];
-	int v;
-
-	if (c == '%' && j + 2 < str.size() &&
-	    (v = hexbyte((tuchar)str[j + 1], (tuchar)str[j + 2])) >= 0) {
-	    c = (tchar)v;
-	    j += 2;
-	} else if (c == '+' && plus) {
-	    c = ' ';
-	}
-	str[i] = c;
-    }
-    str.erase(i);
+    str.resize(::unescape(str.data(), plus));
 }
 
 HTTPClient::HTTPClient(): sstrm(StreamSize) {}
@@ -565,6 +551,570 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 	result[ressz] = '\0';
     hstrm.reset();
     return ret;
+}
+
+static constexpr size_t MaxPipeline = 16;
+static constexpr size_t MinRead = 512;
+
+void AsyncHTTPClient::Request::reset(void) {
+    free(result);
+    result = nullptr;
+    reshdrs.clear();
+    cap = sz = 0;
+    sockerr = 0;
+    sts = 0;
+}
+
+void AsyncHTTPClient::Request::rewind(void) {
+    reset();
+    phase = Status;
+    hdrleft = MaxHdrs;
+    remain = written = 0;
+}
+
+void AsyncHTTPClient::Request::result_grow(DispatchObjCB cb, DispatchObj &co,
+    char *old, uint, uint newsize) {
+    char *p = (char *)realloc(old, newsize);
+
+    if (!p)
+	free(old);
+    result = p;
+    cb(&co);
+}
+
+bool AsyncHTTPClient::Request::setup(DispatchObjCB cb, DispatchObj &co,
+    AsyncHTTPClient &c, const tchar *op, const tchar *path, const void *data,
+    ulong len) {
+    done = cb;
+    caller = &co;
+    client = &c;
+    datap = data;
+    datasz = len;
+    attempts = 0;
+    rewind();
+    if (badtoken(op) || badtoken(path)) {
+	sockerr = EINVAL;
+	hstrm.reset();
+	caller = nullptr;
+	co.ready(cb);
+	return false;
+    }
+    head = !tstrcmp(op, T("HEAD"));
+    req = buildreq(op, path, c.addr, true, len, tstring_view(hstrm.str(),
+	(size_t)hstrm.size()));
+    hstrm.reset();
+    return true;
+}
+
+void AsyncHTTPClient::Request::send(DispatchObjCB cb, DispatchObj &co,
+    AsyncHTTPClient &c, const tchar *op, const tchar *path, const void *data,
+    ulong len) {
+    if (!setup(cb, co, c, op, path, data, len))
+	return;
+    c.submit(*this);
+}
+
+AsyncHTTPClient::AsyncHTTPClient(IOSocket *s, const Sockaddr &sa, Timing *tm):
+    addr(sa), intake(*new Intake(*s, *this)), sock(*s), timing(tm) {
+    if (timing) {
+	const tstring ip(addr.ipstr());
+
+	ckey = T("conn:") + ip;
+	rkey = T("read:") + ip;
+	wkey = T("write:") + ip;
+    }
+}
+
+void AsyncHTTPClient::status(tostream &out, uint indent) const {
+    static constexpr const tchar *names[] = {
+	T("Closed"), T("Connecting"), T("Open")
+    };
+    const tstring pad(indent, T(' '));
+
+    out << pad << T("<state>") << names[state.load()] << T("</state>\n") <<
+	pad << T("<writequeue>") << wcnt.load() << T("</writequeue>\n") <<
+	pad << T("<readqueue>") << rcnt.load() << T("</readqueue>\n") <<
+	pad << T("<requests>") << requests.load() << T("</requests>\n") <<
+	pad << T("<connects>") << connects.load() << T("</connects>\n");
+}
+
+// the Request can be reused or destroyed as soon as it has been completed
+void AsyncHTTPClient::complete(Request &r, int err) {
+    DispatchObj *co = r.caller;
+    const auto cb = r.done;
+
+    r.sockerr = err;
+    r.caller = nullptr;
+    r.done = nullptr;
+    co->ready(cb);
+}
+
+void AsyncHTTPClient::submit(Request &r) {
+    bool wake;
+
+    inlock.lock();
+    wake = inbox.empty();
+    inbox.push_back(&r);
+    inlock.unlock();
+    if (wake)
+	intake.ready(Intake::drain);
+}
+
+void AsyncHTTPClient::drain(void) {
+    vector<Request *> batch;
+
+    inlock.lock();
+    batch.swap(inbox);
+    inlock.unlock();
+    for (Request *r : batch)
+	enqueue(*r);
+}
+
+void AsyncHTTPClient::enqueue(Request &r) {
+    requests++;
+    if (timing)
+	r.start = Timing::now();
+    wq.push_back(&r);
+    count();
+    if (state == Closed)
+	dial();
+    else if (state == Open && !growing)
+	io(false);	// already in the client's dispatch group
+}
+
+void AsyncHTTPClient::dial(void) {
+    state = Connecting;
+    connects++;
+    if (timing)
+	cstart = Timing::now();
+    sock.connect(addr, cto);
+}
+
+void AsyncHTTPClient::connected(void) {
+    int e = 0;
+
+    if (state != Connecting)
+	return;
+    if (timing)
+	timing->record(ckey, cstart);
+    if (sock.reason() == DispatchTimeout) {
+	e = ETIMEDOUT;
+    } else {
+	if (!sock.getsockopt(SOL_SOCKET, SO_ERROR, e))
+	    e = sock.err();
+	if (!e && sock.error())
+	    e = sock.err() ? sock.err() : ECONNRESET;
+    }
+    if (e) {
+	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
+	    addr.str()), Log::error(e == ETIMEDOUT ? tstring(T("timeout")) :
+	    tstring(tstrerror(e))));
+	down(e, Down::Fail);
+	return;
+    }
+    (void)sock.nodelay(true);
+    (void)sock.setsockopt(SOL_SOCKET, SO_KEEPALIVE, true);
+    state = Open;
+    idle = false;
+    rdpos = rdend = 0;
+    dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
+	addr.ipstr()));
+    io();
+}
+
+void AsyncHTTPClient::grown(void) {
+    if (!growing)
+	return;
+    growing = false;
+    if (inreserve)
+	return;
+    if (Request &r = *rq.front(); !r.result) {
+	r.sz = r.cap = 0;
+	(void)bad(ENOMEM);
+    } else {
+	io();
+    }
+}
+
+void AsyncHTTPClient::io(bool event) {
+    Flow w;
+
+    if (state != Open || growing)
+	return;
+    if (event && sock.reason() == DispatchTimeout) {
+	dlogi(Log::mod(T("http")), Log::cmd(T("timeout")), Log::kv(T("addr"),
+	    addr.ipstr()));
+	down(ETIMEDOUT, Down::Fail);
+	return;
+    }
+    // only a poll event can add data to a drained socket
+    if (event && sock.reason() != DispatchNone)
+	idle = false;
+    for (;;) {
+	const size_t pipelined = rq.size();
+
+	if ((w = writeall()) == Flow::Stop || readall() == Flow::Stop ||
+	    growing)
+	    return;
+	if (wq.empty() || w == Flow::Wait || rq.size() >= pipelined)
+	    break;
+    }
+
+    const ulong tmt = rq.empty() && wq.empty() ? DispatchTimer::DSP_NEVER :
+	rto.load();
+
+    if (w == Flow::Wait)
+	sock.rwable(IOSocket::onio, tmt);
+    else
+	sock.readable(IOSocket::onio, tmt);
+}
+
+void AsyncHTTPClient::down(int err, Down how) {
+    deque<Request *> all(rq), dead;
+
+    all.insert(all.end(), wq.begin(), wq.end());
+    rq.clear();
+    wq.clear();
+    sock.cancel();
+    (void)sock.close();
+    state = Closed;
+    growing = idle = false;
+    rdpos = rdend = 0;
+    for (size_t i = 0; i < all.size(); i++) {
+	Request *r = all[i];
+	// only the oldest request can have broken the connection so it gets
+	// one retry and the requests behind it are resent without penalty
+	const bool sent = how == Down::Retry && i == 0 && r->written;
+
+	if (how == Down::Fail || (sent && r->attempts)) {
+	    dead.push_back(r);
+	} else {
+	    r->attempts += sent;
+	    r->rewind();
+	    wq.push_back(r);
+	}
+    }
+    count();
+    if (!wq.empty())
+	dial();
+    for (Request *r : dead)
+	complete(*r, err);
+}
+
+AsyncHTTPClient::Flow AsyncHTTPClient::bad(int err) {
+    Request &r = *rq.front();
+
+    dlogi(Log::mod(T("http")), Log::cmd(T("response")), Log::kv(T("addr"),
+	addr.ipstr()), Log::error(err == EOF ? tstring(T("EOF")) :
+	tstring(tstrerror(err))));
+    rq.pop_front();
+    down(err, Down::Resend);
+    complete(r, err);
+    return Flow::Stop;
+}
+
+int AsyncHTTPClient::fill(void) {
+    // a write cannot make data readable so skip a read that must fail
+    if (idle || sock.drained())
+	return 0;
+    if (rdpos == rdend) {
+	rdpos = rdend = 0;
+    } else if (rdpos && rdcap - rdend < MinRead) {
+	memmove(rdbuf.get(), rdbuf.get() + rdpos, rdend - rdpos);
+	rdend -= rdpos;
+	rdpos = 0;
+    }
+    if (rdcap - rdend < MinRead) {
+	const size_t cap = max(rdcap * 2, (size_t)4096);
+	auto p = make_unique_for_overwrite<char[]>(cap);
+
+	if (rdend > rdpos)
+	    memcpy(p.get(), rdbuf.get() + rdpos, rdend - rdpos);
+	rdend -= rdpos;
+	rdpos = 0;
+	rdbuf = std::move(p);
+	rdcap = cap;
+    }
+
+    const int n = sock.read(rdbuf.get() + rdend, (uint)(rdcap - rdend));
+
+    if (n > 0)
+	rdend += (size_t)n;
+    idle = n >= 0 && sock.drained();
+    return n;
+}
+
+AsyncHTTPClient::Flow AsyncHTTPClient::nextline(string_view &line,
+    size_t &left) {
+    for (;;) {
+	const char *b = rdbuf.get() + rdpos;
+	const size_t avail = rdend - rdpos;
+	const char *nl = avail ? (const char *)memchr(b, '\n', avail) : nullptr;
+
+	if (nl) {
+	    size_t len = (size_t)(nl - b);
+
+	    if (len >= left)
+		return bad(EMSGSIZE);
+	    left -= len + 1;
+	    rdpos += len + 1;
+	    if (len && b[len - 1] == '\r')
+		len--;
+	    line = string_view(b, len);
+	    return Flow::Ok;
+	}
+	if (avail >= left)
+	    return bad(EMSGSIZE);
+
+	const int n = fill();
+
+	if (n < 0)
+	    return broke(sock.err());
+	if (!n)
+	    return Flow::Wait;
+    }
+}
+
+long AsyncHTTPClient::take(Request &r, ulong want) {
+    long n;
+
+    if (rdpos < rdend) {
+	n = (long)min((ulong)(rdend - rdpos), want);
+	memcpy(r.result + r.sz, rdbuf.get() + rdpos, (size_t)n);
+	rdpos += (size_t)n;
+    } else if (sock.drained() && r.phase != Request::Eof) {
+	return 0;	// only a read can see the end of an Eof body
+    } else if ((n = sock.read(r.result + r.sz, (uint)min(want,
+	(ulong)INT_MAX))) <= 0) {
+	return n;
+    }
+    r.sz += (ulong)n;
+    return n;
+}
+
+AsyncHTTPClient::Flow AsyncHTTPClient::reserve(Request &r, ulong need) {
+    ulong cap = need + 1;
+
+    if (r.result && r.cap >= cap)
+	return Flow::Ok;
+    if (r.phase != Request::Length)
+	cap = max({ cap, min(r.cap * 2, MaxBody + 1), 12UL * 1024 });
+    r.cap = cap;
+    growing = inreserve = true;
+    r.result_grow(IOSocket::ongrown, sock, r.result, (uint)r.sz, (uint)cap);
+    inreserve = false;
+    if (growing)
+	return Flow::Wait;			// subclass is allocating
+    if (r.result)
+	return Flow::Ok;
+    r.sz = r.cap = 0;
+    return bad(ENOMEM);
+}
+
+AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
+    iovec iov[2 * MaxPipeline];
+
+    // limit the requests that must be resent if the server closes
+    while (!wq.empty() && rq.size() < MaxPipeline) {
+	const size_t room = MaxPipeline - rq.size();
+	int cnt = 0;
+	ulong total = 0;
+	auto add = [&](const void *p, size_t len) {
+	    iov[cnt].iov_base = (char *)p;	// NOSONAR
+	    iov[cnt++].iov_len = (iovlen_t)len;
+	    total += len;
+	};
+
+	for (size_t i = 0; i < min(wq.size(), room); i++) {
+	    const Request &r = *wq[i];
+	    ulong off = r.written;
+
+	    if (off < r.req.size()) {
+		add(r.req.data() + off, r.req.size() - off);
+		off = 0;
+	    } else {
+		off -= r.req.size();
+	    }
+	    if (r.datasz > off)
+		add((const char *)r.datap + off, r.datasz - off);
+	}
+
+	long n = sock.writev(iov, cnt);
+
+	if (n < 0)
+	    return broke(sock.err());
+	for (ulong left = (ulong)n; left; ) {
+	    Request &r = *wq.front();
+	    const ulong len = r.req.size() + r.datasz - r.written;
+
+	    if (left < len) {
+		r.written += left;
+		break;
+	    }
+	    left -= len;
+	    r.written += len;
+	    wq.pop_front();
+	    rq.push_back(&r);
+	    if (timing)
+		r.start = timing->record(wkey, r.start);
+	}
+	count();
+	if ((ulong)n < total)
+	    return Flow::Wait;
+    }
+    return Flow::Ok;
+}
+
+AsyncHTTPClient::Flow AsyncHTTPClient::readall(void) {
+    while (!rq.empty()) {
+	if (const Flow f = advance(*rq.front()); f != Flow::Ok)
+	    return f;
+    }
+    // idle: unsolicited data is an error and a read error means it closed
+    const int n = rdpos == rdend ? fill() : 1;
+
+    if (n)
+	down(n > 0 ? EPROTO : sock.err(), Down::Resend);
+    return n ? Flow::Stop : Flow::Wait;
+}
+
+AsyncHTTPClient::Flow AsyncHTTPClient::advance(Request &r) {
+    string_view line;
+    size_t left;
+    Flow f;
+    long n;
+
+    for (;;) {
+	switch (r.phase) {
+	case Request::Status:
+	    if ((f = nextline(line, r.hdrleft)) != Flow::Ok)
+		return f;
+	    if (!parsestatus(line, r.sts, r.http11))
+		return bad(EPROTO);
+	    r.phase = Request::Headers;
+	    break;
+	case Request::Headers:
+	    if ((f = nextline(line, r.hdrleft)) != Flow::Ok)
+		return f;
+	    if (!line.empty())
+		addhdr(r.reshdrs, line);
+	    else if ((f = endhdrs(r)) != Flow::Ok)
+		return f;
+	    break;
+	case Request::Length:
+	case Request::ChunkData:
+	    while (r.remain) {
+		if ((n = take(r, r.remain)) < 0)
+		    return broke(sock.err());
+		if (!n)
+		    return Flow::Wait;
+		r.remain -= (ulong)n;
+	    }
+	    r.phase = r.phase == Request::Length ? Request::Done :
+		Request::ChunkEnd;
+	    break;
+	case Request::Eof:
+	    for (;;) {
+		if (r.sz + 1 >= r.cap) {
+		    if (r.sz >= MaxBody)
+			return bad(EFBIG);
+		    if ((f = reserve(r, r.sz + 1)) != Flow::Ok)
+			return f;
+		}
+		if ((n = take(r, r.cap - 1 - r.sz)) > 0)
+		    continue;
+		if (!n)
+		    return Flow::Wait;
+		if (sock.err() != EOF)
+		    return broke(sock.err());
+		break;
+	    }
+	    r.phase = Request::Done;
+	    break;
+	case Request::ChunkSize: {
+	    ulong len;
+
+	    left = 1024;
+	    if ((f = nextline(line, left)) != Flow::Ok)
+		return f;
+	    if (!parsenum(line.substr(0, line.find_first_of("; \t")), len,
+		true) || len > MaxBody - r.sz)
+		return bad(EPROTO);
+	    if (len) {
+		r.remain = len;
+		r.phase = Request::ChunkData;
+		if ((f = reserve(r, r.sz + len)) != Flow::Ok)
+		    return f;
+	    } else {
+		r.hdrleft = MaxHdrs;
+		r.phase = Request::Trailers;
+	    }
+	    break;
+	}
+	case Request::ChunkEnd:
+	    left = 2;
+	    if ((f = nextline(line, left)) != Flow::Ok)
+		return f;
+	    if (!line.empty())
+		return bad(EPROTO);
+	    r.phase = Request::ChunkSize;
+	    break;
+	case Request::Trailers:
+	    if ((f = nextline(line, r.hdrleft)) != Flow::Ok)
+		return f;
+	    if (line.empty())
+		r.phase = Request::Done;
+	    break;
+	case Request::Done:
+	    return finish(r);
+	}
+    }
+}
+
+AsyncHTTPClient::Flow AsyncHTTPClient::endhdrs(Request &r) {
+    const tchar *p = r.response(T("Connection"));
+
+    r.keep = !(p && hastoken(p, T("close"))) && (r.http11 || (p &&
+	hastoken(p, T("keep-alive"))));
+    if (r.head || r.sts == 204 || r.sts == 304 || r.sts / 100 == 1) {
+	r.phase = Request::Done;
+    } else if ((p = r.response(T("Transfer-Encoding"))) != nullptr &&
+	hastoken(p, T("chunked"))) {
+	r.phase = Request::ChunkSize;
+    } else if ((p = r.response(T("Content-Length"))) != nullptr) {
+	if (!parsenum(tchartoachar(p), r.remain, false))
+	    return bad(EPROTO);
+	if (r.remain) {
+	    r.phase = Request::Length;
+	    return reserve(r, r.remain);
+	}
+	r.phase = Request::Done;
+    } else {
+	r.keep = false;
+	r.phase = Request::Eof;
+    }
+    return Flow::Ok;
+}
+
+AsyncHTTPClient::Flow AsyncHTTPClient::finish(Request &r) {
+    const bool keep = r.keep;
+
+    if (r.result)
+	r.result[r.sz] = '\0';
+    rq.pop_front();
+    count();
+    if (timing) {
+	const timing_t now = timing->record(rkey, r.start);
+
+	if (!rq.empty())
+	    rq.front()->start = now;
+    }
+    complete(r, 0);
+    if (keep)
+	return Flow::Ok;
+    // the server will not answer any pipelined requests
+    down(EOF, Down::Resend);
+    return Flow::Stop;
 }
 
 time_t parse_date(const tchar *hdr, int adjhr, int adjmin) {

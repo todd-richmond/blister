@@ -18,6 +18,7 @@
 #ifndef HTTPServer_h
 #define HTTPServer_h
 
+#include <flat_map>
 #include <unordered_map>
 #include "Dispatch.h"
 #include "Service.h"
@@ -26,26 +27,30 @@ class BLISTER HTTPServerSocket: public DispatchServerSocket {
 public:
     using attrmap = unordered_map<const char *, const char *, strihash,
 	strieq>;
+    // a handful of headers: sorted vectors beat hashing, inserts are O(n)
+    using hdrmap = flat_map<const char *, const char *, striless>;
 
-    HTTPServerSocket(Dispatcher &dspr, Socket &sock);
+    HTTPServerSocket(Dispatcher &d, Socket &sock):
+	DispatchServerSocket(d, sock) {}
     virtual ~HTTPServerSocket();
 
     const attrmap &arguments(void) const { return args; }
-    const attrmap &attributes(void) const { return attrs; }
+    const hdrmap &attributes(void) const { return attrs; }
     const attrmap &postarguments(void) const { return postargs; }
     void urldecode(char *buf, attrmap &amap) const;
     virtual const char *mimetype(const char *ext) const;
     void start(void) override { readable(readhdrs, rto); }
+    static void pause(bool b) { paused = b; }
     static void senddate(bool b) { date = b; }
     static const tchar *section(void) { return T("http"); }
 
 protected:
     string argdata;
-    iovec iov[3];
+    iovec iov[3] = {};
     bufferstream<char> hdrs, ss;
-    const char *path, *prot;
-    char *postdata;
-    ulong postsz;
+    const char *path = nullptr, *prot = nullptr;
+    char *postdata = nullptr;
+    ulong postsz = 0;
 
     const char *arg(const char *name) const { return find(args, name); }
     const char *attr(const char *name) const { return find(attrs, name); }
@@ -75,31 +80,43 @@ protected:
     virtual void postdata_grow(DispatchObjCB cb, ulong keepsize, ulong newsize);
     virtual void put(void) { error(501); }
     // called when reply() no longer needs its buffer data
-    virtual void replydone(DispatchObjCB cb) { ready(cb); }
+    // a lone request continues at once but pipelined bytes or an owned body
+    // buffer may still be in use by the caller of reply() so defer those
+    virtual void replydone(DispatchObjCB cb) {
+	if (datasz || postdatasz)
+	    ready(cb);
+	else
+	    cb(this);
+    }
     DSP_DECLARE(HTTPServerSocket, done);
     DSP_DECLARE(HTTPServerSocket, send);
 
 private:
-    attrmap attrs, args, postargs;
-    ulong chunkin;
-    bool chunktrailer, postchunking;
-    const char *cmd;
-    char *data;
-    ulong datasz, sz;
-    char *fmap;
-    bool ka, nagleon;
-    ulong postdatasz, postin;
-    uint rto, wto;
-    char savechar;
-    uint _status;
+    attrmap args, postargs;
+    hdrmap attrs;
+    ulong chunkin = 0;
+    bool chunktrailer = false, postchunking = false;
+    const char *cmd = nullptr;
+    char *data = nullptr;
+    ulong datasz = 0, sz = 0;
+    char *fmap = nullptr;
+    ulong fmapsz = 0;
+    bool ka = false, nagleon = true;
+    ulong postdatasz = 0, postin = 0;
+    uint rto = 30 * 1000, wto = 150 * 1000;
+    char savechar = 0;
+    uint _status = 0;
     static bool date;
+    static atomic_bool paused;
 
-    const char *find(const attrmap &amap, const char *name) const {
+    template<class M>
+    const char *find(const M &amap, const char *name) const {
 	auto it = amap.find(name);
 
 	return it == amap.end() ? nullptr : it->second;
     }
     void scan(char *buf, ulong len, bool append = false);
+    void unmap(void);
     DSP_DECLARE(HTTPServerSocket, parse);
     DSP_DECLARE(HTTPServerSocket, readhdrs);
     DSP_DECLARE(HTTPServerSocket, readpost);

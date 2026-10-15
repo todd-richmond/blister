@@ -106,6 +106,7 @@ bool Dispatcher::exec() {
 	    if (flags & DSP_Polled) {
 		zlist.push_back(*obj);
 		zpending.store(true, memory_order_relaxed);
+		wakeup(0);
 	    } else {
 		olock.unlock();
 		delete obj;
@@ -163,6 +164,7 @@ bool Dispatcher::exec() {
 		if (flags & DSP_Polled) {
 		    zlist.push_back(*obj);
 		    zpending.store(true, memory_order_relaxed);
+		    wakeup(0);
 		} else {
 		    olock.unlock();
 		    delete obj;
@@ -636,6 +638,7 @@ void Dispatcher::reclaim(void) {
 #define DSP_EVENT_ERR(evt)	evt->events & (EPOLLERR | EPOLLHUP)
 #define DSP_EVENT_READ(evt)	evt->events & (EPOLLIN | EPOLLPRI | EPOLLRDHUP)
 #define DSP_EVENT_WRITE(evt)	evt->events & EPOLLOUT
+#define DSP_EVENT_HUP(evt)	evt->events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)
 #define DSP_ONESHOT(ds, flag)	ds->flags &= ~(flag);
 #elif defined(DSP_KQUEUE)
 #define DSP_EVENT_ERR(evt)	evt->flags & (EV_EOF | EV_ERROR)
@@ -648,6 +651,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
     static constexpr uint_fast8_t EVT_READ = 0x01;
     static constexpr uint_fast8_t EVT_WRITE = 0x02;
     static constexpr uint_fast8_t EVT_ERR = 0x04;
+    static constexpr uint_fast8_t EVT_HUP = 0x08;
     DispatchSocket *batch[MAX_EVENTS];
     uint_fast8_t masks[MAX_EVENTS];
     uint rcnt = 0, rsz;
@@ -681,6 +685,10 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    mask |= EVT_WRITE;
 	if (UNLIKELY(DSP_EVENT_ERR(evt)))
 	    mask |= EVT_ERR;
+#ifdef DSP_EPOLL
+	if (UNLIKELY(DSP_EVENT_HUP(evt)))
+	    mask |= EVT_HUP;
+#endif
 	if (LIKELY(ds)) {
 	    __builtin_prefetch(ds, 1, 3);
 	} else if (!rset) {
@@ -703,6 +711,12 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    continue;
 	mask = masks[u];
 	flags = ds->flags;
+#ifdef DSP_EPOLL
+	// a close is reported once so the next poll must re-arm to see it
+	// even if the read that follows drains the socket
+	if (UNLIKELY(mask & EVT_HUP))
+	    ds->evmask = 0;
+#endif
 	if (UNLIKELY(flags & DSP_Freed)) {
 	    continue;
 #ifdef DSP_EPOLL
@@ -1390,6 +1404,7 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 			    break;
 			} else {
 			    scanning.fetch_sub(1, memory_order_relaxed);
+			    break;
 			}
 		    } else {
 			break;

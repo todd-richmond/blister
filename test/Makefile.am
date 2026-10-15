@@ -4,7 +4,7 @@ AM_CPPFLAGS = -I$(top_srcdir)/lib
 LDADD = $(top_builddir)/lib/libblister.la
 
 bin_PROGRAMS = cfg daemonize dlog dtiming httpload smtpload
-noinst_PROGRAMS = echotest httpd hashtest
+noinst_PROGRAMS = echotest httpd httptest hashtest
 sysconf_DATA = http.wld smtp.wld
 EXTRA_DIST = echo.cfg httpd.cfg
 
@@ -17,6 +17,7 @@ echotest_SOURCES = EchoTest.cpp
 hashtest_SOURCES = HashTest.cpp
 httpd_SOURCES = HTTPd.cpp
 httpload_SOURCES = HTTPLoad.cpp
+httptest_SOURCES = HTTPTest.cpp
 smtpload_SOURCES = SMTPLoad.cpp
 
 if HAVE_LIBUV

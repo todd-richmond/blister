@@ -320,12 +320,12 @@ ushort Sockaddr::size(ushort family) {
 }
 
 tstring Sockaddr::str(const tstring &val) const {
-    tchar buf[12];
+    tchar buf[12] = T(":");
     ushort p = port();
 
     if (!p)
 	return val;
-    tsprintf(buf, T(":%hu"), p);
+    *to_chars(buf + 1, buf + sizeof (buf) / sizeof (tchar) - 1, p).ptr = 0;
     if (!val.contains(':')) {
 	return val + buf;
     } else {
@@ -773,11 +773,33 @@ bool Socket::iowait(bool out) const {
     return false;
 }
 
+bool Socket::ktimeo(bool out) const {
+    const uint msec = out ? sbuf->wto : sbuf->rto;
+#ifdef _WIN32
+    // milliseconds
+    DWORD tv = msec == SOCK_INFINITE ? 0 : max(msec, 1U);
+#else
+    timeval tv{};
+
+    if (msec != SOCK_INFINITE) {
+	tv.tv_sec = (time_t)(msec / 1000);
+	// zero would mean no timeout
+	tv.tv_usec = (suseconds_t)(msec ? msec % 1000 * 1000 : 1000);
+    }
+#endif
+    if (!::setsockopt(sbuf->sock, SOL_SOCKET, out ? SO_SNDTIMEO : SO_RCVTIMEO,
+	(const char *)&tv, sizeof (tv))) {
+	(out ? sbuf->kwto : sbuf->krto) = msec;
+	return true;
+    }
+    return msec == SOCK_INFINITE || !blocking() || iowait(out);
+}
+
 long Socket::rdret(long in) const {
     if (LIKELY(in > 0))
 	return in;
     if (in)
-	return blocked() ? 0 : in;
+	return blocked() && !timedout(false) ? 0 : in;
     if (!stream())
 	return 0;
     sbuf->err = EOF;
@@ -788,7 +810,7 @@ int Socket::read(void *buf, uint sz) const {
     int in;
 
     do {
-	if (UNLIKELY(sbuf->rto != SOCK_INFINITE && blocking()) && !iowait(false))
+	if (!iotimeo(false))
 	    return -1;
 	if (check(in = (int)recv(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz, 0)))
 	    break;
@@ -801,7 +823,7 @@ int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
     int in;
 
     do {
-	if (UNLIKELY(sbuf->rto != SOCK_INFINITE && blocking()) && !iowait(false))
+	if (!iotimeo(false))
 	    return -1;
 	if (check(in = (int)recvfrom(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz,
 	    0, sa.data(), &asz)))
@@ -814,7 +836,7 @@ long Socket::readv(iovec *iov, int count) const {
     long in;
 
     do {
-	if (UNLIKELY(sbuf->rto != SOCK_INFINITE && blocking()) && !iowait(false))
+	if (!iotimeo(false))
 	    return -1;
 #ifdef _WIN32
 	ulong flags = 0;
@@ -835,7 +857,7 @@ long Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
     long in;
 
     do {
-	if (UNLIKELY(sbuf->rto != SOCK_INFINITE && blocking()) && !iowait(false))
+	if (!iotimeo(false))
 	    return -1;
 #ifdef _WIN32
 	ulong flags = 0;
@@ -868,10 +890,12 @@ long Socket::sendmsg(const msghdr &msgh, int flags) const {
     long out;
 
     do {
+	if (!iotimeo(true))
+	    return -1;
 	if (check((int)(out = ::sendmsg(sbuf->sock, &msgh, flags))))
 	    break;
     } while (interrupted());
-    return out <= 0 && blocked() ? 0 : out;
+    return out <= 0 && blocked() && !timedout(true) ? 0 : out;
 }
 #endif
 
@@ -885,26 +909,26 @@ int Socket::write(const void *buf, uint sz) const {
     int out;
 
     do {
-	if (UNLIKELY(sbuf->wto != SOCK_INFINITE && blocking()) && !iowait(true))
+	if (!iotimeo(true))
 	    return -1;
 	if (check(out = (int)send(sbuf->sock, (const char *)buf,
 	    (SOCK_SIZE_T)sz, 0)))
 	    break;
     } while (interrupted());
-    return UNLIKELY(out < 0 && blocked()) ? 0 : out;
+    return UNLIKELY(out < 0 && blocked() && !timedout(true)) ? 0 : out;
 }
 
 int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
     int out;
 
     do {
-	if (UNLIKELY(sbuf->wto != SOCK_INFINITE && blocking()) && !iowait(true))
+	if (!iotimeo(true))
 	    return -1;
 	if (check(out = (int)sendto(sbuf->sock, (const char *)buf,
 	    (SOCK_SIZE_T)sz, 0, sa, sa.size())))
 	    break;
     } while (interrupted());
-    return UNLIKELY(out < 0 && blocked()) ? 0 : out;
+    return UNLIKELY(out < 0 && blocked() && !timedout(true)) ? 0 : out;
 }
 
 long Socket::writev(const iovec *iov, int count) const {
@@ -916,11 +940,13 @@ long Socket::writev(const iovec *iov, int count) const {
 	NULL, NULL));
 #else
     do {
+	if (!iotimeo(true))
+	    return -1;
 	if (check((int)(out = ::writev(sbuf->sock, iov, count))))
 	    break;
     } while (interrupted());
 #endif
-    return out <= 0 && blocked() ? 0 : out;
+    return out <= 0 && blocked() && !timedout(true) ? 0 : out;
 }
 
 long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
@@ -929,7 +955,7 @@ long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
 
     check(WSASendTo(sbuf->sock, (iovec *)iov, count, (ulong *)&out, // NOSONAR
 	0, sa, sa.size(), NULL, NULL));
-    return out <= 0 && blocked() ? 0 : out;
+    return out <= 0 && blocked() && !timedout(true) ? 0 : out;
 #else
     msghdr msgh {};
 
