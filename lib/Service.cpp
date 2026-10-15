@@ -722,13 +722,11 @@ Service::Timer::Timer(ulong msec): timer((timer_t)-1) {
 }
 
 void Service::Timer::cancel() {
-    if (timer != (timer_t)-1) {
-#ifdef BSD_BASE
-#elif defined(__linux__)
+#if defined(__linux__) && !defined(BSD_BASE)
+    if (timer != (timer_t)-1)
 	timer_delete(timer);
 #endif
-	timer = (timer_t)-1;
-    }
+    timer = (timer_t)-1;
 }
 
 Service::Service(const char *servicename, const char *h): bPause(false),

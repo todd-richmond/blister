@@ -56,6 +56,7 @@ void Config::clear_locked(void) {
     for (const auto &[key, kv] : amap)
 	delkv(kv);
     amap.clear();
+    sum = 0;
 }
 
 void Config::clear(void) {
@@ -347,7 +348,7 @@ bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
 	return parse(is);
     }
     // parse outside the lock so readers are not blocked by file I/O
-    Config tmp(str);
+    Config tmp(str, ck);
 
     if (sz)
 	tmp.reserve(sz);
@@ -359,18 +360,22 @@ bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
     prefix(str);
     ini |= tmp.ini;
     amap.swap(tmp.amap);
+    sum = tmp.sum;
     return true;
 }
 
 Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     vlen, const tchar *sect, size_t slen, bool append) {
-    KV *kv, *oldkv;
     tchar kbuf[KEYSZ];
     tstring kstr;
+    KV *kv, *oldkv;
     tstring_view fkey = UNLIKELY(slen) ? joinkey(kbuf, kstr, sect, slen, key,
 	klen) : tstring_view(key, klen);
     auto it = amap.find(fkey);
 
+    if (UNLIKELY(ck))
+	sum = rapid_hash(val, vlen * sizeof (tchar), rapid_hash(fkey.data(),
+	    fkey.size() * sizeof (tchar), sum));
     if (it == amap.end()) {
 	kv = newkv(fkey.data(), fkey.size(), val, vlen);
 	amap.emplace(kv->key(), kv);
@@ -508,7 +513,8 @@ bool Config::write(tostream &os, bool inistyle) const {
     return os.good();
 }
 
-ConfigFile::ConfigFile(const tchar *file, const tchar *_pre): Config(_pre) {
+ConfigFile::ConfigFile(const tchar *file, const tchar *_pre, bool cksum):
+    Config(_pre, cksum) {
     if (file)
 	read(file, _pre);
 }

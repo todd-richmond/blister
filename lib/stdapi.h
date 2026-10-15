@@ -1341,7 +1341,8 @@ __forceinline constexpr strhash_t rapidbyte(const B *p) {
 
 // keys up to 16 bytes need only 2 multiplies to mix well
 template<bool fold, typename B>
-__forceinline constexpr strhash_t rapidshort(const B *p, size_t len) {
+__forceinline constexpr strhash_t rapidshort(const B *p, size_t len,
+    strhash_t seed) {
     strhash_t r0 = 0, r1 = 0;
 
     if (LIKELY(len >= 8)) {
@@ -1354,27 +1355,28 @@ __forceinline constexpr strhash_t rapidshort(const B *p, size_t len) {
 	r0 = (rapidbyte<fold>(p) << 16) | (rapidbyte<fold>(p + (len >> 1)) <<
 	    8) | rapidbyte<fold>(p + len - 1);
     }
-    return rapidmix(rapidmix(r0 ^ RAPID_SECRET0, r1 ^ RAPID_SECRET1) ^
+    return rapidmix(rapidmix(r0 ^ RAPID_SECRET0 ^ seed, r1 ^ RAPID_SECRET1) ^
 	(RAPID_SECRET0 ^ (strhash_t)len), RAPID_SECRET1);
 }
 
 // rapidhash V3 Micro (seed 0) for keys over 16 bytes - bit exact with the
 // reference, and faster than the full rapidhash for any size. Shorter keys use
 // rapidshort which beats it by 10-25%
+// seed = previous hash to chain from
 // fold = ASCII case insensitive
 template<bool fold = false, typename B> requires (sizeof (B) == 1)
-constexpr strhash_t rapid_hash(const B *p, size_t len) {
+constexpr strhash_t rapid_hash(const B *p, size_t len, strhash_t sd = 0) {
     static constexpr strhash_t secret[] = {
 	0x2d358dccaa6c78a5ULL, 0x8bb84b93962eacc9ULL, 0x4b33a62ed433d4a3ULL,
 	0x4d5a2da51de1aa47ULL, 0xa0761d6478bd642fULL, 0xe7037ed1a0b428dbULL,
 	0x90ed1765281c388cULL, 0xaaaaaaaaaaaaaaaaULL
     };
     size_t i = len;
-    strhash_t seed, a, b;
+    strhash_t seed = sd, a, b;
 
     if (LIKELY(len <= 16))
-	return rapidshort<fold>(p, len);
-    seed = rapidmix(secret[2], secret[1]);
+	return rapidshort<fold>(p, len, sd);
+    seed ^= rapidmix(seed ^ secret[2], secret[1]);
     if (i > 80) {
 	strhash_t see1 = seed, see2 = seed, see3 = seed, see4 = seed;
 
@@ -1420,8 +1422,8 @@ constexpr strhash_t rapid_hash(const B *p, size_t len) {
     return rapidmix(a ^ secret[7], b ^ secret[1] ^ i);
 }
 
-inline strhash_t rapid_hash(const void *data, size_t len) {
-    return rapid_hash((const uint8_t *)data, len);
+inline strhash_t rapid_hash(const void *data, size_t len, strhash_t seed = 0) {
+    return rapid_hash((const uint8_t *)data, len, seed);
 }
 
 // 1 byte characters use rapid_hash and wide characters bernstein_hash

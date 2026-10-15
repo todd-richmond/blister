@@ -38,7 +38,7 @@ public:
     friend auto operator <=>(const URL &a, const URL &b) = default;
 
     tstring fullpath(void) const;
-    // path and query are stored escaped so they are always wire-correct
+    // path and query are stored escaped
     tstring path(void) const {
 	tstring s(rpath);
 
@@ -57,7 +57,8 @@ public:
 	return rquery.empty() ? rpath : rpath + T("?") + rquery;
     }
     bool set(const tchar *url);
-    static void unescape(tchar *str, bool plus = true);
+    // in place decode returning the new length
+    static size_t unescape(tchar *str, bool plus = true);
     static void unescape(tstring &str, bool plus = true);
 
 private:
@@ -68,7 +69,7 @@ class BLISTER HTTPClient: nocopy {
 public:
     using attrmap = unordered_multimap<tstring, tstring, strihash, strieq>;
 
-    HTTPClient();
+    HTTPClient(): sstrm(3 * 1460) {}
 
     friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
 	os << hc.sts << '\n';
@@ -92,7 +93,7 @@ public:
     bool close(void) { return sock.close(); }
     bool connect(const Sockaddr &sa, bool keepalive = false, uint timeout =
 	SOCK_INFINITE);
-    // adopt an already connected socket (shares its fd with the caller)
+    // shares the caller's fd
     bool connect(Socket &s, bool keepalive = false);
     bool connect(const tchar *host, ushort port = 80, bool keepalive = false,
 	uint timeout = SOCK_INFINITE) {
@@ -107,12 +108,12 @@ public:
     bool del(const tchar *path) { return send(T("DELETE"), path); }
     bool get(const tchar *path) { return send(T("GET"), path); }
     bool head(const tchar *path) { return send(T("HEAD"), path); }
-    bool post(const tchar *path, const void *data, ulong len, msghdr *msgh =
-	nullptr) {
+    bool post(const tchar *path, const void *data, ulong len,
+	msghdr *msgh = nullptr) {
 	return send(T("POST"), path, data, len, msgh);
     }
-    bool put(const tchar *path, const void *data, ulong len, msghdr *msgh =
-	nullptr) {
+    bool put(const tchar *path, const void *data, ulong len,
+	msghdr *msgh = nullptr) {
 	return send(T("PUT"), path, data, len, msgh);
     }
     const tchar *response(tstring_view name) const {
@@ -149,14 +150,10 @@ private:
     bool readchunked(void);
     bool readhdrs(string &line, bool &http11);
     void setup(void);
-    bool transmit(const string &req, const void *data, ulong datasz,
-	msghdr *msgh);
 };
 
-/*
- * Non-blocking client pipelining requests over one keep-alive connection. It
- * must outlive its Requests, which also cannot be destroyed while in flight
- */
+// Pipelines requests over one keep-alive connection. Must outlive its
+// Requests, which cannot be destroyed in flight
 class BLISTER AsyncHTTPClient: nocopy {
 public:
     using attrmap = HTTPClient::attrmap;
@@ -196,13 +193,15 @@ public:
 	void set_logprefix(const tchar *prefix) { logprefix = prefix; }
 
     protected:
-	// set result to newsize bytes keeping keepsize of old
+	// grow result to newsize keeping keepsize bytes of old
 	virtual void result_grow(DispatchObjCB cb, DispatchObj &co, char *old,
 	    uint keepsize, uint newsize);
 
 	bool setup(DispatchObjCB cb, DispatchObj &co, AsyncHTTPClient &client,
 	    const tchar *op, const tchar *path, const void *data, ulong datasz);
-	void queue(void) { client->enqueue(*this); }
+	void queue(void) { client->submit(*this); }
+	// true if resubmitted to a client instead of completing
+	virtual bool resend(void) { return false; }
 
 	attrmap reshdrs;
 	tbufferstream hstrm;
@@ -234,8 +233,7 @@ public:
 	bool head = false, http11 = false, keep = false;
     };
 
-    // a client built on a Dispatcher has its own dispatch group so clients
-    // run in parallel while one built on a parent shares the parent's group
+    // built on a Dispatcher it gets its own group, on a parent it shares it
     AsyncHTTPClient(Dispatcher &d, const Sockaddr &sa, Timing *tm = nullptr):
 	AsyncHTTPClient(new IOSocket(d, *this), sa, tm) {}
     AsyncHTTPClient(DispatchObj &parent, const Sockaddr &sa, Timing *tm =
@@ -245,11 +243,18 @@ public:
 	sock.erase();
     }
 
-    const Sockaddr addr;
-
-    uint numPending(void) const { return rcnt + wcnt; }
+    const Sockaddr &address(void) const { return addr; }
+    uint numPending(void) const { return pending - 1; }
     void status(tostream &out, uint indent) const;
     void timeout(uint connect, uint io) { cto = connect; rto = io; }
+
+    // pending is requests plus one for the owner. A client deletes itself
+    // once idle after the last release() so the owner must then forget it
+    void acquire(void) { pending++; }
+    void release(void) {
+	if (!--pending)
+	    intake.ready(Intake::drain);
+    }
 
 private:
     class IOSocket: public DispatchClientSocket {
@@ -259,7 +264,7 @@ private:
 	IOSocket(DispatchObj &parent, AsyncHTTPClient &c):
 	    DispatchClientSocket(parent), client(c) {}
 
-	// true if the last read emptied the socket so another would only block
+	// the last read emptied the socket
 	bool drained(void) const { return rdrain; }
 
 	DSP_DECLARE(IOSocket, ongrown) { client.grown(); }
@@ -272,7 +277,7 @@ private:
 	AsyncHTTPClient &client;
     };
 
-    // relays requests from any thread into the client's dispatch group
+    // relays requests from any thread into the client's group
     class Intake: public DispatchObj {
     public:
 	Intake(DispatchObj &parent, AsyncHTTPClient &c):
@@ -286,8 +291,7 @@ private:
 
     AsyncHTTPClient(IOSocket *s, const Sockaddr &sa, Timing *tm);
 
-    // Fail: fail all requests, Retry: connection broke so resend requests that
-    // were sent once, Resend: resend all that were not answered
+    // Retry: resend requests sent once, Resend: resend all unanswered
     enum class Down { Fail, Retry, Resend };
     enum class Flow { Ok, Wait, Stop };
     enum State: uchar { Closed, Connecting, Open };
@@ -307,12 +311,12 @@ private:
     int fill(void);
     long take(Request &r, ulong want);
     void complete(Request &r, int err);
+    void connect(void);
     void connected(void);
     void count(void) {
 	rcnt = (uint)rq.size();
 	wcnt = (uint)wq.size();
     }
-    void dial(void);
     void down(int err, Down how);
     void drain(void);
     void enqueue(Request &r);
@@ -320,6 +324,7 @@ private:
     void io(bool event = true);
     void submit(Request &r);
 
+    const Sockaddr addr;
     tstring ckey;
     atomic<ulong> connects = 0;
     timing_t cstart = 0;
@@ -328,7 +333,7 @@ private:
     vector<Request *> inbox;
     SpinLock inlock;
     Intake &intake;
-    atomic<uint> rcnt = 0;
+    atomic<uint> pending = 1, rcnt = 0;
     unique_ptr<char[]> rdbuf;
     size_t rdcap = 0, rdend = 0, rdpos = 0;
     atomic<ulong> requests = 0;

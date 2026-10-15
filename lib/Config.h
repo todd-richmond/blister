@@ -44,6 +44,9 @@
  *   6) key += val appends the value
  *   7) repeated keys are stored as "last read key wins"
  *
+ * cksum = true: checksum() is a rapidhash chain of every set() key/value
+ * (including #include files), reset by clear() and non-append read()
+ *
  *   host = hostname
  *   prog1.key1 = value1
  *   prog2.key1 = " value2 "
@@ -56,10 +59,12 @@
 
 class BLISTER Config: nocopy {
 public:
-    explicit Config(const tchar *prestr = nullptr) {
+    explicit Config(const tchar *prestr = nullptr, bool cksum = false):
+	ck(cksum) {
 	prefix(prestr);
     }
-    explicit Config(tistream &is, const tchar *prestr = nullptr) {
+    explicit Config(tistream &is, const tchar *prestr = nullptr, bool cksum =
+	false): ck(cksum) {
 	(void)read(is, prestr);
     }
     ~Config() { clear(); }
@@ -83,6 +88,11 @@ public:
 
 	return set(key, tstrlen(key), val, tstrlen(val), sect, sect ?
 	    tstrlen(sect) : 0, true);
+    }
+    strhash_t checksum(void) const {
+	SpinRLocker lkr(lck);
+
+	return sum;
     }
     void clear(void);
     void erase(const tchar *key, const tchar *sect = nullptr);
@@ -203,6 +213,8 @@ private:
     kvmap amap;
     mutable SpinRWLock lck;
     tstring pre;
+    strhash_t sum = 0;
+    const bool ck;
     bool ini = false;
 
     void clear_locked(void);
@@ -244,7 +256,8 @@ private:
 class BLISTER ConfigFile: public Config {
 public:
     using Config::Config;
-    explicit ConfigFile(const tchar *file = nullptr, const tchar *_pre = nullptr);
+    explicit ConfigFile(const tchar *file = nullptr, const tchar *_pre = nullptr,
+	bool cksum = false);
 
     using Config::read;
     bool read(const tchar *file = nullptr, const tchar *_pre = nullptr, bool append =

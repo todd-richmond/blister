@@ -18,8 +18,11 @@
 #ifndef HTTPServer_h
 #define HTTPServer_h
 
-#include <flat_map>
 #include <unordered_map>
+#include <version>
+#ifdef __cpp_lib_flat_map
+#include <flat_map>
+#endif
 #include "Dispatch.h"
 #include "Service.h"
 
@@ -27,8 +30,12 @@ class BLISTER HTTPServerSocket: public DispatchServerSocket {
 public:
     using attrmap = unordered_map<const char *, const char *, strihash,
 	strieq>;
+#ifdef __cpp_lib_flat_map
     // a handful of headers: sorted vectors beat hashing, inserts are O(n)
     using hdrmap = flat_map<const char *, const char *, striless>;
+#else
+    using hdrmap = attrmap;
+#endif
 
     HTTPServerSocket(Dispatcher &d, Socket &sock):
 	DispatchServerSocket(d, sock) {}
