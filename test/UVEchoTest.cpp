@@ -85,15 +85,15 @@ struct EchoClient: nocopy {
     uint in;
     timing_t begin;
     bool done;		// permanently stopped; loop budget is exhausted
-    bool errorHandled;	// dedups a timed-out connect racing a late callback
-    bool closingTcp;	// tcp close currently in flight
-    bool tcpOpen;	// tcp has been uv_tcp_init'ed and not yet uv_close'd
-    bool writePending;	// a uv_write on writereq hasn't completed yet
-    bool nextRoundQueued;	// next round wants to start once it does
+    bool error_handled;	// dedups a timed-out connect racing a late callback
+    bool closing_tcp;	// tcp close currently in flight
+    bool tcp_open;	// tcp has been uv_tcp_init'ed and not yet uv_close'd
+    bool write_pending;	// a uv_write on writereq hasn't completed yet
+    bool next_round_queued;	// next round wants to start once it does
 
     explicit EchoClient(Worker *w): worker(w), rbuf(new char[dsz + MAXREAD]),
-	in(0), begin(0), done(false), errorHandled(false), closingTcp(false),
-	tcpOpen(false), writePending(false), nextRoundQueued(false) {}
+	in(0), begin(0), done(false), error_handled(false), closing_tcp(false),
+	tcp_open(false), write_pending(false), next_round_queued(false) {}
     ~EchoClient() { delete [] rbuf; }
 };
 
@@ -101,9 +101,9 @@ struct EchoServerConn: nocopy {
     Handle tcp;
     uv_write_t writereq;
     char *buf;
-    uint writeLen;
+    uint write_len;
 
-    EchoServerConn(): buf(nullptr), writeLen(0) {}
+    EchoServerConn(): buf(nullptr), write_len(0) {}
     ~EchoServerConn() { delete [] buf; }
 };
 
@@ -113,43 +113,43 @@ struct Worker {
     Handle listener {};
     Thread thread;
     vector<EchoClient *> clients;
-    Sockaddr bindAddr;
-    Sockaddr connectAddr;
+    Sockaddr bind_addr;
+    Sockaddr connect_addr;
     ulong tmt = TIMEOUT;
     ulong wait = 0;
     ulong delay = DELAY;
     uint base = 0;		// global stagger index of first client
-    bool doServer = false;
-    bool doClient = false;
+    bool do_server = false;
+    bool do_client = false;
 };
 
-static void startClient(EchoClient *c);
+static void start_client(EchoClient *c);
 
-static void onStartTimer(uv_timer_t *t) {
-    startClient((EchoClient *)t->data);
+static void start_timer(uv_timer_t *t) {
+    start_client((EchoClient *)t->data);
 }
 
-static void requestCloseTcp(EchoClient *c) {
-    if (c->closingTcp || !c->tcpOpen)
+static void request_close_tcp(EchoClient *c) {
+    if (c->closing_tcp || !c->tcp_open)
 	return;
-    c->closingTcp = true;
-    c->tcpOpen = false;
+    c->closing_tcp = true;
+    c->tcp_open = false;
     uv_read_stop((uv_stream_t *)&c->tcp);
     uv_close((uv_handle_t *)&c->tcp, [](uv_handle_t *h) {
 	EchoClient *cl = (EchoClient *)h->data;
 
-	cl->closingTcp = false;
+	cl->closing_tcp = false;
 	if (!cl->done)
-	    uv_timer_start(&cl->timer, onStartTimer, cl->worker->wait, 0);
+	    uv_timer_start(&cl->timer, start_timer, cl->worker->wait, 0);
     });
 }
 
 // like echotest, tell a connected server the test is over so it closes quietly
-static void beginTeardown(EchoClient *c) {
+static void begin_teardown(EchoClient *c) {
     if (c->done)
 	return;
     c->done = true;
-    if (c->tcpOpen && !c->errorHandled &&
+    if (c->tcp_open && !c->error_handled &&
 	uv_is_writable((uv_stream_t *)&c->tcp)) {
 	uv_buf_t mark = uv_buf_init((char *)"", 1);
 
@@ -157,30 +157,30 @@ static void beginTeardown(EchoClient *c) {
     }
     uv_timer_stop(&c->timer);
     uv_close((uv_handle_t *)&c->timer, [](uv_handle_t *) {});
-    requestCloseTcp(c);
+    request_close_tcp(c);
 }
 
-static void onIoError(EchoClient *c, const tchar *what, bool isTimeout =
+static void on_io_error(EchoClient *c, const tchar *what, bool is_timeout =
     false) {
-    if (c->done || c->errorHandled)
+    if (c->done || c->error_handled)
 	return;
-    c->errorHandled = true;
+    c->error_handled = true;
     gerrs.fetch_add(1, memory_order_relaxed);
     dtiming.add(T("error"), 0);
-    dloge(what, isTimeout ? T("timeout") : T("close"));
+    dloge(what, is_timeout ? T("timeout") : T("close"));
     uv_timer_stop(&c->timer);
     if (loop_exit())
-	beginTeardown(c);
+	begin_teardown(c);
     else
-	requestCloseTcp(c);
+	request_close_tcp(c);
 }
 
-static void onConnectTimeout(uv_timer_t *t) {
-    onIoError((EchoClient *)t->data, T("client connect="), true);
+static void on_connect_timeout(uv_timer_t *t) {
+    on_io_error((EchoClient *)t->data, T("client connect="), true);
 }
 
 // cppcheck-suppress constParameterCallback
-static void allocClient(uv_handle_t *h, size_t, uv_buf_t *buf) {    // NOSONAR
+static void alloc_client(uv_handle_t *h, size_t, uv_buf_t *buf) {    // NOSONAR
     const EchoClient *c = (const EchoClient *)h->data;
 
     buf->base = c->rbuf + c->in;
@@ -188,53 +188,53 @@ static void allocClient(uv_handle_t *h, size_t, uv_buf_t *buf) {    // NOSONAR
     buf->len = dsz + MAXREAD - c->in;
 }
 
-static void writeClient(EchoClient *c) {
+static void write_client(EchoClient *c) {
     if (UNLIKELY(loops.load(memory_order_relaxed) <= 0 ||
 	qflag.load(memory_order_relaxed))) {
-	beginTeardown(c);
+	begin_teardown(c);
 	return;
     }
     c->begin = Timing::now();
-    c->writePending = true;
+    c->write_pending = true;
     c->wbuf = uv_buf_init(dbuf, (unsigned int)dsz);
     c->writereq.data = c;
     uv_write(&c->writereq, (uv_stream_t *)&c->tcp, &c->wbuf, 1,
 	[](uv_write_t *req, int status) {
 	EchoClient *cl = (EchoClient *)req->data;
 
-	cl->writePending = false;
+	cl->write_pending = false;
 	if (status < 0) {
-	    onIoError(cl, T("client write="));
+	    on_io_error(cl, T("client write="));
 	    return;
 	}
 	dlogt(T("client write="), dsz);
-	if (cl->nextRoundQueued) {
-	    cl->nextRoundQueued = false;
-	    writeClient(cl);
+	if (cl->next_round_queued) {
+	    cl->next_round_queued = false;
+	    write_client(cl);
 	}
     });
 }
 
 // the echo response for a round can arrive and be processed before this
 // same round's write completion callback has been dispatched by libuv, so
-// starting the next round must wait for writePending to clear rather than
+// starting the next round must wait for write_pending to clear rather than
 // reissuing a write on the still in-flight writereq
-static void startNextRound(EchoClient *c) {
-    if (c->writePending)
-	c->nextRoundQueued = true;
+static void start_next_round(EchoClient *c) {
+    if (c->write_pending)
+	c->next_round_queued = true;
     else
-	writeClient(c);
+	write_client(c);
 }
 
-static void onRepeatTimer(uv_timer_t *t) {
-    startNextRound((EchoClient *)t->data);
+static void on_repeat_timer(uv_timer_t *t) {
+    start_next_round((EchoClient *)t->data);
 }
 
-static void onClientRead(uv_stream_t *s, ssize_t nread, const uv_buf_t *) {
+static void on_client_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *) {
     EchoClient *c = (EchoClient *)s->data;
 
     if (nread < 0) {
-	onIoError(c, T("client read="));
+	on_io_error(c, T("client read="));
 	return;
     }
     if (nread == 0)
@@ -249,7 +249,7 @@ static void onClientRead(uv_stream_t *s, ssize_t nread, const uv_buf_t *) {
 
     c->in = 0;
     if (loop_exit()) {
-	beginTeardown(c);
+	begin_teardown(c);
 	return;
     }
     gops.fetch_add(1, memory_order_relaxed);
@@ -262,71 +262,71 @@ static void onClientRead(uv_stream_t *s, ssize_t nread, const uv_buf_t *) {
 	ulong jitter = wait < 2000 ? 0 :
 	    uniform_int_distribution<ulong>(0, 49)(rng);
 
-	uv_timer_start(&c->timer, onRepeatTimer, wait + jitter, 0);
+	uv_timer_start(&c->timer, on_repeat_timer, wait + jitter, 0);
     } else {
-	startNextRound(c);
+	start_next_round(c);
     }
 }
 
-static void onClientConnect(uv_connect_t *req, int status) {
+static void on_client_connect(uv_connect_t *req, int status) {
     EchoClient *c = (EchoClient *)req->data;
 
     if (status < 0) {
-	onIoError(c, T("client connect="));
+	on_io_error(c, T("client connect="));
 	return;
     }
-    if (c->errorHandled)	// superseded by a connect timeout already
+    if (c->error_handled)	// superseded by a connect timeout already
 	return;
     uv_timer_stop(&c->timer);
     if (!unixsock)
 	uv_tcp_nodelay(&c->tcp.tcp, 1);
-    uv_read_start((uv_stream_t *)&c->tcp, allocClient, onClientRead);
-    writeClient(c);
+    uv_read_start((uv_stream_t *)&c->tcp, alloc_client, on_client_read);
+    write_client(c);
 }
 
 // a leading NUL is a Linux abstract name that Sockaddr pads to the whole
 // sun_path so match the length bound by the server
-static void connectUnix(EchoClient *c, const Sockaddr &addr) {
+static void connect_unix(EchoClient *c, const Sockaddr &addr) {
     const char *name = ((const sockaddr_un *)addr)->sun_path;
     size_t len = *name ? strlen(name) : sizeof (sockaddr_un::sun_path);
 
     uv_pipe_connect2(&c->connreq, &c->tcp.pipe, name, len, 0,
-	onClientConnect);
+	on_client_connect);
 }
 
-static void startClient(EchoClient *c) {
+static void start_client(EchoClient *c) {
     Worker &w = *c->worker;
 
     c->in = 0;
-    c->errorHandled = false;
-    c->writePending = false;
-    c->nextRoundQueued = false;
+    c->error_handled = false;
+    c->write_pending = false;
+    c->next_round_queued = false;
     if (unixsock)
 	uv_pipe_init(&w.loop, &c->tcp.pipe, 0);
     else
 	uv_tcp_init(&w.loop, &c->tcp.tcp);
-    c->tcpOpen = true;
+    c->tcp_open = true;
     c->tcp.tcp.data = c;
     c->connreq.data = c;
     dlogd(T("connecting"));
-    uv_timer_start(&c->timer, onConnectTimeout, w.tmt, 0);
+    uv_timer_start(&c->timer, on_connect_timeout, w.tmt, 0);
     if (unixsock)
-	connectUnix(c, w.connectAddr);
+	connect_unix(c, w.connect_addr);
     else
-	uv_tcp_connect(&c->connreq, &c->tcp.tcp, w.connectAddr,
-	    onClientConnect);
+	uv_tcp_connect(&c->connreq, &c->tcp.tcp, w.connect_addr,
+	    on_client_connect);
 }
 
-static void onServerConnClosed(uv_handle_t *h) {
+static void on_server_conn_closed(uv_handle_t *h) {
     delete (EchoServerConn *)h->data;
 }
 
-static void closeServerConn(EchoServerConn *sc) {
+static void close_server_conn(EchoServerConn *sc) {
     uv_read_stop((uv_stream_t *)&sc->tcp);
-    uv_close((uv_handle_t *)&sc->tcp, onServerConnClosed);
+    uv_close((uv_handle_t *)&sc->tcp, on_server_conn_closed);
 }
 
-static void allocServer(uv_handle_t *h, size_t, uv_buf_t *buf) {
+static void alloc_server(uv_handle_t *h, size_t, uv_buf_t *buf) {
     EchoServerConn *sc = (EchoServerConn *)h->data;
 
     if (!sc->buf)
@@ -335,42 +335,42 @@ static void allocServer(uv_handle_t *h, size_t, uv_buf_t *buf) {
     buf->len = MAXREAD;
 }
 
-static void onServerRead(uv_stream_t *s, ssize_t nread, const uv_buf_t *buf) {
+static void on_server_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *buf) {
     EchoServerConn *sc = (EchoServerConn *)s->data;
 
     if (nread < 0) {
 	if (loops.load(memory_order_relaxed) > 0 &&
 	    !qflag.load(memory_order_relaxed))
 	    dloge(T("server read="), T("close"));
-	closeServerConn(sc);
+	close_server_conn(sc);
 	return;
     }
     if (nread == 0)
 	return;
     if (nread == 1 && buf->base[0] == '\0') {	// client end-of-test marker
-	closeServerConn(sc);
+	close_server_conn(sc);
 	return;
     }
 
     uv_buf_t wbuf = uv_buf_init(buf->base, (unsigned int)nread);
 
     uv_read_stop(s);
-    sc->writeLen = (uint)nread;
+    sc->write_len = (uint)nread;
     sc->writereq.data = sc;
     uv_write(&sc->writereq, s, &wbuf, 1, [](uv_write_t *req, int status) {
 	EchoServerConn *conn = (EchoServerConn *)req->data;
 
 	if (status < 0) {
 	    dloge(T("server write="), achartotchar(uv_strerror(status)));
-	    closeServerConn(conn);
+	    close_server_conn(conn);
 	} else {
-	    dlogt(T("server write="), conn->writeLen);
-	    uv_read_start((uv_stream_t *)&conn->tcp, allocServer, onServerRead);
+	    dlogt(T("server write="), conn->write_len);
+	    uv_read_start((uv_stream_t *)&conn->tcp, alloc_server, on_server_read);
 	}
     });
 }
 
-static void onNewConnection(uv_stream_t *server, int status) {
+static void on_new_connection(uv_stream_t *server, int status) {
     if (status < 0)
 	return;
 
@@ -385,19 +385,19 @@ static void onNewConnection(uv_stream_t *server, int status) {
     if (uv_accept(server, (uv_stream_t *)&sc->tcp) == 0) {
 	if (!unixsock)
 	    uv_tcp_nodelay(&sc->tcp.tcp, 1);
-	uv_read_start((uv_stream_t *)&sc->tcp, allocServer, onServerRead);
+	uv_read_start((uv_stream_t *)&sc->tcp, alloc_server, on_server_read);
     } else {
-	uv_close((uv_handle_t *)&sc->tcp, onServerConnClosed);
+	uv_close((uv_handle_t *)&sc->tcp, on_server_conn_closed);
     }
 }
 
-static void onStop(uv_async_t *a) {
+static void on_stop(uv_async_t *a) {
     Worker *w = (Worker *)a->data;
 
-    if (w->doServer)
+    if (w->do_server)
 	uv_close((uv_handle_t *)&w->listener, nullptr);
     for (EchoClient *c : w->clients)
-	beginTeardown(c);
+	begin_teardown(c);
     uv_close((uv_handle_t *)a, nullptr);
 }
 
@@ -408,7 +408,7 @@ static void onStop(uv_async_t *a) {
 // port was refused. Bind natively with SO_REUSEPORT instead so every worker
 // still gets a duplicate listening socket load-balanced by the kernel.
 #ifndef _WIN32
-static void bindListener(Handle *listener, const Sockaddr &addr) {
+static void bind_listener(Handle *listener, const Sockaddr &addr) {
     int fd = (int)socket(addr.family(), SOCK_STREAM, 0);
     int one = 1;
 
@@ -425,28 +425,28 @@ static void bindListener(Handle *listener, const Sockaddr &addr) {
     uv_tcp_open(&listener->tcp, fd);
 }
 #else
-static void bindListener(Handle *listener, const Sockaddr &addr) {
+static void bind_listener(Handle *listener, const Sockaddr &addr) {
     uv_tcp_bind(&listener->tcp, addr, 0);
 }
 #endif
 
-static int runWorker(void *arg) {
+static int run_worker(void *arg) {
     Worker *w = (Worker *)arg;
 
     uv_loop_init(&w->loop);
-    uv_async_init(&w->loop, &w->stopper, onStop);
+    uv_async_init(&w->loop, &w->stopper, on_stop);
     w->stopper.data = w;
 
-    if (w->doServer) {
+    if (w->do_server) {
 	if (unixsock) {
 	    uv_pipe_init(&w->loop, &w->listener.pipe, 0);
 	    uv_pipe_open(&w->listener.pipe, dup(unixfd));
 	} else {
 	    uv_tcp_init(&w->loop, &w->listener.tcp);
-	    bindListener(&w->listener, w->bindAddr);
+	    bind_listener(&w->listener, w->bind_addr);
 	}
 	w->listener.tcp.data = w;
-	uv_listen((uv_stream_t *)&w->listener, BACKLOG, onNewConnection);
+	uv_listen((uv_stream_t *)&w->listener, BACKLOG, on_new_connection);
     }
     for (size_t i = 0; i < w->clients.size(); i++) {
 	EchoClient *c = w->clients[i];
@@ -454,7 +454,7 @@ static int runWorker(void *arg) {
 
 	uv_timer_init(&w->loop, &c->timer);
 	c->timer.data = c;
-	uv_timer_start(&c->timer, onStartTimer, ms, 0);
+	uv_timer_start(&c->timer, start_timer, ms, 0);
     }
 
     uv_run(&w->loop, UV_RUN_DEFAULT);
@@ -465,7 +465,7 @@ static int runWorker(void *arg) {
     return 0;
 }
 
-static void signalHandler(int) {
+static void signal_handler(int) {
     qflag.store(true, memory_order_relaxed);
 }
 
@@ -549,31 +549,31 @@ int tmain(int argc, const tchar * const argv[]) {
     if (!host)
 	host = T("unix:./socket");
 
-    Sockaddr bindAddr;
+    Sockaddr bind_addr;
 
-    if (!bindAddr.set(host)) {
+    if (!bind_addr.set(host)) {
 	tcerr << T("uvechotest: unknown host ") << host << endl;
 	delete [] dbuf;
 	return 1;
     }
-    if (!bindAddr.port())
-	bindAddr.port(8888);
+    if (!bind_addr.port())
+	bind_addr.port(8888);
 
-    Sockaddr connectAddr(bindAddr);
+    Sockaddr connect_addr(bind_addr);
 
-    if (connectAddr.host() == T("*"))
-	connectAddr.host(T("localhost"));
+    if (connect_addr.host() == T("*"))
+	connect_addr.host(T("localhost"));
 
-    signal(SIGINT, signalHandler);
+    signal(SIGINT, signal_handler);
 #ifndef _WIN32
-    unixsock = bindAddr.family() == AF_UNIX;
+    unixsock = bind_addr.family() == AF_UNIX;
     if (unixsock && server) {
-	sockaddr_un *sun = (sockaddr_un *)(const sockaddr_un *)bindAddr;
+	const sockaddr_un *sun = bind_addr;
 
 	unixfd = (int)socket(AF_UNIX, SOCK_STREAM, 0);
 	if (sun->sun_path[0])
 	    unlink(sun->sun_path);
-	if (unixfd == -1 || ::bind(unixfd, bindAddr, bindAddr.size()) == -1) {
+	if (unixfd == -1 || ::bind(unixfd, bind_addr, bind_addr.size()) == -1) {
 	    tcerr << T("uvechotest: unable to bind ") << host << endl;
 	    delete [] dbuf;
 	    return 1;
@@ -599,14 +599,14 @@ int tmain(int argc, const tchar * const argv[]) {
 	Worker &w = workers[u];
 	uint count = sockets / threads + (u < sockets % threads ? 1 : 0);
 
-	w.doServer = server;
-	w.doClient = client;
+	w.do_server = server;
+	w.do_client = client;
 	w.tmt = tmt;
 	w.wait = wait;
 	w.delay = delay;
 	w.base = base;
-	w.bindAddr = bindAddr;
-	w.connectAddr = connectAddr;
+	w.bind_addr = bind_addr;
+	w.connect_addr = connect_addr;
 	if (client) {
 	    for (uint j = 0; j < count; j++)
 		w.clients.push_back(new EchoClient(&w));
@@ -614,11 +614,11 @@ int tmain(int argc, const tchar * const argv[]) {
 	base += count;
     }
     for (Worker &w : workers)
-	w.thread.start(runWorker, &w, STACKSZ);
+	w.thread.start(run_worker, &w, STACKSZ);
 
     if (client) {
 	dlogi(Log::mod(T("uvecho")), Log::cmd(T("echo")), Log::kv(T("addr"),
-	    connectAddr.str()), Log::kv(T("data"), path));
+	    connect_addr.str()), Log::kv(T("data"), path));
 	dlog.flush();
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 
@@ -627,14 +627,14 @@ int tmain(int argc, const tchar * const argv[]) {
 	do {
 	    msleep(1000);
 
-	    ullong curOps = gops.exchange(0, memory_order_relaxed);
-	    ullong curErrs = gerrs.exchange(0, memory_order_relaxed);
-	    ullong curUsecs = gusecs.exchange(0, memory_order_relaxed);
+	    ullong cur_ops = gops.exchange(0, memory_order_relaxed);
+	    ullong cur_errs = gerrs.exchange(0, memory_order_relaxed);
+	    ullong cur_usecs = gusecs.exchange(0, memory_order_relaxed);
 	    timing_t now = Timing::now();
-	    ullong cnt = curOps + curErrs;
+	    ullong cnt = cur_ops + cur_errs;
 
 	    tcout << (cnt * 1000000 / (now - last)) << T("\t\t") <<
-		(curUsecs / (cnt ? cnt : 1)) << '\t' << curErrs << endl;
+		(cur_usecs / (cnt ? cnt : 1)) << '\t' << cur_errs << endl;
 	    last = now;
 	} while (loops.load(memory_order_relaxed) > 0 &&
 	    !qflag.load(memory_order_relaxed));
@@ -650,8 +650,8 @@ int tmain(int argc, const tchar * const argv[]) {
 
     if (unixfd != -1) {
 	close(unixfd);
-	if (((const sockaddr_un *)bindAddr)->sun_path[0])
-	    unlink(bindAddr.path());
+	if (((const sockaddr_un *)bind_addr)->sun_path[0])
+	    unlink(bind_addr.path());
     }
     delete [] dbuf;
     tcout << dtiming.data() << endl;

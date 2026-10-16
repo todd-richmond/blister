@@ -187,7 +187,7 @@ int Dispatcher::run() {
 
     // producers skip wakeups while this thread counts as scanning or before
     // it is a registered waiter so recheck rlist once registered
-    auto pending = [this] { return rlist.size() != 0; };
+    auto pending = [this] { return !rlist.empty(); };
 
     priority(-1);
     while (exec()) {

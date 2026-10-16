@@ -154,10 +154,9 @@ bool SMTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
 	if (p != str && p[-1] == '$') {	    // $$() -> $()
 	    size_t remaining_len = tstrlen(p) + 1;
 	    size_t pos = (size_t)(p - orig);
-	    if (pos == 0 || pos + remaining_len > buf_size + 1) {
-		return false;  // Not enough space
-	    }
-	    memmove(p - 1, p, remaining_len);
+	    if (pos == 0 || pos + remaining_len > buf_size + 1)
+		return false;
+	    copy(p, p + remaining_len, p - 1);
 	} else if (!end) {
 	    return false;
 	} else {
@@ -168,9 +167,8 @@ bool SMTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
 	    len = it->second.size();
 	    size_t end_len = tstrlen(end) + 1;
 	    size_t current_pos = (size_t)(p - orig);
-	    if (current_pos + len + end_len > buf_size) {
-		return false;  // Not enough space for expansion
-	    }
+	    if (current_pos + len + end_len > buf_size)
+		return false;
 	    memmove(p + len, end, end_len);
 	    memcpy(p, it->second.c_str(), len);
 	}

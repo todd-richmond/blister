@@ -531,9 +531,9 @@ bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz) {
 	    while (q < end && (*q == ' ' || *q == '\t'))
 		++q;
 	    if (q == end || *q == '\n') {
-		p = q + (q < end);
+		p = q < end ? q + 1 : q;
 	    } else if (*q == '\r' && (q + 1 == end || q[1] == '\n')) {
-		p = q + 1 + (q + 1 < end);
+		p = q + 1 < end ? q + 2 : q + 1;
 	    } else {
 		*o++ = '=';
 	    }

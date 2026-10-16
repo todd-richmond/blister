@@ -92,7 +92,7 @@ public:
 
     template<typename T>
     struct KV {
-	__forceinline constexpr KV(tstring_view k, const T &v): key(k), val(v) {}
+	constexpr KV(tstring_view k, const T &v): key(k), val(v) {}
 
 	tstring_view key;
 	const T &val;

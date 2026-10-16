@@ -325,7 +325,7 @@ tstring Sockaddr::str(const tstring &val) const {
 
     if (!p)
 	return val;
-    *to_chars(buf + 1, buf + sizeof (buf) / sizeof (tchar) - 1, p).ptr = 0;
+    *to_chars(buf + 1, buf + std::size(buf) - 1, p).ptr = 0;
     if (!val.contains(':')) {
 	return val + buf;
     } else {

@@ -178,7 +178,7 @@ private:
 	};
 
 	vector<Entry> entries;
-	unordered_set<tstring> keys;
+	unordered_set<tstring, strhash, streq> keys;
 	tstring path;
     };
 

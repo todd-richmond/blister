@@ -1027,7 +1027,7 @@ concept strview_arg = requires (const T &t) {
 };
 
 template<typename T>
-__forceinline constexpr auto strview(const T &s) {
+constexpr auto strview(const T &s) {
     if constexpr (is_array_v<T> && sizeof (remove_extent_t<T>) > 1) {
 	// compilers can fold strlen but not wcslen of a literal
 	size_t n = 0;
@@ -1093,7 +1093,7 @@ __forceinline int stringcmp(const A &a, const B &b) {
 
 	return ret ? ret : (ap[bv.size()] == '\0' ? 0 : 1);
     } else if constexpr (cstr_arg<B>) {
-	return -stringcmp(b, a);
+	return -stringcmp(b, a);	// NOSONAR
     } else {
 	return strview(a).compare(strview(b));
     }
@@ -1113,7 +1113,7 @@ __forceinline int stringicmp(const A &a, const B &b) {
 
 	return ret ? ret : (ap[bv.size()] == '\0' ? 0 : 1);
     } else if constexpr (cstr_arg<B>) {
-	return -stringicmp(b, a);
+	return -stringicmp(b, a);	// NOSONAR
     } else {
 	const auto av = strview(a);
 	const auto bv = strview(b);
@@ -1137,7 +1137,7 @@ __forceinline bool stringeq(const A &a, const B &b) {
 
 	return !cstrncmp(ap, bv.data(), bv.size()) && ap[bv.size()] == '\0';
     } else if constexpr (cstr_arg<B>) {
-	return stringeq(b, a);
+	return stringeq(b, a);	// NOSONAR
     } else {
 	return strview(a) == strview(b);
     }
@@ -1156,7 +1156,7 @@ __forceinline bool stringieq(const A &a, const B &b) {
 
 	return !cstrnicmp(ap, bv.data(), bv.size()) && ap[bv.size()] == '\0';
     } else if constexpr (cstr_arg<B>) {
-	return stringieq(b, a);
+	return stringieq(b, a);	// NOSONAR
     } else {
 	const auto av = strview(a);
 	const auto bv = strview(b);
@@ -1263,7 +1263,7 @@ constexpr auto unicode_fold = [](wchar c) {
 };
 
 // rapidhash for arbitrary binary data - 64*64 -> 128 bit multiply
-__forceinline constexpr void rapidmum(strhash_t &a, strhash_t &b) {
+constexpr void rapidmum(strhash_t &a, strhash_t &b) {
 #if defined(__SIZEOF_INT128__)
     __uint128_t r = (__uint128_t)a * b;
 
@@ -1291,14 +1291,14 @@ __forceinline constexpr void rapidmum(strhash_t &a, strhash_t &b) {
 #endif
 }
 
-__forceinline constexpr strhash_t rapidmix(strhash_t a, strhash_t b) {
+constexpr strhash_t rapidmix(strhash_t a, strhash_t b) {
     rapidmum(a, b);
     return a ^ b;
 }
 
 // ASCII A-Z to a-z in every byte of an integer
 template<typename U>
-__forceinline constexpr U rapidfold(U x) {
+constexpr U rapidfold(U x) {
     constexpr U ones = (U)(~(U)0 / 255);
     U h = x & (ones * 0x7f);
     U upper = ~x & ((h + ones * (0x7f - 'Z')) ^ (h + ones * (0x80 - 'A'))) &
@@ -1309,7 +1309,7 @@ __forceinline constexpr U rapidfold(U x) {
 
 // native endian unaligned loads usable in constant expressions
 template<typename U, bool fold = false, typename B>
-__forceinline constexpr U rapidload(const B *p) {
+constexpr U rapidload(const B *p) {
     U u = 0;
 
     if consteval {
@@ -1332,7 +1332,7 @@ inline constexpr strhash_t RAPID_SECRET1 = 0x6c62272e07bb0142ULL;
 
 // fold = ASCII case insensitive
 template<bool fold, typename B>
-__forceinline constexpr strhash_t rapidbyte(const B *p) {
+constexpr strhash_t rapidbyte(const B *p) {
     if constexpr (fold)
 	return (uint8_t)ascii_fold<B>(*p);
     else
@@ -1341,7 +1341,7 @@ __forceinline constexpr strhash_t rapidbyte(const B *p) {
 
 // keys up to 16 bytes need only 2 multiplies to mix well
 template<bool fold, typename B>
-__forceinline constexpr strhash_t rapidshort(const B *p, size_t len,
+constexpr strhash_t rapidshort(const B *p, size_t len,
     strhash_t seed) {
     strhash_t r0 = 0, r1 = 0;
 
@@ -1438,7 +1438,7 @@ constexpr strhash_t charhash(const T *s, size_t len, [[maybe_unused]] F xfrm =
 }
 
 template<typename T>
-__forceinline constexpr strhash_t stringhash(const T &s) {
+constexpr strhash_t stringhash(const T &s) {
     const auto v = strview(s);
 
     return charhash(v.data(), v.size());
@@ -1455,7 +1455,7 @@ constexpr auto ifold = [] {
 }();
 
 template<typename T>
-__forceinline constexpr strhash_t stringiasciihash(const T &s) {
+constexpr strhash_t stringiasciihash(const T &s) {
     const auto v = strview(s);
 
     return charhash<true>(v.data(), v.size(), ascii_fold<typename
@@ -1463,7 +1463,7 @@ __forceinline constexpr strhash_t stringiasciihash(const T &s) {
 }
 
 template<typename T>
-__forceinline constexpr strhash_t stringihash(const T &s) {
+constexpr strhash_t stringihash(const T &s) {
     const auto v = strview(s);
 
     return charhash<true>(v.data(), v.size(), ifold<typename
@@ -1682,6 +1682,7 @@ class BLISTER SizedObjectList: public ObjectList<C> {
 public:
     using Base = ObjectList<C>;
 
+    __forceinline bool empty(void) const { return sz.get() == 0; }
     __forceinline uint size(void) const { return sz.get(); }
 
     void erase(void) { Base::erase(); sz.zero(); }

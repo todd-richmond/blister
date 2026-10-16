@@ -168,31 +168,31 @@ static bool readline(streambuf *sb, string &s, size_t &left) {
 }
 
 tstring URL::fullpath(void) const {
-    tstring s(prot);
+    tstring s(protstr);
 
-    s.reserve(prot.length() + host.length() + rpath.length() +
+    s.reserve(protstr.length() + hoststr.length() + rpath.length() +
 	rquery.length() + 16);
     s += T("://");
-    if (!port) {
-	for (tchar c : host) {		// unix socket path
+    if (!portnum) {
+	for (tchar c : hoststr) {		// unix socket path
 	    if (c == '/')
 		s += T("%2F");
 	    else
 		s += c;
 	}
     } else {
-	const bool v6 = host.contains(':');
+	const bool v6 = hoststr.contains(':');
 
 	if (v6)
 	    s += '[';
-	s += host;
+	s += hoststr;
 	if (v6)
 	    s += ']';
-	if (port != (prot == T("https") ? 443 : 80)) {
+	if (portnum != (protstr == T("https") ? 443 : 80)) {
 	    tchar buf[8];
 
 	    buf[0] = ':';
-	    to_str(buf + 1, buf + 8, port);
+	    to_str(buf + 1, buf + 8, portnum);
 	    s += buf;
 	}
     }
@@ -206,9 +206,9 @@ tstring URL::fullpath(void) const {
 
 bool URL::set(const tchar *url) {
     if (!url) {
-	prot = T("http");
-	host = T("localhost");
-	port = 80;
+	protstr = T("http");
+	hoststr = T("localhost");
+	portnum = 80;
 	rpath = T("/");
 	rquery.erase();
 	return true;
@@ -270,12 +270,11 @@ bool URL::set(const tchar *url) {
 	if (h.empty())
 	    h = T("localhost");
     }
-    if (pos = rest.find('#'); pos != tstring_view::npos)
-	rest = rest.substr(0, pos);
+    rest = rest.substr(0, rest.find('#'));
     pos = rest.find('?');
-    prot = std::move(p);
-    host = std::move(h);
-    port = pt;
+    protstr = std::move(p);
+    hoststr = std::move(h);
+    portnum = pt;
     rpath.assign(rest.substr(0, pos));
     if (rpath.empty())
 	rpath = T("/");
@@ -931,6 +930,7 @@ void AsyncHTTPClient::grown(void) {
 }
 
 void AsyncHTTPClient::io(bool event) {
+    using enum Flow;
     Flow w;
 
     if (state != Open || growing)
@@ -947,17 +947,17 @@ void AsyncHTTPClient::io(bool event) {
     for (;;) {
 	const size_t pipelined = rq.size();
 
-	if ((w = writeall()) == Flow::Stop || readall() == Flow::Stop ||
+	if ((w = writeall()) == Stop || readall() == Stop ||
 	    growing)
 	    return;
-	if (wq.empty() || w == Flow::Wait || rq.size() >= pipelined)
+	if (wq.empty() || w == Wait || rq.size() >= pipelined)
 	    break;
     }
 
     const ulong tmt = rq.empty() && wq.empty() ? DispatchTimer::DSP_NEVER :
 	rto.load();
 
-    if (w == Flow::Wait)
+    if (w == Wait)
 	sock.rwable(IOSocket::onio, tmt);
     else
 	sock.readable(IOSocket::onio, tmt);
@@ -995,8 +995,10 @@ AsyncHTTPClient::Flow AsyncHTTPClient::nextline(string_view &line,
 }
 
 AsyncHTTPClient::Flow AsyncHTTPClient::readall(void) {
+    using enum Flow;
+
     while (!rq.empty()) {
-	if (const Flow f = advance(*rq.front()); f != Flow::Ok)
+	if (const Flow f = advance(*rq.front()); f != Ok)
 	    return f;
     }
     // idle: unsolicited data is an error and a read error means it closed
@@ -1004,7 +1006,7 @@ AsyncHTTPClient::Flow AsyncHTTPClient::readall(void) {
 
     if (n)
 	down(n > 0 ? EPROTO : sock.err(), Down::Resend);
-    return n ? Flow::Stop : Flow::Wait;
+    return n ? Stop : Wait;
 }
 
 AsyncHTTPClient::Flow AsyncHTTPClient::reserve(Request &r, ulong need) {

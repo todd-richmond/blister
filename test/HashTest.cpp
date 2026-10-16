@@ -512,8 +512,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	};
 	int bad = 0;
 
-	auto check = [&](auto tag) {
-	    using C = decltype(tag);
+	auto check = [&]<typename C>(C) {
 	    using S = basic_string<C>;
 
 	    for (const char *wa : words) {
@@ -525,8 +524,8 @@ int tmain(int argc, const tchar * const argv[]) {
 		    const C *ca = sa.c_str(), *cb = sb.c_str();
 		    basic_string_view<C> va(sa), vb(sb);
 
-		    copy(sa.begin(), sa.end(), ma);
-		    copy(sb.begin(), sb.end(), mb);
+		    ranges::copy(sa, ma);
+		    ranges::copy(sb, mb);
 		    for (auto &c : la)
 			c = (C)(c >= 'A' && c <= 'Z' ? c + 32 : c);
 		    for (auto &c : lb)
@@ -534,20 +533,22 @@ int tmain(int argc, const tchar * const argv[]) {
 
 		    int rc = sa.compare(sb), ric = la.compare(lb);
 		    auto sgn = [](int v) { return (v > 0) - (v < 0); };
-		    auto ok = [&](const auto &a, const auto &b) {
+		    auto miss = [&](const auto &a, const auto &b) {
 			return stringeq(a, b) == (rc == 0) &&
 			    stringieq(a, b) == (ric == 0) &&
 			    stringless(a, b) == (rc < 0) &&
 			    sgn(stringcmp(a, b)) == sgn(rc) &&
-			    sgn(stringicmp(a, b)) == sgn(ric);
+			    sgn(stringicmp(a, b)) == sgn(ric) ? 0 : 1;
 		    };
 
-		    bad += !ok(pa, pb) + !ok(pa, cb) + !ok(ca, pb) +
-			!ok(ca, cb) + !ok(ma, mb) + !ok(ma, cb) + !ok(pa, mb) +
-			!ok(sa, pb) + !ok(sa, mb) + !ok(sa, cb) + !ok(ca, sb) +
-			!ok(ma, sb) + !ok(sa, sb) + !ok(va, vb) + !ok(sa, vb) +
-			!ok(va, sb) + !ok(ca, vb) + !ok(va, cb) + !ok(ma, vb) +
-			!ok(va, mb) + !ok(pa, vb) + !ok(va, pb);
+		    bad += miss(pa, pb) + miss(pa, cb) + miss(ca, pb) +
+			miss(ca, cb) + miss(ma, mb) + miss(ma, cb) +
+			miss(pa, mb) + miss(sa, pb) + miss(sa, mb) +
+			miss(sa, cb) + miss(ca, sb) + miss(ma, sb) +
+			miss(sa, sb) + miss(va, vb) + miss(sa, vb) +
+			miss(va, sb) + miss(ca, vb) + miss(va, cb) +
+			miss(ma, vb) + miss(va, mb) + miss(pa, vb) +
+			miss(va, pb);
 		}
 	    }
 	};
@@ -565,7 +566,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	bool seen[64] = {};
 	int distinct = 0;
 
-	for (auto &o : objs) {
+	for (const auto &o : objs) {
 	    size_t slot = ptrhash<char>()(o) & 63;
 
 	    if (!seen[slot]) {

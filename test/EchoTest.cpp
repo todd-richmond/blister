@@ -97,7 +97,10 @@ public:
 	    SimpleDispatchListenSocket<EchoTest, EchoServerSocket>(d),
 	    tmt(timeout) {}
 
-	void start(EchoServerSocket &ess) { ess.timeout(tmt); ess.start(); }
+	void start(EchoServerSocket &ess) override {
+	    ess.timeout(tmt);
+	    ess.start();
+	}
 
     private:
 	ulong tmt;

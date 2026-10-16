@@ -511,6 +511,7 @@ public:
     SocketSet(const SocketSet &ss) { *this = ss; }
     SocketSet(SocketSet &&ss) noexcept: fds(std::move(ss.fds)),
 	maxsz(std::exchange(ss.maxsz, 0U)), sz(std::exchange(ss.sz, 0U)) {}
+    ~SocketSet() = default;
 
     SocketSet &operator =(const SocketSet &ss);
     SocketSet &operator =(SocketSet &&ss) noexcept {

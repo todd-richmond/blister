@@ -32,11 +32,11 @@ class BLISTER URL {
 public:
     explicit URL(const tchar *url = nullptr) { set(url); }
 
-    tstring host, prot;
-    ushort port = 80;
-
     friend auto operator <=>(const URL &a, const URL &b) = default;
 
+    const tstring &host(void) const { return hoststr; }
+    const tstring &prot(void) const { return protstr; }
+    ushort port(void) const { return portnum; }
     tstring fullpath(void) const;
     // path and query are stored escaped
     tstring path(void) const {
@@ -62,7 +62,8 @@ public:
     static void unescape(tstring &str, bool plus = true);
 
 private:
-    tstring rpath = T("/"), rquery;
+    tstring hoststr, protstr, rpath = T("/"), rquery;
+    ushort portnum = 80;
 };
 
 class BLISTER HTTPClient: nocopy {

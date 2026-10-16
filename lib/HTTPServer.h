@@ -37,7 +37,7 @@ public:
     using hdrmap = attrmap;
 #endif
 
-    HTTPServerSocket(Dispatcher &d, Socket &sock):
+    HTTPServerSocket(Dispatcher &d, const Socket &sock):
 	DispatchServerSocket(d, sock) {}
     virtual ~HTTPServerSocket();
 

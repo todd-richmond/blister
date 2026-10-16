@@ -313,7 +313,7 @@ void Log::LogFile::roll(void) {
 		entries.emplace_back((ulong)sbuf.st_mtime, s3);
 	}
 	tclosedir(dir);
-	sort(entries.begin(), entries.end());
+	ranges::sort(entries);
 	files = (uint)entries.size();
 	if (cnt || sec) {
 	    for (auto it = entries.begin(); it != entries.end(); ) {
