@@ -1283,11 +1283,9 @@ constexpr void rapidmum(strhash_t &a, strhash_t &b) {
     strhash_t b_lo = (uint32_t)b, b_hi = b >> 32;
     strhash_t ll = a_lo * b_lo, lh = a_lo * b_hi, hl = a_hi * b_lo;
     strhash_t mid = (ll >> 32) + (uint32_t)lh + (uint32_t)hl;
-    strhash_t lo = (mid << 32) | (uint32_t)ll;
-    strhash_t hi = a_hi * b_hi + (lh >> 32) + (hl >> 32) + (mid >> 32);
 
-    a = lo;
-    b = hi;
+    a = (mid << 32) | (uint32_t)ll;
+    b = a_hi * b_hi + (lh >> 32) + (hl >> 32) + (mid >> 32);
 #endif
 }
 

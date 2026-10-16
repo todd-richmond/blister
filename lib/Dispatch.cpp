@@ -651,7 +651,9 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
     static constexpr uint_fast8_t EVT_READ = 0x01;
     static constexpr uint_fast8_t EVT_WRITE = 0x02;
     static constexpr uint_fast8_t EVT_ERR = 0x04;
+#ifdef DSP_EPOLL
     static constexpr uint_fast8_t EVT_HUP = 0x08;
+#endif
     DispatchSocket *batch[MAX_EVENTS];
     uint_fast8_t masks[MAX_EVENTS];
     uint rcnt = 0, rsz;
