@@ -2,9 +2,8 @@ set(blister_obj_INC_SOURCE Config.h Dispatch.h HTTPClient.h HTTPServer.h Log.h
     LRUCache.h MD5.h ResourcePool.h Service.h SMTPClient.h Socket.h stdapi.h
     Streams.h Thread.h Timing.h)
 
-set(blister_obj_LIB_SOURCE Config.cpp Dispatch.cpp HTTPClient.cpp
-    HTTPServer.cpp Log.cpp MD5.c Service.cpp Socket.cpp SMTPClient.cpp \
-    Thread.cpp Timing.cpp)
+set(blister_obj_LIB_SOURCE Config.cpp Dispatch.cpp HTTPClient.cpp HTTPServer.cpp
+    Log.cpp MD5.c Service.cpp Socket.cpp SMTPClient.cpp Thread.cpp Timing.cpp)
 
 if(WIN32)
     list(APPEND blister_obj_LIB_SOURCE Windows.c WindowsCPP.cpp)
