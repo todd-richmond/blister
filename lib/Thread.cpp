@@ -16,6 +16,7 @@
  */
 
 #include "stdapi.h"
+#include <vector>
 #include "Thread.h"
 
 static const thread_id_t NOID = (thread_id_t)-1;

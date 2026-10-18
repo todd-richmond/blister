@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 100;
+	objectVersion = 110;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -21,6 +21,10 @@
 		9079E3781FDB1C01008FA996 /* DLog.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9079E3231FDB144C008FA996 /* DLog.cpp */; };
 		9079E37F1FDB1C1F008FA996 /* Blister.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = F7AA211913149F2C00272F6A /* Blister.dylib */; };
 		9079E3851FDB1C31008FA996 /* Cfg.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9079E3261FDB15EC008FA996 /* Cfg.cpp */; };
+		90F85B0D3084802100281C4E /* Blister.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = F7AA211913149F2C00272F6A /* Blister.dylib */; };
+		90F85B163084809C00281C4E /* HTTPTest.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 90F85B153084809C00281C4E /* HTTPTest.cpp */; };
+		90F85B183084835C00281C4E /* LRUCache.h in Headers */ = {isa = PBXBuildFile; fileRef = 90F85B173084835C00281C4E /* LRUCache.h */; };
+		90F85B1A308581D300281C4E /* ResourcePool.h in Headers */ = {isa = PBXBuildFile; fileRef = 90F85B19308581D300281C4E /* ResourcePool.h */; };
 		F7AA214313149FAF00272F6A /* Config.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA212A13149FAF00272F6A /* Config.cpp */; };
 		F7AA214413149FAF00272F6A /* Config.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA212B13149FAF00272F6A /* Config.h */; };
 		F7AA214513149FAF00272F6A /* Dispatch.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA212C13149FAF00272F6A /* Dispatch.cpp */; };
@@ -100,6 +104,13 @@
 			remoteGlobalIDString = F7AA211813149F2C00272F6A;
 			remoteInfo = Blister;
 		};
+		90F85B093084802100281C4E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F7AA211813149F2C00272F6A;
+			remoteInfo = Blister;
+		};
 		F7AA218F131CA4D300272F6A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
@@ -166,6 +177,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 1;
 		};
+		90F85B0E3084802100281C4E /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolder = None;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
 		F7AA217D131C246200272F6A /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			dstPath = /usr/share/man/man1/;
@@ -191,6 +210,10 @@
 		9079E3651FDB1BC3008FA996 /* HTTPLoad */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = HTTPLoad; sourceTree = BUILT_PRODUCTS_DIR; };
 		9079E3721FDB1BCD008FA996 /* SMTPLoad */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = SMTPLoad; sourceTree = BUILT_PRODUCTS_DIR; };
 		9079E3841FDB1C1F008FA996 /* Cfg */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Cfg; sourceTree = BUILT_PRODUCTS_DIR; };
+		90F85B123084802100281C4E /* HTTPTest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = HTTPTest; sourceTree = BUILT_PRODUCTS_DIR; };
+		90F85B153084809C00281C4E /* HTTPTest.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = HTTPTest.cpp; sourceTree = "<group>"; };
+		90F85B173084835C00281C4E /* LRUCache.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LRUCache.h; sourceTree = "<group>"; };
+		90F85B19308581D300281C4E /* ResourcePool.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ResourcePool.h; sourceTree = "<group>"; };
 		F7AA211913149F2C00272F6A /* Blister.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = Blister.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7AA211E13149F2C00272F6A /* BlisterProj.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = BlisterProj.xcconfig; path = Blister.xcodeproj/BlisterProj.xcconfig; sourceTree = SOURCE_ROOT; };
 		F7AA211F13149F2C00272F6A /* BlisterTarget.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = BlisterTarget.xcconfig; path = Blister.xcodeproj/BlisterTarget.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -220,7 +243,7 @@
 		F7AA214113149FAF00272F6A /* Timing.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.h; fileEncoding = 4; name = Timing.h; path = ../lib/Timing.h; sourceTree = "<group>"; };
 		F7AA214213149FAF00272F6A /* Unix.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = Unix.c; path = ../lib/Unix.c; sourceTree = "<group>"; };
 		F7AA217F131C246200272F6A /* Echotest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Echotest; sourceTree = BUILT_PRODUCTS_DIR; };
-		F7AA2188131C24DF00272F6A /* EchoTest.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = EchoTest.cpp; path = ../test/EchoTest.cpp; sourceTree = "<group>"; };
+		F7AA2188131C24DF00272F6A /* EchoTest.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = EchoTest.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -266,6 +289,12 @@
 				9079E37F1FDB1C1F008FA996 /* Blister.dylib in Frameworks */,
 			);
 		};
+		90F85B0C3084802100281C4E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+				90F85B0D3084802100281C4E /* Blister.dylib in Frameworks */,
+			);
+		};
 		F7AA211613149F2C00272F6A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
@@ -304,6 +333,7 @@
 				9079E3651FDB1BC3008FA996 /* HTTPLoad */,
 				9079E3721FDB1BCD008FA996 /* SMTPLoad */,
 				9079E3841FDB1C1F008FA996 /* Cfg */,
+				90F85B123084802100281C4E /* HTTPTest */,
 			);
 			name = Products;
 			sourceTree = SOURCE_ROOT;
@@ -321,8 +351,10 @@
 				F7AA213113149FAF00272F6A /* HTTPServer.h */,
 				F7AA213213149FAF00272F6A /* Log.cpp */,
 				F7AA213313149FAF00272F6A /* Log.h */,
+				90F85B173084835C00281C4E /* LRUCache.h */,
 				F7AA213413149FAF00272F6A /* MD5.c */,
 				F7AA213513149FAF00272F6A /* MD5.h */,
+				90F85B19308581D300281C4E /* ResourcePool.h */,
 				F7AA213613149FAF00272F6A /* Service.cpp */,
 				F7AA213713149FAF00272F6A /* Service.h */,
 				F7AA213813149FAF00272F6A /* SMTPClient.cpp */,
@@ -353,6 +385,7 @@
 				9079E3291FDB1609008FA996 /* HTTPd.cpp */,
 				F7AA2188131C24DF00272F6A /* EchoTest.cpp */,
 				9079E32C1FDB160A008FA996 /* HTTPLoad.cpp */,
+				90F85B153084809C00281C4E /* HTTPTest.cpp */,
 				9079E32B1FDB160A008FA996 /* SMTPLoad.cpp */,
 			);
 			name = Test;
@@ -376,7 +409,9 @@
 				F7AA215413149FAF00272F6A /* Socket.h in Headers */,
 				F7AA215513149FAF00272F6A /* stdapi.h in Headers */,
 				F7AA215613149FAF00272F6A /* Streams.h in Headers */,
+				90F85B183084835C00281C4E /* LRUCache.h in Headers */,
 				F7AA215813149FAF00272F6A /* Thread.h in Headers */,
+				90F85B1A308581D300281C4E /* ResourcePool.h in Headers */,
 				F7AA215A13149FAF00272F6A /* Timing.h in Headers */,
 			);
 		};
@@ -509,6 +544,24 @@
 			productReference = 9079E3841FDB1C1F008FA996 /* Cfg */;
 			productType = "com.apple.product-type.tool";
 		};
+		90F85B073084802100281C4E /* HTTPTest */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 90F85B0F3084802100281C4E /* Build configuration list for PBXNativeTarget "HTTPTest" */;
+			buildPhases = (
+				90F85B0A3084802100281C4E /* Sources */,
+				90F85B0C3084802100281C4E /* Frameworks */,
+				90F85B0E3084802100281C4E /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				90F85B083084802100281C4E /* PBXTargetDependency */,
+			);
+			name = HTTPTest;
+			productName = Echotest;
+			productReference = 90F85B123084802100281C4E /* HTTPTest */;
+			productType = "com.apple.product-type.tool";
+		};
 		F7AA211813149F2C00272F6A /* Blister */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F7AA212713149F2C00272F6A /* Build configuration list for PBXNativeTarget "Blister" */;
@@ -559,7 +612,7 @@
 				Base,
 			);
 			mainGroup = F7AA210E13149F2C00272F6A;
-			preferredProjectObjectVersion = 100;
+			preferredProjectObjectVersion = 110;
 			productRefGroup = F7AA211A13149F2C00272F6A /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -573,6 +626,7 @@
 				9079E34C1FDB1BB8008FA996 /* HTTPd */,
 				9079E3591FDB1BC3008FA996 /* HTTPLoad */,
 				9079E3661FDB1BCD008FA996 /* SMTPLoad */,
+				90F85B073084802100281C4E /* HTTPTest */,
 			);
 		};
 /* End PBXProject section */
@@ -618,6 +672,12 @@
 			isa = PBXSourcesBuildPhase;
 			files = (
 				9079E3851FDB1C31008FA996 /* Cfg.cpp in Sources */,
+			);
+		};
+		90F85B0A3084802100281C4E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+				90F85B163084809C00281C4E /* HTTPTest.cpp in Sources */,
 			);
 		};
 		F7AA211513149F2C00272F6A /* Sources */ = {
@@ -680,6 +740,11 @@
 			isa = PBXTargetDependency;
 			target = F7AA211813149F2C00272F6A /* Blister */;
 			targetProxy = 9079E37B1FDB1C1F008FA996 /* PBXContainerItemProxy */;
+		};
+		90F85B083084802100281C4E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F7AA211813149F2C00272F6A /* Blister */;
+			targetProxy = 90F85B093084802100281C4E /* PBXContainerItemProxy */;
 		};
 		F7AA2190131CA4D300272F6A /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -871,6 +936,34 @@
 			};
 			name = Release;
 		};
+		90F85B103084802100281C4E /* Debug configuration for PBXNativeTarget "HTTPTest" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_ATOMIC_IMPLICIT_SEQ_CST = NO;
+				CODE_SIGN_IDENTITY = "-";
+				DEAD_CODE_STRIPPING = YES;
+				HEADER_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = .;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				USER_HEADER_SEARCH_PATHS = ../lib;
+			};
+			name = Debug;
+		};
+		90F85B113084802100281C4E /* Release configuration for PBXNativeTarget "HTTPTest" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_ATOMIC_IMPLICIT_SEQ_CST = NO;
+				CODE_SIGN_IDENTITY = "-";
+				DEAD_CODE_STRIPPING = YES;
+				HEADER_SEARCH_PATHS = "";
+				LIBRARY_SEARCH_PATHS = .;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				USER_HEADER_SEARCH_PATHS = ../lib;
+			};
+			name = Release;
+		};
 		F7AA212513149F2C00272F6A /* Debug configuration for PBXProject "Blister" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -880,7 +973,7 @@
 				CLANG_ANALYZER_GCD_PERFORMANCE = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
 				CLANG_CXX_STANDARD_LIBRARY_HARDENING = debug;
 				CLANG_OPTIMIZATION_PROFILE_FILE = "";
 				"CLANG_OPTIMIZATION_PROFILE_FILE[arch=*]" = "";
@@ -920,7 +1013,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = c17;
+				GCC_C_LANGUAGE_STANDARD = c23;
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_INCREASE_PRECOMPILED_HEADER_SHARING = YES;
@@ -956,7 +1049,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LD_WARN_DUPLICATE_LIBRARIES = YES;
 				LD_WARN_UNUSED_DYLIBS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-fno-standalone-debug",
@@ -1005,7 +1098,7 @@
 				CLANG_ANALYZER_GCD_PERFORMANCE = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
 				CLANG_DEBUG_INFORMATION_LEVEL = "line-tables-only";
 				CLANG_OPTIMIZATION_PROFILE_FILE = "";
 				CLANG_TIDY_MISC_REDUNDANT_EXPRESSION = NO;
@@ -1043,7 +1136,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = c17;
+				GCC_C_LANGUAGE_STANDARD = c23;
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_INCREASE_PRECOMPILED_HEADER_SHARING = YES;
@@ -1081,7 +1174,7 @@
 				LD_WARN_DUPLICATE_LIBRARIES = YES;
 				LD_WARN_UNUSED_DYLIBS = YES;
 				LLVM_LTO = YES_THIN;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				OTHER_CFLAGS = (
 					"-fno-standalone-debug",
 					"-fvisibility=hidden",
@@ -1152,7 +1245,6 @@
 				DEAD_CODE_STRIPPING = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
@@ -1167,7 +1259,6 @@
 				DEAD_CODE_STRIPPING = YES;
 				HEADER_SEARCH_PATHS = "";
 				LIBRARY_SEARCH_PATHS = .;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
@@ -1229,6 +1320,14 @@
 			buildConfigurations = (
 				9079E3821FDB1C1F008FA996 /* Debug configuration for PBXNativeTarget "Cfg" */,
 				9079E3831FDB1C1F008FA996 /* Release configuration for PBXNativeTarget "Cfg" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		90F85B0F3084802100281C4E /* Build configuration list for PBXNativeTarget "HTTPTest" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				90F85B103084802100281C4E /* Debug configuration for PBXNativeTarget "HTTPTest" */,
+				90F85B113084802100281C4E /* Release configuration for PBXNativeTarget "HTTPTest" */,
 			);
 			defaultConfigurationName = Release;
 		};
