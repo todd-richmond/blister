@@ -47,9 +47,10 @@ See `lib/README.md` for full per-class detail; summary below.
 - `lib/Thread.h/.cpp` — threading primitives. `Thread`, `ThreadGroup` (base of `Dispatcher`). Lock types: `SpinLock`/`SpinRWLock`, `TicketLock`, `UnfairLock`, `Lock`/`RWLock`, all with RAII `*Locker`. Also `LifoSemaphore`, `ThreadLocal`, `RefCount`, `DLLibrary`, `Processor`.
 - `lib/Service.h/.cpp` — unified Windows SCM / Unix signal daemon control.
 - `lib/Timing.h/.cpp` — call-duration profiling; `TimingEntry`/`TimingFrame` are RAII scope timers; global `dtiming` instance.
-- `lib/HTTPClient`/`HTTPServer`/`SMTPClient` — protocol implementations on `Dispatch`. `lib/MPHTTPServer` layers multi-process worker management (prefork, rolling restarts, health/metrics endpoints) on top of `HTTPServer`.
+- `lib/HTTPClient`/HTTPServer`/`SMTPClient` — protocol implementations on `Dispatch`.
 - `lib/LRUCache.h` — header-only size/time-bounded LRU cache.
-- `test/` — sample/load-test programs, not unit tests (`cfg`, `dlog`, `dtiming`, `hashtest`, `daemonize`, `echotest`, `uvechotest`, `uhttpd`, `httpload`, `smtpload` — see `test/README.md`). `echotest` is the canonical Dispatch client+server example.
+- `lib/ResourcePool.h` — header-only `ResourcePool<C>` (blocking) and `AsyncResourcePool<C>` (`Waiter` callbacks on an `AsyncCondvar`) pools of lazily created, shareable resources.
+- `test/` — sample/load-test programs, not unit tests (`cfg`, `dlog`, `dtiming`, `hashtest`, `daemonize`, `echotest`, `uvechotest`, `httptest`, `uhttpd`, `httpload`, `smtpload` — see `test/README.md`). `echotest` is the canonical Dispatch client+server example.
 
 ### Conventions
 - Prefer C++23 (concepts, ranges, `to_chars`, etc.) over older idioms in new/modified code.

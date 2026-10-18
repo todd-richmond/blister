@@ -614,22 +614,29 @@ inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg
  * AsyncCondvar acts like a std::condition_variable, but queues a callback
  * to be called instead of blocking the thread. The lock must be held
  * but wait() returns with it unlocked. A Waiter must not be destroyed or
- * cancelled while its thread holds the lock
+ * cancelled while its thread holds the lock. A Waiter may wait on any
+ * AsyncCondvar that shares its lock
  */
 class BLISTER AsyncCondvar: nocopy {
 public:
     class BLISTER Waiter: public DispatchObj {
     public:
-	explicit Waiter(AsyncCondvar &a): DispatchObj(a.dispatcher()), ac(a),
-	    link(*this) {}
-	~Waiter() override { ac.cancel(*this); }
+	explicit Waiter(AsyncCondvar &a): DispatchObj(a.dispatcher()),
+	    lck(a.lck), ac(&a), link(*this) {}
+	Waiter(AsyncCondvar &a, DispatchObj &parent): DispatchObj(child,
+	    parent), lck(a.lck), ac(&a), link(*this) {}
+	~Waiter() override { unwait(); }
 
 	void wait(DispatchObjCB cb) {
 	    callback(cb);
-	    ac.wait(*this);
+	    ac->wait(*this);
+	}
+	void wait(DispatchObjCB cb, AsyncCondvar &cv) {
+	    callback(cb);
+	    cv.wait(*this);
 	}
 	void cancel(void) override {
-	    ac.cancel(*this);
+	    unwait();
 	    DispatchObj::cancel();
 	}
 
@@ -641,7 +648,17 @@ public:
 	    Waiter &waiter;
 	};
 
-	AsyncCondvar &ac;
+	void unwait(void) {
+	    lck.lock();
+	    if (waiting) {
+		waiting = false;
+		ac->waiters.pop(link);
+	    }
+	    lck.unlock();
+	}
+
+	Lock &lck;
+	AsyncCondvar *ac;		// guarded by lck
 	Link link;
 	bool waiting = false;
 
@@ -664,6 +681,18 @@ public:
 	while (waiters)
 	    wake();
     }
+    // move all waiters to another AsyncCondvar sharing the same held lock
+    void requeue(AsyncCondvar &other) {
+	if (!waiters)
+	    return;
+	for (const Waiter::Link &l : waiters)
+	    l.waiter.ac = &other;
+	other.waiters.push_back(waiters);
+	if (other.signaled) {
+	    other.signaled = false;
+	    other.set();
+	}
+    }
     uint set(uint count = 1) {
 	uint woken = 0;
 
@@ -683,20 +712,11 @@ public:
 	} else {
 	    if (!waiter.waiting) {
 		waiter.waiting = true;
+		waiter.ac = this;
 		waiters.push_back(waiter.link);
 	    }
 	    lck.unlock();
 	}
-    }
-
-protected:
-    void cancel(Waiter &waiter) {
-	lck.lock();
-	if (waiter.waiting) {
-	    waiter.waiting = false;
-	    waiters.pop(waiter.link);
-	}
-	lck.unlock();
     }
 
 private:
