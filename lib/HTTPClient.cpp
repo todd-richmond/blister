@@ -26,6 +26,7 @@ static constexpr ulong MaxBody = 256UL * 1024 * 1024;
 static constexpr size_t MaxHdrs = 64UL * 1024;		// status + header bytes
 static constexpr size_t MaxPipeline = 16;
 static constexpr size_t MinRead = 512;
+static constexpr ulong MaxKeep = 64UL * 1024;	// reused response buffer
 
 static constexpr auto hex_lut = [] {
     array<uchar, 256> t{};
@@ -84,10 +85,9 @@ static bool badtoken(const tchar *s) {
     return false;
 }
 
-static string buildreq(const tchar *op, const tchar *path, const Sockaddr &addr,
-    bool ka, ulong datasz, tstring_view hdrs) {
+static void buildreq(string &req, const tchar *op, const tchar *path,
+    const Sockaddr &addr, bool ka, ulong datasz, tstring_view hdrs) {
     tstring host = addr.str();		// never does a reverse DNS lookup
-    string req;
 
     req.reserve(256 + hdrs.size());
     req = tchartoachar(op);
@@ -111,7 +111,6 @@ static string buildreq(const tchar *op, const tchar *path, const Sockaddr &addr,
     if (!hdrs.empty())
 	req.append(tchartoachar(hdrs.data()), hdrs.size());
     req += "\r\n";
-    return req;
 }
 
 static constexpr int hexbyte(tuchar hi, tuchar lo) {
@@ -461,8 +460,10 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     if (!badtoken(op) && !badtoken(path)) {
 	const bool head = !tstrcmp(op, T("HEAD"));
 	string line;
-	const string req = buildreq(op, path, addr, ka, datasz,
-	    tstring_view(hstrm.str(), (size_t)hstrm.size()));
+	string req;
+
+	buildreq(req, op, path, addr, ka, datasz, tstring_view(hstrm.str(),
+	    (size_t)hstrm.size()));
 	const streamsize rsz = (streamsize)req.size();
 	const streamsize total = rsz + (streamsize)datasz;
 #ifndef _WIN32
@@ -553,10 +554,15 @@ void HTTPClient::setup(void) {
 }
 
 void AsyncHTTPClient::Request::reset(void) {
-    free(result);
-    result = nullptr;
+    if (cap > MaxKeep) {
+	free(result);
+	result = nullptr;
+	cap = 0;
+    } else if (result) {
+	*result = '\0';
+    }
     reshdrs.clear();
-    cap = sz = 0;
+    sz = 0;
     sockerr = 0;
     sts = 0;
 }
@@ -605,7 +611,7 @@ bool AsyncHTTPClient::Request::setup(DispatchObjCB cb, DispatchObj &co,
 	return false;
     }
     head = !tstrcmp(op, T("HEAD"));
-    req = buildreq(op, path, c.addr, true, len, tstring_view(hstrm.str(),
+    buildreq(req, op, path, c.addr, true, len, tstring_view(hstrm.str(),
 	(size_t)hstrm.size()));
     hstrm.reset();
     return true;
@@ -815,13 +821,12 @@ void AsyncHTTPClient::down(int err, Down how) {
 }
 
 void AsyncHTTPClient::drain(void) {
-    vector<Request *> batch;
-
     inlock.lock();
     batch.swap(inbox);
     inlock.unlock();
     for (Request *r : batch)
 	enqueue(*r);
+    batch.clear();
     if (!pending)
 	delete this;
 }

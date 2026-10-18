@@ -331,7 +331,7 @@ private:
     timing_t cstart = 0;
     atomic<uint> cto = 30 * 1000;
     bool growing = false, idle = false, inreserve = false;
-    vector<Request *> inbox;
+    vector<Request *> batch, inbox;
     SpinLock inlock;
     Intake &intake;
     atomic<uint> pending = 1, rcnt = 0;

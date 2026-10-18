@@ -74,7 +74,8 @@ enum DispatchFlag: dspflag_t {
     DSP_SelectRead = 0x2000,
     DSP_SelectWrite = 0x4000,
     DSP_SelectClose = 0x8000,
-    DSP_Polled = 0x10000
+    DSP_Polled = 0x10000,
+    DSP_Armed = 0x20000
 };
 
 class Dispatcher;

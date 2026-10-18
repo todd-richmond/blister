@@ -713,6 +713,7 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    continue;
 	mask = masks[u];
 	flags = ds->flags;
+	ds->flags &= ~DSP_Armed;
 #ifdef DSP_EPOLL
 	// a close is reported once so the next poll must re-arm to see it
 	// even if the read that follows drains the socket
@@ -1180,6 +1181,11 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 	return;
     }
     b = sarray[m] == (flags & DSP_SelectAll);
+#if defined(DSP_EPOLL) || defined(DSP_KQUEUE)
+    // no event has consumed the edge armed by the previous poll
+    if (flags & DSP_Armed)
+	drained = true;
+#endif
 #ifdef DSP_KQUEUE
     // EV_CLEAR edges only fire on new data so re-adding re-checks unread data
     if (b && !drained && (m == DispatchRead || m == DispatchReadWrite ||
@@ -1187,7 +1193,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 	b = false;
 #endif
     ds.flags &= ~(DSP_SelectAll | DSP_IO);
-    ds.flags |= sarray[m] | DSP_Scheduled;
+    ds.flags |= sarray[m] | DSP_Scheduled | DSP_Armed;
 #ifdef DSP_EPOLL
     if (UNLIKELY(op == EPOLL_CTL_ADD)) {
 	b = false;
@@ -1286,8 +1292,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 
     if (LIKELY(m == DispatchRead || m == DispatchReadWrite || m ==
 	DispatchAccept || m == DispatchClose)) {
-	EV_SET(&chgs[nevts++], ds.fd(), EVFILT_READ, EV_ADD | EV_CLEAR,
-	    NOTE_EOF, 0, &ds);
+	EV_SET(&chgs[nevts++], ds.fd(), EVFILT_READ,
+	    EV_ADD | EV_CLEAR | EV_ENABLE, NOTE_EOF, 0, &ds);
 	if ((flags & DSP_SelectWrite) && m != DispatchReadWrite) {
 	    EV_SET(&chgs[nevts++], ds.fd(), EVFILT_WRITE, EV_DISABLE, 0, 0,
 		&ds);
@@ -1295,8 +1301,8 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
     }
     if (UNLIKELY(m == DispatchWrite || m == DispatchReadWrite || m ==
 	DispatchConnect)) {
-	EV_SET(&chgs[nevts++], ds.fd(), EVFILT_WRITE, EV_ADD | EV_CLEAR,
-	    NOTE_EOF, 0, &ds);
+	EV_SET(&chgs[nevts++], ds.fd(), EVFILT_WRITE,
+	    EV_ADD | EV_CLEAR | EV_ENABLE, NOTE_EOF, 0, &ds);
 	if ((flags & DSP_SelectRead) && m != DispatchReadWrite) {
 	    EV_SET(&chgs[nevts++], ds.fd(), EVFILT_READ, EV_DISABLE, 0, 0, &ds);
 	}
