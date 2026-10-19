@@ -326,6 +326,7 @@ private:
     void submit(Request &r);
 
     const Sockaddr addr;
+    const string host;		// Host header value
     tstring ckey;
     atomic<ulong> connects = 0;
     timing_t cstart = 0;

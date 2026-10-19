@@ -85,20 +85,24 @@ static bool badtoken(const tchar *s) {
     return false;
 }
 
-static void buildreq(string &req, const tchar *op, const tchar *path,
-    const Sockaddr &addr, bool ka, ulong datasz, tstring_view hdrs) {
+static string hosthdr(const Sockaddr &addr) {
     tstring host = addr.str();		// never does a reverse DNS lookup
 
+    if (addr.proto() == Sockaddr::UNIX)
+	host = T("localhost");
+    else if (addr.port() == 80)
+	host.resize(host.size() - 3);	// strip ":80"
+    return tstringtoastring(host);
+}
+
+static void buildreq(string &req, const tchar *op, const tchar *path,
+    string_view host, bool ka, ulong datasz, tstring_view hdrs) {
     req.reserve(256 + hdrs.size());
     req = tchartoachar(op);
     req += ' ';
     req += tchartoachar(path);
     req += " HTTP/1.1\r\nHost: ";
-    if (addr.proto() == Sockaddr::UNIX)
-	host = T("localhost");
-    else if (addr.port() == 80)
-	host.resize(host.size() - 3);	// strip ":80"
-    req += tstringtoastring(host);
+    req += host;
     req += "\r\n";
     if (datasz || !tstrcmp(op, T("POST")) || !tstrcmp(op, T("PUT"))) {
 	char buf[24];
@@ -462,8 +466,8 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 	string line;
 	string req;
 
-	buildreq(req, op, path, addr, ka, datasz, tstring_view(hstrm.str(),
-	    (size_t)hstrm.size()));
+	buildreq(req, op, path, hosthdr(addr), ka, datasz,
+	    tstring_view(hstrm.str(), (size_t)hstrm.size()));
 	const streamsize rsz = (streamsize)req.size();
 	const streamsize total = rsz + (streamsize)datasz;
 #ifndef _WIN32
@@ -611,14 +615,15 @@ bool AsyncHTTPClient::Request::setup(DispatchObjCB cb, DispatchObj &co,
 	return false;
     }
     head = !tstrcmp(op, T("HEAD"));
-    buildreq(req, op, path, c.addr, true, len, tstring_view(hstrm.str(),
+    buildreq(req, op, path, c.host, true, len, tstring_view(hstrm.str(),
 	(size_t)hstrm.size()));
     hstrm.reset();
     return true;
 }
 
 AsyncHTTPClient::AsyncHTTPClient(IOSocket *s, const Sockaddr &sa, Timing *tm):
-    addr(sa), intake(*new Intake(*s, *this)), sock(*s), timing(tm) {
+    addr(sa), host(hosthdr(sa)), intake(*new Intake(*s, *this)), sock(*s),
+    timing(tm) {
     if (timing) {
 	const tstring ip(addr.ipstr());
 
