@@ -44,6 +44,10 @@ public:
     }
 
     void attach(const C &c) { fd = &c; }
+    string_view avail(void) const {
+	return { gptr(), (size_t)(egptr() - gptr()) };
+    }
+    void consume(size_t n) { gbump((int)n); }
     const char *str(void) const { return buf; }
     // cppcheck-suppress nullPointer
     void str(char *p, streamsize sz) { setbuf(p, sz); }

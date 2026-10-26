@@ -130,8 +130,11 @@ public:
 
 protected:
     Sockaddr addr;
+    string hostval;
     bufferstream<tchar> hstrm;
     bool ka = true;
+    string line;
+    string req;
     attrmap reshdrs;
     ulong ressz = 0;
     unique_ptr<char[]> result;
@@ -149,7 +152,7 @@ private:
     void grow(ulong need);
     bool readbody(bool head, bool &keep);
     bool readchunked(void);
-    bool readhdrs(string &line, bool &http11);
+    bool readhdrs(bool &http11);
     void setup(void);
 };
 
@@ -235,6 +238,7 @@ public:
     };
 
     // built on a Dispatcher it gets its own group, on a parent it shares it
+    // and the parent's callbacks run within client io so must not delete it
     AsyncHTTPClient(Dispatcher &d, const Sockaddr &sa, Timing *tm = nullptr):
 	AsyncHTTPClient(new IOSocket(d, *this), sa, tm) {}
     AsyncHTTPClient(DispatchObj &parent, const Sockaddr &sa, Timing *tm =
@@ -326,13 +330,14 @@ private:
     void submit(Request &r);
 
     const Sockaddr addr;
-    const string host;		// Host header value
+    const string host;
     tstring ckey;
     atomic<ulong> connects = 0;
     timing_t cstart = 0;
     atomic<uint> cto = 30 * 1000;
     bool growing = false, idle = false, inreserve = false;
     vector<Request *> batch, inbox;
+    atomic<DispatchObj *> incall = nullptr;
     SpinLock inlock;
     Intake &intake;
     atomic<uint> pending = 1, rcnt = 0;

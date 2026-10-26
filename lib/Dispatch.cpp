@@ -76,6 +76,66 @@ static constexpr dspflag_t DSP_PostCB = DSP_Freed | DSP_Ready;
 static constexpr dspflag_t DSP_SelectAll = DSP_SelectAccept | DSP_SelectRead |
     DSP_SelectWrite | DSP_SelectClose;
 
+void Dispatcher::TimerSet::erase(DispatchTimer &dt) {
+    if (dt.due() <= split)
+	sorted.erase(&dt);
+    unsorted.erase(&dt);
+    // drop from an in-flight batch so it is not touched once freed
+    for (uint u = 0; u < nfiring; u++) {
+	DispatchTimer *p = &dt;
+
+	if (firing[u].compare_exchange_strong(p, nullptr,
+	    memory_order_acq_rel))
+	    break;
+    }
+}
+
+uint Dispatcher::TimerSet::get(msec_t when, DispatchTimer **batch,
+    uint maxcnt) {
+    uint cnt = 0;
+    auto it = sorted.begin();
+
+    while (cnt < maxcnt && it != sorted.end() && (*it)->due() <= when) {
+	(*it)->due(DispatchTimer::DSP_FIRING);
+	firing[cnt].store(*it, memory_order_relaxed);
+	batch[cnt++] = *it++;
+    }
+    nfiring = cnt;
+    sorted.erase(sorted.begin(), it);
+    batch[cnt] = cnt < maxcnt && it != sorted.end() ? *it : nullptr;
+    return cnt;
+}
+
+DispatchTimer *Dispatcher::TimerSet::reorder(msec_t when) {
+    for (DispatchTimer *dt : unsorted) {
+	msec_t d = dt->due();
+
+	if (d < when && d > split)
+	    sorted.insert(dt);
+    }
+    split = when;
+    return peek();
+}
+
+void Dispatcher::TimerSet::set(DispatchTimer &dt, msec_t when) {
+    msec_t cur = dt.due();
+
+    if (UNLIKELY(cur == when))
+	return;
+    if (UNLIKELY(cur <= split)) {
+	if (when <= split) {
+	    sorted_timerset::node_type node = sorted.extract(&dt);
+	    dt.due(when);
+	    sorted.insert(std::move(node));
+	    return;
+	}
+	sorted.erase(&dt);
+    }
+    dt.due(when);
+    if (when <= split)
+	sorted.insert(&dt);
+}
+
 Dispatcher::Dispatcher(const Config &config): ThreadGroup(false), cfg(config),
     maxthreads(0), polling(false), shutdown(true), zpending(false),
     scanning(0), workers(0), cache(0), due(DispatchTimer::DSP_NEVER_DUE),
@@ -102,46 +162,68 @@ bool Dispatcher::exec() {
 	DispatchObj *obj = rlist.pop_front();
 
 	__builtin_prefetch(rlist.peek(), 0, 1);
-	if (UNLIKELY((flags = obj->flags) & DSP_Freed)) {
-	    if (flags & DSP_Polled) {
-		zlist.push_back(*obj);
-		zpending.store(true, memory_order_relaxed);
-		wakeup(0);
-	    } else {
-		olock.unlock();
-		delete obj;
-		olock.lock();
-	    }
-	    continue;
-	}
-	__builtin_prefetch((const void *)obj->dcb, 0, 3);
+	flags = obj->flags;
 	if (UNLIKELY((group = obj->group) != nullptr)) {
 	    __builtin_prefetch(group, 0, 3);
 	    if (group->active) {
-		obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
+		if (!(flags & DSP_Freed))
+		    obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
 		group->glist.push_back(*obj);
 		continue;
 	    }
 	    group->active = true;
+	} else if (UNLIKELY(flags & DSP_Freed)) {
+	    reap(*obj);
+	    continue;
 	}
+	__builtin_prefetch((const void *)obj->dcb, 0, 3);
 	for (;;) {
-	    const auto cb = obj->dcb;
+	    if (LIKELY(!(flags & DSP_Freed))) {
+		const auto cb = obj->dcb;
 
-	    obj->flags = (flags & ~DSP_Ready) | DSP_Active;
-	    olock.unlock();
-	    if (counted) {
-		scanning.fetch_sub(1, memory_order_seq_cst);
-		counted = false;
+		obj->flags = (flags & ~DSP_Ready) | DSP_Active;
+		olock.unlock();
+		if (counted) {
+		    scanning.fetch_sub(1, memory_order_seq_cst);
+		    counted = false;
+		}
+		cb(obj);
+		olock.lock();
+		flags = obj->flags &= ~DSP_Active;
+		group = obj->group;
 	    }
-	    cb(obj);
-	    olock.lock();
-	    flags = obj->flags &= ~DSP_Active;
-	    group = obj->group;
-	    // rerun a re-readied obj for locality unless rlist backs up
-	    if ((flags & (DSP_Freed | DSP_Ready)) != DSP_Ready || (group &&
-		group->glist) || rlist.size() >= workers.load(
-		memory_order_relaxed))
-		break;
+	    if (UNLIKELY(flags & DSP_Freed)) {
+		if (!group)
+		    break;
+		// delete while holding the group so no other member can run
+		group->add();
+		reap(*obj);
+		flags = 0;
+		if (group->refcount.release()) {
+		    delete group;
+		    group = nullptr;
+		    break;
+		}
+		if (!group->glist || rlist.size() >= workers.load(
+		    memory_order_relaxed))
+		    break;
+	    } else {
+		// keep running here for locality unless rlist backs up
+		if (rlist.size() >= workers.load(memory_order_relaxed))
+		    break;
+		if (!group || !group->glist) {
+		    if (flags & DSP_Ready)
+			continue;
+		    break;
+		}
+		// hand the still active group to its next ready member
+		if (flags & DSP_Ready) {
+		    obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
+		    group->glist.push_back(*obj);
+		}
+	    }
+	    obj = group->glist.pop_front();
+	    flags = obj->flags & ~DSP_ReadyGroup;
 	}
 	// a group parent has no DSP_Grouped flag but must still release group
 	if (UNLIKELY(group || (flags & DSP_PostCB))) {
@@ -150,30 +232,22 @@ bool Dispatcher::exec() {
 		if (UNLIKELY(group->glist)) {
 		    DispatchObj *next;
 
-		    if (flags & DSP_Ready && !(flags & DSP_Freed)) {
+		    if (flags & DSP_Ready) {
 			flags = obj->flags = (flags & ~DSP_Ready) |
 			    DSP_ReadyGroup;
 			group->glist.push_back(*obj);
 		    }
 		    next = group->glist.pop_front();
-		    next->flags = (next->flags & ~DSP_ReadyGroup) | DSP_Ready;
+		    if (!(next->flags & DSP_Freed))
+			next->flags = (next->flags & ~DSP_ReadyGroup) |
+			    DSP_Ready;
 		    rlist.push_back(*next);
 		}
 	    }
-	    if (flags & DSP_Freed) {
-		if (flags & DSP_Polled) {
-		    zlist.push_back(*obj);
-		    zpending.store(true, memory_order_relaxed);
-		    wakeup(0);
-		} else {
-		    olock.unlock();
-		    delete obj;
-		    olock.lock();
-		}
-		continue;
-	    } else if (flags & DSP_Ready) {
+	    if (flags & DSP_Freed)
+		reap(*obj);
+	    else if (flags & DSP_Ready)
 		rlist.push_back(*obj);
-	    }
 	}
     }
     olock.unlock();
@@ -596,33 +670,66 @@ void Dispatcher::cleanup(void) {
 	    break;
 	delete t;
     }
-    timers.erase();
-    while (rlist) {
-	DispatchObj *obj = rlist.pop_front();
+    // owners free their objects so only free erased and detached ones
+    timers.clear();
+    for (;;) {
+	while (zlist)
+	    rlist.push_back(*zlist.pop_front());
+	if (rlist) {
+	    DispatchObj *obj = rlist.pop_front();
 
-	if (!obj)
+	    while (obj->group && obj->group->glist)
+		rlist.push_back(*obj->group->glist.pop_front());
+	    obj->flags &= ~(DSP_Ready | DSP_ReadyGroup);
+	    if (obj->flags & DSP_Freed)
+		delete obj;
+	} else if (owned.empty()) {
 	    break;
-	if (obj->group && obj->group->glist) {
-	    while (obj->group->glist)
-		rlist.push_front(*obj->group->glist.pop_front());
-	}
-	obj->flags &= ~(DSP_Ready | DSP_ReadyGroup);
-	if (obj->flags & DSP_Freed)
-	    delete obj;
-	else
+	} else {
+	    DispatchObj *obj = *owned.begin();
+
+	    owned.erase(owned.begin());
 	    obj->erase();
+	}
     }
-    reclaim();
+    zpending.store(false, memory_order_relaxed);
+}
+
+// enter and leave locked
+void Dispatcher::reap(DispatchObj &obj) {
+    if (obj.flags & DSP_Polled) {
+	zlist.push_back(obj);
+	zpending.store(true, memory_order_relaxed);
+	wakeup(0);
+    } else {
+	olock.unlock();
+	delete &obj;
+	olock.lock();
+    }
 }
 
 // free sockets queued while handling an event batch
 void Dispatcher::reclaim(void) {
     ObjectList<DispatchObj> lst;
+    bool queued = false;
 
     olock.lock();
-    lst.push_back(zlist);
     zpending.store(false, memory_order_relaxed);
+    while (zlist) {
+	DispatchObj *obj = zlist.pop_front();
+
+	// exec deletes grouped sockets within their group
+	if (obj->group) {
+	    obj->flags &= ~DSP_Polled;
+	    rlist.push_back(*obj);
+	    queued = true;
+	} else {
+	    lst.push_back(*obj);
+	}
+    }
     olock.unlock();
+    if (queued)
+	wake();
     while (lst)
 	delete lst.pop_front();
 }
@@ -1346,6 +1453,14 @@ DispatchObj::DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb):
     delete g;
 }
 
+DispatchObj::~DispatchObj() {
+    DispatchObj::cancel();
+    if (flags & DSP_Detached)
+	dspr.disown(*this);
+    if (group && group->refcount.release())
+	delete group;
+}
+
 void Dispatcher::cancelReady(DispatchObj &obj, bool del) {
     olock.lock();
     obj.flags &= ~DSP_Scheduled;
@@ -1391,39 +1506,43 @@ void Dispatcher::ready(DispatchObj &obj, bool hipri) {
 	    obj.group->glist.push_back(obj);
 	olock.unlock();
     } else {
-	uint rsz;
-
 	obj.flags = flags | DSP_Ready;
 	if (UNLIKELY(hipri))
 	    rlist.push_front(obj);
 	else
 	    rlist.push_back(obj);
 	olock.unlock();
-	rsz = rlist.size();
-	if (LIKELY(maxthreads)) {
-	    uint_fast32_t s = scanning.load(memory_order_seq_cst);
+	wake();
+    }
+}
 
-	    while (rsz > s) {
-		if (scanning.compare_exchange_weak(s, s + 1,
-		    memory_order_acquire, memory_order_relaxed)) {
-		    if (sema4.release()) {
-			if (workers < maxthreads && !shutdown) {
-			    worker();
-			    break;
-			} else {
-			    scanning.fetch_sub(1, memory_order_relaxed);
-			    break;
-			}
+// start or signal a worker for the ready list, called unlocked
+void Dispatcher::wake(void) {
+    uint rsz = rlist.size();
+
+    if (LIKELY(maxthreads)) {
+	uint_fast32_t s = scanning.load(memory_order_seq_cst);
+
+	while (rsz > s) {
+	    if (scanning.compare_exchange_weak(s, s + 1,
+		memory_order_acquire, memory_order_relaxed)) {
+		if (sema4.release()) {
+		    if (workers < maxthreads && !shutdown) {
+			worker();
+			break;
 		    } else {
+			scanning.fetch_sub(1, memory_order_relaxed);
 			break;
 		    }
+		} else {
+		    break;
 		}
-		rsz = rlist.size();
-		s = scanning.load(memory_order_seq_cst);
 	    }
-	} else if (polling.load(memory_order_relaxed)) {
-	    wakeup(0);
+	    rsz = rlist.size();
+	    s = scanning.load(memory_order_seq_cst);
 	}
+    } else if (polling.load(memory_order_relaxed)) {
+	wakeup(0);
     }
 }
 

@@ -598,6 +598,8 @@ void HTTPServerSocket::senddone() {
 
 void HTTPServerSocket::reply(const char *p, ulong len) {
     char key[64];
+    char *k = key;
+    char *const last = key + sizeof (key) - 1;
 
     if (len == (ulong)-1)
 	len = p ? (ulong)strlen(p) : 0;
@@ -613,13 +615,22 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     elapsed = uticks() - begin;
     // Timing keeps every key forever: only 2xx replies use the client's path
     if (_status >= 200 && _status < 300) {
-	snprintf(key, sizeof (key), "%s::%s", cmd, path + (*path == '/'));
-	for (char *k = key; *k && *k != ':'; k++)
-	    *k = (char)tolower((uchar)*k);
+	for (const char *s = cmd; *s && k < last; s++)
+	    *k++ = (char)tolower((uchar)*s);
+	for (const char *s = "::"; *s && k < last; s++)
+	    *k++ = *s;
+	for (const char *s = path + (*path == '/'); *s && k < last; s++)
+	    *k++ = *s;
     } else {
-	snprintf(key, sizeof (key), "http::%u", _status);
+	memcpy(key, "http::", 6);
+	k = to_chars(key + 6, last, _status).ptr;
     }
+    *k = '\0';
+#ifdef UNICODE
     dtiming.add(achartotchar(key), elapsed);
+#else
+    dtiming.add(key, (uint)(k - key), elapsed);
+#endif
     if (_status < 400)
 	dlogl(Log::Info, Log::cmd(cmd), Log::kv(T("path"), path),
 	    Log::kv(T("sts"), _status), Log::kv(T("duration"), elapsed / 1000));

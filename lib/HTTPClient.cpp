@@ -154,18 +154,24 @@ static bool parsestatus(string_view line, uint &sts, bool &http11) {
     return sts != 0;
 }
 
-static bool readline(streambuf *sb, string &s, size_t &left) {
+static bool readline(socketbuf *sb, string &s, size_t &left) {
     s.clear();
-    for (int c; (c = sb->sbumpc()) != EOF; ) {
-	if (c == '\n') {
+    while (sb->sgetc() != EOF) {
+	const string_view v = sb->avail();
+	const size_t pos = v.find('\n');
+	const size_t len = pos == string_view::npos ? v.size() : pos;
+
+	if (len > left)
+	    return false;
+	left -= len;
+	s.append(v.data(), len);
+	if (pos != string_view::npos) {
+	    sb->consume(len + 1);
 	    if (!s.empty() && s.back() == '\r')
 		s.pop_back();
 	    return true;
 	}
-	if (!left)
-	    return false;
-	left--;
-	s += (char)c;
+	sb->consume(len);
     }
     return false;
 }
@@ -325,7 +331,10 @@ bool HTTPClient::connect(Socket &s, bool keepalive) {
     if (!s.open() || !s.peername(sa))
 	return false;
     ka = keepalive;
-    addr = sa;
+    if (sa != addr || hostval.empty()) {
+	addr = sa;
+	hostval = hosthdr(addr);
+    }
     sock = s;
     setup();
     dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("fd"),
@@ -337,7 +346,10 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     ka = keepalive;
     if (sock.open() && sa == addr)
 	return true;
-    addr = sa;
+    if (sa != addr || hostval.empty()) {
+	addr = sa;
+	hostval = hosthdr(addr);
+    }
     sock.close();
     if (!sock.connect(addr, to)) {
 	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
@@ -407,7 +419,6 @@ bool HTTPClient::readbody(bool head, bool &keep) {
 }
 
 bool HTTPClient::readchunked(void) {
-    string line;
     size_t left;
 
     for (;;) {
@@ -438,7 +449,7 @@ bool HTTPClient::readchunked(void) {
     return false;
 }
 
-bool HTTPClient::readhdrs(string &line, bool &http11) {
+bool HTTPClient::readhdrs(bool &http11) {
     size_t left = MaxHdrs - line.size();
 
     if (!parsestatus(line, sts, http11))
@@ -463,10 +474,8 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     reshdrs.clear();
     if (!badtoken(op) && !badtoken(path)) {
 	const bool head = !tstrcmp(op, T("HEAD"));
-	string line;
-	string req;
 
-	buildreq(req, op, path, hosthdr(addr), ka, datasz,
+	buildreq(req, op, path, hostval, ka, datasz,
 	    tstring_view(hstrm.str(), (size_t)hstrm.size()));
 	const streamsize rsz = (streamsize)req.size();
 	const streamsize total = rsz + (streamsize)datasz;
@@ -480,7 +489,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 	}
 #endif
 
-	for (bool first = true; msgh ? sock.open() : connect(addr, ka);
+	for (bool first = true; sock.open() || (!msgh && connect(addr, ka));
 	    first = false) {
 	    size_t left = MaxHdrs;
 	    const msec_t start = mticks();
@@ -516,7 +525,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 	    if (sent && readline(sstrm.rdbuf(), line, left)) {
 		bool http11 = false;
 
-		if (readhdrs(line, http11)) {
+		if (readhdrs(http11)) {
 		    const tchar *resp = response(T("Connection"));
 
 		    dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
@@ -750,7 +759,14 @@ void AsyncHTTPClient::complete(Request &r, int err) {
 
     r.caller = nullptr;
     r.done = nullptr;
-    co->ready(cb);
+    if (!co->grouped(sock)) {
+	co->ready(cb);
+	return;
+    }
+    // a caller in this group runs now and its resubmit skips the intake
+    incall = co;
+    cb(co);
+    incall = nullptr;
 }
 
 void AsyncHTTPClient::connect(void) {
@@ -831,6 +847,8 @@ void AsyncHTTPClient::drain(void) {
     inlock.unlock();
     for (Request *r : batch)
 	enqueue(*r);
+    if (!batch.empty() && state == Open && !growing)
+	io(false);
     batch.clear();
     if (!pending)
 	delete this;
@@ -869,8 +887,6 @@ void AsyncHTTPClient::enqueue(Request &r) {
     count();
     if (state == Closed)
 	connect();
-    else if (state == Open && !growing)
-	io(false);	// already in the client's dispatch group
 }
 
 int AsyncHTTPClient::fill(void) {
@@ -1055,6 +1071,10 @@ void AsyncHTTPClient::status(tostream &out, uint indent) const {
 void AsyncHTTPClient::submit(Request &r) {
     bool wake;
 
+    if (r.caller == incall) {
+	enqueue(r);
+	return;
+    }
     inlock.lock();
     wake = inbox.empty();
     inbox.push_back(&r);

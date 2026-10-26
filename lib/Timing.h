@@ -102,6 +102,9 @@ public:
     __forceinline void add(const tstring &key, timing_t diff) {
 	add(key.c_str(), (uint)key.length(), stringhash(key), diff);
     }
+    __forceinline void add(const tchar *key, uint klen, timing_t diff) {
+	add(key, klen, charhash(key, klen), diff);
+    }
     void clear(void);
     tstring data(bool sort_by_key = false, uint columns = TIMINGSLOTS - 2)
 	const;

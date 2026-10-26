@@ -91,11 +91,7 @@ public:
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = nullptr): dcb(cb),
 	dspr(d), flags(0) {}
     DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb = nullptr);
-    virtual ~DispatchObj() {
-	DispatchObj::cancel();
-	if (group && group->refcount.release())
-	    delete group;
-    }
+    virtual ~DispatchObj();
 
     Dispatcher &dispatcher(void) const { return dspr; }
     bool error(void) const {
@@ -106,7 +102,8 @@ public:
     bool grouped(const DispatchObj &obj) const {
 	return group && obj.group == group;
     }
-    void detach(void) { flags |= DSP_Detached; }
+    // hand ownership to the dispatcher which erases it at shutdown
+    void detach(void);
     void ready(DispatchObjCB cb = nullptr, bool hipri = false, DispatchMsg reason =
 	DispatchNone);
     virtual void cancel(void);
@@ -374,69 +371,18 @@ private:
 	    return it == sorted.cend() ? nullptr : *it;
 	}
 
-	void erase(void) {
-	    while (!unsorted.empty())
-		(*unsorted.begin())->erase();
+	void clear(void) {
+	    sorted.clear();
+	    unsorted.clear();
 	}
-	void erase(DispatchTimer &dt) {
-	    if (dt.due() <= split)
-		sorted.erase(&dt);
-	    unsorted.erase(&dt);
-	    // drop from an in-flight batch so it is not touched once freed
-	    for (uint u = 0; u < nfiring; u++) {
-		DispatchTimer *p = &dt;
-
-		if (firing[u].compare_exchange_strong(p, nullptr,
-		    memory_order_acq_rel))
-		    break;
-	    }
-	}
+	void erase(DispatchTimer &dt);
 	DispatchTimer *claim(uint u) {
 	    return firing[u].exchange(nullptr, memory_order_acq_rel);
 	}
-	uint get(msec_t when, DispatchTimer **batch, uint maxcnt) {
-	    uint cnt = 0;
-	    auto it = sorted.begin();
-
-	    while (cnt < maxcnt && it != sorted.end() && (*it)->due() <= when) {
-		(*it)->due(DispatchTimer::DSP_FIRING);
-		firing[cnt].store(*it, memory_order_relaxed);
-		batch[cnt++] = *it++;
-	    }
-	    nfiring = cnt;
-	    sorted.erase(sorted.begin(), it);
-	    batch[cnt] = cnt < maxcnt && it != sorted.end() ? *it : nullptr;
-	    return cnt;
-	}
+	uint get(msec_t when, DispatchTimer **batch, uint maxcnt);
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
-	DispatchTimer *reorder(msec_t when) {
-	    for (DispatchTimer *dt : unsorted) {
-		msec_t d = dt->due();
-
-		if (d < when && d > split)
-		    sorted.insert(dt);
-	    }
-	    split = when;
-	    return peek();
-	}
-	void set(DispatchTimer &dt, msec_t when) {
-	    msec_t cur = dt.due();
-
-	    if (UNLIKELY(cur == when))
-		return;
-	    if (UNLIKELY(cur <= split)) {
-		if (when <= split) {
-		    sorted_timerset::node_type node = sorted.extract(&dt);
-		    dt.due(when);
-		    sorted.insert(std::move(node));
-		    return;
-		}
-		sorted.erase(&dt);
-	    }
-	    dt.due(when);
-	    if (when <= split)
-		sorted.insert(&dt);
-	}
+	DispatchTimer *reorder(msec_t when);
+	void set(DispatchTimer &dt, msec_t when);
 
 	static constexpr uint BATCHSZ = 32;
 
@@ -449,6 +395,17 @@ private:
     };
 
     friend class DispatchObj;
+    void adopt(DispatchObj &obj) {
+	olock.lock();
+	obj.flags |= DSP_Detached;
+	owned.insert(&obj);
+	olock.unlock();
+    }
+    void disown(DispatchObj &obj) {
+	olock.lock();
+	owned.erase(&obj);
+	olock.unlock();
+    }
     void addReady(DispatchObj &obj, DispatchObj::DispatchObjCB cb, bool hipri,
 	DispatchMsg reason);
     void cancelReady(DispatchObj &ob, bool del = false);
@@ -486,9 +443,11 @@ private:
     bool exec(void);
     void handleEvents(const void *evts, uint cnt);
     DispatchTimer *handleTimers(msec_t now);
+    void reap(DispatchObj &obj);
     void reclaim(void);
     void reset(void);
     int run(void);
+    void wake(void);
     void wakeup(ulong msec);
     void worker() {
 	Thread *t;
@@ -505,6 +464,7 @@ private:
     uint maxthreads;
     SizedObjectList<DispatchObj, ObjectListAtomicSize> rlist;
     ObjectList<DispatchObj> zlist;
+    unordered_set<DispatchObj *> owned;
     atomic_bool polling, shutdown, zpending;
     alignas(64) atomic_uint_fast32_t scanning, workers;
     SpinLock tlock;
@@ -583,6 +543,7 @@ protected:
 
 inline void DispatchObj::cancel(void) { dspr.cancelReady(*this); }
 inline void DispatchObj::erase(void) { dspr.cancelReady(*this, true); }
+inline void DispatchObj::detach(void) { dspr.adopt(*this); }
 inline void DispatchObj::ready(DispatchObjCB cb, bool hipri, DispatchMsg
     reason) {
     dspr.addReady(*this, cb, hipri, reason);
