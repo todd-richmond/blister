@@ -71,7 +71,7 @@ public:
 	return lmt;
     }
     void limit(uint lim) {
-	vector<Entry> dead;
+	vector<Entry> dead;		// cppcheck-suppress variableScope
 	Locker lkr(lk);
 	const uint old = exchange(lmt, lim);
 
@@ -272,7 +272,7 @@ public:
 	friend class AsyncResourcePool;
     };
 
-    AsyncResourcePool(Dispatcher &d, uint lim = 32, uint maxcount = 1):
+    explicit AsyncResourcePool(Dispatcher &d, uint lim = 32, uint maxcount = 1):
 	lmt(lim), maxuse(maxcount), acv(d, lk) {}
     ~AsyncResourcePool() { clear(); }
 

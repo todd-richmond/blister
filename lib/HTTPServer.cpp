@@ -26,6 +26,7 @@
 #include "HTTPClient.h"
 #include "HTTPServer.h"
 #include "Log.h"
+#include "Timing.h"
 
 static constexpr ulong MaxHdrs = 64UL * 1024;	// request + header bytes
 static constexpr size_t MaxHdrCount = 100;
@@ -303,6 +304,7 @@ void HTTPServerSocket::parse(void) {
     const char *val;
     bool noprot;
 
+    begin = uticks();
     path = "/";
     prot = "HTTP/1.0";
     postsz = 0;
@@ -455,6 +457,7 @@ void HTTPServerSocket::parse(void) {
 }
 
 void HTTPServerSocket::exec(void) {
+    begin = uticks();
     if (paused.load(memory_order_relaxed)) {
 	error(503);
     } else if (LIKELY(stringieq(cmd, "GET"))) {
@@ -594,6 +597,8 @@ void HTTPServerSocket::senddone() {
 }
 
 void HTTPServerSocket::reply(const char *p, ulong len) {
+    char key[64];
+
     if (len == (ulong)-1)
 	len = p ? (ulong)strlen(p) : 0;
     hdrs.write("Content-Length: ", 16);
@@ -605,8 +610,22 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     iov[1].iov_len = (iovlen_t)ss.size();
     iov[2].iov_base = (char *)p;		// NOSONAR
     iov[2].iov_len = (iovlen_t)len;
-    dlogl(_status < 400 ? Log::Info : Log::Note, Log::cmd(cmd),
-	Log::kv(T("path"), path), Log::kv(T("sts"), _status));
+    elapsed = uticks() - begin;
+    // Timing keeps every key forever: only 2xx replies use the client's path
+    if (_status >= 200 && _status < 300) {
+	snprintf(key, sizeof (key), "%s::%s", cmd, path + (*path == '/'));
+	for (char *k = key; *k && *k != ':'; k++)
+	    *k = (char)tolower((uchar)*k);
+    } else {
+	snprintf(key, sizeof (key), "http::%u", _status);
+    }
+    dtiming.add(achartotchar(key), elapsed);
+    if (_status < 400)
+	dlogl(Log::Info, Log::cmd(cmd), Log::kv(T("path"), path),
+	    Log::kv(T("sts"), _status), Log::kv(T("duration"), elapsed / 1000));
+    else
+	dlogl(Log::Note, Log::cmd(cmd), Log::kv(T("path"), path),
+	    Log::kv(T("sts"), _status));
     send();
 }
 

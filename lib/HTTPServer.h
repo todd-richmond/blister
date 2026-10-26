@@ -113,6 +113,7 @@ private:
     uint rto = 30 * 1000, wto = 150 * 1000;
     char savechar = 0;
     uint _status = 0;
+    usec_t begin = 0, elapsed = 0;
     static bool date;
     static atomic_bool paused;
 
