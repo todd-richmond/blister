@@ -76,6 +76,14 @@ static constexpr dspflag_t DSP_PostCB = DSP_Freed | DSP_Ready;
 static constexpr dspflag_t DSP_SelectAll = DSP_SelectAccept | DSP_SelectRead |
     DSP_SelectWrite | DSP_SelectClose;
 
+bool Dispatcher::TimerSet::compare::operator ()(const DispatchTimer *a,
+    const DispatchTimer *b) const {
+    msec_t ad = a->due();
+    msec_t bd = b->due();
+
+    return ad == bd ? a < b : ad < bd;
+}
+
 void Dispatcher::TimerSet::erase(DispatchTimer &dt) {
     if (dt.due() <= split)
 	sorted.erase(&dt);
@@ -137,19 +145,11 @@ void Dispatcher::TimerSet::set(DispatchTimer &dt, msec_t when) {
 }
 
 Dispatcher::Dispatcher(const Config &config): ThreadGroup(false), cfg(config),
-    maxthreads(0), polling(false), shutdown(true), zpending(false),
-    scanning(0), workers(0), cache(0), due(DispatchTimer::DSP_NEVER_DUE),
+    due(DispatchTimer::DSP_NEVER_DUE)
 #ifdef DSP_WIN32_ASYNC
-    interval(DispatchTimer::DSP_NEVER), wnd(0),
-#elif defined(DSP_POLL)
-    rsock(SOCK_STREAM), wsock(SOCK_STREAM),
-#else
-    evtfd(-1),
-#ifdef DSP_EPOLL
-    wfd(-1),
+    , interval(DispatchTimer::DSP_NEVER)
 #endif
-#endif
-    stacksz(0) {}
+    {}
 
 WARN_DISABLE(26430)
 bool Dispatcher::exec() {
@@ -1052,12 +1052,32 @@ void Dispatcher::wakeup(ulong msec) {
 #endif
 }
 
+void Dispatcher::addTimer(DispatchTimer &dt) {
+    tlock.lock();
+    timers.insert(dt);
+    tlock.unlock();
+}
+
 void Dispatcher::cancelTimer(DispatchTimer &dt, bool del) {
     if (del)
 	eraseTimer(dt);
     else
 	removeTimer(dt);
     cancelReady(dt, del);
+}
+
+void Dispatcher::eraseTimer(DispatchTimer &dt) {
+    tlock.lock();
+    timers.erase(dt);
+    tlock.unlock();
+}
+
+void Dispatcher::removeTimer(DispatchTimer &dt) {
+    if (dt.due() == DispatchTimer::DSP_NEVER_DUE)
+	return;
+    tlock.lock();
+    timers.set(dt, DispatchTimer::DSP_NEVER_DUE);
+    tlock.unlock();
 }
 
 void Dispatcher::setTimer(DispatchTimer &dt, DispatchObj::DispatchObjCB cb,
@@ -1438,6 +1458,13 @@ void Dispatcher::addReady(DispatchObj &obj, DispatchObj::DispatchObjCB cb,
     ready(obj, hipri);
 }
 
+void Dispatcher::adopt(DispatchObj &obj) {
+    olock.lock();
+    obj.flags |= DSP_Detached;
+    owned.insert(&obj);
+    olock.unlock();
+}
+
 DispatchObj::DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb):
     dcb(cb), dspr(parent.dspr), flags(DSP_Grouped) {
     Group *g = parent.group ? nullptr : new Group();
@@ -1472,6 +1499,12 @@ void Dispatcher::cancelReady(DispatchObj &obj, bool del) {
 	    rlist.push_front(obj);
 	}
     }
+    olock.unlock();
+}
+
+void Dispatcher::disown(DispatchObj &obj) {
+    olock.lock();
+    owned.erase(&obj);
     olock.unlock();
 }
 

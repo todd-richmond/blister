@@ -74,7 +74,7 @@ public:
 
     friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
 	os << hc.sts << '\n';
-	for (const auto &[key, value] : hc.reshdrs)
+	for (const auto &[key, value] : hc.responses())
 	    os << key << ": " << value << '\n';
 	os.write(achartotchar(hc.data()), (streamsize)hc.ressz);
 	os << '\n';
@@ -118,11 +118,9 @@ public:
 	return send(T("PUT"), path, data, len, msgh);
     }
     const tchar *response(tstring_view name) const {
-	auto it = reshdrs.find(name);
-
-	return it == reshdrs.end() ? nullptr : it->second.c_str();
+	return reshdrs.find(name);
     }
-    const attrmap &responses(void) const { return reshdrs; }
+    attrmap responses(void) const { return reshdrs.map(); }
     void timeout(uint r, uint w = SOCK_INFINITE) {
 	sock.rtimeout(rto = r);
 	sock.wtimeout(wto = w);
@@ -135,7 +133,6 @@ protected:
     bool ka = true;
     string line;
     string req;
-    attrmap reshdrs;
     ulong ressz = 0;
     unique_ptr<char[]> result;
     uint rto = 90 * 1000;
@@ -149,6 +146,43 @@ protected:
 	ulong datasz = 0, msghdr *msgh = nullptr);
 
 private:
+    friend class AsyncHTTPClient;
+
+    // response headers in one reused buffer: too few to need hashing
+    class DLL_LOCAL Headers {
+    public:
+	void add(string_view hdr);
+	void clear(void) {
+	    buf.clear();
+	    hdrs.clear();
+	}
+	const tchar *find(tstring_view name) const {
+	    for (const auto &h : hdrs) {
+		if (stringieq(tstring_view(buf.data() + h.name, h.nlen), name))
+		    return buf.data() + h.val;
+	    }
+	    return nullptr;
+	}
+	attrmap map(void) const {
+	    attrmap m;
+
+	    for (const auto &h : hdrs)
+		m.emplace(tstring(buf.data() + h.name, h.nlen), buf.data() +
+		    h.val);
+	    return m;
+	}
+
+    private:
+	struct Hdr {
+	    uint name, nlen, val;
+	};
+
+	tstring buf;
+	vector<Hdr> hdrs;
+    };
+
+    Headers reshdrs;
+
     void grow(ulong need);
     bool readbody(bool head, bool &keep);
     bool readchunked(void);
@@ -178,11 +212,9 @@ public:
 	ulong size(void) const { return sz; }
 	uint status(void) const { return sts; }
 	const tchar *response(tstring_view name) const {
-	    auto it = reshdrs.find(name);
-
-	    return it == reshdrs.end() ? nullptr : it->second.c_str();
+	    return reshdrs.find(name);
 	}
-	const attrmap &responses(void) const { return reshdrs; }
+	attrmap responses(void) const { return reshdrs.map(); }
 
 	template<typename C>
 	void header(tstring_view hdr, const C &val) {
@@ -207,7 +239,6 @@ public:
 	// true if resubmitted to a client instead of completing
 	virtual bool resend(void) { return false; }
 
-	attrmap reshdrs;
 	tbufferstream hstrm;
 	tstring logprefix;
 	char *result = nullptr;
@@ -229,6 +260,7 @@ public:
 	DispatchObjCB done = nullptr;
 	const void *datap = nullptr;
 	string req;
+	HTTPClient::Headers reshdrs;
 	ulong cap = 0, datasz = 0, remain = 0, written = 0;
 	timing_t start = 0;
 	size_t hdrleft = 0;

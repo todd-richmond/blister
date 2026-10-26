@@ -247,7 +247,7 @@ public:
     static Level str2enum(const tchar *lvl);
 
 private:
-    class BLISTER FlushThread: public Thread {
+    class DLL_LOCAL FlushThread: public Thread {
     public:
 	explicit FlushThread(Log &lg): l(lg) {}
 
@@ -289,7 +289,7 @@ private:
 	bool paused = false;
     };
 
-    class BLISTER LogFile: nocopy {
+    class DLL_LOCAL LogFile: nocopy {
     public:
 	LogFile(bool denable, Level dlvl, const tchar *dfile, bool m): mp(m),
 	    lvl(dlvl) {

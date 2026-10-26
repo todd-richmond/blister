@@ -78,12 +78,180 @@ enum DispatchFlag: dspflag_t {
     DSP_Armed = 0x20000
 };
 
-class Dispatcher;
+class DispatchObj;
+class DispatchSocket;
+class DispatchTimer;
+
+using dspcb_t = void (*)(DispatchObj *);
+
+class BLISTER Dispatcher: public ThreadGroup {
+public:
+    using dspsema4_t = LifoSemaphore;
+    explicit Dispatcher(const Config &config);
+
+    const Config &config(void) const { return cfg; }
+
+    [[nodiscard]] bool start(uint maxthreads = 100, uint stacksz = 0);
+
+protected:
+    int onStart(void) override;
+    void onStop(void) override;
+
+    const Config &cfg;
+
+private:
+#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
+    using socketmap = unordered_map<socket_t, DispatchSocket *>;
+
+    __forceinline DispatchSocket *get_socket(socket_t fd) const {
+	auto it = smap.find(fd);
+
+	return it == smap.end() ? nullptr : it->second;
+    }
+#endif
+    // Lock optimized SizedObjectList counter
+    struct ObjectListAtomicSize {
+	__forceinline void inc(void) { n.fetch_add(1, memory_order_seq_cst); }
+	__forceinline void dec(void) {
+	    n.store(n.load(memory_order_relaxed) - 1, memory_order_relaxed);
+	}
+	__forceinline void add(uint v) { n.fetch_add(v, memory_order_relaxed); }
+	__forceinline void zero(void) { n.store(0, memory_order_relaxed); }
+	__forceinline uint get(void) const {
+	    return n.load(memory_order_seq_cst);
+	}
+
+	atomic<uint> n = 0;
+    };
+
+    class DLL_LOCAL TimerSet: ::nocopy {
+    public:
+	struct compare {
+	    bool operator ()(const DispatchTimer *a, const DispatchTimer *b)
+		const;
+	};
+
+	using sorted_timerset = ::set<DispatchTimer *, compare>;
+	using unsorted_timerset = unordered_set<DispatchTimer *,
+	    ptrhash<DispatchTimer>>;
+
+	TimerSet() = default;
+
+	bool empty(void) const { return unsorted.empty(); }
+	msec_t half(void) const { return split; }
+	DispatchTimer *peek(void) const {
+	    auto it = sorted.cbegin();
+
+	    return it == sorted.cend() ? nullptr : *it;
+	}
+
+	void clear(void) {
+	    sorted.clear();
+	    unsorted.clear();
+	}
+	void erase(DispatchTimer &dt);
+	DispatchTimer *claim(uint u) {
+	    return firing[u].exchange(nullptr, memory_order_acq_rel);
+	}
+	uint get(msec_t when, DispatchTimer **batch, uint maxcnt);
+	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
+	DispatchTimer *reorder(msec_t when);
+	void set(DispatchTimer &dt, msec_t when);
+
+	static constexpr uint BATCHSZ = 32;
+
+    private:
+	atomic<DispatchTimer *> firing[BATCHSZ] = {};
+	uint nfiring = 0;
+	sorted_timerset sorted;
+	msec_t split = 0;
+	unsorted_timerset unsorted;
+    };
+
+    friend class DispatchObj;
+    void addReady(DispatchObj &obj, dspcb_t cb, bool hipri, DispatchMsg reason);
+    void adopt(DispatchObj &obj);
+    void cancelReady(DispatchObj &ob, bool del = false);
+    void disown(DispatchObj &obj);
+    void removeReady(DispatchObj &obj);
+    void ready(DispatchObj &obj, bool hipri = false);
+
+    friend class DispatchTimer;
+    void addTimer(DispatchTimer &dt);
+    void cancelTimer(DispatchTimer &dt, bool del = false);
+    void eraseTimer(DispatchTimer &dt);
+    void removeTimer(DispatchTimer &dt);
+    void setTimer(DispatchTimer &dt, dspcb_t cb, ulong tm);
+
+    friend class DispatchSocket;
+    void cancelSocket(DispatchSocket &ds, bool del = false);
+    void pollSocket(DispatchSocket &ds, dspcb_t cb, ulong timeout,
+	DispatchMsg msg);
+    void unmapSocket(DispatchSocket &ds, socket_t fd);
+
+    void cleanup(void);
+    bool exec(void);
+    void handleEvents(const void *evts, uint cnt);
+    DispatchTimer *handleTimers(msec_t now);
+    void reap(DispatchObj &obj);
+    void reclaim(void);
+    void reset(void);
+    int run(void);
+    void wake(void);
+    void wakeup(ulong msec);
+    void worker() {
+	Thread *t;
+
+	workers++;
+	t = new Thread();
+	t->start(worker, this, stacksz, this);
+	while ((t = wait(0)) != nullptr)
+	    delete t;
+    }
+    static int worker(void *param);
+
+    uint maxthreads = 0;
+    atomic_bool shutdown = true;
+    uint stacksz = 0;
+    atomic_uint_fast32_t workers = 0;
+#ifdef DSP_WIN32_ASYNC
+    HWND wnd = nullptr;
+    static uint socketmsg;
+    static constexpr int DSP_TimerID = 1;
+#elif defined(DSP_POLL)
+    Socket rsock, wsock;
+    SocketSet rset, wset;
+#else
+    int evtfd = -1;
+#ifdef DSP_EPOLL
+    int wfd = -1;
+#endif
+#endif
+    alignas(64) SpinLock olock;
+    atomic_bool polling = false;
+    SizedObjectList<DispatchObj, ObjectListAtomicSize> rlist;
+    ObjectList<DispatchObj> zlist;
+    atomic_bool zpending = false;
+    unordered_set<DispatchObj *> owned;
+    alignas(64) atomic_uint_fast32_t scanning = 0;
+    dspsema4_t sema4;
+    alignas(64) SpinLock tlock;
+    atomic<msec_t> cache = 0;
+    msec_t due;
+#ifdef DSP_WIN32_ASYNC
+    atomic_ulong interval;
+#endif
+    TimerSet timers;
+#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
+    alignas(64) SpinLock slock;
+    socketmap smap;
+#endif
+};
 
 // base classes for event objects
 class BLISTER DispatchObj: public ObjectList<DispatchObj>::Node {
 public:
-    using DispatchObjCB = void (*)(DispatchObj *);
+    using DispatchObjCB = dspcb_t;
 
     struct child_t {};
     static constexpr child_t child{};
@@ -103,11 +271,13 @@ public:
 	return group && obj.group == group;
     }
     // hand ownership to the dispatcher which erases it at shutdown
-    void detach(void);
-    void ready(DispatchObjCB cb = nullptr, bool hipri = false, DispatchMsg reason =
-	DispatchNone);
-    virtual void cancel(void);
-    virtual void erase(void);
+    void detach(void) { dspr.adopt(*this); }
+    void ready(DispatchObjCB cb = nullptr, bool hipri = false,
+	DispatchMsg reason = DispatchNone) {
+	dspr.addReady(*this, cb, hipri, reason);
+    }
+    virtual void cancel(void) { dspr.cancelReady(*this); }
+    virtual void erase(void) { dspr.cancelReady(*this, true); }
 
 protected:
     void callback(DispatchObjCB cb) { if (cb) dcb = cb; }
@@ -155,25 +325,20 @@ public:
 	init();
 	timeout(cb, msec);
     }
-    virtual ~DispatchTimer();
+    virtual ~DispatchTimer() { dspr.eraseTimer(*this); }
 
     msec_t expires(void) const { return due(); }
     ulong timeout(void) const { return to; }
 
-    void timeout(DispatchObjCB cb, ulong msec = DSP_PREVIOUS);
-    void cancel(void) override;
-    void erase(void) override;
+    void timeout(DispatchObjCB cb, ulong msec = DSP_PREVIOUS) {
+	if (msec != DSP_PREVIOUS)
+	    to = msec;
+	dspr.setTimer(*this, cb, to);
+    }
+    void cancel(void) override { dspr.cancelTimer(*this); }
+    void erase(void) override { dspr.cancelTimer(*this, true); }
 
 protected:
-    struct compare {
-	bool operator ()(const DispatchTimer *a, const DispatchTimer *b) const {
-	    msec_t ad = a->due();
-	    msec_t bd = b->due();
-
-	    return ad == bd ? a < b : ad < bd;
-	}
-    };
-
     ulong to = 0;
 
 private:
@@ -183,7 +348,7 @@ private:
     __forceinline void due(msec_t msec) {
 	tm.store(msec, memory_order_relaxed);
     }
-    void init(void);
+    void init(void) { dspr.addTimer(*this); }
 
     atomic<msec_t> tm = DSP_NEVER_DUE;
 
@@ -205,10 +370,13 @@ public:
 	DSP_NEVER): DispatchTimer(parent, msec), Socket(s) {}
     virtual ~DispatchSocket() { DispatchSocket::cancel(); }
 
-    void cancel(void) override;
-    void erase(void) override;
+    void cancel(void) override { dspr.cancelSocket(*this); }
+    void erase(void) override { dspr.cancelSocket(*this, true); }
     // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
-    bool close(void);
+    bool close(void) {
+	dspr.unmapSocket(*this, fd());
+	return Socket::close();
+    }
     int read(void *buf, uint len) {
 	return drained(Socket::read(buf, len), len);
     }
@@ -224,7 +392,11 @@ public:
     }
 
 protected:
-    void poll(DispatchObjCB cb, ulong msec, DispatchMsg msg);
+    void poll(DispatchObjCB cb, ulong msec, DispatchMsg reason) {
+	if (msec != DSP_PREVIOUS)
+	    to = msec;
+	dspr.pollSocket(*this, cb, to, reason);
+    }
 
 #ifdef DSP_EPOLL
     uint32_t evmask = 0;
@@ -315,184 +487,6 @@ private:
     DSP_DECLARE(DispatchListenSocket, connection);
 };
 
-class BLISTER Dispatcher: public ThreadGroup {
-public:
-    using dspsema4_t = LifoSemaphore;
-    explicit Dispatcher(const Config &config);
-
-    const Config &config(void) const { return cfg; }
-
-    [[nodiscard]] bool start(uint maxthreads = 100, uint stacksz = 0);
-
-protected:
-    int onStart(void) override;
-    void onStop(void) override;
-
-    const Config &cfg;
-
-private:
-#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
-    using socketmap = unordered_map<socket_t, DispatchSocket *>;
-
-    __forceinline DispatchSocket *get_socket(socket_t fd) const {
-	auto it = smap.find(fd);
-
-	return it == smap.end() ? nullptr : it->second;
-    }
-#endif
-    // Lock optimized SizedObjectList counter
-    struct ObjectListAtomicSize {
-	__forceinline void inc(void) { n.fetch_add(1, memory_order_seq_cst); }
-	__forceinline void dec(void) {
-	    n.store(n.load(memory_order_relaxed) - 1, memory_order_relaxed);
-	}
-	__forceinline void add(uint v) { n.fetch_add(v, memory_order_relaxed); }
-	__forceinline void zero(void) { n.store(0, memory_order_relaxed); }
-	__forceinline uint get(void) const {
-	    return n.load(memory_order_seq_cst);
-	}
-
-	atomic<uint> n = 0;
-    };
-
-    class BLISTER TimerSet: ::nocopy {
-    public:
-	using sorted_timerset = ::set<DispatchTimer *, DispatchTimer::compare>;
-	using unsorted_timerset = unordered_set<DispatchTimer *,
-	    ptrhash<DispatchTimer>>;
-
-	TimerSet() = default;
-
-	bool empty(void) const { return unsorted.empty(); }
-	msec_t half(void) const { return split; }
-	DispatchTimer *peek(void) const {
-	    auto it = sorted.cbegin();
-
-	    return it == sorted.cend() ? nullptr : *it;
-	}
-
-	void clear(void) {
-	    sorted.clear();
-	    unsorted.clear();
-	}
-	void erase(DispatchTimer &dt);
-	DispatchTimer *claim(uint u) {
-	    return firing[u].exchange(nullptr, memory_order_acq_rel);
-	}
-	uint get(msec_t when, DispatchTimer **batch, uint maxcnt);
-	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
-	DispatchTimer *reorder(msec_t when);
-	void set(DispatchTimer &dt, msec_t when);
-
-	static constexpr uint BATCHSZ = 32;
-
-    private:
-	atomic<DispatchTimer *> firing[BATCHSZ] = {};
-	uint nfiring = 0;
-	sorted_timerset sorted;
-	msec_t split = 0;
-	unsorted_timerset unsorted;
-    };
-
-    friend class DispatchObj;
-    void adopt(DispatchObj &obj) {
-	olock.lock();
-	obj.flags |= DSP_Detached;
-	owned.insert(&obj);
-	olock.unlock();
-    }
-    void disown(DispatchObj &obj) {
-	olock.lock();
-	owned.erase(&obj);
-	olock.unlock();
-    }
-    void addReady(DispatchObj &obj, DispatchObj::DispatchObjCB cb, bool hipri,
-	DispatchMsg reason);
-    void cancelReady(DispatchObj &ob, bool del = false);
-    void removeReady(DispatchObj &obj);
-    void ready(DispatchObj &obj, bool hipri = false);
-
-    friend class DispatchTimer;
-    void addTimer(DispatchTimer &dt) {
-	tlock.lock();
-	timers.insert(dt);
-	tlock.unlock();
-    }
-    void cancelTimer(DispatchTimer &dt, bool del = false);
-    void eraseTimer(DispatchTimer &dt) {
-	tlock.lock();
-	timers.erase(dt);
-	tlock.unlock();
-    }
-    void removeTimer(DispatchTimer &dt) {
-	if (dt.due() == DispatchTimer::DSP_NEVER_DUE)
-	    return;
-	tlock.lock();
-	timers.set(dt, DispatchTimer::DSP_NEVER_DUE);
-	tlock.unlock();
-    }
-    void setTimer(DispatchTimer &dt, DispatchObj::DispatchObjCB cb, ulong tm);
-
-    friend class DispatchSocket;
-    void cancelSocket(DispatchSocket &ds, bool del = false);
-    void pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
-	ulong timeout, DispatchMsg msg);
-    void unmapSocket(DispatchSocket &ds, socket_t fd);
-
-    void cleanup(void);
-    bool exec(void);
-    void handleEvents(const void *evts, uint cnt);
-    DispatchTimer *handleTimers(msec_t now);
-    void reap(DispatchObj &obj);
-    void reclaim(void);
-    void reset(void);
-    int run(void);
-    void wake(void);
-    void wakeup(ulong msec);
-    void worker() {
-	Thread *t;
-
-	workers++;
-	t = new Thread();
-	t->start(worker, this, stacksz, this);
-	while ((t = wait(0)) != nullptr)
-	    delete t;
-    }
-    static int worker(void *param);
-
-    SpinLock olock;
-    uint maxthreads;
-    SizedObjectList<DispatchObj, ObjectListAtomicSize> rlist;
-    ObjectList<DispatchObj> zlist;
-    unordered_set<DispatchObj *> owned;
-    atomic_bool polling, shutdown, zpending;
-    alignas(64) atomic_uint_fast32_t scanning, workers;
-    SpinLock tlock;
-    atomic<msec_t> cache;
-    msec_t due;
-    TimerSet timers;
-#ifdef DSP_WIN32_ASYNC
-    atomic_ulong interval;
-    HWND wnd;
-    static uint socketmsg;
-    static constexpr int DSP_TimerID = 1;
-#elif defined(DSP_POLL)
-    SocketSet rset, wset;
-    Socket rsock, wsock;
-#else
-    int evtfd;
-#ifdef DSP_EPOLL
-    int wfd;
-#endif
-#endif
-    dspsema4_t sema4;
-#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
-    SpinLock slock;
-    socketmap smap;
-#endif
-    uint stacksz;
-};
-
 template<class D, class C>
 class SimpleDispatchListenSocket: public DispatchListenSocket {
 public:
@@ -540,37 +534,6 @@ protected:
 
     virtual void start(C &ssock) { ssock.start(); }
 };
-
-inline void DispatchObj::cancel(void) { dspr.cancelReady(*this); }
-inline void DispatchObj::erase(void) { dspr.cancelReady(*this, true); }
-inline void DispatchObj::detach(void) { dspr.adopt(*this); }
-inline void DispatchObj::ready(DispatchObjCB cb, bool hipri, DispatchMsg
-    reason) {
-    dspr.addReady(*this, cb, hipri, reason);
-}
-
-inline void DispatchTimer::cancel(void) { dspr.cancelTimer(*this); }
-inline void DispatchTimer::erase(void) { dspr.cancelTimer(*this, true); }
-inline DispatchTimer::~DispatchTimer() { dspr.eraseTimer(*this); }
-inline void DispatchTimer::init(void) { dspr.addTimer(*this); }
-inline void DispatchTimer::timeout(DispatchObjCB cb, ulong msec) {
-    if (msec != DSP_PREVIOUS)
-	to = msec;
-    dspr.setTimer(*this, cb, to);
-}
-
-inline void DispatchSocket::cancel(void) { dspr.cancelSocket(*this); }
-inline bool DispatchSocket::close(void) {
-    dspr.unmapSocket(*this, fd());
-    return Socket::close();
-}
-inline void DispatchSocket::erase(void) { dspr.cancelSocket(*this, true); }
-inline void DispatchSocket::poll(DispatchObjCB cb, ulong msec, DispatchMsg
-    reason) {
-    if (msec != DSP_PREVIOUS)
-	to = msec;
-    dspr.pollSocket(*this, cb, to, reason);
-}
 
 /*
  * AsyncCondvar acts like a std::condition_variable, but queues a callback

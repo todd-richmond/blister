@@ -156,7 +156,7 @@ public:
     static __forceinline timing_t start(void) { return now(); }
 
 private:
-    struct BLISTER Stats: nocopy {
+    struct DLL_LOCAL Stats: nocopy {
 	alignas(64) atomic<uint32_t> cnts[TIMINGSLOTS]{};
 	atomic_uint_fast64_t tot = 0;
 	Stats *flist = nullptr;

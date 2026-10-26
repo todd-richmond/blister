@@ -23,6 +23,7 @@
 #include "Log.h"
 
 static constexpr ulong MaxBody = 256UL * 1024 * 1024;
+static constexpr size_t MaxCopy = 4UL * 1024;		// request with small body
 static constexpr size_t MaxHdrs = 64UL * 1024;		// status + header bytes
 static constexpr size_t MaxPipeline = 16;
 static constexpr size_t MinRead = 512;
@@ -47,15 +48,15 @@ static constexpr uchar hexval(tuchar c) {
     return hex_lut[c];
 }
 
-static tstring totstring(string_view sv) {
+static void tappend(tstring &s, string_view sv) {
 #ifdef UNICODE
-    return achartotstring(string(sv).c_str());
+    s += achartotstring(string(sv).c_str());
 #else
-    return tstring(sv);
+    s += sv;
 #endif
 }
 
-static void addhdr(HTTPClient::attrmap &hdrs, string_view hdr) {
+void HTTPClient::Headers::add(string_view hdr) {
     size_t colon = hdr.find(':');
 
     // folded headers are not supported
@@ -71,7 +72,15 @@ static void addhdr(HTTPClient::attrmap &hdrs, string_view hdr) {
 	val.remove_prefix(1);
     while (!val.empty() && (val.back() == ' ' || val.back() == '\t'))
 	val.remove_suffix(1);
-    hdrs.emplace(totstring(name), totstring(val));
+
+    Hdr h{(uint)buf.size(), 0, 0};
+
+    tappend(buf, name);
+    h.nlen = (uint)buf.size() - h.name;
+    h.val = (uint)buf.size();
+    tappend(buf, val);
+    buf.push_back('\0');
+    hdrs.push_back(h);
 }
 
 // request line injection protection
@@ -174,6 +183,35 @@ static bool readline(socketbuf *sb, string &s, size_t &left) {
 	sb->consume(len);
     }
     return false;
+}
+
+// write req then data after skipping the off bytes already sent
+static bool sendall(const Socket &sock, string_view req, const void *data,
+    ulong datasz, ulong off) {
+    iovec iov[2];
+    iovec *v = iov;
+    int cnt = 2;
+
+    iov[0].iov_base = (char *)req.data();
+    iov[0].iov_len = (iovlen_t)req.size();
+    iov[1].iov_base = (char *)data;		// NOSONAR
+    iov[1].iov_len = (iovlen_t)datasz;
+    for (;;) {
+	long n;
+
+	while (cnt && off >= (ulong)v->iov_len) {
+	    off -= (ulong)v->iov_len;
+	    v++;
+	    cnt--;
+	}
+	if (!cnt)
+	    return true;
+	v->iov_base = (char *)v->iov_base + off;
+	v->iov_len -= (iovlen_t)off;
+	if ((n = sock.writev(v, cnt)) <= 0)
+	    return false;
+	off = (ulong)n;
+    }
 }
 
 tstring URL::fullpath(void) const {
@@ -459,7 +497,7 @@ bool HTTPClient::readhdrs(bool &http11) {
 	    return false;
 	if (line.empty())
 	    return true;
-	addhdr(reshdrs, line);
+	reshdrs.add(line);
     }
 }
 
@@ -475,10 +513,15 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     if (!badtoken(op) && !badtoken(path)) {
 	const bool head = !tstrcmp(op, T("HEAD"));
 
+	req.reserve(MaxCopy);
 	buildreq(req, op, path, hostval, ka, datasz,
 	    tstring_view(hstrm.str(), (size_t)hstrm.size()));
-	const streamsize rsz = (streamsize)req.size();
-	const streamsize total = rsz + (streamsize)datasz;
+	// a copy is cheaper than a second iovec for a small body
+	if (!msgh && datasz && req.size() + datasz <= MaxCopy) {
+	    req.append((const char *)data, datasz);
+	    datasz = 0;
+	}
+	const streamsize total = (streamsize)(req.size() + datasz);
 #ifndef _WIN32
 	iovec iov[2] = { { (void *)req.data(), req.size() },
 	    { (void *)data, datasz } };
@@ -504,24 +547,9 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 		sent = off > 0;
 #endif
 	    }
-	    // ancillary data goes with the first byte so only finish the stream
-	    if (sent && off < total) {
-		// cppcheck-suppress knownConditionTrueFalse
-		const streamsize doff = off > rsz ? off - rsz : 0;
-		const streamsize dleft = (streamsize)datasz - doff;
-		// cppcheck-suppress knownConditionTrueFalse
-		const streamsize rleft = off < rsz ? rsz - off : 0;
-
-		// cppcheck-suppress knownConditionTrueFalse
-
-		if (rleft)
-		    sent = sstrm.write(req.data() + off, rleft) == rleft;
-		if (sent && dleft)
-		    sent = sstrm.write((const char *)data + doff, dleft) ==
-			dleft;
-		if (sent)
-		    sent = bool(sstrm.flush());
-	    }
+	    // ancillary data goes with the first byte so only finish the rest
+	    if (sent && off < total)
+		sent = sendall(sock, req, data, datasz, (ulong)off);
 	    if (sent && readline(sstrm.rdbuf(), line, left)) {
 		bool http11 = false;
 
@@ -623,9 +651,14 @@ bool AsyncHTTPClient::Request::setup(DispatchObjCB cb, DispatchObj &co,
 	co.ready(cb);
 	return false;
     }
+    req.reserve(MaxCopy);
     head = !tstrcmp(op, T("HEAD"));
     buildreq(req, op, path, c.host, true, len, tstring_view(hstrm.str(),
 	(size_t)hstrm.size()));
+    if (len && req.size() + len <= MaxCopy) {
+	req.append((const char *)data, len);
+	datasz = 0;
+    }
     hstrm.reset();
     return true;
 }
@@ -661,7 +694,7 @@ AsyncHTTPClient::Flow AsyncHTTPClient::advance(Request &r) {
 	    if ((f = nextline(line, r.hdrleft)) != Flow::Ok)
 		return f;
 	    if (!line.empty())
-		addhdr(r.reshdrs, line);
+		r.reshdrs.add(line);
 	    else if ((f = endhdrs(r)) != Flow::Ok)
 		return f;
 	    break;
