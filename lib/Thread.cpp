@@ -28,13 +28,11 @@ static thread_local ThreadGroup *curgroup;
 // cleans up threads not started by Thread; key deleted at library unload
 static class ThreadLocalKey: nocopy {
 public:
-    ThreadLocalKey() {
 #ifdef _WIN32
-	key = FlsAlloc(destroy);
+    ThreadLocalKey(): key(FlsAlloc(destroy)) {}
 #else
-	pthread_key_create(&key, destroy);
+    ThreadLocalKey() { pthread_key_create(&key, destroy); }
 #endif
-    }
     ~ThreadLocalKey() {
 #ifdef _WIN32
 	FlsFree(key);

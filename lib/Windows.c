@@ -266,6 +266,54 @@ int read(int fd, void *buf, uint len) {
     return in;
 }
 
+/*
+ * readv emulation: ReadFileScatter has the same limits as WriteFileGather so
+ * read into one buffer and scatter it which keeps the read atomic
+ */
+long readv(int fd, iovec *io, int num) {
+    char sbuf[4096];
+    char *buf = sbuf, *p;
+    ullong total = 0;
+    long in = 0;
+
+    if (num == 1)
+	return read(fd, io->iov_base, io->iov_len);
+    for (int i = 0; i < num; i++)
+	total += io[i].iov_len;
+    if (total > 64 * 1024) {
+	/* too large to copy: a short read means no more data is ready */
+	for (int i = 0; i < num; i++) {
+	    int n = read(fd, io[i].iov_base, io[i].iov_len);
+
+	    if (n == -1)
+		return in ? in : -1;
+	    in += n;
+	    if ((ulong)n < io[i].iov_len)
+		break;
+	}
+	return in;
+    }
+    if (total > sizeof (sbuf) && (buf = malloc((size_t)total)) == NULL) {
+	errno = ENOMEM;
+	return -1;
+    }
+    if ((in = read(fd, buf, (uint)total)) > 0) {
+	ulong left = (ulong)in;
+
+	p = buf;
+	for (int i = 0; left; i++) {
+	    ulong n = io[i].iov_len < left ? io[i].iov_len : left;
+
+	    memcpy(io[i].iov_base, p, n);
+	    p += n;
+	    left -= n;
+	}
+    }
+    if (buf != sbuf)
+	free(buf);
+    return in;
+}
+
 /* write emulation - does not work if fd was opened O_APPEND or O_TEXT */
 int write(int fd, const void *buf, uint len) {
     DWORD out = 0;
@@ -277,38 +325,47 @@ int write(int fd, const void *buf, uint len) {
     return out;
 }
 
+/*
+ * writev emulation: WriteFileGather needs unbuffered overlapped handles and
+ * page aligned buffers so coalesce into a single WriteFile which keeps the
+ * write atomic like POSIX writev
+ */
 long writev(int fd, const iovec *io, int num) {
-    ulong len = 0;
-    char buf[1024];
-    char *p = buf;
-    int out;
+    char sbuf[4096];
+    char *buf = sbuf, *p;
+    ullong total = 0;
+    long out = 0;
 
     if (num == 1)
-	return write(fd, io->iov_base, (int)io->iov_len);
-    for (int i = 0; i < num; i++, io++) {
-	if (p - buf + io->iov_len > sizeof (buf)) {
-	    if (p != buf) {
-		if ((out = write(fd, buf, (uint)(p - buf))) == -1)
-		    return len;
-		len += out;
-		p = buf;
-	    }
-	    if (io->iov_len > sizeof (buf) || i == num - 1) {
-		if ((out = write(fd, io->iov_base, (int)io->iov_len)) == -1)
-		    return len;
-		len += out;
-		continue;
-	    }
+	return write(fd, io->iov_base, io->iov_len);
+    for (int i = 0; i < num; i++)
+	total += io[i].iov_len;
+    if (total > 64 * 1024) {
+	/* too large to copy: stop at a short write so no data is skipped */
+	for (int i = 0; i < num; i++) {
+	    int n = write(fd, io[i].iov_base, io[i].iov_len);
+
+	    if (n == -1)
+		return out ? out : -1;
+	    out += n;
+	    if ((ulong)n < io[i].iov_len)
+		break;
 	}
-	memcpy(p, io->iov_base, io->iov_len);
-	p += io->iov_len;
+	return out;
     }
-    if (p != buf) {
-	if ((out = write(fd, buf, (int)(p - buf))) == -1)
-	    return len;
-	len += out;
+    if (total > sizeof (sbuf) && (buf = malloc((size_t)total)) == NULL) {
+	errno = ENOMEM;
+	return -1;
     }
-    return (long)len;
+    p = buf;
+    for (int i = 0; i < num; i++) {
+	memcpy(p, io[i].iov_base, io[i].iov_len);
+	p += io[i].iov_len;
+    }
+    out = write(fd, buf, (uint)total);
+    if (buf != sbuf)
+	free(buf);
+    return out;
 }
 
 long tell(int fd) {
@@ -631,6 +688,11 @@ int rename(const char *from, const char *to) {
 
     return A_TO_W(from, fbuf) && A_TO_W(to, tbuf) ? wrename(fbuf, tbuf) : -1;
 }
+
+/* only ntifs.h defines this but FileRenameInfoEx accepts it since 1809 */
+#ifndef FILE_RENAME_FLAG_IGNORE_READONLY_ATTRIBUTE
+#define FILE_RENAME_FLAG_IGNORE_READONLY_ATTRIBUTE	0x00000040
+#endif
 
 /* atomically replace an existing target even if it is open, like POSIX */
 int wrename(const wchar *from, const wchar *to) {
