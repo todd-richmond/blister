@@ -237,12 +237,12 @@ private:
     int wfd = -1;
 #endif
 #endif
-    alignas(64) SpinLock olock;
+    alignas(CACHELINE_SZ) SpinLock olock;
     SizedObjectList<DispatchObj, ObjectListAtomicSize> rlist;
     ObjectList<DispatchObj> zlist;
-    alignas(64) atomic_uint_fast32_t scanning = 0;
+    alignas(CACHELINE_SZ) atomic_uint_fast32_t scanning = 0;
     dspsema4_t sema4;
-    alignas(64) SpinLock tlock;
+    alignas(CACHELINE_SZ) SpinLock tlock;
     // poller written state kept off the olock and rlist lines
     atomic<msec_t> cache = 0;
     atomic_bool polling = false;
@@ -253,7 +253,7 @@ private:
 #endif
     TimerSet timers;
 #if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
-    alignas(64) SpinLock slock;
+    alignas(CACHELINE_SZ) SpinLock slock;
     socketmap smap;
 #endif
     SpinLock alock;
