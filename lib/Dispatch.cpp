@@ -1514,7 +1514,7 @@ void Dispatcher::wake(uint cnt) {
 #endif
     rsz = rlist.size();
     while (cnt && rsz > s) {
-	uint n = min({cnt, maxwake, (uint)(rsz - s)});
+	uint n = (min)({cnt, maxwake, (uint)(rsz - s)});
 
 	if (scanning.compare_exchange_weak(s, s + n, memory_order_acquire,
 	    memory_order_relaxed)) {

@@ -22,7 +22,7 @@
 
 using ThreadLocalMap = vector<pair<void *, ThreadLocalFree>>;
 
-static constexpr thread_id_t NOID = (thread_id_t)-1;
+static const thread_id_t NOID = (thread_id_t)-1;
 static thread_local ThreadGroup *curgroup;
 
 // cleans up threads not started by Thread; key deleted at library unload
