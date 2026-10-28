@@ -16,16 +16,93 @@
  */
 
 #include "stdapi.h"
+#include <algorithm>
 #include <vector>
 #include "Thread.h"
 
-static const thread_id_t NOID = (thread_id_t)-1;
+using ThreadLocalMap = vector<pair<void *, ThreadLocalFree>>;
+
+static constexpr thread_id_t NOID = (thread_id_t)-1;
 static thread_local ThreadGroup *curgroup;
 
+// cleans up threads not started by Thread; key deleted at library unload
+static class ThreadLocalKey: nocopy {
+public:
+    ThreadLocalKey() {
+#ifdef _WIN32
+	key = FlsAlloc(destroy);
+#else
+	pthread_key_create(&key, destroy);
+#endif
+    }
+    ~ThreadLocalKey() {
+#ifdef _WIN32
+	FlsFree(key);
+#else
+	pthread_key_delete(key);
+#endif
+    }
+
+    ThreadLocalMap *get(void) const {
+#ifdef _WIN32
+	return (ThreadLocalMap *)FlsGetValue(key);
+#else
+	return (ThreadLocalMap *)pthread_getspecific(key);
+#endif
+    }
+    void set(ThreadLocalMap *fmap) const {
+#ifdef _WIN32
+	FlsSetValue(key, fmap);
+#else
+	pthread_setspecific(key, fmap);
+#endif
+    }
+    // callbacks may register new data so detach the map before running them
+    void run(void) const {
+	ThreadLocalMap *fmap = get();
+
+	if (fmap) {
+	    set(nullptr);
+	    run(fmap);
+	}
+    }
+
+private:
+#ifdef _WIN32
+    DWORD key;
+#else
+    pthread_key_t key;
+#endif
+
+    static void run(ThreadLocalMap *fmap) {
+	for (const auto &[data, func] : *fmap)
+	    func(data);
+	delete fmap;
+    }
+#ifdef _WIN32
+    static void WINAPI destroy(void *data);
+#else
+    static void destroy(void *data) { run((ThreadLocalMap *)data); }
+#endif
+} flocal;
+
+#ifdef _WIN32
+void WINAPI ThreadLocalKey::destroy(void *data) {
+    flocal.set(nullptr);
+    run((ThreadLocalMap *)data);
+}
+#endif
+
 atomic_ulong ThreadGroup::next_id;
-ThreadLocal<Thread::ThreadLocalMap *> Thread::flocal;
-ThreadGroup ThreadGroup::MainThreadGroup(false);
+ThreadGroup ThreadGroup::MainThreadGroup;
+#ifdef _WIN32
+// GetCurrentThread() is a pseudo-handle that names whichever thread uses it
+Thread Thread::MainThread(OpenThread(SYNCHRONIZE | THREAD_QUERY_INFORMATION |
+    THREAD_SET_INFORMATION, FALSE, GetCurrentThreadId()),
+    &ThreadGroup::MainThreadGroup);
+#else
 Thread Thread::MainThread(THREAD_HDL(), &ThreadGroup::MainThreadGroup);
+#endif
 
 #ifdef _WIN32
 // -V::1020
@@ -217,61 +294,65 @@ bool Processor::affinity(ullong mask) {
 #endif
 }
 
+// register func to free data at thread exit or free data now if func is null
 void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
     WARN_PUSH_DISABLE(26430);
     ThreadLocalMap *fmap = flocal.get();
 
-    if (!fmap) {
-	fmap = new ThreadLocalMap();
-	flocal.set(fmap);
-    }
     if (func) {
-	(*fmap)[data] = func;
-    } else if (data) {
-	auto node = fmap->extract(data);
+	if (!fmap) {
+	    fmap = new ThreadLocalMap();
+	    flocal.set(fmap);
+	}
+	for (auto &[d, f] : *fmap) {
+	    if (d == data) {
+		f = func;
+		return;
+	    }
+	}
+	fmap->emplace_back(data, func);
+    } else if (data && fmap) {
+	auto it = ranges::find(*fmap, data, &ThreadLocalMap::value_type::first);
 
-	if (node)
-	    node.mapped()(data);
+	if (it != fmap->end()) {
+	    func = it->second;
+	    fmap->erase(it);
+	    func(data);
+	}
     }
     WARN_POP();
 }
 
-Thread::Thread(thread_hdl_t handle, ThreadGroup *tg, bool aterm): cv(lck),
-    argument(nullptr), autoterm(aterm), hdl(handle), id(NOID), main(nullptr),
-    retval(0), state(Running) {
+Thread::Thread(thread_hdl_t handle, ThreadGroup *tg): cv(lck),
+    argument(nullptr), hdl(handle), id(NOID), main(nullptr), retval(0),
+    state(Running) {
     group = ThreadGroup::add(*this, tg);
 }
 
-Thread::Thread(void): cv(lck), argument(nullptr), autoterm(false), group(nullptr),
-    hdl(0), id(NOID), main(nullptr), retval(0), state(Init) {
+Thread::Thread(void): cv(lck), argument(nullptr), group(nullptr), hdl(0),
+    id(NOID), main(nullptr), retval(0), state(Init) {
 }
 
 Thread::~Thread() {
-    if (hdl && getId() != NOID) {
-	if (autoterm)
-	    terminate();
-	else
-	    wait();
-    }
+    if (hdl && getId() != NOID)
+	wait();
     if (group)
 	group->remove(*this);
     if (this == &MainThread)
-	thread_cleanup();
+	flocal.run();
 }
 
 // set state and notify threadgroup before hdl clears so wait() cannot release
 // the Thread or its group while notify() is still running
 void Thread::clear(void) {
-    thread_cleanup();
+    flocal.run();
     lck.lock();
-    if (getId() != NOID) {
 #ifdef _WIN32
-	CloseHandle(hdl);
+    CloseHandle(hdl);
 #else
-	pthread_detach(hdl);
+    pthread_detach(hdl);
 #endif
-	id.store(NOID, memory_order_release);
-    }
+    id.store(NOID, memory_order_release);
     setState(Terminated);
     group->notify(*this);
     hdl = 0;
@@ -296,6 +377,8 @@ int Thread::init(void *thisp) {
 }
 
 bool Thread::priority(int pri) {	// NOLINT
+    Locker lkr(lck);
+
     if (!hdl)
 	return false;
 #ifdef _WIN32
@@ -340,17 +423,6 @@ bool Thread::priority(int pri) {	// NOLINT
 #endif
 }
 
-void Thread::thread_cleanup(void) {
-    ThreadLocalMap *fmap = flocal.get();
-
-    if (fmap) {
-	flocal.set(nullptr);
-	for (const auto &[data, func] : *fmap)
-	    func(data);
-	delete fmap;
-    }
-}
-
 // setup thread and call it's main routine
 THREAD_FUNC Thread::thread_init(void *arg) {
     Thread *thread = (Thread *)arg;
@@ -368,18 +440,19 @@ THREAD_FUNC Thread::thread_init(void *arg) {
 }
 
 // create Thread and have it call ThreadMain()
-bool Thread::start(uint stacksz, ThreadGroup *tg, bool suspend, bool aterm) {
-    return start(init, this, stacksz, tg, suspend, aterm);
+bool Thread::start(uint stacksz, ThreadGroup *tg, bool suspend) {
+    return start(init, this, stacksz, tg, suspend);
 }
 
 // create Thread and start it running at a given function
 // a suspended Thread has no OS thread until resume()
 bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
-    bool suspend, bool aterm) {
+    bool suspend) {
     ThreadGroup *g = ThreadGroup::add(*this, tg);
     Locker lkr(lck);
 
-    if (getState() != Terminated && getState() != Init) {
+    // a stopped Thread keeps hdl until its OS thread exits
+    if ((getState() != Terminated && getState() != Init) || hdl) {
 	lkr.unlock();
 	if (g != group)
 	    g->remove(*this);
@@ -387,7 +460,6 @@ bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     }
     group = g;
     argument = arg;
-    autoterm = aterm;
     main = func;
     stacksize = stacksz;
     if (suspend) {
@@ -458,69 +530,40 @@ bool Thread::stop(void) {
     return true;
 }
 
-// terminate thread ungracefully
-bool Thread::terminate(void) {
-    bool ret = false;
-    Locker lkr(lck);
-
-    if (getState() == Suspended) {
-	retval = -2;
-	setState(Terminated);
-	group->notify(*this);
-	cv.broadcast();
-	ret = true;
-    } else if (getState() == Running) {
-#ifdef _WIN32
-#pragma warning(disable: 6258)
-	if (hdl && hdl != GetCurrentThread())
-	    ret = TerminateThread(hdl, 1) != FALSE;
-#else
-	ret = pthread_cancel(hdl) == 0;
-#endif
-	if (ret) {
-	    retval = -2;
-	    if (getId() != NOID) {
-#ifdef _WIN32
-		CloseHandle(hdl);
-#else
-		pthread_detach(hdl);
-#endif
-		id.store(NOID, memory_order_release);
-	    }
-	    setState(Terminated);
-	    group->notify(*this);
-	    hdl = 0;
-	    cv.broadcast();
-	}
-    } else if (getState() == Terminated) {
-	ret = true;
-    }
-    return ret;
-}
-
 // wait for thread to exit
 bool Thread::wait(ulong timeout) {
     Locker lkr(lck);
 
     if (getState() == Init || getState() == Suspended)
 	return true;
-    if (getState() == Running && getId() == NOID) {	// wrapped thread
+    if (hdl && getId() == NOID) {			// wrapped thread
+	thread_hdl_t h = hdl;
+	bool ret;
+
 	lkr.unlock();
 #ifdef _WIN32
-	return WaitForSingleObject(hdl, timeout) == WAIT_OBJECT_0;
+	ret = WaitForSingleObject(h, timeout) == WAIT_OBJECT_0;
 #elif defined(__linux__)
-	if (timeout == INFINITE)
-	    return pthread_join(hdl, nullptr) == 0;
+	if (timeout == INFINITE) {
+	    ret = pthread_join(h, nullptr) == 0;
+	} else {
+	    timespec ts;
 
-	timespec ts;
-
-	clock_gettime(CLOCK_REALTIME, &ts);
-	time_adjust_msec(&ts, timeout);
-	return pthread_timedjoin_np(hdl, nullptr, &ts) == 0;
+	    clock_gettime(CLOCK_REALTIME, &ts);
+	    time_adjust_msec(&ts, timeout);
+	    ret = pthread_timedjoin_np(h, nullptr, &ts) == 0;
+	}
 #else
 	// other pthreads do not support a timeout
-	return timeout == INFINITE && pthread_join(hdl, nullptr) == 0;
+	ret = timeout == INFINITE && pthread_join(h, nullptr) == 0;
 #endif
+	if (ret) {			// a joined pthread cannot be joined again
+	    lkr.lock();
+	    setState(Terminated);
+	    hdl = 0;
+	    cv.broadcast();
+	}
+	return ret;
     }
 
     msec_t end = mticks() + timeout;
@@ -539,13 +582,9 @@ bool Thread::wait(ulong timeout) {
     return true;
 }
 
-ThreadGroup::ThreadGroup(bool aterm): cv(cvlck), autoterm(aterm), state(Init) {
-    id = (thread_id_t)++next_id;
-}
+ThreadGroup::ThreadGroup(void): cv(cvlck), id(++next_id), state(Init) {}
 
 ThreadGroup::~ThreadGroup() {
-    if (autoterm)
-	terminate();
     wait(INFINITE, true);
     waitForMain(INFINITE);
 }
@@ -561,54 +600,73 @@ ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
     return tg;
 }
 
-// control all threads in group - does not work yet if caller is in same group
-// func runs unlocked since Thread::terminate() re-enters notify()
-void ThreadGroup::control(ThreadState ts, ThreadControlRoutine func) {
-    vector<Thread *> snapshot;
-    Locker lck(cvlck);
+// run func unlocked; pinned keeps remove()/wait() from freeing the thread
+template<class F>
+void ThreadGroup::control(F func) {
+    Locker lkr(cvlck);
 
-    setState(ts);
-    for (auto *thread : threads) {
-	if (!THREAD_ISSELF(thread->getId()))
-	    snapshot.push_back(thread);
+    while (pinned)
+	cv.wait();
+
+    const vector<Thread *> snapshot(threads.begin(), threads.end());
+
+    for (auto *thread : snapshot) {
+	if (!threads.contains(thread))
+	    continue;
+	pinned = thread;
+	lkr.unlock();
+	func(*thread);
+	lkr.lock();
+	cv.broadcast();
     }
-    lck.unlock();
-    for (auto *thread : snapshot)
-	(thread->*func)();
+    pinned = nullptr;
+    cv.broadcast();
 }
 
 int ThreadGroup::init(void *thisp) {
     return ((ThreadGroup *)thisp)->onStart();
 }
 
+// broadcast since waiters also watch for pinned to clear
 void ThreadGroup::notify(const Thread &thread) {
     if (&thread != &master) {
 	Locker lkr(cvlck);
 
-	cv.set();
+	cv.broadcast();
     }
 }
 
 void ThreadGroup::priority(int pri) {
-    Locker lkr(cvlck);
-
-    for (auto *thread : threads)
-	thread->priority(pri);
+    control([pri](Thread &thread) { thread.priority(pri); });
 }
 
 void ThreadGroup::remove(Thread &thread) {
     Locker lkr(cvlck);
 
+    while (pinned == &thread)
+	cv.wait();
     threads.erase(&thread);
 }
 
 bool ThreadGroup::start(uint stacksz, bool suspend) {
     if (master.getState() != Init && master.getState() != Terminated)
 	return false;
-    return master.start(init, this, stacksz, this, suspend, autoterm);
+    return master.start(init, this, stacksz, this, suspend);
+}
+
+void ThreadGroup::stop(void) {
+    const thread_id_t self = THREAD_ID();
+
+    onStop();
+    setState(Terminated);
+    control([self](Thread &thread) {
+	if (!THREAD_EQUAL(thread.getId(), self))
+	    thread.stop();
+    });
 }
 
 Thread *ThreadGroup::wait(ulong msec, bool all) {
+    const thread_id_t self = THREAD_ID();
     Locker lkr(cvlck);
 
     do {
@@ -619,7 +677,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	for (auto it = threads.begin(); it != threads.end(); ) {
 	    Thread *thread = *it;
 
-	    if (thread->terminated()) {
+	    if (thread->terminated() && thread != pinned) {
 		it = threads.erase(it);
 		batch[count++] = thread;
 		if (!all || count == 64)
@@ -627,7 +685,8 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	    } else {
 		thread_id_t tid = thread->getId();
 
-		if (tid != NOID && !THREAD_ISSELF(tid))
+		if (thread == pinned || (tid != NOID &&
+		    !THREAD_EQUAL(tid, self)))
 		    running = true;
 		++it;
 	    }

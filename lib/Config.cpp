@@ -16,7 +16,6 @@
  */
 
 #include "stdapi.h"
-#include <stdarg.h>
 #include <algorithm>
 #include <ranges>
 #include <fstream>
@@ -25,14 +24,9 @@
 #include <sys/stat.h>
 #include "Config.h"
 
-#ifdef WIN32
-#define ENDL "\r\n"
-#else
-#define ENDL '\n'
-#endif
-
 constexpr uint MINBUFSZ = 4 * 1024U;
 constexpr uint MAXEXPAND = 64;
+constexpr uint MAXINCLUDE = 16;
 
 tstring_view Config::joinkey(tchar (&buf)[KEYSZ], tstring &str, const tchar
     *sect, size_t slen, const tchar *key, size_t klen) {
@@ -57,6 +51,7 @@ void Config::clear_locked(void) {
 	delkv(kv);
     amap.clear();
     sum = 0;
+    ini = false;
 }
 
 void Config::clear(void) {
@@ -176,27 +171,17 @@ Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     kv->val[vlen + 1 + klen] = '\0';
     kv->expand = false;
     if (LIKELY(vlen > 3 && quote != '\'')) {
-#ifdef _UNICODE
-	const tchar *p = tstrchr(kv->val, '$');
-#else
-	const tchar *p = (const tchar *)memchr(kv->val, '$', vlen);
-#endif
-	while (p != nullptr) {
-	    ++p;
-	    if (*p == '{' || *p == '(') {
-		tchar close = *p == '(' ? ')' : '}';
+	tstring_view v(kv->val, vlen);
 
-		if (tstrchr(p, close) != nullptr) {
-		    kv->expand = true;
-		    break;
-		}
+	for (size_t pos = v.find('$'); pos != v.npos && pos + 1 < vlen;
+	    pos = v.find('$', pos + 1)) {
+	    tchar open = v[pos + 1];
+
+	    if ((open == '{' || open == '(') && v.find(open == '(' ? ')' : '}',
+		pos + 2) != v.npos) {
+		kv->expand = true;
+		break;
 	    }
-#ifdef _UNICODE
-	    p = tstrchr(p, '$');
-#else
-	    size_t remaining = vlen - (size_t)(p - kv->val);
-	    p = (const tchar *)memchr(p, '$', remaining);
-#endif
 	}
     }
 #pragma warning(disable: 26402)
@@ -206,19 +191,19 @@ Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
 bool Config::open_file(const tstring &file, tifstream &is, unique_ptr<tchar[]>
     &fbuf, ulong &sz) {
     struct stat sbuf;
-    uint bufsz;
+    size_t bufsz;
 
     if (stat(tstringtoachar(file), &sbuf))
 	return false;
     sz = (ulong)sbuf.st_size;
-    bufsz = max((uint)sbuf.st_size + 1, MINBUFSZ);
-    fbuf.reset(new tchar[bufsz]);
-    is.rdbuf()->pubsetbuf(fbuf.get(), bufsz);
+    bufsz = max((size_t)sbuf.st_size + 1, (size_t)MINBUFSZ);
+    fbuf = make_unique_for_overwrite<tchar[]>(bufsz);
+    is.rdbuf()->pubsetbuf(fbuf.get(), (streamsize)bufsz);
     is.open(file.c_str());
     return (bool)is;
 }
 
-bool Config::parse(tistream &is) {
+bool Config::parse(tistream &is, uint depth) {
     bool app;
     tstring_view key, val;
     tstring line, sect;
@@ -251,9 +236,13 @@ bool Config::parse(tistream &is) {
 		    tstring_view sv(s);
 
 		    trim(sv);
-		    if (!sv.empty())
-			line += sv.front() == ';' || sv.front() == '#' ?
-			    T("\\") : s;
+		    if (sv.empty())
+			continue;
+		    if (sv.front() == ';' || sv.front() == '#')
+			line += '\\';
+		    else	// keep indentation, drop trailing space
+			line.append(s.data(), (size_t)(sv.data() + sv.size() -
+			    s.data()));
 		}
 	    } while (!line.empty() && line.back() == '\\');
 	    len = line.size();
@@ -263,6 +252,7 @@ bool Config::parse(tistream &is) {
 		continue;
 	}
 	key = tstring_view(line.data(), len);
+	trim(key);
 	switch (key.front()) {
 	case ';':
 	case '=':
@@ -278,7 +268,8 @@ bool Config::parse(tistream &is) {
 		key.remove_prefix(9);
 		trim(key);
 		file.assign(key);
-		if (!open_file(file, iis, fbuf, sz) || !parse(iis))
+		if (depth >= MAXINCLUDE || !open_file(file, iis, fbuf, sz) ||
+		    !parse(iis, depth + 1))
 		    return false;
 	    }
 	    break;
@@ -342,13 +333,14 @@ bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
     if (app) {
 	SpinWLocker lkr(lck);
 
-	prefix(str);
+	if (str)
+	    pre = str;
 	if (sz)
 	    reserve(sz);
 	return parse(is);
     }
     // parse outside the lock so readers are not blocked by file I/O
-    Config tmp(str, ck);
+    Config tmp(str ? str : prefix().c_str(), ck);
 
     if (sz)
 	tmp.reserve(sz);
@@ -357,8 +349,8 @@ bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
 
     SpinWLocker lkr(lck);
 
-    prefix(str);
-    ini |= tmp.ini;
+    pre.swap(tmp.pre);
+    ini = tmp.ini;
     amap.swap(tmp.amap);
     sum = tmp.sum;
     return true;
@@ -410,36 +402,6 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     return *this;
 }
 
-Config &Config::setv(const tchar *key1, const tchar *val1, ...) {
-    uint argc = 0;
-    const tchar *arg, *key = nullptr, *last = nullptr, *sect = nullptr;
-    size_t slen;
-    va_list vl;
-
-    va_start(vl, val1);
-    while ((arg = va_arg(vl, const tchar *)) != nullptr) {
-	last = arg;
-	++argc;
-    }
-    sect = (argc & 1) ? last : nullptr;
-    va_end(vl);
-    slen = sect ? tstrlen(sect) : 0;
-    lock();
-    set(key1, tstrlen(key1), val1, tstrlen(val1), sect, slen);
-    va_start(vl, val1);
-    while ((arg = va_arg(vl, const tchar *)) != nullptr) {
-	if (key) {
-	    set(key, tstrlen(key), arg, tstrlen(arg), sect, slen);
-	    key = nullptr;
-	} else {
-	    key = arg;
-	}
-    }
-    va_end(vl);
-    unlock();
-    return *this;
-}
-
 void Config::trim(tstring_view &s) {
     const tchar *start, *end;
 
@@ -463,15 +425,12 @@ bool Config::write(tostream &os, bool inistyle) const {
     keys.reserve(amap.size());
     for (const auto &kv : amap)
 	keys.emplace_back(kv.first, kv.second);
-    if (inistyle) {
-	ranges::sort(keys, [](const auto &a, const auto &b) {
-	    return keyless()(a.first, b.first);
-	});
-    } else {
-	ranges::sort(keys, [](const auto &a, const auto &b) {
-	    return stringless(a.first, b.first);
-	});
-    }
+    if (inistyle)
+	ranges::sort(keys, keyless{}, &pair<const tchar *, const KV *>::first);
+    else
+	ranges::sort(keys, [](const tchar *a, const tchar *b) {
+	    return stringless(a, b);
+	}, &pair<const tchar *, const KV *>::first);
     for (size_t u = 0; u < keys.size(); ++u) {
 	const tchar *dot;
 	const tchar *key = keys[u].first;
@@ -485,18 +444,18 @@ bool Config::write(tostream &os, bool inistyle) const {
 		if (cnt > 1 || (cnt == 1 && u + 1 < keys.size() &&
 		    !tstrncmp(keys[u + 1].first, sect.c_str(), sect.size()) &&
 		    keys[u + 1].first[sect.size()] == '.'))
-		    os << ENDL;
+		    os << '\n';
 		cnt = 0;
 	    }
 	} else {
 	    if (tstrncmp(key, sect.c_str(), (size_t)(dot - key)) != 0) {
 		sect.assign(key, (size_t)(dot - key));
 		if (cnt) {
-		    os << ENDL;
+		    os << '\n';
 		    cnt = 0;
 		}
 		if (inistyle)
-		    os << T("[") << sect << T("]") << ENDL;
+		    os << '[' << sect << ']' << '\n';
 	    }
 	    if (inistyle)
 		key = dot + 1;
@@ -505,9 +464,12 @@ bool Config::write(tostream &os, bool inistyle) const {
 	os << key << '=';
 	if (kv->quote)
 	    os << kv->quote << kv->val << kv->quote;
+	else if (kv->vlen && (istspace(kv->val[0]) ||
+	    istspace(kv->val[kv->vlen - 1])))
+	    os << '"' << kv->val << '"';
 	else
 	    os << kv->val;
-	os << ENDL;
+	os << '\n';
     }
     os.flush();
     return os.good();

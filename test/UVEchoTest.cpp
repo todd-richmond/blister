@@ -634,7 +634,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    ullong cnt = cur_ops + cur_errs;
 
 	    tcout << (cnt * 1000000 / (now - last)) << T("\t\t") <<
-		(cur_usecs / (cnt ? cnt : 1)) << '\t' << cur_errs << endl;
+		(cur_usecs / (cur_ops ? cur_ops : 1)) << '\t' << cur_errs <<
+		endl;
 	    last = now;
 	} while (loops.load(memory_order_relaxed) > 0 &&
 	    !qflag.load(memory_order_relaxed));

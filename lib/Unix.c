@@ -41,29 +41,15 @@ __attribute__((constructor)) static void ticks_init(void) {
     ticks_denom_ms = mti.denom * 1000000U;
     ticks_denom_us = mti.denom * 1000U;
 }
-#endif
 
 msec_t mticks(void) {
-#ifdef __APPLE__
     return (msec_t)(mach_approximate_time() * ticks_numer / ticks_denom_ms);
-#else
-    struct timespec ts;
-
-    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
-    return (msec_t)ts.tv_sec * 1000 + (msec_t)ts.tv_nsec / 1000000;
-#endif
 }
 
 usec_t uticks(void) {
-#ifdef __APPLE__
     return (usec_t)(mach_absolute_time() * ticks_numer / ticks_denom_us);
-#else
-    struct timespec ts;
-
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (usec_t)ts.tv_sec * 1000000 + (usec_t)ts.tv_nsec / 1000;
-#endif
 }
+#endif
 
 int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test) {

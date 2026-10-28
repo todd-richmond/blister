@@ -109,13 +109,16 @@ private:
 	return it == smap.end() ? nullptr : it->second;
     }
 #endif
-    // Lock optimized SizedObjectList counter
+    // SizedObjectList counter changed only under olock and read unlocked;
+    // wake() fences before reading it to pair with workers going idle
     struct ObjectListAtomicSize {
-	__forceinline void inc(void) { n.fetch_add(1, memory_order_seq_cst); }
+	__forceinline void inc(void) { add(1); }
 	__forceinline void dec(void) {
 	    n.store(n.load(memory_order_relaxed) - 1, memory_order_relaxed);
 	}
-	__forceinline void add(uint v) { n.fetch_add(v, memory_order_relaxed); }
+	__forceinline void add(uint v) {
+	    n.store(n.load(memory_order_relaxed) + v, memory_order_relaxed);
+	}
 	__forceinline void zero(void) { n.store(0, memory_order_relaxed); }
 	__forceinline uint get(void) const {
 	    return n.load(memory_order_seq_cst);
@@ -126,12 +129,8 @@ private:
 
     class DLL_LOCAL TimerSet: ::nocopy {
     public:
-	struct compare {
-	    bool operator ()(const DispatchTimer *a, const DispatchTimer *b)
-		const;
-	};
-
-	using sorted_timerset = ::set<DispatchTimer *, compare>;
+	// due kept in the node so tree walks skip cold timer objects
+	using sorted_timerset = ::set<pair<msec_t, DispatchTimer *>>;
 	using unsorted_timerset = unordered_set<DispatchTimer *,
 	    ptrhash<DispatchTimer>>;
 
@@ -142,7 +141,7 @@ private:
 	DispatchTimer *peek(void) const {
 	    auto it = sorted.cbegin();
 
-	    return it == sorted.cend() ? nullptr : *it;
+	    return it == sorted.cend() ? nullptr : it->second;
 	}
 
 	void clear(void) {
@@ -173,6 +172,7 @@ private:
     void adopt(DispatchObj &obj);
     void cancelReady(DispatchObj &ob, bool del = false);
     void disown(DispatchObj &obj);
+    bool enqueue(DispatchObj &obj, bool hipri);
     void removeReady(DispatchObj &obj);
     void ready(DispatchObj &obj, bool hipri = false);
 
@@ -197,16 +197,26 @@ private:
     void reclaim(void);
     void reset(void);
     int run(void);
-    void wake(void);
+    void wake(uint cnt = 1);
     void wakeup(ulong msec);
-    void worker() {
+    bool worker(void) {
 	Thread *t;
+	uint_fast32_t w = workers.load(memory_order_relaxed);
 
-	workers++;
+	do {
+	    if (w >= maxthreads || shutdown.load(memory_order_relaxed))
+		return false;
+	} while (!workers.compare_exchange_weak(w, w + 1,
+	    memory_order_relaxed));
 	t = new Thread();
-	t->start(worker, this, stacksz, this);
+	if (UNLIKELY(!t->start(worker, this, stacksz, this))) {
+	    delete t;
+	    workers.fetch_sub(1, memory_order_relaxed);
+	    return false;
+	}
 	while ((t = wait(0)) != nullptr)
 	    delete t;
+	return true;
     }
     static int worker(void *param);
 
@@ -228,15 +238,15 @@ private:
 #endif
 #endif
     alignas(64) SpinLock olock;
-    atomic_bool polling = false;
     SizedObjectList<DispatchObj, ObjectListAtomicSize> rlist;
     ObjectList<DispatchObj> zlist;
-    atomic_bool zpending = false;
-    unordered_set<DispatchObj *> owned;
     alignas(64) atomic_uint_fast32_t scanning = 0;
     dspsema4_t sema4;
     alignas(64) SpinLock tlock;
+    // poller written state kept off the olock and rlist lines
     atomic<msec_t> cache = 0;
+    atomic_bool polling = false;
+    atomic_bool zpending = false;
     msec_t due;
 #ifdef DSP_WIN32_ASYNC
     atomic_ulong interval;
@@ -246,6 +256,8 @@ private:
     alignas(64) SpinLock slock;
     socketmap smap;
 #endif
+    SpinLock alock;
+    unordered_set<DispatchObj *> owned;
 };
 
 // base classes for event objects
@@ -540,21 +552,21 @@ protected:
  * to be called instead of blocking the thread. The lock must be held
  * but wait() returns with it unlocked. A Waiter must not be destroyed or
  * cancelled while its thread holds the lock. A Waiter may wait on any
- * AsyncCondvar that shares its lock
+ * AsyncCondvar that shares its lock but wait(cb) uses the one it was built with
  */
 class BLISTER AsyncCondvar: nocopy {
 public:
     class BLISTER Waiter: public DispatchObj {
     public:
 	explicit Waiter(AsyncCondvar &a): DispatchObj(a.dispatcher()),
-	    lck(a.lck), ac(&a), link(*this) {}
+	    lck(a.lck), home(a), ac(&a), link(*this) {}
 	Waiter(AsyncCondvar &a, DispatchObj &parent): DispatchObj(child,
-	    parent), lck(a.lck), ac(&a), link(*this) {}
+	    parent), lck(a.lck), home(a), ac(&a), link(*this) {}
 	~Waiter() override { unwait(); }
 
 	void wait(DispatchObjCB cb) {
 	    callback(cb);
-	    ac->wait(*this);
+	    home.wait(*this);
 	}
 	void wait(DispatchObjCB cb, AsyncCondvar &cv) {
 	    callback(cb);
@@ -583,6 +595,7 @@ public:
 	}
 
 	Lock &lck;
+	AsyncCondvar &home;
 	AsyncCondvar *ac;		// guarded by lck
 	Link link;
 	bool waiting = false;
@@ -630,6 +643,11 @@ public:
 	return woken;
     }
     void wait(Waiter &waiter) {
+	// a Waiter is only ever queued on one AsyncCondvar
+	if (waiter.waiting && waiter.ac != this) {
+	    waiter.waiting = false;
+	    waiter.ac->waiters.pop(waiter.link);
+	}
 	if (signaled) {
 	    signaled = false;
 	    lck.unlock();
@@ -654,7 +672,7 @@ private:
 
     Dispatcher &dspr;
     Lock &lck;
-    atomic_bool signaled = false;
+    bool signaled = false;		// guarded by lck
     SizedObjectList<Waiter::Link> waiters;
 };
 

@@ -65,7 +65,7 @@ typedef pthread_t thread_id_t;
 #define THREAD_ID()		pthread_self()
 #endif
 
-#define INFINITE		(ulong)-1
+#define INFINITE		((ulong)-1)
 #define THREAD_FUNC		void *
 #define THREAD_HDL()		pthread_self()
 #if defined(__i386__) || defined(__x86_64__)
@@ -104,9 +104,15 @@ typedef pthread_key_t tlskey_t;
 #include <thread>
 #include <unordered_map>
 
+#if defined(__APPLE__) && defined(__aarch64__)
+inline constexpr size_t CACHELINE_SZ = 128;
+#else
+inline constexpr size_t CACHELINE_SZ = 64;
+#endif
+
 #ifdef THREAD_PAUSE
 // exponential spin backoff with constant-fold optimization
-static __forceinline void spin_backoff(uint &limit, uint spins) {
+inline void spin_backoff(uint &limit, uint spins) {
     for (uint u = 0; u < limit; ++u)
 	THREAD_PAUSE();
     if (limit < spins)
@@ -115,16 +121,16 @@ static __forceinline void spin_backoff(uint &limit, uint spins) {
 	THREAD_YIELD();
 }
 
-static __forceinline void spin_release(bool pause = true, bool = false) {
+inline void spin_release(bool pause = true, bool = false) {
     if (pause)
 	THREAD_PAUSE();
     else
 	THREAD_YIELD();
 }
 #else
-static __forceinline void spin_backoff(uint &, uint) { THREAD_YIELD(); }
+inline void spin_backoff(uint &, uint) { THREAD_YIELD(); }
 
-static __forceinline void spin_release(bool = true, bool yield = false) {
+inline void spin_release(bool = true, bool yield = false) {
     if (yield)
 	THREAD_YIELD();
 }
@@ -167,6 +173,9 @@ private:
 // Thread local storage for simple types
 template<class C>
 class BLISTER ThreadLocal: nocopy {
+    static_assert(sizeof (C) <= sizeof (void *) &&
+	is_trivially_copyable_v<C>);
+
 public:
     // cppcheck-suppress useInitializationList
     ThreadLocal() { tls_init(key); }
@@ -176,10 +185,12 @@ public:
     explicit __forceinline operator bool(void) const {
 	return tls_get(key) != nullptr;
     }
-    explicit __forceinline operator C() const { return (C)tls_get(key); }
+    explicit __forceinline operator C() const { return get(); }
 
-    __forceinline C get(void) const { return (C)tls_get(key); }
-    __forceinline void set(const C c) const { tls_set(key, c); }
+    __forceinline C get(void) const { return (C)(uintptr_t)tls_get(key); }
+    __forceinline void set(const C c) const {
+	tls_set(key, (void *)(uintptr_t)c);
+    }
 
 protected:
     tlskey_t key;
@@ -313,7 +324,7 @@ public:
     }
 
 private:
-    alignas(64) atomic_bit lck;
+    alignas(CACHELINE_SZ) atomic_bit lck;
     const uint spins;
 };
 
@@ -326,72 +337,66 @@ public:
     explicit SpinRWLock(uint lmt = SPIN_LIMIT):
 	spins(Processor::count() == 1 ? 0 : lmt) {}
 
-    __forceinline void downlock(void) { state.store(1, memory_order_release); }
+    // readers increment optimistically so writer releases must subtract
+    __forceinline void downlock(void) {
+	state.fetch_sub(WRITE_BIT - 1, memory_order_release);
+    }
     __forceinline void lock(void) {
-	uint_fast32_t expected = state.load(memory_order_relaxed) & READER_MASK;
 	uint limit = spins > 0;
 
-	while (!state.compare_exchange_weak(expected, expected | WRITE_BIT,
-	    memory_order_acquire, memory_order_relaxed)) {
-	    if (expected & WRITE_BIT) {
-		do {
-		    spin_backoff(limit, spins);
-		} while (state.load(memory_order_relaxed) & WRITE_BIT);
-		limit = spins > 0;
-	    }
-	    expected &= READER_MASK;
+	while (UNLIKELY(state.fetch_or(WRITE_BIT, memory_order_acquire) &
+	    WRITE_BIT)) {
+	    do {
+		spin_backoff(limit, spins);
+	    } while (state.load(memory_order_relaxed) & WRITE_BIT);
+	    limit = spins > 0;
 	}
 	limit = spins > 0;
 	while (state.load(memory_order_acquire) & READER_MASK)
 	    spin_backoff(limit, spins);
     }
     __forceinline void lock_shared(void) {
-	do {
-	    uint_fast32_t expected = state.load(memory_order_relaxed);
+	while (UNLIKELY(state.fetch_add(1, memory_order_acquire) &
+	    WRITE_BIT)) {
+	    uint limit = spins > 0;
 
-	    if (UNLIKELY(expected & WRITE_BIT)) {
-		uint limit = spins > 0;
-
-		do {
-		    spin_backoff(limit, spins);
-		} while (state.load(memory_order_relaxed) & WRITE_BIT);
-	    } else if (LIKELY(state.compare_exchange_weak(expected, expected +
-		1, memory_order_acquire, memory_order_relaxed))) {
-		return;
-	    } else {
-		spin_release(true, true);
-	    }
-	} while (true);
+	    state.fetch_sub(1, memory_order_relaxed);
+	    do {
+		spin_backoff(limit, spins);
+	    } while (state.load(memory_order_relaxed) & WRITE_BIT);
+	}
     }
     __forceinline bool try_lock(void) {
-	uint_fast32_t expected = 0;
+	uint32_t expected = 0;
 
 	return state.compare_exchange_strong(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed);
     }
     __forceinline bool try_lock_shared(void) {
-	uint_fast32_t expected = state.load(memory_order_relaxed);
+	uint32_t expected = state.load(memory_order_relaxed);
 
 	return !(expected & WRITE_BIT) && state.compare_exchange_strong(expected,
 	    expected + 1, memory_order_acquire, memory_order_relaxed);
     }
     __forceinline bool try_uplock(void) {
-	uint_fast32_t expected = 1;
+	uint32_t expected = 1;
 
 	return state.compare_exchange_strong(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed);
     }
-    __forceinline void unlock(void) { state.store(0, memory_order_release); }
+    __forceinline void unlock(void) {
+	state.fetch_sub(WRITE_BIT, memory_order_release);
+    }
     __forceinline void unlock_shared(void) {
 	state.fetch_sub(1, memory_order_release);
     }
 
 private:
-    alignas(64) atomic_uint_fast32_t state = 0;
+    alignas(CACHELINE_SZ) atomic<uint32_t> state = 0;
     const uint spins;
 
-    static constexpr uint_fast32_t WRITE_BIT = 1U << 31;
-    static constexpr uint_fast32_t READER_MASK = WRITE_BIT - 1;
+    static constexpr uint32_t WRITE_BIT = 1U << 31;
+    static constexpr uint32_t READER_MASK = WRITE_BIT - 1;
 };
 
 using FastSpinRLocker = FastLockerTemplate<SpinRWLock, &SpinRWLock::lock_shared,
@@ -408,18 +413,17 @@ public:
     explicit TicketLock(uint lmt = 0): yield(lmt ? lmt :
 	Processor::count() / 2) {}
     __forceinline void lock() {
-	uint_fast16_t ticket = next.fetch_add(1, memory_order_relaxed);
+	uint32_t ticket = next.fetch_add(1, memory_order_relaxed);
 	uint pos;
 
-	while ((pos = (uint)(uint_fast16_t)(ticket -
-	    current.load(memory_order_acquire))) != 0)
+	while ((pos = ticket - current.load(memory_order_acquire)) != 0)
 	    spin_release(LIKELY(pos < yield), true);
     }
     __forceinline bool try_lock() {
-	uint_fast16_t n = next.load(memory_order_relaxed);
+	uint32_t n = next.load(memory_order_relaxed);
 
 	return current.load(memory_order_acquire) == n &&
-	    next.compare_exchange_strong(n, (uint_fast16_t)(n + 1),
+	    next.compare_exchange_strong(n, n + 1,
 	    memory_order_acquire, memory_order_relaxed);
     }
     __forceinline void unlock() {
@@ -429,8 +433,8 @@ public:
     }
 
 private:
-    alignas(64) atomic_uint_fast16_t current = 0;
-    alignas(64) atomic_uint_fast16_t next = 0;
+    alignas(CACHELINE_SZ) atomic<uint32_t> current = 0;
+    atomic<uint32_t> next = 0;
     const uint yield;
 };
 
@@ -465,8 +469,8 @@ private:
     void lock_contended(uint32_t expected) {
 	for (uint i = 0; i < spins && expected != 2; ++i) {
 	    spin_release();
-	    expected = 0;
-	    if (state.compare_exchange_weak(expected, 1, memory_order_acquire,
+	    if ((expected = state.load(memory_order_relaxed)) == 0 &&
+		state.compare_exchange_weak(expected, 1, memory_order_acquire,
 		memory_order_relaxed))
 		return;
 	}
@@ -477,7 +481,7 @@ private:
 	}
     }
 
-    alignas(64) atomic<uint32_t> state = 0;
+    alignas(CACHELINE_SZ) atomic<uint32_t> state = 0;
     const uint spins;
 };
 
@@ -555,11 +559,17 @@ public:
 	    return;
 	sema4.acquire();
     }
-    __forceinline uint broadcast(void) {
-	int_fast32_t c = cnt.load(memory_order_acquire);
-	uint wake = c < 0 ? (uint)-c : 0;
+    // wake only current waiters so a racing timeout cannot leave a permit
+    uint broadcast(void) {
+	int_fast32_t c = cnt.load(memory_order_relaxed);
 
-	return wake - release(wake);
+	do {
+	    if (c >= 0)
+		return 0;
+	} while (!cnt.compare_exchange_weak(c, 0, memory_order_acq_rel,
+	    memory_order_relaxed));
+	sema4.release(-c);
+	return (uint)-c;
     }
     uint release(uint count = 1) {
 	int_fast32_t c;
@@ -614,11 +624,24 @@ private:
 class BLISTER LifoSemaphore: nocopy {
 public:
     explicit LifoSemaphore() = default;
+    // wait for woken and cancelled waiters to finish with their nodes
     ~LifoSemaphore() {
-	Node *n;
+	Node *n = allnodes.load(memory_order_acquire);
+	uint total = 0;
 
-	broadcast();
-	n = allnodes.load(memory_order_acquire);
+	for (const Node *a = n; a; a = a->allnext)
+	    ++total;
+	for (;;) {
+	    uint idle = 0;
+
+	    broadcast();
+	    for (const Node *f = freelist.top(); f; f =
+		f->next.load(memory_order_acquire))
+		++idle;
+	    if (idle >= total && !waiters.load(memory_order_acquire))
+		break;
+	    THREAD_YIELD();
+	}
 	while (n) {
 	    Node *a = n->allnext;
 
@@ -718,6 +741,8 @@ private:
     public:
 	TaggedStack() { head.store(0, memory_order_relaxed); }
 
+	N *top(void) const { return unpack(head.load(memory_order_acquire)); }
+
 	void push(N *n) {
 	    uint64_t old = head.load(memory_order_relaxed);
 
@@ -742,10 +767,10 @@ private:
 	}
     };
 
-    alignas(64) TaggedStack<Node> waitstack;
-    alignas(64) TaggedStack<Node> freelist;
-    alignas(64) atomic<Node *> allnodes { nullptr };
-    alignas(64) atomic_uint_fast32_t waiters { 0 };
+    alignas(CACHELINE_SZ) TaggedStack<Node> waitstack;
+    alignas(CACHELINE_SZ) TaggedStack<Node> freelist;
+    alignas(CACHELINE_SZ) atomic<Node *> allnodes { nullptr };
+    alignas(CACHELINE_SZ) atomic_uint_fast32_t waiters { 0 };
 
     Node *claim(void) {
 	Node *n = freelist.pop();
@@ -882,7 +907,9 @@ public:
     static Process self;
 
     operator HANDLE(void) const { return hdl; }
-    bool mask(ulong m) const { return SetProcessAffinityMask(hdl, m) != 0; }
+    bool mask(DWORD_PTR m) const {
+	return SetProcessAffinityMask(hdl, m) != 0;
+    }
     static Process start(tchar * const *args, const int *fds = nullptr);
 
 private:
@@ -917,13 +944,19 @@ public:
 	return h == -1 || semctl(h, 0, IPC_RMID) == 0;
     }
     bool open(const tchar *name = nullptr, uint init = 0, bool excl = false);
-    __forceinline bool set(uint cnt = 1) {		// NOSONAR
+    // sem_op 0 waits for zero so post in SHRT_MAX chunks
+    bool set(uint cnt = 1) {				// NOSONAR
 	sembuf op;
 
 	op.sem_num = 0;
-	op.sem_op = (short)cnt;
 	op.sem_flg = 0;
-	return semop(op);
+	while (cnt) {
+	    op.sem_op = (short)min(cnt, (uint)SHRT_MAX);
+	    if (!semop(op))
+		return false;
+	    cnt -= (uint)op.sem_op;
+	}
+	return true;
     }
     __forceinline bool trywait(void) {			// NOSONAR
 	sembuf op;
@@ -996,7 +1029,9 @@ public:
     explicit RefCount(uint init = 1): cnt(init) {}
 
     explicit __forceinline operator bool(void) const { return referenced(); }
-    __forceinline bool referenced(void) const { return cnt != 0; }
+    __forceinline bool referenced(void) const {
+	return cnt.load(memory_order_relaxed) != 0;
+    }
 
     __forceinline void reference(void) {
 	cnt.fetch_add(1, memory_order_relaxed);
@@ -1014,15 +1049,13 @@ class Thread;
 class ThreadGroup;
 
 using ThreadRoutine = int (*)(void *userdata);
-using ThreadControlRoutine = bool (Thread::*)(void);
 
-enum ThreadState { Init, Running, Suspended, Terminated };
+enum ThreadState: uint8_t { Init, Running, Suspended, Terminated };
 
 // manage OS native threads
 class BLISTER Thread: nocopy {
 public:
-    explicit Thread(thread_hdl_t handle, ThreadGroup *tg = nullptr, bool
-	autoterm = false);
+    explicit Thread(thread_hdl_t handle, ThreadGroup *tg = nullptr);
     Thread(void);
     virtual ~Thread();
 
@@ -1045,12 +1078,11 @@ public:
 
     bool priority(int pri = 0);			// -20 -> 20
     bool start(uint stacksz = 0, ThreadGroup *tg = nullptr, bool suspend =
-	false, bool autoterm = false);
+	false);
     bool start(ThreadRoutine main, void *data = nullptr, uint stacksz = 0,
-	ThreadGroup *tg = nullptr, bool suspend = false, bool autoterm = false);
+	ThreadGroup *tg = nullptr, bool suspend = false);
     bool resume(void);
     bool stop(void);
-    bool terminate(void);
     bool wait(ulong timeout = INFINITE);
     static void thread_cleanup(void *data, ThreadLocalFree func);
 
@@ -1060,12 +1092,9 @@ protected:
     virtual void onStop(void) {}
 
 private:
-    using ThreadLocalMap = unordered_map<void *, ThreadLocalFree>;
-
     mutable Lock lck;
     Condvar cv;
     void *argument;
-    bool autoterm;
     ThreadGroup *group;
     thread_hdl_t hdl;
     atomic<thread_id_t> id;
@@ -1074,12 +1103,10 @@ private:
     atomic<ThreadState> state;
     uint stacksize = 0;
     FastSemaphore started;
-    static ThreadLocal<ThreadLocalMap *> flocal;
 
     void clear(void);
     bool launch(Locker &lkr);
     void setState(ThreadState s) { state.store(s, memory_order_release); }
-    void thread_cleanup(void);
     static int init(void *thisp);
     static THREAD_FUNC thread_init(void *thisp);
 
@@ -1087,11 +1114,9 @@ private:
 };
 
 // manage a group of one or more, possibly dissimilar threads
-using ThreadGroupControlRoutine = void (ThreadGroup::*)(bool);
-
 class BLISTER ThreadGroup: nocopy {
 public:
-    explicit ThreadGroup(bool autoterm = true);
+    ThreadGroup(void);
     virtual ~ThreadGroup();
 
     static ThreadGroup MainThreadGroup;
@@ -1099,7 +1124,7 @@ public:
     ThreadState getState(void) const {
 	return state.load(memory_order_acquire);
     }
-    thread_id_t getId(void) const { return id; }
+    ulong getId(void) const { return id; }
     const Thread &getMainThread(void) const { return master; }
     size_t size(void) const { Locker lkr(cvlck); return threads.size(); }
 
@@ -1111,8 +1136,7 @@ public:
     void remove(Thread &thread);
     bool resume(void) { return master.resume(); }
     bool start(uint stacksz = 0, bool suspend = false);
-    void stop(void) { onStop(); control(Terminated, &Thread::stop); }
-    void terminate(void) { control(Terminated, &Thread::terminate); }
+    void stop(void);
     // only the caller may delete returned Thread
     Thread *wait(ulong msec = INFINITE, bool all = false);
     bool waitForMain(ulong msec = INFINITE) { return master.wait(msec); }
@@ -1120,7 +1144,6 @@ public:
     static ThreadGroup *add(Thread &thread, ThreadGroup *tg = nullptr);
 
 protected:
-    void control(ThreadState, ThreadControlRoutine);
     void notify(const Thread &thread);
     virtual void onResume(void) {}
     virtual int onStart(void) { return -1; }
@@ -1130,13 +1153,14 @@ protected:
 private:
     mutable Lock cvlck;
     Condvar cv;
-    bool autoterm;
-    thread_id_t id;
+    ulong id;
+    const Thread *pinned = nullptr;
     atomic<ThreadState> state;
     set<Thread *> threads;
     Thread master;
     static atomic_ulong next_id;
 
+    template<class F> void control(F func);
     void setState(ThreadState s) { state.store(s, memory_order_release); }
     static int init(void *thisp);
     friend class Thread;

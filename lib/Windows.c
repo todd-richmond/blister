@@ -31,13 +31,8 @@
 #pragma warning(disable: 4305)
 #pragma warning(disable: 4306)
 
-#define HASH_SIZE	    769
-#define rename_unlock(lck)  if (locks) InterlockedExchange(locks + lck, 0)
 #define to_fd(hdl)	    ((int)(ullong)hdl)
 #define to_handle(fd)	    ((HANDLE)(ullong)(fd))
-
-static HANDLE lockhdl;
-static long *locks;
 
 #ifdef _DLL
 #define _dosmaperr	__dosmaperr
@@ -54,12 +49,6 @@ static int A_TO_W(const char *path, wchar *buf) {
 	return 1;
     errno = EINVAL;
     return 0;
-}
-
-static void __cdecl stdapi_cleanup(void) {
-    UnmapViewOfFile(locks);
-    locks = NULL;
-    CloseHandle(lockhdl);
 }
 
 #define EPOCH_BIAS  116444736000000000i64
@@ -108,45 +97,14 @@ msec_t mticks(void) {
 
 usec_t uticks(void) {
     LARGE_INTEGER now;
+    ULONGLONG freq, ticks;
 
     tps_init();
     QueryPerformanceCounter(&now);
-    return (ULONGLONG)now.QuadPart * 1000000 / (ULONGLONG)tps.QuadPart;
-}
-
-static INIT_ONCE init_once = INIT_ONCE_STATIC_INIT;
-
-static BOOL CALLBACK InitRenameLock(PINIT_ONCE InitOnce,    // NOSONAR
-    PVOID Parameter, PVOID *lpContext) {
-    (void)InitOnce;
-    (void)Parameter;
-    (void)lpContext;
-    if ((lockhdl = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL,
-	PAGE_READWRITE, 0, HASH_SIZE * sizeof (long),
-	"rename_locks")) != NULL) {
-	if ((locks = MapViewOfFile(lockhdl, FILE_MAP_WRITE, 0, 0,
-	    HASH_SIZE * sizeof (long))) == NULL)
-	    CloseHandle(lockhdl);
-	else
-	    atexit(stdapi_cleanup);
-    }
-    return TRUE;
-}
-
-static uint rename_lock(const wchar *path) {
-    uint hash = 0;
-
-    InitOnceExecuteOnce(&init_once, InitRenameLock, NULL, NULL);
-    while (*path) {
-	hash = hash * *path + *path;
-	path++;
-    }
-    hash = hash % HASH_SIZE;
-    if (locks) {
-	while (InterlockedExchange(locks + hash, 1))
-	    Sleep(0);
-    }
-    return hash;
+    freq = (ULONGLONG)tps.QuadPart;
+    ticks = (ULONGLONG)now.QuadPart;
+    // split so ticks * 1000000 cannot overflow after ~21 days at 10MHz
+    return ticks / freq * 1000000 + ticks % freq * 1000000 / freq;
 }
 
 int close(int fd) {
@@ -525,61 +483,10 @@ int link(const char *from, const char *to) {
 }
 
 int wlink(const wchar *from, const wchar *to) {
-    wchar buf[MAX_PATH + 1];
-    LPWSTR file;
-    HANDLE hdl;
-    LPVOID lpContext = NULL;
-    DWORD sz, out;
-    WIN32_STREAM_ID sid;
-    uint lck;
-    int ret = -1;
-
-    if (to[1] == ':') {
-	sz = (DWORD)wcslen(to);
-    } else if ((sz = GetFullPathNameW(to, MAX_PATH, buf, &file)) == 0 || sz > MAX_PATH) {
-	_dosmaperr(GetLastError());
-	return ret;
-    } else {
-	to = buf;
-    }
-#pragma warning(push)
-#pragma warning(disable: 6102)
-    if (GetFileAttributesW(to) != (DWORD)-1) {
-	errno = EEXIST;
-	return ret;
-    }
-#pragma warning(pop)
-    /* check for same drive */
-    if (wcsnicmp(from, to, 2) != 0) {
-	errno = EINVAL;
-	return ret;
-    }
-    lck = rename_lock(from);
-    if ((hdl = CreateFileW(from, 0,
-	FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-	NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE) {
-	rename_unlock(lck);
-	_dosmaperr(GetLastError());
-	return ret;
-    }
-    rename_unlock(lck);
-    ZERO(sid);
-    sid.dwStreamId = BACKUP_LINK;
-    sid.Size.LowPart = (DWORD)((sz + 1) * sizeof (wchar));
-    out = (DWORD)offsetof(WIN32_STREAM_ID, cStreamName);
-    if (!BackupWrite(hdl, (LPBYTE)&sid, out, &out, FALSE, FALSE, &lpContext)) {
-	_dosmaperr(GetLastError());
-	CloseHandle(hdl);
-	return ret;
-    }
-    if (BackupWrite(hdl, (LPBYTE)to, sid.Size.LowPart, &out, FALSE, // NOSONAR
-	FALSE, &lpContext))
-	ret = 0;
-    else
-	_dosmaperr(GetLastError());
-    BackupWrite(hdl, NULL, 0, &out, TRUE, FALSE, &lpContext);
-    CloseHandle(hdl);
-    return ret;
+    if (CreateHardLinkW(to, from, NULL))
+	return 0;
+    _dosmaperr(GetLastError());
+    return -1;
 }
 
 int open(const char *path, int oflag, ...) {
@@ -605,7 +512,6 @@ int wopen(const wchar *path, int oflag, ...) {	// NOSONAR
     DWORD filetype = 0;
     DWORD in = 0;
     SECURITY_ATTRIBUTES sa;
-    uint lck;
     int mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 
     if (oflag & O_CREAT) {
@@ -687,10 +593,8 @@ int wopen(const wchar *path, int oflag, ...) {	// NOSONAR
 	fileattrib |= FILE_FLAG_SEQUENTIAL_SCAN;
     else if (oflag & O_RANDOM)
 	fileattrib |= FILE_FLAG_RANDOM_ACCESS;
-    lck = rename_lock(path);
     hdl = CreateFileW(path, fileaccess, fileshare, &sa,
 	filecreate, fileattrib, NULL);
-    rename_unlock(lck);
     if (hdl == INVALID_HANDLE_VALUE) {
 	_dosmaperr(GetLastError());
 	return -1;
@@ -722,42 +626,87 @@ int wopen(const wchar *path, int oflag, ...) {	// NOSONAR
     return to_fd(hdl);
 }
 
-/* rename that emulates atomic operations expensively */
 int rename(const char *from, const char *to) {
     wchar fbuf[MAX_PATH], tbuf[MAX_PATH];
 
     return A_TO_W(from, fbuf) && A_TO_W(to, tbuf) ? wrename(fbuf, tbuf) : -1;
 }
 
+/* atomically replace an existing target even if it is open, like POSIX */
 int wrename(const wchar *from, const wchar *to) {
-    uint lck;
-    wchar oldbuf[MAX_PATH + 10];
-    const wchar *old;
-    wchar *p;
-    int ret = 0;
+    union {
+	FILE_RENAME_INFO fri;
+	char buf[sizeof (FILE_RENAME_INFO) + MAX_PATH * sizeof (wchar)];
+    } u;
+    wchar path[MAX_PATH];
+    HANDLE hdl;
+    DWORD len, sz;
+    int ret = -1;
 
-    if (MoveFileExW(from, to, MOVEFILE_REPLACE_EXISTING))
-	return ret;
-    wcscpy(oldbuf, to);
-    p = wcsrchr(oldbuf, '/');
-    wsprintfW(p ? p + 1 : oldbuf, L"%u", (uint)uticks() ^ rand());  // NOLINT
-    lck = rename_lock(to);
-    old = oldbuf;
-    if (!MoveFileExW(to, old, MOVEFILE_REPLACE_EXISTING)) {
-	_dosmaperr(GetLastError());
-	if (errno == ENOENT)
-	    oldbuf[0] = '\0';
+    if ((len = GetFullPathNameW(to, MAX_PATH, path, NULL)) == 0 ||
+	len >= MAX_PATH) {
+	if (len)
+	    errno = ENAMETOOLONG;
 	else
-	    ret = -1;
+	    _dosmaperr(GetLastError());
+	return ret;
     }
-    if (!ret && !MoveFileExW(from, to, MOVEFILE_REPLACE_EXISTING)) {
+    if ((hdl = CreateFileW(from, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE |
+	FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS |
+	FILE_FLAG_OPEN_REPARSE_POINT, NULL)) == INVALID_HANDLE_VALUE) {
 	_dosmaperr(GetLastError());
-	MoveFileW(old, to);
-	ret = -1;
+	return ret;
     }
-    rename_unlock(lck);
-    if (!ret && oldbuf[0])
-	DeleteFileW(old);
+    u.fri.Flags = FILE_RENAME_FLAG_REPLACE_IF_EXISTS |
+	FILE_RENAME_FLAG_POSIX_SEMANTICS |
+	FILE_RENAME_FLAG_IGNORE_READONLY_ATTRIBUTE;
+    u.fri.RootDirectory = NULL;
+    u.fri.FileNameLength = len * sizeof (wchar);
+    sz = (DWORD)(offsetof(FILE_RENAME_INFO, FileName) + (len + 1) *
+	sizeof (wchar));
+    memcpy((char *)&u + offsetof(FILE_RENAME_INFO, FileName), path,
+	(len + 1) * sizeof (wchar));
+    if (SetFileInformationByHandle(hdl, FileRenameInfoEx, &u.fri, sz))
+	ret = 0;
+    CloseHandle(hdl);
+    // file systems without POSIX semantics such as FAT reject FileRenameInfoEx
+    if (ret && !MoveFileExW(from, to, MOVEFILE_REPLACE_EXISTING))
+	_dosmaperr(GetLastError());
+    else
+	ret = 0;
+    return ret;
+}
+
+int unlink(const char *path) {
+    wchar pbuf[MAX_PATH];
+
+    return A_TO_W(path, pbuf) ? wunlink(pbuf) : -1;
+}
+
+/* remove the name immediately even if the file is open, like POSIX */
+int wunlink(const wchar *path) {
+    FILE_DISPOSITION_INFO_EX fdi;
+    HANDLE hdl;
+    int ret = -1;
+
+    if ((hdl = CreateFileW(path, DELETE, FILE_SHARE_READ | FILE_SHARE_WRITE |
+	FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT,
+	NULL)) == INVALID_HANDLE_VALUE) {
+	_dosmaperr(GetLastError());
+	return ret;
+    }
+    fdi.Flags = FILE_DISPOSITION_FLAG_DELETE |
+	FILE_DISPOSITION_FLAG_POSIX_SEMANTICS |
+	FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE;
+    if (SetFileInformationByHandle(hdl, FileDispositionInfoEx, &fdi,
+	sizeof (fdi)))
+	ret = 0;
+    CloseHandle(hdl);
+    // file systems without POSIX semantics such as FAT reject the Ex class
+    if (ret && !DeleteFileW(path))
+	_dosmaperr(GetLastError());
+    else
+	ret = 0;
     return ret;
 }
 
@@ -881,14 +830,11 @@ static int dir_stat(const wchar *path, struct stat *buf) {
 
 int wstat(const wchar *path, struct stat *buf) {
     HANDLE hdl;
-    uint lck;
     int ret;
 
-    lck = rename_lock(path);
     hdl = CreateFileW(path, 0,
 	FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
 	OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING, NULL);
-    rename_unlock(lck);
     if (hdl == (HANDLE)-1) {
 	ret = GetLastError();
 	if (ret == ERROR_ACCESS_DENIED)

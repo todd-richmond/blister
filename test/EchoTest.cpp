@@ -75,7 +75,6 @@ public:
 	static constexpr const tchar *section(void) { return T("echo"); }
 
 	void start(void) override {
-	    cork(false);
 	    loopback(true);
 	    nodelay(true);
 	    readable(input, tmt);
@@ -111,10 +110,9 @@ public:
 	ulong wait);
 };
 
-static EchoTest *etp;
 static atomic<uint> errs, ops;
 static atomic loops(LLONG_MAX);
-static volatile sig_atomic_t qflag;
+static atomic_bool qflag;
 alignas(64) static atomic<usec_t> usecs;
 
 static inline bool loop_exit(void) {
@@ -133,7 +131,6 @@ void EchoTest::EchoClientSocket::onConnect(void) {
 	    timeout(start, wait);
 	}
     } else {
-	cork(false);
 	loopback(true);
 	nodelay(true);
 	begin = Timing::now();
@@ -302,11 +299,8 @@ bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
     }
 }
 
-static void signal_handler(int) {
-    qflag = true;
-    if (!errs && !ops)
-	etp->stop();
-}
+// only async-signal-safe work here so main notices qflag and stops
+static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true;
@@ -316,7 +310,7 @@ int tmain(int argc, const tchar * const argv[]) {
     int fd;
     const tchar *host = nullptr;
     int i;
-    msec_t last, now;
+    timing_t last, now;
     const tchar *path = T("echo this short test string as quickly as possible");
     Sockaddr sa;
     struct stat sbuf;
@@ -418,7 +412,6 @@ int tmain(int argc, const tchar * const argv[]) {
 	et.stop();
 	return 1;
     }
-    etp = &et;
     if (client) {
 	dlogi(Log::mod(T("echo")), Log::cmd(T("echo")), Log::kv(T("addr"),
 	    sa.str()), Log::kv(T("data"), path));
@@ -430,22 +423,25 @@ int tmain(int argc, const tchar * const argv[]) {
 	Thread::MainThread.priority(10);
 	last = Timing::now();
 	do {
-	    ulong cnt;
+	    ulong cnt, err, ok;
 
-	    ops = errs = 0U;
-	    usecs = 0U;
-	    et.waitForMain(1000);
+	    if (et.waitForMain(1000))
+		break;
 	    now = Timing::now();
-	    cnt = ops + errs;
+	    // swap counters so increments between read and reset are kept
+	    err = errs.exchange(0, memory_order_relaxed);
+	    ok = ops.exchange(0, memory_order_relaxed);
+	    cnt = ok + err;
 	    tcout << (timing_t)cnt * 1000000 / (now - last) << T("\t\t") <<
-		(usecs / (cnt ? cnt : 1)) << '\t' << errs << endl;
+		(usecs.exchange(0, memory_order_relaxed) / (ok ? ok : 1)) <<
+		'\t' << err << endl;
 	    last = now;
 	} while (loops.load() > 0 && !qflag);
     } else {
-	et.waitForMain();
+	while (!qflag && !et.waitForMain(1000))
+	    continue;
     }
     et.stop();
-    etp = nullptr;
     delete [] dbuf;
     tcout << dtiming.data() << endl;
     return qflag ? -1 : 0;

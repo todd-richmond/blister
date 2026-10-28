@@ -114,7 +114,7 @@
 #define WIN32
 #endif
 #define _WIN32_WINNT	_WIN32_WINNT_WIN10
-#define NTDDI_VERSION	NTDDI_WIN10
+#define NTDDI_VERSION	NTDDI_WIN10_CO	// Windows 11
 #define NOIME
 #define NOMCX
 #define NOSERVICE
@@ -351,7 +351,7 @@ struct timezone {
 };
 
 // replacement CLib supports atomic rename, deleting open files and socket fds
-#define fileno(stream)	(_get_osfhandle((stream)->_file))
+#define fileno(stream)	((int)_get_osfhandle(_fileno(stream)))
 
 EXTERNC
 extern BLISTER int access(const char *path, int mode);
@@ -437,6 +437,7 @@ EXTERNC_
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 #include <sys/time.h>
 #include <sys/uio.h>
 
@@ -494,9 +495,13 @@ typedef wchar_t wchar;
 
 #ifdef CLOCK_MONOTONIC_FAST
 #define CLOCK_BOOTTIME		CLOCK_UPTIME
-#define CLOCK_BOOTTIME_COURSE	CLOCK_UPTIME_FAST
-#define CLOCK_MONOTONIC_COURSE	CLOCK_MONOTONIC_FAST
-#define CLOCK_REALTIME_COURSE	CLOCK_REALTIME_FAST
+#define CLOCK_BOOTTIME_COARSE	CLOCK_UPTIME_FAST
+#ifndef CLOCK_MONOTONIC_COARSE
+#define CLOCK_MONOTONIC_COARSE	CLOCK_MONOTONIC_FAST
+#endif
+#ifndef CLOCK_REALTIME_COARSE
+#define CLOCK_REALTIME_COARSE	CLOCK_REALTIME_FAST
+#endif
 #elif !defined(CLOCK_BOOTTIME)
 #ifdef CLOCK_MONOTONIC_RAW
 #define CLOCK_BOOTTIME		CLOCK_MONOTONIC_RAW
@@ -615,7 +620,7 @@ EXTERNC_
 #define tseekdir	wseekdir
 #define tstat		wstat
 #define tstatvfs	wstatvfs
-#define tunlink		_wunlink
+#define tunlink		wunlink
 
 #define tspawnl		_wspawnvl
 #define tspawnle	_wspawnle
@@ -757,8 +762,25 @@ inline void time_adjust_msec(struct timespec *ts, ulong msec) {
 EXTERNC
 extern BLISTER int lockfile(int fd, short type, short whence, ulong start, ulong
     len, short test);
+#if defined(_WIN32) || defined(__APPLE__)
 extern BLISTER msec_t mticks(void);
 extern BLISTER usec_t uticks(void);
+#else
+// inline to avoid a call per timestamp in hot paths
+static inline __attribute__((always_inline)) msec_t mticks(void) {
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
+    return (msec_t)ts.tv_sec * 1000 + (msec_t)ts.tv_nsec / 1000000;
+}
+
+static inline __attribute__((always_inline)) usec_t uticks(void) {
+    struct timespec ts;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (usec_t)ts.tv_sec * 1000000 + (usec_t)ts.tv_nsec / 1000;
+}
+#endif
 #ifndef _WIN32
 WARN_PUSH_DISABLE(-Wshadow)
 extern BLISTER int pidstat(pid_t pid, struct pidstat *psbuf);
@@ -781,23 +803,18 @@ EXTERNC_
 using namespace std;
 
 // narrow / wide string routines
-extern BLISTER wstring _achartowstring(const char *s, size_t len);
-extern BLISTER string _wchartoastring(const wchar *s, size_t len);
+extern BLISTER wstring _achartowstring(string_view s);
+extern BLISTER string _wchartoastring(wstring_view s);
 
-inline wstring astringtowstring(const string &s) {
-    return _achartowstring(s.c_str(), s.size() + 1);
-}
-
-inline string wstringtoastring(const wstring &s) {
-    return _wchartoastring(s.c_str(), s.size() + 1);
-}
+inline wstring astringtowstring(const string &s) { return _achartowstring(s); }
+inline string wstringtoastring(const wstring &s) { return _wchartoastring(s); }
 
 #define achartowchar(s)		achartowstring(s).c_str()
-#define achartowstring(s)	_achartowstring((s), (size_t)-1)
+#define achartowstring(s)	_achartowstring(s)
 #define astringtoachar(s)	(s).c_str()
 #define astringtowchar(s)	astringtowstring(s).c_str()
 #define wchartoachar(s)		wchartoastring(s).c_str()
-#define wchartoastring(s)	_wchartoastring((s), (size_t)-1)
+#define wchartoastring(s)	_wchartoastring(s)
 #define wstringtoachar(s)	wstringtoastring(s).c_str()
 #define wstringtowchar(s)	(s).c_str()
 

@@ -173,8 +173,9 @@ void HTTPServerSocket::readhdrs() {
 
 void HTTPServerSocket::readpost() {
     ulong in = 0;
-    // chunked or read until close: size unknown so always use own buffer
+    // chunked: size unknown so always use own buffer
     bool chunky = postsz == (ulong)-1;
+    bool eof = false;
     ulong room = postdatasz ? postdatasz - postin : chunky ? 0 : sz - datasz;
     ulong left = chunky ? room : postsz - postin;
 
@@ -201,13 +202,13 @@ void HTTPServerSocket::readpost() {
     }
     if (msg == DispatchClose || (in = (ulong)read(postdata + postin,
 	(uint)left)) == (ulong)-1) {
-	if (chunky && !postchunking) {
-	    left = in = 0;
-	    postsz = postin;
-	} else {
+	// a half closed client may have already sent the whole chunked body
+	if (!chunky || !postdatasz) {
 	    disconnect();
 	    return;
 	}
+	eof = true;
+	in = 0;
     }
     if (!postdatasz)
 	datasz += in;
@@ -273,10 +274,14 @@ void HTTPServerSocket::readpost() {
 	    chunkin += chunksize;
     }
     if (left || postsz == (ulong)-1) {
-	readable(readpost, rto);
+	if (eof)
+	    disconnect();
+	else
+	    readable(readpost, rto);
     } else {
 	savechar = postdata[postsz];
 	postdata[postsz] = '\0';
+	begin = uticks();		// exclude the upload from the timing
 	exec();
     }
 }
@@ -337,6 +342,14 @@ void HTTPServerSocket::parse(void) {
 	    p++;
 	for (prot = p; *p != ' ' && *p != '\t' && *p != '\r'; p++)
 	    continue;
+	// trailing blanks must not hide the headers
+	while (*p == ' ' || *p == '\t')
+	    *p++ = '\0';
+	if (*p != '\r') {
+	    prot = "HTTP/1.0";
+	    error(400, true);
+	    return;
+	}
 	*p++ = '\0';
     }
     if (strnicmp(prot, "HTTP/1.", 7) != 0 || prot[7] < '0' || prot[7] > '9' ||
@@ -436,8 +449,6 @@ void HTTPServerSocket::parse(void) {
 	    error(400, true);
 	    return;
 	}
-    } else if (stringieq(cmd, "POST") || stringieq(cmd, "PUT")) {
-	postsz = (ulong)-1;
     }
     postin = min(datasz - (ulong)(postdata - data), postsz);
     if (postin < postsz) {
@@ -457,7 +468,6 @@ void HTTPServerSocket::parse(void) {
 }
 
 void HTTPServerSocket::exec(void) {
-    begin = uticks();
     if (paused.load(memory_order_relaxed)) {
 	error(503);
     } else if (LIKELY(stringieq(cmd, "GET"))) {
@@ -711,7 +721,8 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 	hdrs.write(hdr.c_str(), (streamsize)hdr.size());
     }
     _status = sts;
-    if (close) {
+    // an unread body would be parsed as the next request
+    if (close || postin < postsz) {
 	hdrs.write("Connection: close\r\n", 19);
 	ka = false;
     } else {

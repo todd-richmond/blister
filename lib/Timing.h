@@ -157,11 +157,12 @@ public:
 
 private:
     struct DLL_LOCAL Stats: nocopy {
-	alignas(64) atomic<uint32_t> cnts[TIMINGSLOTS]{};
-	atomic_uint_fast64_t tot = 0;
+	// hash, tot and slots 0-5 (< 1s) share the first cache line
+	alignas(64) strhash_t hash;
+	atomic<uint64_t> tot = 0;
+	atomic<uint64_t> cnts[TIMINGSLOTS]{};
 	Stats *flist = nullptr;
-	strhash_t hash = 0;
-	uint klen = 0;
+	uint klen;
 	tchar key[];
 
 	// cppcheck-suppress uninitMemberVar
@@ -215,18 +216,22 @@ public:
 	Timing &t = dtiming): key(k), hash(stringhash(k)), start(t.start()),
 	timing(t) {}
     __forceinline ~TimingEntry() {
-	if (start != (timing_t)-1)
+	if (start != STOPPED)
 	    timing.add(key, 0, hash, Timing::now() - start);
     }
 
     __forceinline void record(void) {
-	timing.add(key, 0, hash, Timing::now() - start);
-	stop();
+	if (start != STOPPED) {
+	    timing.add(key, 0, hash, Timing::now() - start);
+	    stop();
+	}
     }
     void restart(void) { start = timing.start(); }
-    void stop(void) { start = (timing_t)-1; }
+    void stop(void) { start = STOPPED; }
 
 private:
+    static constexpr timing_t STOPPED = ~timing_t{};
+
     const tchar *key;
     strhash_t hash;
     timing_t start;
@@ -254,16 +259,20 @@ public:
     }
 
     __forceinline void record(void) {
-	timing.record();
-	started = false;
+	if (started) {
+	    timing.record();
+	    started = false;
+	}
     }
     void restart(void) {
 	if (started)
 	    timing.restart();
     }
     void stop(void) {
-	timing.stop();
-	started = false;
+	if (started) {
+	    timing.stop();
+	    started = false;
+	}
     }
 
 private:

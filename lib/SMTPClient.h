@@ -113,13 +113,13 @@ public:
     virtual ~SMTPClient() = default;
 
     int code(void) const { return atoi<int>(sts.c_str()); }
-    bool exts_find(const tchar *s) const { return exts.find(s) != exts.npos; }
+    bool exts_find(const tchar *s) const { return exts.contains(s); }
     const tstring &extensions(void) const { return exts; }
     const tchar *message(void) const {
 	return sts.length() > 4 ? sts.c_str() + 4 : T("");
     }
     const tstring &message_multi(void) const { return multi; }
-    bool multi_find(const tchar *s) const { return multi.find(s) != multi.npos; }
+    bool multi_find(const tchar *s) const { return multi.contains(s); }
     const tstring &result(void) const { return sts; }
     const vector<tstring> &results(void) const { return resultsv; }
 

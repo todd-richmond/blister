@@ -522,8 +522,8 @@ int HTTPLoad::onStart(void) {
 		    fs.write(hc.data(), (streamsize)hc.size());
 		    fs.flush();
 		}
-		if (!cmd->value.empty() && tstring_view(hc.data(),
-		    hc.size()).find(cmd->value) == tstring_view::npos) {
+		if (!cmd->value.empty() && !tstring_view(hc.data(),
+		    hc.size()).contains(cmd->value)) {
 		    dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") <<
 			buf << T(" invalid return data") << endlog;
 		    lock.lock();

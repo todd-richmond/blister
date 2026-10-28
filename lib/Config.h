@@ -60,9 +60,7 @@
 class BLISTER Config: nocopy {
 public:
     explicit Config(const tchar *prestr = nullptr, bool cksum = false):
-	ck(cksum) {
-	prefix(prestr);
-    }
+	pre(prestr ? prestr : T("")), ck(cksum) {}
     explicit Config(tistream &is, const tchar *prestr = nullptr, bool cksum =
 	false): ck(cksum) {
 	(void)read(is, prestr);
@@ -79,8 +77,16 @@ public:
 	return os;
     }
 
-    bool iniformat(void) const { return ini; }
-    const tstring &prefix(void) const { return pre; }
+    bool iniformat(void) const {
+	SpinRLocker lkr(lck);
+
+	return ini;
+    }
+    tstring prefix(void) const {
+	SpinRLocker lkr(lck);
+
+	return pre;
+    }
 
     Config &append(const tchar *key, const tchar *val, const tchar *sect =
 	nullptr) {
@@ -134,20 +140,34 @@ public:
 	else
 	    return get_num(k, def, sect, atoun<T>);
     }
-    void prefix(const tchar *str) { pre = str ? str : T(""); }
-    bool read(tistream &is, const tchar *pre = nullptr,
-	bool append = false, ulong sz = 0);
-    template<typename T>
-    Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
-	tchar buf[64];
-	auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
+    void prefix(const tchar *str) {
 	SpinWLocker lkr(lck);
 
-	if (UNLIKELY(ec != errc()))
-	    ptr = buf;
-	*ptr = '\0';
-	return set(key, tstrlen(key), buf, (size_t)(ptr - buf), sect, sect ?
-	    tstrlen(sect) : 0);
+	pre = str ? str : T("");
+    }
+    bool read(tistream &is, const tchar *pre = nullptr,
+	bool append = false, ulong sz = 0);
+    template<typename T> requires is_arithmetic_v<T>
+    Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
+	char buf[64];
+	auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
+
+	if (UNLIKELY(ec != errc{}))
+	    return *this;
+
+	size_t len = (size_t)(ptr - buf);
+#ifdef _UNICODE
+	tchar tbuf[std::size(buf)];
+
+	for (size_t u = 0; u < len; ++u)
+	    tbuf[u] = (tchar)buf[u];
+#else
+	const tchar *tbuf = buf;
+#endif
+	SpinWLocker lkr(lck);
+
+	return set(key, tstrlen(key), tbuf, len, sect, sect ? tstrlen(sect) :
+	    0);
     }
     Config &set(const tchar *key, const tchar *val, const tchar *sect =
 	nullptr) {
@@ -171,9 +191,22 @@ public:
 	return set(key.data(), key.size(), val.data(), val.size(),
 	    sect.data(), sect.size());
     }
-    // end with [const tchar *sect = nullptr], nullptr */
-    Config &setv(const tchar *key, const tchar *val, ...);
-    bool write(tostream &os) const { return write(os, ini); }
+    // key, val pairs followed by an optional section
+    template<typename... A> requires (is_convertible_v<A, const tchar *> &&
+	...)
+    Config &setv(const tchar *key, const tchar *val, A... args) {
+	const tchar *argv[] = { key, val, args... };
+	constexpr size_t argc = std::size(argv);
+	const tchar *sect = argc & 1 ? argv[argc - 1] : nullptr;
+	size_t slen = sect ? tstrlen(sect) : 0;
+	SpinWLocker lkr(lck);
+
+	for (size_t u = 0; u + 1 < argc; u += 2)
+	    set(argv[u], tstrlen(argv[u]), argv[u + 1], tstrlen(argv[u + 1]),
+		sect, slen);
+	return *this;
+    }
+    bool write(tostream &os) const { return write(os, iniformat()); }
     bool write(tostream &os, bool ini) const;
     void lock(void) { lck.lock(); }
     void unlock(void) { lck.unlock(); }
@@ -194,7 +227,7 @@ private:
     };
 
     struct keyless {
-	bool operator ()(const tchar *a, const tchar *b) const {
+	static bool operator ()(const tchar *a, const tchar *b) {
 	    const tchar *ap = tstrchr(a, '.');
 	    const tchar *bp = tstrchr(b, '.');
 
@@ -237,7 +270,7 @@ private:
 	}
 	return def;
     }
-    bool parse(tistream &is);
+    bool parse(tistream &is, uint depth = 0);
     Config &set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
 	const tchar *sect, size_t slen, bool append = false);
     static void delkv(KV *kv) { delete [] (char *)kv; }

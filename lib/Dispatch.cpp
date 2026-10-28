@@ -73,20 +73,12 @@ static constexpr dspflag_t DSP_IO = DSP_Acceptable | DSP_Readable |
     DSP_Writeable | DSP_Closeable;
 static constexpr dspflag_t DSP_ReadyAll = DSP_Ready | DSP_ReadyGroup;
 static constexpr dspflag_t DSP_PostCB = DSP_Freed | DSP_Ready;
-static constexpr dspflag_t DSP_SelectAll = DSP_SelectAccept | DSP_SelectRead |
-    DSP_SelectWrite | DSP_SelectClose;
-
-bool Dispatcher::TimerSet::compare::operator ()(const DispatchTimer *a,
-    const DispatchTimer *b) const {
-    msec_t ad = a->due();
-    msec_t bd = b->due();
-
-    return ad == bd ? a < b : ad < bd;
-}
+static constexpr dspflag_t DSP_SelectAll = DSP_Connecting | DSP_SelectAccept |
+    DSP_SelectRead | DSP_SelectWrite | DSP_SelectClose;
 
 void Dispatcher::TimerSet::erase(DispatchTimer &dt) {
     if (dt.due() <= split)
-	sorted.erase(&dt);
+	sorted.erase({dt.due(), &dt});
     unsorted.erase(&dt);
     // drop from an in-flight batch so it is not touched once freed
     for (uint u = 0; u < nfiring; u++) {
@@ -103,14 +95,16 @@ uint Dispatcher::TimerSet::get(msec_t when, DispatchTimer **batch,
     uint cnt = 0;
     auto it = sorted.begin();
 
-    while (cnt < maxcnt && it != sorted.end() && (*it)->due() <= when) {
-	(*it)->due(DispatchTimer::DSP_FIRING);
-	firing[cnt].store(*it, memory_order_relaxed);
-	batch[cnt++] = *it++;
+    while (cnt < maxcnt && it != sorted.end() && it->first <= when) {
+	DispatchTimer *dt = (it++)->second;
+
+	dt->due(DispatchTimer::DSP_FIRING);
+	firing[cnt].store(dt, memory_order_relaxed);
+	batch[cnt++] = dt;
     }
     nfiring = cnt;
     sorted.erase(sorted.begin(), it);
-    batch[cnt] = cnt < maxcnt && it != sorted.end() ? *it : nullptr;
+    batch[cnt] = cnt < maxcnt && it != sorted.end() ? it->second : nullptr;
     return cnt;
 }
 
@@ -118,8 +112,8 @@ DispatchTimer *Dispatcher::TimerSet::reorder(msec_t when) {
     for (DispatchTimer *dt : unsorted) {
 	msec_t d = dt->due();
 
-	if (d < when && d > split)
-	    sorted.insert(dt);
+	if (d <= when && d > split)
+	    sorted.emplace(d, dt);
     }
     split = when;
     return peek();
@@ -132,19 +126,23 @@ void Dispatcher::TimerSet::set(DispatchTimer &dt, msec_t when) {
 	return;
     if (UNLIKELY(cur <= split)) {
 	if (when <= split) {
-	    sorted_timerset::node_type node = sorted.extract(&dt);
+	    sorted_timerset::node_type node = sorted.extract({cur, &dt});
+
 	    dt.due(when);
-	    sorted.insert(std::move(node));
+	    if (LIKELY(node)) {
+		node.value().first = when;
+		sorted.insert(std::move(node));
+	    }
 	    return;
 	}
-	sorted.erase(&dt);
+	sorted.erase({cur, &dt});
     }
     dt.due(when);
     if (when <= split)
-	sorted.insert(&dt);
+	sorted.emplace(when, &dt);
 }
 
-Dispatcher::Dispatcher(const Config &config): ThreadGroup(false), cfg(config),
+Dispatcher::Dispatcher(const Config &config): cfg(config),
     due(DispatchTimer::DSP_NEVER_DUE)
 #ifdef DSP_WIN32_ASYNC
     , interval(DispatchTimer::DSP_NEVER)
@@ -382,8 +380,9 @@ int Dispatcher::onStart() {
 		    tlock.unlock();
 		    KillTimer(wnd, DSP_TimerID);
 		} else {
-		    due = now + MAX_IDLE_TIMER;
-		    interval = MAX_IDLE_TIMER;
+		    // unsorted timers only become due once reordered at split
+		    due = timers.half();
+		    interval = (ulong)(due - now);
 		    tlock.unlock();
 		    SetTimer(wnd, DSP_TimerID, interval, NULL);
 		}
@@ -392,7 +391,7 @@ int Dispatcher::onStart() {
 		msec_t d = dt->due();
 
 		due = d > now ? d : now;
-		interval = (ulong)(d - now);
+		interval = (ulong)(due - now);
 		tlock.unlock();
 		SetTimer(wnd, DSP_TimerID, interval, NULL);
 	    } else {
@@ -469,7 +468,7 @@ int Dispatcher::onStart() {
 
     RETRY(pwrite(evtfd, &evts[0], sizeof (evts[0]), 0));
 #elif defined(DSP_EPOLL)
-    if ((wfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE)) == -1) {
+    if ((wfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)) == -1) {
 	close(evtfd);
 	return -1;
     }
@@ -495,8 +494,9 @@ int Dispatcher::onStart() {
 		msec = SOCK_INFINITE;
 		due = DispatchTimer::DSP_NEVER_DUE;
 	    } else {
-		msec = MAX_IDLE_TIMER;
-		due = now + MAX_IDLE_TIMER;
+		// unsorted timers only become due once reordered at split
+		due = timers.half();
+		msec = (uint)(due - now);
 	    }
 	} else {
 	    msec_t d = dt->due();
@@ -755,22 +755,22 @@ void Dispatcher::reclaim(void) {
 #endif
 
 void Dispatcher::handleEvents(const void *evts, uint nevts) {
-    static constexpr uint_fast8_t EVT_READ = 0x01;
-    static constexpr uint_fast8_t EVT_WRITE = 0x02;
-    static constexpr uint_fast8_t EVT_ERR = 0x04;
+    static constexpr uint EVT_READ = 0x01;
+    static constexpr uint EVT_WRITE = 0x02;
+    static constexpr uint EVT_ERR = 0x04;
 #ifdef DSP_EPOLL
-    static constexpr uint_fast8_t EVT_HUP = 0x08;
+    static constexpr uint EVT_HUP = 0x08;
 #endif
     DispatchSocket *batch[MAX_EVENTS];
-    uint_fast8_t masks[MAX_EVENTS];
-    uint rcnt = 0, rsz;
+    uint masks[MAX_EVENTS];
+    uint rcnt = 0;
     bool rset = false;
 
     // phase 1: identify sockets from events
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds;
 	const event_t *evt = (const event_t *)evts + u;
-	uint_fast8_t mask = LIKELY(DSP_EVENT_READ(evt)) ? EVT_READ : 0;
+	uint mask = LIKELY(DSP_EVENT_READ(evt)) ? EVT_READ : 0;
 
 #ifdef DSP_DEVPOLL
 	if (UNLIKELY(evt->fd == rsock)) {
@@ -807,14 +807,12 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	batch[u] = ds;
 	masks[u] = mask;
     }
-    // phase 2: tlock nests inside olock, matching handleTimers
-    bool tlocked = false;
-
+    // phase 2: keep timers so re-polls within slack skip tlock
     olock.lock();
     for (uint u = 0; u < nevts; u++) {
 	DispatchSocket *ds = batch[u];
 	dspflag_t flags;
-	uint_fast8_t mask;
+	uint mask;
 
 	if (UNLIKELY(!ds))
 	    continue;
@@ -840,20 +838,15 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 #endif
 	    DispatchMsg msg = ds->msg;
 
-	    if (!tlocked) {
-		tlock.lock();
-		tlocked = true;
-	    }
-	    timers.set(*ds, DispatchTimer::DSP_NEVER_DUE);
 #ifdef DSP_EPOLL
 	    if (UNLIKELY((mask & EVT_READ) && !(flags & (DSP_SelectRead |
 		DSP_SelectAccept)))) {
 		ds->flags |= DSP_Readable;
-		mask = (uint_fast8_t)(mask & ~EVT_READ);
+		mask &= ~EVT_READ;
 	    }
 	    if (UNLIKELY((mask & EVT_WRITE) && !(flags & DSP_SelectWrite))) {
 		ds->flags |= DSP_Writeable;
-		mask = (uint_fast8_t)(mask & ~EVT_WRITE);
+		mask &= ~EVT_WRITE;
 	    }
 #endif
 	    if (LIKELY(mask & EVT_READ))
@@ -874,27 +867,9 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 		    ds->flags |= DSP_Closeable;
 	    }
 	    ds->msg = msg;
-	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose |
-		DSP_SelectRead | DSP_SelectWrite | DSP_Scheduled);
-	    if (UNLIKELY(flags & DSP_ReadyAll)) {
-		// already queued
-	    } else if (UNLIKELY(flags & DSP_Active)) {
-		ds->flags |= DSP_Ready;
-	    } else if (UNLIKELY((ds->flags & DSP_Grouped) &&
-		ds->group->active)) {
-		ds->flags = (ds->flags & ~DSP_Scheduled) | DSP_ReadyGroup;
-		if (UNLIKELY(msg == DispatchAccept))
-		    ds->group->glist.push_front(*ds);
-		else
-		    ds->group->glist.push_back(*ds);
-	    } else {
-		ds->flags |= DSP_Ready;
-		if (UNLIKELY(msg == DispatchAccept))
-		    rlist.push_front(*ds);
-		else
-		    rlist.push_back(*ds);
+	    DSP_ONESHOT(ds, DSP_SelectAll | DSP_Scheduled);
+	    if (enqueue(*ds, msg == DispatchAccept))
 		rcnt++;
-	    }
 	} else {
 	    if (LIKELY(mask & EVT_READ))
 		ds->flags |= DSP_Readable;
@@ -903,50 +878,13 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 	    if (UNLIKELY(mask & EVT_ERR))
 		ds->flags |= DSP_Closeable;
 #ifndef DSP_EPOLL
-	    DSP_ONESHOT(ds, DSP_SelectAccept | DSP_SelectClose |
-		DSP_SelectRead | DSP_SelectWrite);
+	    DSP_ONESHOT(ds, DSP_SelectAll);
 #endif
 	}
     }
-    if (tlocked)
-	tlock.unlock();
     olock.unlock();
-    rsz = rlist.size();
-    // phase 4: batch wake threads
-    if (LIKELY(rcnt && maxthreads)) {
-	uint maxwake = (rcnt + 1) / 2;
-	uint_fast32_t s = scanning.load(memory_order_seq_cst);
-
-	while (rcnt && rsz > s) {
-	    uint done;
-	    uint wake = min(rcnt, (uint)(rsz - s));
-
-	    if (wake > maxwake)
-		wake = maxwake;
-	    if (scanning.compare_exchange_weak(s, s + wake,
-		memory_order_acquire, memory_order_relaxed)) {
-		uint unwoken = sema4.release(wake);
-
-		done = wake - unwoken;
-		if (UNLIKELY(unwoken)) {
-		    if (unwoken == wake && workers < maxthreads && !shutdown) {
-			scanning.fetch_sub(unwoken - 1, memory_order_relaxed);
-			worker();
-			done = 1;
-		    } else {
-			scanning.fetch_sub(unwoken, memory_order_relaxed);
-		    }
-		}
-		if (!done)
-		    break;
-		rcnt -= done;
-	    }
-	    rsz = rlist.size();
-	    s = scanning.load(memory_order_seq_cst);
-	}
-    } else if (rcnt && polling.load(memory_order_relaxed)) {
-	wakeup(0);
-    }
+    if (LIKELY(rcnt))
+	wake(rcnt);
 }
 
 #endif
@@ -957,28 +895,30 @@ DispatchTimer *Dispatcher::handleTimers(msec_t now) {
     DispatchTimer *dts[BATCHSZ + 1];
 
     while ((cnt = timers.get(now, dts, BATCHSZ)) > 0) {
+	uint rcnt = 0;
+
 	tlock.unlock();
+	// claimed timers cannot be freed while olock is held
+	olock.lock();
 	for (uint u = 0; u < cnt; u++) {
 	    DispatchTimer *dt;
 	    msec_t firing = DispatchTimer::DSP_FIRING;
 
-	    olock.lock();
-	    if (UNLIKELY((dt = timers.claim(u)) == nullptr)) {
-		olock.unlock();
+	    if (UNLIKELY((dt = timers.claim(u)) == nullptr))
 		continue;
-	    }
 	    // skip a stale expiry re-armed, removed or raced by an event
 	    if (UNLIKELY(!dt->tm.compare_exchange_strong(firing,
 		DispatchTimer::DSP_NEVER_DUE, memory_order_relaxed) ||
-		!(dt->flags & DSP_Scheduled))) {
-		olock.unlock();
+		!(dt->flags & DSP_Scheduled)))
 		continue;
-	    }
-	    dt->flags &= ~DSP_Scheduled;
 	    if (!(dt->flags & DSP_ReadyAll))
 		dt->msg = DispatchTimeout;
-	    ready(*dt);
+	    if (enqueue(*dt, false))
+		rcnt++;
 	}
+	olock.unlock();
+	if (rcnt)
+	    wake(rcnt);
 	tlock.lock();
     }
     return dts[cnt];
@@ -1002,21 +942,15 @@ bool Dispatcher::start(uint mthreads, uint stack) {
     maxthreads = mthreads;
     stacksz = stack ? stack : 128 * 1024;
     if (ThreadGroup::start(mthreads ? 8 * 1024 : stacksz)) {
-	olock.lock();
-	while (shutdown && getMainThread().getState() == Running) {
-	    olock.unlock();
+	while (shutdown && getMainThread().getState() == Running)
 	    msleep(20);
-	    olock.lock();
-	}
-	olock.unlock();
     }
     return !shutdown;
 }
 
 void Dispatcher::onStop() {
-    if (shutdown)
+    if (shutdown.exchange(true))
 	return;
-    shutdown = true;
     while (!waitForMain(0)) {
 	wakeup(0);
 	msleep(1);
@@ -1125,8 +1059,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
     // unregister before a delete is queued so no new events reference ds
     unmapSocket(ds, fd);
     cancelTimer(ds, del);
-    return;
-#endif
+#else
     cancelTimer(ds, del);
     if (!ds.mapped || fd == (socket_t)INVALID_SOCKET)
 	return;
@@ -1207,6 +1140,7 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
     } else {
 	olock.unlock();
     }
+#endif
 #endif
 #endif
 }
@@ -1327,6 +1261,14 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 	ds.mapped = true;
 	ds.flags |= DSP_Polled;
     }
+    // skip re-arming only when the last read drained the socket, checked
+    // under olock since a hangup event clears evmask
+    if (!b) {
+	uint32_t events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLET;
+
+	b = op == EPOLL_CTL_MOD && events == ds.evmask && drained;
+	ds.evmask = events;
+    }
 #endif
     ds.msg = DispatchNone;
     olock.unlock();
@@ -1388,13 +1330,6 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 
     evt.data.ptr = &ds;
     evt.events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLET;
-    // skip re-arming only when the last read drained the socket
-    if (op == EPOLL_CTL_MOD && evt.events == ds.evmask && drained) {
-	if (tmt)
-	    wakeup((ulong)(tmt - now));
-	return;
-    }
-    ds.evmask = evt.events;
 #ifdef EPOLLEXCLUSIVE
     // connection() accepts until drained and MOD rejects EPOLLEXCLUSIVE
     if (UNLIKELY(m == DispatchAccept)) {
@@ -1461,8 +1396,10 @@ void Dispatcher::addReady(DispatchObj &obj, DispatchObj::DispatchObjCB cb,
 void Dispatcher::adopt(DispatchObj &obj) {
     olock.lock();
     obj.flags |= DSP_Detached;
-    owned.insert(&obj);
     olock.unlock();
+    alock.lock();
+    owned.insert(&obj);
+    alock.unlock();
 }
 
 DispatchObj::DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb):
@@ -1503,9 +1440,9 @@ void Dispatcher::cancelReady(DispatchObj &obj, bool del) {
 }
 
 void Dispatcher::disown(DispatchObj &obj) {
-    olock.lock();
+    alock.lock();
     owned.erase(&obj);
-    olock.unlock();
+    alock.unlock();
 }
 
 void Dispatcher::removeReady(DispatchObj &obj) {
@@ -1521,61 +1458,83 @@ void Dispatcher::removeReady(DispatchObj &obj) {
     }
 }
 
-// enter locked, leave unlocked for performance
-void Dispatcher::ready(DispatchObj &obj, bool hipri) {
+// enter and leave locked, true if obj was added to rlist
+bool Dispatcher::enqueue(DispatchObj &obj, bool hipri) {
     dspflag_t flags = obj.flags &= ~DSP_Scheduled;
 
     if (UNLIKELY(flags & (DSP_ReadyAll | DSP_Freed))) {
 	// already queued
-	olock.unlock();
     } else if (UNLIKELY(flags & DSP_Active)) {
 	obj.flags = flags | DSP_Ready;
-	olock.unlock();
     } else if (UNLIKELY((flags & DSP_Grouped) && obj.group->active)) {
 	obj.flags = flags | DSP_ReadyGroup;
 	if (UNLIKELY(hipri))
 	    obj.group->glist.push_front(obj);
 	else
 	    obj.group->glist.push_back(obj);
-	olock.unlock();
     } else {
 	obj.flags = flags | DSP_Ready;
 	if (UNLIKELY(hipri))
 	    rlist.push_front(obj);
 	else
 	    rlist.push_back(obj);
-	olock.unlock();
-	wake();
+	return true;
     }
+    return false;
 }
 
-// start or signal a worker for the ready list, called unlocked
-void Dispatcher::wake(void) {
-    uint rsz = rlist.size();
+// enter locked, leave unlocked for performance
+void Dispatcher::ready(DispatchObj &obj, bool hipri) {
+    bool queued = enqueue(obj, hipri);
 
-    if (LIKELY(maxthreads)) {
-	uint_fast32_t s = scanning.load(memory_order_seq_cst);
+    olock.unlock();
+    if (queued)
+	wake();
+}
 
-	while (rsz > s) {
-	    if (scanning.compare_exchange_weak(s, s + 1,
-		memory_order_acquire, memory_order_relaxed)) {
-		if (sema4.release()) {
-		    if (workers < maxthreads && !shutdown) {
-			worker();
-			break;
-		    } else {
-			scanning.fetch_sub(1, memory_order_relaxed);
-			break;
-		    }
+// start or signal workers for cnt newly ready objects, called unlocked
+void Dispatcher::wake(uint cnt) {
+    uint maxwake = (cnt + 1) / 2;
+    uint rsz;
+    uint_fast32_t s;
+
+    if (UNLIKELY(!maxthreads)) {
+	if (polling.load(memory_order_relaxed))
+	    wakeup(0);
+	return;
+    }
+    // rlist size is stored relaxed under olock so order it before reading
+    // scanning, pairing with workers that leave scanning then check rlist
+#ifdef __SANITIZE_THREAD__
+    // tsan does not model fences so order through scanning instead
+    s = scanning.fetch_add(0, memory_order_seq_cst);
+#else
+    atomic_thread_fence(memory_order_seq_cst);
+    s = scanning.load(memory_order_relaxed);
+#endif
+    rsz = rlist.size();
+    while (cnt && rsz > s) {
+	uint n = min({cnt, maxwake, (uint)(rsz - s)});
+
+	if (scanning.compare_exchange_weak(s, s + n, memory_order_acquire,
+	    memory_order_relaxed)) {
+	    uint unwoken = sema4.release(n);
+	    uint done = n - unwoken;
+
+	    if (UNLIKELY(unwoken)) {
+		if (unwoken == n && worker()) {
+		    scanning.fetch_sub(unwoken - 1, memory_order_relaxed);
+		    done = 1;
 		} else {
-		    break;
+		    scanning.fetch_sub(unwoken, memory_order_relaxed);
 		}
 	    }
-	    rsz = rlist.size();
-	    s = scanning.load(memory_order_seq_cst);
+	    if (!done)
+		break;
+	    cnt -= done;
 	}
-    } else if (polling.load(memory_order_relaxed)) {
-	wakeup(0);
+	rsz = rlist.size();
+	s = scanning.load(memory_order_seq_cst);
     }
 }
 

@@ -128,6 +128,7 @@ public:
 
 protected:
     Sockaddr addr;
+    uint cto = SOCK_INFINITE;
     string hostval;
     bufferstream<tchar> hstrm;
     bool ka = true;

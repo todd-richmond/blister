@@ -192,7 +192,7 @@ static bool sendall(const Socket &sock, string_view req, const void *data,
     iovec *v = iov;
     int cnt = 2;
 
-    iov[0].iov_base = (char *)req.data();
+    iov[0].iov_base = (char *)req.data();	// NOSONAR
     iov[0].iov_len = (iovlen_t)req.size();
     iov[1].iov_base = (char *)data;		// NOSONAR
     iov[1].iov_len = (iovlen_t)datasz;
@@ -382,6 +382,7 @@ bool HTTPClient::connect(Socket &s, bool keepalive) {
 
 bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     ka = keepalive;
+    cto = to;
     if (sock.open() && sa == addr)
 	return true;
     if (sa != addr || hostval.empty()) {
@@ -532,8 +533,8 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 	}
 #endif
 
-	for (bool first = true; sock.open() || (!msgh && connect(addr, ka));
-	    first = false) {
+	for (bool first = true; sock.open() || (!msgh && connect(addr, ka,
+	    cto)); first = false) {
 	    size_t left = MaxHdrs;
 	    const msec_t start = mticks();
 	    streamsize off = 0;

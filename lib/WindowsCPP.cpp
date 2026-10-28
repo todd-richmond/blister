@@ -31,40 +31,26 @@ extern "C" {
 
 #endif
 
-wstring _achartowstring(const char *s, size_t len) {
-    wchar sbuf[512];
-    int sz;
+// UTF-16 never needs more code units than the UTF-8 input has bytes
+wstring _achartowstring(string_view s) {
+    wstring ret;
 
-    if (len == 0)
-	return L"";
-    else if (MultiByteToWideChar(CP_UTF8, 0, s, (int)len, sbuf, size(sbuf)) > 0)
-	return sbuf;
-    else if ((sz = MultiByteToWideChar(CP_UTF8, 0, s, (int)len, NULL, 0)) == 0)
-	return L"";
-
-    vector<wchar> buf((size_t)sz);
-
-    MultiByteToWideChar(CP_UTF8, 0, s, (int)len, buf.data(), sz);
-    return wstring(buf.data(), (size_t)sz - 1);
+    ret.resize_and_overwrite(s.size(), [&](wchar *buf, size_t n) {
+	return (size_t)MultiByteToWideChar(CP_UTF8, 0, s.data(),
+	    (int)s.size(), buf, (int)n);
+    });
+    return ret;
 }
 
-string _wchartoastring(const wchar *s, size_t len) {
-    char sbuf[1024];
-    int sz;
+// each UTF-16 code unit expands to at most 3 UTF-8 bytes
+string _wchartoastring(wstring_view s) {
+    string ret;
 
-    if (len == 0)
-	return "";
-    else if (WideCharToMultiByte(CP_UTF8, 0, s, (int)len, sbuf,
-	sizeof (sbuf), NULL, NULL) > 0)
-	return sbuf;
-    else if ((sz = WideCharToMultiByte(CP_UTF8, 0, s, (int)len, NULL, 0, NULL,
-	NULL)) == 0)
-	return "";
-
-    vector<char> buf((size_t)sz);
-
-    WideCharToMultiByte(CP_UTF8, 0, s, (int)len, buf.data(), sz, NULL, NULL);
-    return string(buf.data(), (size_t)sz - 1);
+    ret.resize_and_overwrite(s.size() * 3, [&](char *buf, size_t n) {
+	return (size_t)WideCharToMultiByte(CP_UTF8, 0, s.data(), (int)s.size(),
+	    buf, (int)n, NULL, NULL);
+    });
+    return ret;
 }
 #endif
 

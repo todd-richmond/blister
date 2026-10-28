@@ -97,10 +97,9 @@ private:
     ulong tmt, nap, stagger;
 };
 
-static HTTPTest *htp;
 static atomic<uint> errs, ops;
 static atomic loops(LLONG_MAX);
-static volatile sig_atomic_t qflag;
+static atomic_bool qflag;
 alignas(64) static atomic<usec_t> usecs;
 
 static inline bool loop_exit(void) {
@@ -204,11 +203,8 @@ bool HTTPTest::listen(const Sockaddr &sa) {
     }
 }
 
-static void signal_handler(int) {
-    qflag = true;
-    if (!errs && !ops)
-	htp->stop();
-}
+// only async-signal-safe work here so main notices qflag and stops
+static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true, sync = false;
@@ -218,7 +214,7 @@ int tmain(int argc, const tchar * const argv[]) {
     int fd;
     const tchar *host = nullptr;
     int i;
-    msec_t last, now;
+    timing_t last, now;
     const tchar *path = T("echo this short test string as quickly as possible");
     Sockaddr sa;
     struct stat sbuf;
@@ -328,7 +324,6 @@ int tmain(int argc, const tchar * const argv[]) {
 	ht.stop();
 	return 1;
     }
-    htp = &ht;
     if (client) {
 	dlogi(Log::mod(T("http")), Log::cmd(T("httptest")), Log::kv(T("addr"),
 	    sa.str()), Log::kv(T("data"), path));
@@ -352,15 +347,18 @@ int tmain(int argc, const tchar * const argv[]) {
 	Thread::MainThread.priority(10);
 	last = Timing::now();
 	do {
-	    ulong cnt;
+	    ulong cnt, err, ok;
 
-	    ops = errs = 0U;
-	    usecs = 0U;
-	    ht.waitForMain(1000);
+	    if (ht.waitForMain(1000))
+		break;
 	    now = Timing::now();
-	    cnt = ops + errs;
+	    // swap counters so increments between read and reset are kept
+	    err = errs.exchange(0, memory_order_relaxed);
+	    ok = ops.exchange(0, memory_order_relaxed);
+	    cnt = ok + err;
 	    tcout << (timing_t)cnt * 1000000 / (now - last) << T("\t\t") <<
-		(usecs / (cnt ? cnt : 1)) << '\t' << errs << endl;
+		(usecs.exchange(0, memory_order_relaxed) / (ok ? ok : 1)) <<
+		'\t' << err << endl;
 	    last = now;
 	} while (loops.load() > 0 && !qflag);
 	// the server and clients must outlive all in flight requests
@@ -369,10 +367,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	for (int n = 0; active && n < 100; n++)
 	    msleep(50);
     } else {
-	ht.waitForMain();
+	while (!qflag && !ht.waitForMain(1000))
+	    continue;
     }
     ht.stop();
-    htp = nullptr;
     delete [] dbuf;
     tcout << dtiming.data() << endl;
     return qflag ? -1 : 0;
