@@ -113,7 +113,7 @@ public:
 static atomic<uint> errs, ops;
 static atomic loops(LLONG_MAX);
 static atomic_bool qflag;
-alignas(64) static atomic<usec_t> usecs;
+alignas(CACHELINE_SZ) static atomic<usec_t> usecs;
 
 static inline bool loop_exit(void) {
     return loops.fetch_sub(1, memory_order_relaxed) <= 0 || qflag;

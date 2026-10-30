@@ -738,6 +738,12 @@ bool Socket::proxysockname(Sockaddr &sa) {
 // wait for the socket to become readable/writable within rto/wto
 bool Socket::iowait(bool out) const {
     const uint msec = out ? sbuf->wto : sbuf->rto;
+
+    // poll ignores a closed socket and would wait for the whole timeout
+    if (sbuf->sock == SOCK_INVALID) {
+	sbuf->err = WSAENOTSOCK;
+	return false;
+    }
 #ifdef _WIN32
     SocketSet sset(1), ioset(1), eset(1);
 

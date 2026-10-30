@@ -28,6 +28,7 @@
 #include <fstream>
 #include <memory>
 #include <random>
+#include <ranges>
 #include <unordered_map>
 #include "HTTPClient.h"
 #include "Log.h"
@@ -50,21 +51,26 @@ public:
     static void pause(ulong msec) { lock.lock(); cv.wait(msec); lock.unlock(); }
 
 private:
+    enum class Op: uchar { Get, Post, Sleep };
+
     class LoadCmd {
     public:
 	LoadCmd(const tchar *c, const tchar *a, const URL &u, const tchar *d =
 	    nullptr, const tchar *s = nullptr, const tchar *v = nullptr):
-	    cmd(c), arg(a ? a : T("")), data(d ? d : T("")), value(v ? v :
-	    T("")), status((ushort)(s ? ttoi(s) : 0)), url(u), usec(0),
-	    tusec(0), minusec(0), tminusec(0), maxusec(0), tmaxusec(0),
-	    count(0), tcount(0), err(0), terr(0) {}
+	    arg(a ? a : T("")), cmd(c), data(d ? d : T("")), full(u.fullpath()),
+	    path(u.relpath()), value(v ? v : T("")),
+	    op(!tstricmp(c, T("get")) ? Op::Get : !tstricmp(c, T("post")) ?
+	    Op::Post : Op::Sleep), status((ushort)(s ? ttoi(s) : 0)),
+	    vars(path.contains(T("$("))) {}
 
-	tstring cmd, arg, data, value;
-	ushort status;
-	URL url;
 	Sockaddr addr;
-	ulong usec, tusec, minusec, tminusec, maxusec, tmaxusec;
-	ulong count, tcount, err, terr;
+	tstring arg, cmd, data, full, path, value;
+	ulong count = 0, err = 0, tcount = 0, terr = 0;
+	ulong maxusec = 0, minusec = 0, tmaxusec = 0, tminusec = 0, tusec = 0,
+	    usec = 0;
+	Op op;
+	ushort status;
+	bool vars;			// path has $() for per request values
 
 	void error(void) { err++; terr++; }
 	void complete(bool sts, ulong diff) {
@@ -76,71 +82,42 @@ private:
 	    }
 	    usec += diff;
 	    tusec += diff;
-	    if (!minusec || diff < minusec)
-		minusec = diff;
-	    if (diff > maxusec)
-		maxusec = diff;
-	    if (!tminusec || diff < tminusec)
-		tminusec = diff;
-	    if (diff > tmaxusec)
-		tmaxusec = diff;
+	    minusec = minusec ? min(minusec, diff) : diff;
+	    maxusec = max(maxusec, diff);
+	    tminusec = tminusec ? min(tminusec, diff) : diff;
+	    tmaxusec = max(tmaxusec, diff);
 	}
     };
-
-    ulong id;
-    static Lock lock;
-    static Condvar cv;
-    static bool dbg, ka, ruser;
-    static tchar format_buf[32];
-    static ulong muser;
-    static uint mthread;
-    static uint to;
-    static atomic_long remain;
-    static uint threads;
-    static attrmap hdrs, vars;
     struct BodyFile {
+	unique_ptr<char[]> cache;
 	tstring path;
 	ulong size = 0;
-	char *cache = nullptr;
     };
-    static ulong bodycachesz;
-    static vector<BodyFile> bodies;
-    static bool allfiles;
-    static int filecnt;
-    static uint nextfile;
-    static uint startfile;
-    static atomic<ulong> usec, tusec, count, tcount;
-    static vector<unique_ptr<LoadCmd>> cmds;
+
+    static inline bool allfiles = false, dbg = false, ka = false,
+	needid = false, needpass = false, needuser = false, ruser = false;
+    static inline vector<BodyFile> bodies;
+    static inline vector<unique_ptr<LoadCmd>> cmds;
+    static inline atomic<ulong> count = 0, tcount = 0, tusec = 0, usec = 0;
+    static inline Lock lock;		// before cv which uses it
+    static inline Condvar cv{lock};
+    static inline attrmap hdrs, vars;
+    ulong id;
+    static inline uint mthread = 0, startfile = 0, threads = 0, to = 0;
+    static inline ulong muser = 0;
+    static inline atomic<uint> nextfile = 0;
+    static inline atomic_long remain = 0;
+    static inline SpinLock statlock{SPIN_LIMIT};
 
     int onStart(void) override;
-    static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
-    static const tchar *format(ulong u);
-    static const tchar *format(float f);
-    static char *load(uint idx, usec_t &iousec);
     static void add(const tchar *file);
+    static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
+    static tstring format(ulong u);
+    static tstring format(float f);
+    static const char *load(uint idx, usec_t &iousec, unique_ptr<char[]> &buf);
     static uint next(void);
+    static unique_ptr<char[]> read(const BodyFile &body);
 };
-
-Lock HTTPLoad::lock;
-Condvar HTTPLoad::cv(lock);
-tchar HTTPLoad::format_buf[32];
-uint HTTPLoad::threads;
-ulong HTTPLoad::muser;
-uint HTTPLoad::mthread;
-bool HTTPLoad::dbg, HTTPLoad::ka, HTTPLoad::ruser;
-atomic_long HTTPLoad::remain;
-uint HTTPLoad::to;
-attrmap HTTPLoad::hdrs;
-attrmap HTTPLoad::vars;
-ulong HTTPLoad::bodycachesz;
-vector<HTTPLoad::BodyFile> HTTPLoad::bodies;
-bool HTTPLoad::allfiles;
-int HTTPLoad::filecnt;
-uint HTTPLoad::nextfile;
-uint HTTPLoad::startfile;
-atomic<ulong> HTTPLoad::usec, HTTPLoad::tusec;
-atomic<ulong> HTTPLoad::count, HTTPLoad::tcount;
-vector<unique_ptr<HTTPLoad::LoadCmd>> HTTPLoad::cmds;
 
 bool HTTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
     const tchar *orig = str;
@@ -197,8 +174,6 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     ka = keepalive;
     to = timeout;
     allfiles = all;
-    bodycachesz = (loops == 1) ? 0 : cachesz;
-    filecnt = fcnt;
     if (!is) {
 	tcerr << T("invalid file: ") << file << endl;
 	return false;
@@ -219,12 +194,21 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	}
     }
     if (allfiles && !bodies.empty()) {
-	if (filecnt > 0 && (uint)filecnt < (uint)bodies.size())
-	    bodies.resize((size_t)filecnt);
-	else if (filecnt < 0 && (uint)(-filecnt) < (uint)bodies.size())
-	    startfile = (uint)bodies.size() - (uint)(-filecnt);
-	nextfile = startfile;
+	if (fcnt > 0 && (uint)fcnt < (uint)bodies.size())
+	    bodies.resize((size_t)fcnt);
+	else if (fcnt < 0 && (uint)(-fcnt) < (uint)bodies.size())
+	    startfile = (uint)bodies.size() - (uint)(-fcnt);
 	remain = remain * (long)(bodies.size() - startfile);
+    }
+    // cache files up front so senders never wait on disk or a lock
+    if (loops != 1) {
+	for (auto &b : bodies | views::drop(startfile)) {
+	    if (b.size > cachesz)
+		continue;
+	    if (!(b.cache = read(b)))
+		return false;
+	    cachesz -= b.size;
+	}
     }
     vars[T("host")] = host;
     while (is.getline(buf, (streamsize)size(buf))) {
@@ -243,7 +227,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	if (!tstricmp(cmd, T("hdr")) || !tstricmp(cmd, T("var"))) {
 	    tchar *attr, *val;
 
-	    attr = tstrtok(NULL, T("="));
+	    attr = tstrtok(nullptr, T("="));
 	    if (!attr) {
 		tcerr << T("invalid attribute: line ") << line << endl;
 		return false;
@@ -253,7 +237,7 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 		*p-- = '\0';
 	    if (host && !tstricmp(attr, T("host")))
 		continue;
-	    val = tstrtok(NULL, T(""));
+	    val = tstrtok(nullptr, T(""));
 	    if (!val) {
 		tcerr << T("invalid value: line ") << line << endl;
 		return false;
@@ -270,158 +254,150 @@ bool HTTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	    continue;
 	}
 	if (!tstricmp(cmd, T("get")) || !tstricmp(cmd, T("post"))) {
-	    arg = tstrtok(NULL, T(" \t"));
-	    req = tstrtok(NULL, T(" \t"));
+	    arg = tstrtok(nullptr, T(" \t"));
+	    req = tstrtok(nullptr, T(" \t"));
 	    if (!tstricmp(cmd, T("post")))
-		data = tstrtok(NULL, T(" \t"));
-	    status = tstrtok(NULL, T(" \t"));
+		data = tstrtok(nullptr, T(" \t"));
+	    status = tstrtok(nullptr, T(" \t"));
 	    if (!status)
 		status = T("200");
-	    value = tstrtok(NULL, T(""));
+	    value = tstrtok(nullptr, T(""));
 	    if (!url.set(req)) {
 		tcerr << T("invalid url: line ") << line << endl;
 		return false;
 	    }
 	} else if (!tstricmp(cmd, T("sleep"))) {
-	    arg = tstrtok(NULL, T(" \t"));
+	    arg = tstrtok(nullptr, T(" \t"));
 	} else {
 	    tcerr << T("invalid cmd: line ") << line << endl;
 	    return false;
 	}
 	if (arg && arg - buf == len)
 	    arg = nullptr;
-	if (!arg && bodies.empty() &&
-	    (!tstricmp(cmd, T("body")) || !tstricmp(cmd, T("data")))) {
-	    tcerr << T("missing text for ") << cmd << endl;
+	if (bodies.empty() && !tstricmp(cmd, T("post")) && !data) {
+	    tcerr << T("missing body file for ") << cmd << endl;
 	    return false;
 	}
 	if (!addr.set(url.host().c_str(), url.port())) {
 	    tcerr << T("invalid host: line ") << line << endl;
 	    return false;
 	}
+
 	auto lcmd = make_unique<LoadCmd>(cmd, arg, url, data, status, value);
+
+	// per request values are only formatted when a command uses them
+	for (const tstring *str : { &lcmd->path, &lcmd->data }) {
+	    needid = needid || str->contains(T("$(id)"));
+	    needpass = needpass || str->contains(T("$(pass)"));
+	    needuser = needuser || str->contains(T("$(user)"));
+	}
 	lcmd->addr = addr;
 	cmds.push_back(std::move(lcmd));
     }
     return true;
 }
 
-char *HTTPLoad::load(uint idx, usec_t &iousec) {
-    int fd;
-    char *ret;
-    const tchar *file = bodies[idx].path.c_str();
-    ulong filelen = bodies[idx].size;
+unique_ptr<char[]> HTTPLoad::read(const BodyFile &body) {
+    int fd = open(tchartoachar(body.path.c_str()), O_RDONLY | O_BINARY |
+	O_SEQUENTIAL);
+    unique_ptr<char[]> ret;
 
-    lock.lock();
-    ret = bodies[idx].cache;
-    lock.unlock();
-    if (ret) {
-	iousec = 0;
-	return ret;
-    }
-    ret = nullptr;
-    iousec = uticks();
-    if ((fd = open(tchartoachar(file), O_RDONLY | O_BINARY | O_SEQUENTIAL)) !=
-	-1) {
-	ret = new char[(size_t)filelen + 1];
-	if (::read(fd, ret, filelen) == (int)filelen) {
-	    ret[filelen] = '\0';
-	    lock.lock();
-	    if (!bodies[idx].cache && filelen <= bodycachesz) {
-		bodies[idx].cache = ret;
-		bodycachesz -= filelen;
-	    }
-	    lock.unlock();
-	} else {
-	    delete [] ret;
-	    ret = nullptr;
-	}
+    if (fd != -1) {
+	ret = make_unique_for_overwrite<char[]>((size_t)body.size + 1);
+	if (::read(fd, ret.get(), body.size) == (int)body.size)
+	    ret[body.size] = '\0';
+	else
+	    ret.reset();
 	close(fd);
     }
     if (!ret)
-	tcerr << T("unable to read body file: ") << file << endl;
-    iousec = uticks() - iousec;
+	tcerr << T("unable to read body file: ") << body.path << endl;
     return ret;
+}
+
+// a cached body or one read into buf
+const char *HTTPLoad::load(uint idx, usec_t &iousec, unique_ptr<char[]> &buf) {
+    const BodyFile &body = bodies[idx];
+
+    if (body.cache) {
+	iousec = 0;
+	return body.cache.get();
+    }
+    iousec = uticks();
+    buf = read(body);
+    iousec = uticks() - iousec;
+    return buf.get();
 }
 
 void HTTPLoad::add(const tchar *file) {
     namespace fs = std::filesystem;
     std::error_code ec;
     auto sz = fs::file_size(fs::path(file), ec);
+
     if (ec)
 	tcerr << T("invalid body file: ") << file << endl;
     else
-	bodies.push_back({.path = tstring(file), .size = (ulong)sz});
+	bodies.push_back({.cache = {}, .path = tstring(file), .size = (ulong)sz});
 }
 
-uint HTTPLoad::next() {
-    uint ret;
-
-    lock.lock();
-    ret = nextfile++;
-    if (nextfile >= (uint)bodies.size())
-	nextfile = startfile;
-    lock.unlock();
-    return ret;
+uint HTTPLoad::next(void) {
+    return startfile + nextfile.fetch_add(1, memory_order_relaxed) %
+	((uint)bodies.size() - startfile);
 }
 
 int HTTPLoad::onStart(void) {
-    usec_t start, end, last, now, io;
     tchar buf[1024], data[4096];
     HTTPClient hc;
     tofstream fs;
     attrmap lvars;
-    ulong diff;
     tstring s;
     vector<tstring> cookies;
     thread_local mt19937 rng(random_device {}());
     thread_local uniform_int_distribution<ulong> dist;
+    const auto pick = [&] {
+	return allfiles ? next() : (uint)(dist(rng) % bodies.size());
+    };
+    const auto setvar = [&](const tchar *var, const tchar *fmt) {
+	if (auto it = vars.find(var); it != vars.end())
+	    fmt = it->second.c_str();
+	tsprintf(data, fmt, id);			// NOSONAR
+	lvars[var] = data;
+    };
 
     if (dbg)
 	fs.open("debug.out", ios::trunc | ios::out);
     if (id > Processor::count())
 	msleep(dist(rng) % 1000U * ((mthread / 20) + 1));
-    while (!qflag) {
-	const tchar *p;
-	ulong smsec = 0;
+    while (!qflag && remain.fetch_sub(1, memory_order_relaxed) > 0) {
+	ulong cusec = 0, diff, smsec = 0;
 	bool ret;
-	HTTPClient::attrmap rmap;
 	ulong tmpid = ruser ? dist(rng) << 14 ^ dist(rng) : id;
-	long tmp;
+	usec_t start, last, io = 0;
 
-	tmp = remain.fetch_sub(1, memory_order_relaxed);
-	if (tmp <= 0)
-	    break;
 	id = tmpid ? tmpid % (muser ? muser : id) : 0;	// NOLINT
-	tsprintf(data, T("%lu"), id);
-	lvars[T("id")] = data;
-	if (auto ait = vars.find(T("user")); ait == vars.end())
-	    tsprintf(data, T("user_%06lu"), id);
-	else
-	    tsprintf(data, ait->second.c_str(), id);	// NOSONAR
-	lvars[T("user")] = data;
-	if (auto ait = vars.find(T("pass")); ait == vars.end())
-	    tsprintf(data, T("pass_%06lu"), id);
-	else
-	    tsprintf(data, ait->second.c_str(), id);	// NOSONAR
-	lvars[T("pass")] = data;
+	if (needid)
+	    lvars[T("id")] = std::format(T("{}"), id);
+	if (needuser)
+	    setvar(T("user"), T("user_%06lu"));
+	if (needpass)
+	    setvar(T("pass"), T("pass_%06lu"));
 	cookies.clear();
 	start = last = uticks();
-	io = 0;
 	for (const auto &cmd : cmds) {
+	    const tchar *path = cmd->path.c_str();
+
 	    if (qflag)
 		break;
-
-	    if (!tstricmp(cmd->cmd.c_str(), T("sleep"))) {
+	    if (cmd->op == Op::Sleep) {
+		const tchar *p = cmd->arg.c_str();
 		ulong len;
 
-		p = cmd->arg.c_str();
 		if (*p == '%') {
-		    len = tstrtoul(p + 1, NULL, 10);
+		    len = atoi<ulong>(p + 1);
 		    if (len)
 			len = dist(rng) % len;
 		} else {
-		    len = tstrtoul(p, NULL, 10);
+		    len = atoi<ulong>(p);
 		}
 		smsec += len;
 		msleep(len);
@@ -431,7 +407,7 @@ int HTTPLoad::onStart(void) {
 	    }
 	    if (dbg)
 		fs << T("\n\n******* ") << cmd->cmd << T(" ") << cmd->arg <<
-		    T(" ") << cmd->url.fullpath() << T(" *******") << endl;
+		    T(" ") << cmd->full << T(" *******") << endl;
 	    hc.timeout(to, to);
 	    if ((ret = hc.connect(cmd->addr, ka, to)) == true) {
 		if (!cookies.empty()) {
@@ -445,65 +421,68 @@ int HTTPLoad::onStart(void) {
 		    if (dbg)
 			fs << T("SEND Cookie: ") << s << endl;
 		}
-		for (const auto& [key, value] : hdrs)
+		for (const auto &[key, value] : hdrs)
 		    hc.header(key, value);
+	    } else {
+		path = cmd->full.c_str();
 	    }
-	    if (!ret) {
-		tstrcpy(buf, cmd->url.fullpath().c_str());
-	    } else if (!tstricmp(cmd->cmd.c_str(), T("get"))) {
-		tstrcpy(buf, cmd->url.relpath().c_str());
-		ret = expand(buf, size(buf), lvars) && hc.get(buf);
-	    } else if (!tstricmp(cmd->cmd.c_str(), T("post"))) {
-		tstrcpy(buf, cmd->url.relpath().c_str());
-		if (!expand(buf, size(buf), lvars)) {
-		    ret = false;
-		} else if (cmd->data.empty()) {
-		    uint u = allfiles ? next() : ((uint)dist(rng) % (uint)bodies.size());
-		    char *d = load(u, io);
-
-		    hc.header(T("content-type"), T("application/octet-stream"));
-		    if (d) {
-			ret = hc.post(buf, d, bodies[u].size);
-			if (d != bodies[u].cache)
-			    delete [] d;
-		    }
-		} else if (cmd->data.length() >= std::size(data)) {
-		    ret = false;
-		} else {
-		    tstrcpy(data, cmd->data.c_str());
-		    if (!expand(data, size(data), lvars)) {
-			ret = false;
-		    } else {
-			hc.header(T("content-type"), T("application/x-www-form-urlencoded"));
-			ret = hc.post(buf, data, (ulong)(tstrlen(data) * sizeof (tchar)));
-		    }
+	    if (ret && cmd->vars) {
+		ret = cmd->path.size() < size(buf);
+		if (ret) {
+		    tstrcpy(buf, path);
+		    ret = expand(buf, size(buf), lvars);
+		    path = buf;
 		}
 	    }
-	    now = uticks();
+	    if (!ret) {
+		// continue
+	    } else if (cmd->op == Op::Get) {
+		ret = hc.get(path);
+	    } else if (cmd->data.empty()) {
+		unique_ptr<char[]> rbuf;
+		uint u = pick();
+		const char *d = load(u, io, rbuf);
+
+		hc.header(T("content-type"), T("application/octet-stream"));
+		ret = d && hc.post(path, d, bodies[u].size);
+	    } else if (cmd->data.length() >= size(data)) {
+		ret = false;
+	    } else {
+		tstrcpy(data, cmd->data.c_str());
+		ret = expand(data, size(data), lvars);
+		if (ret) {
+		    hc.header(T("content-type"),
+			T("application/x-www-form-urlencoded"));
+		    ret = hc.post(path, data, (ulong)(tstrlen(data) *
+			sizeof (tchar)));
+		}
+	    }
+
+	    usec_t now = uticks();
+
 	    diff = (ulong)(now - last - io);
-	    usec += diff;
+	    cusec += diff;
 	    last = now;
 	    io = 0;
-	    lock.lock();
+	    statlock.lock();
 	    cmd->complete(ret, diff);
-	    lock.unlock();
+	    statlock.unlock();
 	    if (!ret || (cmd->status && hc.status() != cmd->status) ||
 		(!cmd->status && hc.status() != 200 && hc.status() != 302)) {
 		if (ret) {
-		    lock.lock();
+		    statlock.lock();
 		    cmd->error();
-		    lock.unlock();
+		    statlock.unlock();
 		}
 		dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") <<
-		    buf << T(" status=") << hc.status() << T(" expected=") <<
+		    path << T(" status=") << hc.status() << T(" expected=") <<
 		    cmd->status << T(" duration=") << (diff / 1000) << endlog;
 		break;
 	    } else {
 		if (dbg)
 		    fs << cmd->cmd << T(" status: ") << hc.status() << endl <<
 			endl;
-		rmap = hc.responses();
-		for (const auto &[key, val] : rmap) {
+		for (const auto &[key, val] : hc.responses()) {
 		    if (key == T("set-cookie")) {
 			tstring::size_type pos;
 
@@ -525,23 +504,23 @@ int HTTPLoad::onStart(void) {
 		if (!cmd->value.empty() && !tstring_view(hc.data(),
 		    hc.size()).contains(cmd->value)) {
 		    dlog << Log::Err << T("cmd=") << cmd->cmd << T(" arg=") <<
-			buf << T(" invalid return data") << endlog;
-		    lock.lock();
+			path << T(" invalid return data") << endlog;
+		    statlock.lock();
 		    cmd->error();
-		    lock.unlock();
+		    statlock.unlock();
 		    break;
 		}
 #endif
 		if (dlog.level() >= Log::Info)
 		    dlog << Log::Info << T("cmd=") << cmd->cmd << T(" arg=") <<
-			buf << T(" status=") << hc.status() <<
+			path << T(" status=") << hc.status() <<
 			T(" duration=") << (diff / 1000) << endlog;
 	    }
 	}
 	if (!ka)
 	    hc.close();
-	end = uticks();
-	diff = (ulong)(end - start);
+	diff = (ulong)(uticks() - start);
+	usec += cusec;
 	tusec += diff - smsec * 1000;
 	++count;
 	++tcount;
@@ -554,36 +533,31 @@ int HTTPLoad::onStart(void) {
     return 0;
 }
 
-const tchar *HTTPLoad::format(ulong u) {
-    tsprintf(format_buf, T(" %7lu"), u);
-    return format_buf;
-}
+tstring HTTPLoad::format(ulong u) { return std::format(T(" {:7}"), u); }
 
-const tchar *HTTPLoad::format(float f) {
-    if (f - 0.0F < FLT_EPSILON)
-	tstrcpy(format_buf, T("       0"));
+tstring HTTPLoad::format(float f) {
+    if (f < FLT_EPSILON)
+	return T("       0");
     else if (f >= 100)
-	tsprintf(format_buf, T(" %7lu"), (ulong)lround(f));
+	return std::format(T(" {:7}"), lround(f));
     else
-	tsprintf(format_buf, T(" %7.2g"), (double)f);
-    return format_buf;
+	return std::format(T(" {:7.2g}"), f);
 }
 
-static inline float round(ulong count, ulong div) {
-    return div ? (float)count / ((float)div * 1.0F) : 0;
+static inline float per(ulong count, ulong div) {
+    return div ? (float)count / (float)div : 0;
 }
 
 void HTTPLoad::print(tostream &os, usec_t last) {
-    tchar buf[32];
     ulong lusec = (ulong)(uticks() - last);
     ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0;
     bufferstream<tchar> bs;
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
-    lock.lock();
+    statlock.lock();
     for (const auto &cmd : cmds) {
-	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
+	if (cmd->op == Op::Sleep)
 	    continue;
 	ops += cmd->count;
 	tops += cmd->tcount;
@@ -597,33 +571,33 @@ void HTTPLoad::print(tostream &os, usec_t last) {
 	    tminusec = cmd->tminusec;
 	if (cmd->tmaxusec > tmaxusec)
 	    tmaxusec = cmd->tmaxusec;
-	tsprintf(buf, T("%-7s"), cmd->cmd.c_str());
-	bs << buf << format(round(cmd->count, lusec) * 1000000) <<
-	    format(round(cmd->usec, cmd->count) / 1000) <<
+	bs << std::format(T("{:<7}"), cmd->cmd) <<
+	    format(per(cmd->count, lusec) * 1000000) <<
+	    format(per(cmd->usec, cmd->count) / 1000) <<
 	    format(cmd->maxusec / 1000) << format(cmd->err) <<
-	    format(round(cmd->tcount, tusec) * 1000000) <<
-	    format(round(cmd->tusec, cmd->tcount) / 1000) <<
+	    format(per(cmd->tcount, tusec) * 1000000) <<
+	    format(per(cmd->tusec, cmd->tcount) / 1000) <<
 	    format(cmd->terr) << format(cmd->tminusec / 1000) <<
 	    format(cmd->tmaxusec / 1000) << endl;
     }
-    lock.unlock();
-    bs << T("ALL    ") << format(round(count, lusec) * 1000000) <<
-	format(round(usec, count) / 1000) <<
+    statlock.unlock();
+    bs << T("ALL    ") << format(per(count, lusec) * 1000000) <<
+	format(per(usec, count) / 1000) <<
 	format(maxusec / 1000) << format(err) <<
-	format(round(tcount, tusec) * 1000000) <<
-	format(round(tusec, tcount) / 1000) << format(terr) <<
+	format(per(tcount, tusec) * 1000000) <<
+	format(per(tusec, tcount) / 1000) << format(terr) <<
 	format(tminusec / 1000) << format(tmaxusec / 1000) << endl;
-    bs << T("AVG/TOT") << format(round(ops, lusec) * 1000000) <<
-	format(round(usec, ops) / 1000) << format(maxusec / 1000) <<
-	format(err) << format(round(tops, tusec) * 1000000) <<
-	format(round(tusec, tops) / 1000) << format(terr) <<
+    bs << T("AVG/TOT") << format(per(ops, lusec) * 1000000) <<
+	format(per(usec, ops) / 1000) << format(maxusec / 1000) <<
+	format(err) << format(per(tops, tusec) * 1000000) <<
+	format(per(tusec, tops) / 1000) << format(terr) <<
 	format(tminusec / 1000) << format(tmaxusec / 1000) << endl << endl;
     os.write(bs.str(), bs.pcount());
     os.flush();
 }
 
 void HTTPLoad::reset(bool all) {
-    lock.lock();
+    statlock.lock();
     for (const auto &cmd : cmds) {
 	cmd->count = 0;
 	cmd->err = 0;
@@ -634,18 +608,16 @@ void HTTPLoad::reset(bool all) {
 	    cmd->tusec = cmd->tminusec = cmd->tmaxusec = 0;
 	}
     }
+    statlock.unlock();
     usec = 0;
     count = 0;
     if (all) {
 	tusec = 0;
 	tcount = 0;
     }
-    lock.unlock();
 }
 
 void HTTPLoad::uninit(void) {
-    for (const auto &b : bodies)
-	delete [] b.cache;
     bodies.clear();
     cmds.clear();
 }
@@ -735,7 +707,7 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[-s stattime] [-t threads] [-w timeout] cmdfile") << endl;
 	return 1;
     }
-    setvbuf(stdout, NULL, _IOFBF, 4096);
+    setvbuf(stdout, nullptr, _IOFBF, 4096);
     signal(SIGINT, signal_handler);
     signal(SIGHUP, signal_handler);
     if (!wld)

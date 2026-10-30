@@ -24,7 +24,8 @@
 #include "Thread.h"
 
 /*
- * Time, size and count limited LRU Cache
+ * Time, size and count limited LRU Cache. Entries match by 64 bit key hash
+ * only - collisions are not detected
  */
 using lruhash_t = uint64_t;
 
@@ -32,7 +33,7 @@ class BLISTER LRUCacheEntry {
 public:
     LRUCacheEntry(const void *d, ulong s): hash(rapid_hash(d, s)) {}
 
-    __forceinline operator bool() const { return data != nullptr; }
+    __forceinline explicit operator bool() const { return data != nullptr; }
     __forceinline operator lruhash_t() const { return hash; }
     __forceinline msec_t touch(void) const { return msec; }
 
@@ -75,54 +76,50 @@ public:
     C get(const void *data, ulong sz) {
 	C entry(data, sz);
 	lru_list freed;		// NOSONAR: destroyed after lkr unlocks
-	msec_t now = LIKELY(maxtm) ? mticks() : 0;
+	const msec_t tm = maxtm.load(memory_order_relaxed);
+	msec_t now = LIKELY(tm) ? mticks() : 0;
 	FastSpinLocker lkr(lock);
 
-	if (LIKELY(maxtm) && now - last_purge > maxtm / 2) {
+	if (LIKELY(tm) && now - last_purge > tm / 2) {
 	    purge(now, freed);
 	    last_purge = now;
 	}
 	auto it = cache_map.find(entry);
 	if (it != cache_map.end() &&
-	    (!maxtm || now - it->second->touch() <= maxtm)) {
+	    (!tm || now - it->second->touch() <= tm)) {
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
-	    if (LIKELY(maxtm))
+	    if (LIKELY(tm))
 		it->second->touch(now);
 	    return *it->second;
 	}
 	return entry;
     }
     bool put(C &entry, const void *data, ulong sz) {
-	if (UNLIKELY(sz > maxsz)) {
+	if (UNLIKELY(sz > maxsz.load(memory_order_relaxed))) {
 	    entry.data = nullptr;
 	    entry.sz = 0;
 	    return false;
 	}
 
-	msec_t now = maxtm ? mticks() : 0;
-	lru_list freed;
-	shared_ptr<const void> old_data;
+	msec_t now = maxtm.load(memory_order_relaxed) ? mticks() : 0;
+	lru_list freed, node;	// NOSONAR: destroyed after lkr unlocks
 
 	entry.data = shared_ptr<const void>(data, [](const void *p) {
 	    delete [] (const char *)p;
 	});
 	entry.sz = sz;
 	entry.touch(now);
+	node.emplace_front(entry);
 
 	FastSpinLocker lkr(lock);
 	auto [it, added] = cache_map.try_emplace(lruhash_t(entry));
 
-	if (added) {
-	    cache_list.emplace_front(entry);
-	    it->second = cache_list.begin();
-	} else {
-	    C &node = *it->second;
-
-	    old_data = std::move(node.data);
-	    cursz -= node.sz;
-	    node = entry;
-	    cache_list.splice(cache_list.begin(), cache_list, it->second);
+	cache_list.splice(cache_list.begin(), node);
+	if (!added) {
+	    cursz -= it->second->sz;
+	    freed.splice(freed.end(), cache_list, it->second);
 	}
+	it->second = cache_list.begin();
 	cursz += sz;
 	purge(now, freed);
 	return true;
@@ -130,20 +127,24 @@ public:
     void resize(ulong sz, msec_t tm = LRUCACHE_TIME,
 	ulong cnt = LRUCACHE_COUNT) {
 	lru_list freed;
+	msec_t now = tm ? mticks() : 0;
 	FastSpinLocker lkr(lock);
 
-	maxcnt = cnt;
-	maxsz = sz;
-	maxtm = tm;
-	purge(maxtm ? mticks() : 0, freed);
+	maxcnt.store(cnt, memory_order_relaxed);
+	maxsz.store(sz, memory_order_relaxed);
+	maxtm.store(tm, memory_order_relaxed);
+	purge(now, freed);
     }
 
 private:
     SpinLock lock;
     lru_list cache_list;
     lru_map cache_map;
-    ulong cursz = 0, maxcnt, maxsz;
-    msec_t maxtm, last_purge = 0;
+    ulong cursz = 0;
+    msec_t last_purge = 0;
+    // written under lock but read without it in get() / put()
+    atomic<ulong> maxcnt, maxsz;
+    atomic<msec_t> maxtm;
 
     void evict(lru_list &freed) {
 	cursz -= cache_list.back().sz;
@@ -151,13 +152,17 @@ private:
 	freed.splice(freed.end(), cache_list, prev(cache_list.end()));
     }
     void purge(msec_t now, lru_list &freed) {
-	if (maxtm && now) {
+	const ulong cnt = maxcnt.load(memory_order_relaxed);
+	const ulong sz = maxsz.load(memory_order_relaxed);
+	const msec_t tm = maxtm.load(memory_order_relaxed);
+
+	if (tm && now) {
 	    while (!cache_list.empty() &&
-		LIKELY(now - cache_list.back().touch() > maxtm))
+		LIKELY(now - cache_list.back().touch() > tm))
 		evict(freed);
 	}
-	while (UNLIKELY(cursz > maxsz ||
-	    (maxcnt && cache_map.size() > maxcnt)) && !cache_list.empty())
+	while (UNLIKELY(cursz > sz || (cnt && cache_map.size() > cnt)) &&
+	    !cache_list.empty())
 	    evict(freed);
     }
 };

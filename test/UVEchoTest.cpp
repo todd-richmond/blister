@@ -52,7 +52,7 @@ static uint dsz;
 static atomic<uint> gerrs, gops;
 static atomic loops(LLONG_MAX);
 static atomic qflag = false;
-alignas(64) static atomic<usec_t> gusecs;
+alignas(CACHELINE_SZ) static atomic<usec_t> gusecs;
 
 // consumes one unit of the shared loop budget; every completed round trip
 // and every failed attempt counts as one unit, matching echotest's
@@ -120,7 +120,6 @@ struct Worker {
     ulong delay = DELAY;
     uint base = 0;		// global stagger index of first client
     bool do_server = false;
-    bool do_client = false;
 };
 
 static void start_client(EchoClient *c);
@@ -179,6 +178,10 @@ static void on_connect_timeout(uv_timer_t *t) {
     on_io_error((EchoClient *)t->data, T("client connect="), true);
 }
 
+static void on_io_timeout(uv_timer_t *t) {
+    on_io_error((EchoClient *)t->data, T("client read="), true);
+}
+
 // cppcheck-suppress constParameterCallback
 static void alloc_client(uv_handle_t *h, size_t, uv_buf_t *buf) {    // NOSONAR
     const EchoClient *c = (const EchoClient *)h->data;
@@ -195,8 +198,24 @@ static void write_client(EchoClient *c) {
 	return;
     }
     c->begin = Timing::now();
-    c->write_pending = true;
+    // like echotest, every round trip must finish within the timeout
+    uv_timer_start(&c->timer, on_io_timeout, c->worker->tmt, 0);
     c->wbuf = uv_buf_init(dbuf, (unsigned int)dsz);
+
+    // most writes complete synchronously; queue only the remainder
+    int n = uv_try_write((uv_stream_t *)&c->tcp, &c->wbuf, 1);
+
+    if (n == (int)dsz) {
+	dlogt(T("client write="), dsz);
+	return;
+    } else if (n < 0 && n != UV_EAGAIN) {
+	on_io_error(c, T("client write="));
+	return;
+    } else if (n > 0) {
+	c->wbuf.base += n;
+	c->wbuf.len -= (size_t)n;
+    }
+    c->write_pending = true;
     c->writereq.data = c;
     uv_write(&c->writereq, (uv_stream_t *)&c->tcp, &c->wbuf, 1,
 	[](uv_write_t *req, int status) {
@@ -248,6 +267,7 @@ static void on_client_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *) {
     timing_t usec = Timing::now() - c->begin;
 
     c->in = 0;
+    uv_timer_stop(&c->timer);
     if (loop_exit()) {
 	begin_teardown(c);
 	return;
@@ -353,9 +373,22 @@ static void on_server_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *buf) {
     }
 
     uv_buf_t wbuf = uv_buf_init(buf->base, (unsigned int)nread);
+    int n = uv_try_write(s, &wbuf, 1);
 
+    // keep reading when the echo completes synchronously
+    if (n == nread) {
+	dlogt(T("server write="), (uint)n);
+	return;
+    } else if (n < 0 && n != UV_EAGAIN) {
+	dloge(T("server write="), achartotchar(uv_strerror(n)));
+	close_server_conn(sc);
+	return;
+    } else if (n > 0) {
+	wbuf.base += n;
+	wbuf.len -= (size_t)n;
+    }
     uv_read_stop(s);
-    sc->write_len = (uint)nread;
+    sc->write_len = (uint)wbuf.len;
     sc->writereq.data = sc;
     uv_write(&sc->writereq, s, &wbuf, 1, [](uv_write_t *req, int status) {
 	EchoServerConn *conn = (EchoServerConn *)req->data;
@@ -371,8 +404,10 @@ static void on_server_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *buf) {
 }
 
 static void on_new_connection(uv_stream_t *server, int status) {
-    if (status < 0)
+    if (status < 0) {
+	dloge(T("server accept="), achartotchar(uv_strerror(status)));
 	return;
+    }
 
     auto *w = (Worker *)server->data;
     auto *sc = new EchoServerConn;
@@ -408,27 +443,48 @@ static void on_stop(uv_async_t *a) {
 // port was refused. Bind natively with SO_REUSEPORT instead so every worker
 // still gets a duplicate listening socket load-balanced by the kernel.
 #ifndef _WIN32
-static void bind_listener(Handle *listener, const Sockaddr &addr) {
+static int bind_listener(Handle *listener, const Sockaddr &addr) {
     int fd = (int)socket(addr.family(), SOCK_STREAM, 0);
-    int one = 1;
+    int err, one = 1;
 
-    if (fd == -1) {
-	dloge(T("server socket="), achartotchar(strerror(errno)));
-	return;
-    }
+    if (fd == -1)
+	return uv_translate_sys_error(errno);
     setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof (one));
-    if (::bind(fd, addr, addr.size()) == -1) {
-	dloge(T("server bind="), achartotchar(strerror(errno)));
-	close(fd);
-	return;
-    }
-    uv_tcp_open(&listener->tcp, fd);
+    if (::bind(fd, addr, addr.size()) == -1)
+	err = uv_translate_sys_error(errno);
+    else if ((err = uv_tcp_open(&listener->tcp, fd)) == 0)
+	return 0;
+    close(fd);
+    return err;
 }
 #else
-static void bind_listener(Handle *listener, const Sockaddr &addr) {
-    uv_tcp_bind(&listener->tcp, addr, 0);
+static int bind_listener(Handle *listener, const Sockaddr &addr) {
+    return uv_tcp_bind(&listener->tcp, addr, 0);
 }
 #endif
+
+static bool start_listener(Worker *w) {
+    int err;
+
+    if (unixsock) {
+	int fd = dup(unixfd);
+
+	uv_pipe_init(&w->loop, &w->listener.pipe, 0);
+	err = fd == -1 ? uv_translate_sys_error(errno) :
+	    uv_pipe_open(&w->listener.pipe, fd);
+    } else {
+	uv_tcp_init(&w->loop, &w->listener.tcp);
+	err = bind_listener(&w->listener, w->bind_addr);
+    }
+    w->listener.tcp.data = w;
+    if (!err)
+	err = uv_listen((uv_stream_t *)&w->listener, BACKLOG, on_new_connection);
+    if (err) {
+	dloge(T("server listen="), achartotchar(uv_strerror(err)));
+	return false;
+    }
+    return true;
+}
 
 static int run_worker(void *arg) {
     Worker *w = (Worker *)arg;
@@ -437,17 +493,9 @@ static int run_worker(void *arg) {
     uv_async_init(&w->loop, &w->stopper, on_stop);
     w->stopper.data = w;
 
-    if (w->do_server) {
-	if (unixsock) {
-	    uv_pipe_init(&w->loop, &w->listener.pipe, 0);
-	    uv_pipe_open(&w->listener.pipe, dup(unixfd));
-	} else {
-	    uv_tcp_init(&w->loop, &w->listener.tcp);
-	    bind_listener(&w->listener, w->bind_addr);
-	}
-	w->listener.tcp.data = w;
-	uv_listen((uv_stream_t *)&w->listener, BACKLOG, on_new_connection);
-    }
+    // a worker without a listener would only measure refused connects
+    if (w->do_server && !start_listener(w))
+	qflag.store(true, memory_order_relaxed);
     for (size_t i = 0; i < w->clients.size(); i++) {
 	EchoClient *c = w->clients[i];
 	ulong ms = (w->base + i) * w->delay;
@@ -600,7 +648,6 @@ int tmain(int argc, const tchar * const argv[]) {
 	uint count = sockets / threads + (u < sockets % threads ? 1 : 0);
 
 	w.do_server = server;
-	w.do_client = client;
 	w.tmt = tmt;
 	w.wait = wait;
 	w.delay = delay;

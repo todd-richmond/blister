@@ -109,7 +109,7 @@ private:
 
 class BLISTER SMTPClient: nocopy {
 public:
-    SMTPClient();
+    SMTPClient(): sstrm(sock) {}
     virtual ~SMTPClient() = default;
 
     int code(void) const { return atoi<int>(sts.c_str()); }
@@ -120,6 +120,10 @@ public:
     }
     const tstring &message_multi(void) const { return multi; }
     bool multi_find(const tchar *s) const { return multi.contains(s); }
+    // recipients refused by RCPT or, for LMTP, at delivery with the reply
+    const vector<pair<tstring, tstring>> &rejected(void) const {
+	return rejectedv;
+    }
     const tstring &result(void) const { return sts; }
     const vector<tstring> &results(void) const { return resultsv; }
 
@@ -168,6 +172,10 @@ public:
 	const tchar *desc = nullptr, const tchar *encoding = nullptr,
 	const tchar *disp = nullptr, const tchar *name = nullptr);
     bool bdat(const void *p, size_t sz, bool last = true);
+    // send messages with BDAT instead of DATA when the server supports it.
+    // BDAT is faster at every size: small messages are pipelined with the
+    // envelope and large data() calls are sent without copying
+    void chunking(bool enable) { usebdat = enable; }
     bool enddata(void);
     bool quit(void);
     bool rset(void) { pipelined = false; return cmd(T("RSET")); }
@@ -195,6 +203,12 @@ protected:
 private:
     bool add(vector<tstring> &v, const tchar *id);
     bool add(vector<tstring> &v, const RFC822Addr &addrs);
+    bool bigchunk(const void *p, size_t sz, bool dotstuff);
+    bool final(const tchar *c);
+    bool hello(const tchar *c, const tchar *domain);
+    bool reply(void);
+    bool replies(void);
+    bool sendchunk(bool last);
     void recip(const tchar *hdr, const vector<tstring> &v);
     bool downgrade(const tchar *cmd, tstring &id);
     bool canutf8(void) const { return ext_smtputf8 || fstrm; }
@@ -206,6 +220,7 @@ private:
     bool rcptcmd(tstring &id);
     bool startdata(void);
     bool stuff(const void *p, size_t sz);
+    static size_t barelfs(const char *p, const char *end);
     static string base64line(string_view in);
     static void encodedwords(string &out, string_view text);
     static string encodewords(string_view text);
@@ -214,18 +229,28 @@ private:
     static bool punycode(const vector<char32_t> &in, string &out);
     static tstring sasl64(const string &in);
 #ifdef __AVX2__
-    static __m256i stuffhits(const char *p);
+    template<bool dots> static __m256i stuffhits(const char *p);
 #elif defined(__ARM_NEON)
-    static uint8x16_t stuffhits(const char *p);
+    template<bool dots> static uint8x16_t stuffhits(const char *p);
 #endif
-    static const char *stuffscan(const char *p, const char *end,
-	const char *start);
+    template<bool dots> static const char *stuffscan(const char *p,
+	const char *end, const char *start);
     static bool utf8decode(string_view s, vector<char32_t> &cp);
 
     string boundary;
     tstring frm, sub;
-    bool datasent, lmtp, mime;
+    bool datasent = false, lmtp = false, mime = false;
     bool pipelined = false;
+    bool chunked = false, usebdat = true;
+    stringstream bstrm;
+    struct Expect {
+	tstring rcpt;
+	int code;
+	bool delivery;
+    };
+    vector<Expect> expectv;
+    vector<tstring> acceptedv;
+    vector<pair<tstring, tstring>> rejectedv;
     vector<tstring> tov, ccv, bccv, hdrv, resultsv;
 };
 

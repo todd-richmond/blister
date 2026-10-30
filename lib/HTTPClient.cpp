@@ -189,8 +189,7 @@ static bool readline(socketbuf *sb, string &s, size_t &left) {
 static bool sendall(const Socket &sock, string_view req, const void *data,
     ulong datasz, ulong off) {
     iovec iov[2];
-    iovec *v = iov;
-    int cnt = 2;
+    int i = 0;
 
     iov[0].iov_base = (char *)req.data();	// NOSONAR
     iov[0].iov_len = (iovlen_t)req.size();
@@ -199,16 +198,13 @@ static bool sendall(const Socket &sock, string_view req, const void *data,
     for (;;) {
 	long n;
 
-	while (cnt && off >= (ulong)v->iov_len) {
-	    off -= (ulong)v->iov_len;
-	    v++;
-	    cnt--;
-	}
-	if (!cnt)
+	while (i < 2 && off >= (ulong)iov[i].iov_len)
+	    off -= (ulong)iov[i++].iov_len;
+	if (i == 2)
 	    return true;
-	v->iov_base = (char *)v->iov_base + off;
-	v->iov_len -= (iovlen_t)off;
-	if ((n = sock.writev(v, cnt)) <= 0)
+	iov[i].iov_base = (char *)iov[i].iov_base + off;
+	iov[i].iov_len -= (iovlen_t)off;
+	if ((n = sock.writev(iov + i, 2 - i)) <= 0)
 	    return false;
 	off = (ulong)n;
     }

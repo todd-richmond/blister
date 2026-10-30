@@ -28,6 +28,7 @@
 #include <fstream>
 #include <memory>
 #include <random>
+#include <ranges>
 #include <unordered_map>
 #include "Log.h"
 #include "SMTPClient.h"
@@ -36,6 +37,7 @@ using attrmap = unordered_map<tstring, tstring, strhash, streq>;
 
 static constexpr const tchar *default_host = T("localhost:25");
 static atomic_bool qflag = false, rflag = false;
+static bool dflag = false, pflag = false;
 
 class SMTPLoad: public Thread {
 public:
@@ -51,23 +53,48 @@ public:
     static void pause(ulong msec) { lock.lock(); cv.wait(msec); lock.unlock(); }
 
 private:
+    enum class Op: uchar {
+	Auth, Bcc, Body, Cc, Cmd, Connect, Data, Ehlo, From, Header, Helo,
+	Lhlo, Quit, Rcpt, Rset, Sleep, Subject, Vrfy, Xclient
+    };
+
     class LoadCmd {
     public:
 	LoadCmd(const tchar *comment, const tchar *command, const tchar
-	    *argument, const tchar *status = nullptr): cmt(comment), cmd(command),
-	    arg(argument ? argument : T("")),
-	    sts((ushort)(status ? ttoi(status) : 200)), usec(0), tusec(0),
-	    minusec(0), tminusec(0), maxusec(0), tmaxusec(0), count(0),
-	    tcount(0), err(0), terr(0) {
+	    *argument, const tchar *status = nullptr): arg(argument ? argument :
+	    T("")), cmd(command), cmt(comment),
+	    sts((ushort)(status ? ttoi(status) : 200)),
+	    vars(arg.contains(T("$("))) {
 	    for (auto &c : cmd)
-		c = (char)tolower(c);
+		c = (tchar)totlower(c);
+
+	    const auto *it = ranges::find(ops, tstring_view(cmd),
+		&pair<tstring_view, Op>::first);
+
+	    op = it == ranges::end(ops) ? Op::Cmd : it->second;
 	}
 
-	tstring cmt, cmd, arg;
-	ushort sts;
 	Sockaddr addr;
-	ulong usec, tusec, minusec, tminusec, maxusec, tmaxusec;
-	ulong count, tcount, err, terr;
+	tstring arg, cmd, cmt;
+	ulong count = 0, err = 0, tcount = 0, terr = 0;
+	ulong maxusec = 0, minusec = 0, tmaxusec = 0, tminusec = 0, tusec = 0,
+	    usec = 0;
+	Op op;
+	static constexpr pair<tstring_view, Op> ops[] = {
+	    { T("auth"), Op::Auth }, { T("bcc"), Op::Bcc },
+	    { T("body"), Op::Body }, { T("cc"), Op::Cc },
+	    { T("connect"), Op::Connect }, { T("data"), Op::Data },
+	    { T("ehlo"), Op::Ehlo }, { T("from"), Op::From },
+	    { T("hdr"), Op::Header }, { T("header"), Op::Header },
+	    { T("helo"), Op::Helo }, { T("lhlo"), Op::Lhlo },
+	    { T("quit"), Op::Quit }, { T("rcpt"), Op::Rcpt },
+	    { T("rset"), Op::Rset }, { T("sleep"), Op::Sleep },
+	    { T("subj"), Op::Subject }, { T("subject"), Op::Subject },
+	    { T("to"), Op::Rcpt }, { T("vrfy"), Op::Vrfy },
+	    { T("xclient"), Op::Xclient }
+	};
+	ushort sts;
+	bool vars;			// arg has $() for per message values
 
 	void complete(bool status, ulong diff) {
 	    count++;
@@ -78,77 +105,49 @@ private:
 	    }
 	    usec += diff;
 	    tusec += diff;
-	    if (!minusec || diff < minusec)
-		minusec = diff;
-	    if (diff > maxusec)
-		maxusec = diff;
-	    if (!tminusec || diff < tminusec)
-		tminusec = diff;
-	    if (diff > tmaxusec)
-		tmaxusec = diff;
+	    minusec = minusec ? min(minusec, diff) : diff;
+	    maxusec = max(maxusec, diff);
+	    tminusec = tminusec ? min(tminusec, diff) : diff;
+	    tmaxusec = max(tmaxusec, diff);
 	}
     };
-
-    ulong id;
-    static Lock lock;
-    static Condvar cv;
-    static tchar format_buf[32];
-    static bool ruser;
-    static ulong muser;
-    static uint mthread;
-    static uint to;
-    static atomic_long remain;
-    static uint threads;
-    static attrmap vars;
     struct BodyFile {
+	unique_ptr<char[]> cache;
 	tstring path;
 	ulong size = 0;
-	char *cache = nullptr;
     };
-    static ulong bodycachesz;
-    static vector<BodyFile> bodies;
-    static bool allfiles;
-    static int filecnt;
-    static uint nextfile;
-    static uint startfile;
-    static atomic<ulong> usec, tusec, count, tcount;
-    static vector<unique_ptr<LoadCmd>> cmds;
+
+    static inline bool allfiles = false, needid = false, needpass = false,
+	needuser = false, ruser = false;
+    static inline vector<BodyFile> bodies;
+    static inline vector<unique_ptr<LoadCmd>> cmds;
+    static inline atomic<ulong> count = 0, tcount = 0, tusec = 0, usec = 0;
+    static inline Lock lock;		// before cv which uses it
+    static inline Condvar cv{lock};
+    ulong id;
+    static inline uint mthread = 0, startfile = 0, threads = 0, to = 0;
+    static inline ulong muser = 0;
+    static inline atomic<uint> nextfile = 0;
+    static inline atomic_long remain = 0;
+    static inline SpinLock statlock{SPIN_LIMIT};
+    static inline attrmap vars;
 
     int onStart(void) override;
-    static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
-    static const tchar *format(ulong u);
-    static const tchar *format(float f);
-    static char *load(uint idx, usec_t &iousec);
     static void add(const tchar *file);
+    static bool expand(tchar *str, size_t buf_size, const attrmap &amap = vars);
+    static tstring format(ulong u);
+    static tstring format(float f);
+    static const char *load(uint idx, usec_t &iousec, unique_ptr<char[]> &buf);
     static uint next(void);
+    static unique_ptr<char[]> read(const BodyFile &body);
 };
-
-Lock SMTPLoad::lock;
-Condvar SMTPLoad::cv(lock);
-tchar SMTPLoad::format_buf[32];
-uint SMTPLoad::threads;
-ulong SMTPLoad::muser;
-uint SMTPLoad::mthread;
-bool SMTPLoad::ruser;
-atomic_long SMTPLoad::remain;
-uint SMTPLoad::to;
-attrmap SMTPLoad::vars;
-ulong SMTPLoad::bodycachesz;
-vector<SMTPLoad::BodyFile> SMTPLoad::bodies;
-bool SMTPLoad::allfiles;
-int SMTPLoad::filecnt;
-uint SMTPLoad::nextfile;
-uint SMTPLoad::startfile = 0;
-atomic<ulong> SMTPLoad::usec, SMTPLoad::tusec;
-atomic<ulong> SMTPLoad::count, SMTPLoad::tcount;
-vector<unique_ptr<SMTPLoad::LoadCmd>> SMTPLoad::cmds;
 
 bool SMTPLoad::expand(tchar *str, size_t buf_size, const attrmap &amap) {
     const tchar *orig = str;
     tchar *p;
     tstring::size_type len;
 
-    while ((p = tstrstr(str, T("$("))) != NULL) {
+    while ((p = tstrstr(str, T("$("))) != nullptr) {
 	tchar *end = tstrchr(p, ')');
 
 	if (p != str && p[-1] == '$') {	    // $$() -> $()
@@ -195,8 +194,6 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
     ruser = randuser;
     to = timeout;
     allfiles = all;
-    bodycachesz = (loops == 1) ? 0 : cachesz;
-    filecnt = fcnt;
     if (!is) {
 	tcerr << T("invalid file: ") << file << endl;
 	return false;
@@ -217,19 +214,28 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	}
     }
     if (allfiles && !bodies.empty()) {
-	if (filecnt > 0 && (uint)filecnt < (uint)bodies.size())
-	    bodies.resize((size_t)filecnt);
-	else if (filecnt < 0 && (uint)(-filecnt) < (uint)bodies.size())
-	    startfile = (uint)bodies.size() - (uint)(-filecnt);
-	nextfile = startfile;
+	if (fcnt > 0 && (uint)fcnt < (uint)bodies.size())
+	    bodies.resize((size_t)fcnt);
+	else if (fcnt < 0 && (uint)(-fcnt) < (uint)bodies.size())
+	    startfile = (uint)bodies.size() - (uint)(-fcnt);
 	remain = remain * (long)(bodies.size() - startfile);
+    }
+    // cache files up front so senders never wait on disk or a lock
+    if (loops != 1) {
+	for (auto &b : bodies | views::drop(startfile)) {
+	    if (b.size > cachesz)
+		continue;
+	    if (!(b.cache = read(b)))
+		return false;
+	    cachesz -= b.size;
+	}
     }
     vars[T("host")] = host ? host : default_host;
     if (!addr.set(host ? host : default_host)) {
 	tcerr << T("invalid host: ") << vars[T("host")] << endl;
 	return false;
     }
-    while (is.getline(buf, (streamsize)std::size(buf))) {
+    while (is.getline(buf, (streamsize)size(buf))) {
 	line++;
 	if (!buf[0] || buf[0] == '#' || buf[0] == '/')
 	    continue;
@@ -244,7 +250,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	    continue;
 	if (*cmt == '*') {
 	    cmt++;
-	    if ((cmd = tstrtok(NULL, T(" \t"))) == NULL) {
+	    if ((cmd = tstrtok(nullptr, T(" \t"))) == nullptr) {
 		tcerr << T("invalid syntax: line ") << line << endl;
 		return false;
 	    }
@@ -253,7 +259,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	}
 	if (istdigit(*cmd)) {
 	    status = cmd;
-	    if ((cmd = tstrtok(NULL, T(" \t"))) == NULL) {
+	    if ((cmd = tstrtok(nullptr, T(" \t"))) == nullptr) {
 		tcerr << T("invalid syntax: line ") << line << endl;
 		return false;
 	    }
@@ -261,7 +267,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	if (!tstricmp(cmd, T("var"))) {
 	    tchar *attr, *val;
 
-	    attr = tstrtok(NULL, T("="));
+	    attr = tstrtok(nullptr, T("="));
 	    if (!attr) {
 		tcerr << T("invalid attribute: line ") << line << endl;
 		return false;
@@ -271,7 +277,7 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 		*p-- = '\0';
 	    if (host && !tstricmp(attr, T("host")))
 		continue;
-	    val = tstrtok(NULL, T(""));
+	    val = tstrtok(nullptr, T(""));
 	    if (!val) {
 		tcerr << T("invalid value: line ") << line << endl;
 		return false;
@@ -289,231 +295,247 @@ bool SMTPLoad::init(const tchar *host, uint maxthread, ulong maxuser,
 	    arg = nullptr;
 	else
 	    arg++;
-	if (!arg && bodies.empty() &&
-	    (!tstricmp(cmd, T("body")) || !tstricmp(cmd, T("data")))) {
-	    tcerr << T("missing text for ") << cmd << endl;
+
+	auto lcmd = make_unique<LoadCmd>(cmt, cmd, arg, status);
+
+	if (bodies.empty() && (lcmd->op == Op::Data || (lcmd->op ==
+	    Op::Body && !arg))) {
+	    tcerr << T("missing body file for ") << cmd << endl;
 	    return false;
 	}
-	auto lcmd = make_unique<LoadCmd>(cmt, cmd, arg, status);
+	// per message values are only formatted when a command uses them
+	needid = needid || lcmd->arg.contains(T("$(id)"));
+	needpass = needpass || lcmd->arg.contains(T("$(pass)"));
+	needuser = needuser || lcmd->arg.contains(T("$(user)"));
 	lcmd->addr = addr;
 	cmds.push_back(std::move(lcmd));
     }
     return true;
 }
 
-char *SMTPLoad::load(uint idx, usec_t &iousec) {
-    int fd;
-    char *ret;
-    const tchar *file = bodies[idx].path.c_str();
-    ulong filelen = bodies[idx].size;
+unique_ptr<char[]> SMTPLoad::read(const BodyFile &body) {
+    int fd = open(tchartoachar(body.path.c_str()), O_RDONLY | O_BINARY |
+	O_SEQUENTIAL);
+    unique_ptr<char[]> ret;
 
-    lock.lock();
-    ret = bodies[idx].cache;
-    lock.unlock();
-    if (ret) {
-	iousec = 0;
-	return ret;
-    }
-    ret = nullptr;
-    iousec = uticks();
-    if ((fd = open(tchartoachar(file), O_RDONLY | O_BINARY | O_SEQUENTIAL)) !=
-	-1) {
-	ret = new char[(size_t)filelen + 1];
-	if (::read(fd, ret, filelen) == (int)filelen) {
-	    ret[filelen] = '\0';
-	    lock.lock();
-	    if (!bodies[idx].cache && filelen <= bodycachesz) {
-		bodies[idx].cache = ret;
-		bodycachesz -= filelen;
-	    }
-	    lock.unlock();
-	} else {
-	    delete [] ret;
-	    ret = nullptr;
-	}
+    if (fd != -1) {
+	ret = make_unique_for_overwrite<char[]>((size_t)body.size + 1);
+	if (::read(fd, ret.get(), body.size) == (int)body.size)
+	    ret[body.size] = '\0';
+	else
+	    ret.reset();
 	close(fd);
     }
     if (!ret)
-	tcerr << T("unable to read body file: ") << file << endl;
-    iousec = uticks() - iousec;
+	tcerr << T("unable to read body file: ") << body.path << endl;
     return ret;
+}
+
+// a cached body or one read into buf
+const char *SMTPLoad::load(uint idx, usec_t &iousec, unique_ptr<char[]> &buf) {
+    const BodyFile &body = bodies[idx];
+
+    if (body.cache) {
+	iousec = 0;
+	return body.cache.get();
+    }
+    iousec = uticks();
+    buf = read(body);
+    iousec = uticks() - iousec;
+    return buf.get();
 }
 
 void SMTPLoad::add(const tchar *file) {
     namespace fs = std::filesystem;
     std::error_code ec;
     auto sz = fs::file_size(fs::path(file), ec);
+
     if (ec)
 	tcerr << T("invalid body file: ") << file << endl;
     else
-	bodies.push_back({.path = tstring(file), .size = (ulong)sz});
+	bodies.push_back({.cache = {}, .path = tstring(file), .size = (ulong)sz});
 }
 
 uint SMTPLoad::next(void) {
-    uint ret;
-
-    lock.lock();
-    ret = nextfile++;
-    if (nextfile >= (uint)bodies.size())
-	nextfile = startfile;
-    lock.unlock();
-    return ret;
+    return startfile + nextfile.fetch_add(1, memory_order_relaxed) %
+	((uint)bodies.size() - startfile);
 }
 
 int SMTPLoad::onStart(void) {
     tchar buf[1024], data[4096];
-    ulong diff;
     attrmap lvars;
     SMTPClient sc;
-    usec_t start, end, last, now, io;
     thread_local mt19937 rng(random_device {}());
     thread_local uniform_int_distribution<ulong> dist;
+    const auto pick = [&] {
+	return allfiles ? next() : (uint)(dist(rng) % bodies.size());
+    };
+    const auto setvar = [&](const tchar *var, const tchar *fmt) {
+	if (auto it = vars.find(var); it != vars.end())
+	    fmt = it->second.c_str();
+	tsprintf(data, fmt, id);			// NOSONAR
+	lvars[var] = data;
+    };
+
+    sc.chunking(!dflag);
     if (id > Processor::count())
 	msleep(dist(rng) % 1000U * ((mthread / 20) + 1));
-    while (!qflag) {
-	const tchar *p;
-	ulong smsec = 0;
+    while (!qflag && remain.fetch_sub(1, memory_order_relaxed) > 0) {
+	ulong cusec = 0, diff, smsec = 0;
 	bool ret = false;
 	ulong tmpid = ruser ? dist(rng) << 14 ^ dist(rng) : id;
-	long tmp;
+	usec_t start, last, io = 0;
 
-	tmp = remain.fetch_sub(1, memory_order_relaxed);
-	if (tmp <= 0)
-	    break;
 	id = tmpid ? tmpid % (muser ? muser : id) : 0;	// NOLINT
-	tsprintf(data, T("%lu"), id);
-	lvars[T("id")] = data;
-	if (auto ait = vars.find(T("user")); ait == vars.end())
-	    tsprintf(data, T("user_%06lu"), id);
-	else
-	    tsprintf(data, ait->second.c_str(), id);	// NOSONAR
-	lvars[T("user")] = data;
-	if (auto ait = vars.find(T("pass")); ait == vars.end())
-	    tsprintf(data, T("pass_%06lu"), id);
-	else
-	    tsprintf(data, ait->second.c_str(), id);	// NOSONAR
-	lvars[T("pass")] = data;
+	if (needid)
+	    lvars[T("id")] = std::format(T("{}"), id);
+	if (needuser)
+	    setvar(T("user"), T("user_%06lu"));
+	if (needpass)
+	    setvar(T("pass"), T("pass_%06lu"));
 	start = last = uticks();
-	io = 0;
 	for (const auto &cmd : cmds) {
+	    const tchar *arg = cmd->arg.c_str();
+
 	    if (qflag)
 		break;
-	    ret = false;
-	    if (!tstricmp(cmd->cmd.c_str(), T("sleep"))) {
+	    if (cmd->op == Op::Sleep) {
 		ulong len;
 
-		p = cmd->arg.c_str();
-		if (*p == '%') {
-		    len = atoi<ulong>(p + 1);
+		if (*arg == '%') {
+		    len = atoi<ulong>(arg + 1);
 		    if (len)
 			len = (uint)(dist(rng) % len);
 		} else {
-		    len = atoi<ulong>(p);
+		    len = atoi<ulong>(arg);
 		}
 		smsec += len;
 		msleep(len);
 		last = uticks();
 		io = 0;
 		continue;
-	    } else if (cmd->arg.length() < std::size(buf)) {
-		tstrcpy(buf, cmd->arg.c_str());
-		ret = expand(buf, size(buf), lvars);
 	    }
-	    if (!ret) {
-		// continue
-	    } else if (cmd->cmd == T("connect")) {
-		ret = sc.connect(cmd->addr, to);
-	    } else if (cmd->cmd == T("auth")) {
-		tstring auth;
-
-		p = tstrchr(buf, ' ');
-		if (p) {
-		    while (istspace(*p))
-			p++;
-		    auth.assign(buf, (tstring::size_type)(p - buf));
-		    ret = sc.auth(auth.c_str(), p + 1);
-		} else {
-		    ret = false;
+	    ret = true;
+	    if (cmd->vars) {
+		ret = cmd->arg.size() < size(buf);
+		if (ret) {
+		    tstrcpy(buf, arg);
+		    ret = expand(buf, size(buf), lvars);
+		    arg = buf;
 		}
-	    } else if (cmd->cmd == T("ehlo")) {
-		ret = sc.ehlo(buf);
-	    } else if (cmd->cmd == T("helo")) {
-		ret = sc.helo(buf);
-	    } else if (cmd->cmd == T("lhlo")) {
-		ret = sc.lhlo(buf);
-	    } else if (cmd->cmd == T("xclient")) {
-		ret = sc.xclient(buf);
-	    } else if (cmd->cmd == T("from")) {
-		ret = sc.from(buf);
-	    } else if (cmd->cmd == T("rcpt") || cmd->cmd == T("to")) {
-		ret = sc.to(buf);
-	    } else if (cmd->cmd == T("bcc")) {
-		ret = sc.bcc(buf);
-	    } else if (cmd->cmd == T("cc")) {
-		ret = sc.cc(buf);
-	    } else if (cmd->cmd == T("hdr") || cmd->cmd == T("header")) {
-		sc.header(buf);
-		ret = true;
-	    } else if (cmd->cmd == T("rset")) {
-		ret = sc.rset();
-	    } else if (cmd->cmd == T("subj") || cmd->cmd == T("subject")) {
-		sc.subject(buf);
-		ret = true;
-	    } else if (cmd->cmd == T("body")) {
-		if (buf[0] || bodies.empty()) {
-		    ret = sc.data(false, buf) && sc.enddata();
-		} else {
-		    uint u = allfiles ? next() : ((uint)dist(rng) % (uint)bodies.size());
-		    char *d = load(u, io);
+	    }
+	    if (ret) {
+		switch (cmd->op) {
+		case Op::Auth:
+		    if (const tchar *p = tstrchr(arg, ' '); p) {
+			tstring user(arg, p);
 
-		    if (d) {
-			ret = sc.data(false, achartotchar(d)) &&
-			    sc.enddata();
-			if (d != bodies[u].cache)
-			    delete [] d;
+			while (istspace(*p))
+			    p++;
+			ret = sc.auth(user.c_str(), p);
+		    } else {
+			ret = false;
 		    }
-		}
-	    } else if (cmd->cmd == T("data")) {
-		uint u = allfiles ? next() : ((uint)dist(rng) % (uint)bodies.size());
-		char *d = load(u, io);
+		    break;
+		case Op::Bcc:
+		    ret = sc.bcc(arg);
+		    break;
+		case Op::Body:
+		    if (*arg || bodies.empty()) {
+			ret = sc.data(false, arg) && sc.enddata();
+			break;
+		    }
+		    [[fallthrough]];
+		case Op::Data: {
+		    unique_ptr<char[]> rbuf;
+		    uint u = pick();
+		    const char *d = load(u, io, rbuf);
 
-		if (d) {
-		    ret = sc.data(d, bodies[u].size) && sc.enddata();
-		    if (d != bodies[u].cache)
-			delete [] d;
+		    ret = d && (cmd->op == Op::Body ? sc.data(false,
+			achartotchar(d)) : sc.data(d, bodies[u].size)) &&
+			sc.enddata();
+		    break;
 		}
-	    } else if (cmd->cmd == T("vrfy")) {
-		ret = sc.vrfy(buf);
-	    } else if (cmd->cmd == T("quit")) {
-		ret = sc.quit();
-	    } else {
-		ret = sc.cmd(cmd->cmd.c_str(), buf[0] ? buf : nullptr);
+		case Op::Cc:
+		    ret = sc.cc(arg);
+		    break;
+		case Op::Cmd:
+		    ret = sc.cmd(cmd->cmd.c_str(), *arg ? arg : nullptr);
+		    break;
+		case Op::Connect:
+		    ret = sc.connect(cmd->addr, to);
+		    break;
+		case Op::Ehlo:
+		    ret = sc.ehlo(arg);
+		    break;
+		case Op::From:
+		    if (pflag)
+			sc.pipeline();
+		    ret = sc.from(arg);
+		    break;
+		case Op::Header:
+		    sc.header(arg);
+		    break;
+		case Op::Helo:
+		    ret = sc.helo(arg);
+		    break;
+		case Op::Lhlo:
+		    ret = sc.lhlo(arg);
+		    break;
+		case Op::Quit:
+		    ret = sc.quit();
+		    break;
+		case Op::Rcpt:
+		    ret = sc.to(arg);
+		    break;
+		case Op::Rset:
+		    ret = sc.rset();
+		    break;
+		case Op::Sleep:
+		    break;
+		case Op::Subject:
+		    sc.subject(arg);
+		    break;
+		case Op::Vrfy:
+		    ret = sc.vrfy(arg);
+		    break;
+		case Op::Xclient:
+		    ret = sc.xclient(arg);
+		    break;
+		}
 	    }
-	    now = uticks();
+
+	    usec_t now = uticks();
+
 	    diff = (ulong)(now - last - io);
-	    usec += diff;
+	    cusec += diff;
 	    last = now;
 	    io = 0;
-	    lock.lock();
+	    statlock.lock();
 	    cmd->complete(ret, diff);
-	    lock.unlock();
+	    statlock.unlock();
+	    if (ret && pflag && (cmd->op == Op::Body || cmd->op == Op::Data)) {
+		for (const auto &r : sc.rejected())
+		    dlog << Log::Warn << Log::cmd(T("rcpt")) << Log::kv(T("arg"),
+			r.first) << Log::kv(T("result"), r.second) << endlog;
+	    }
 	    if (!ret) {
 		dlog << Log::Err << Log::cmd(cmd->cmd) << Log::kv(T("arg"),
-		    buf) << Log::kv(T("status"), sc.code()) <<
+		    arg) << Log::kv(T("status"), sc.code()) <<
 		    Log::kv(T("message"), sc.message()) <<
 		    Log::kv(T("duration"), (diff / 1000)) <<
 		    Log::kv(T("result"), sc.result()) << endlog;
 		break;
 	    } else if (dlog.level() >= Log::Info) {
 		dlog << Log::Info << Log::cmd(cmd->cmd) << Log::kv(T("arg"),
-		    buf) << Log::kv(T("status"), sc.code()) <<
+		    arg) << Log::kv(T("status"), sc.code()) <<
 		    Log::kv(T("message"), sc.message()) <<
 		    Log::kv(T("duration"), (diff / 1000)) << endlog;
 	    }
 	}
 	sc.close();
-	end = uticks();
-	diff = (ulong)(end - start);
+	diff = (ulong)(uticks() - start);
+	usec += cusec;
 	tusec += diff - smsec * 1000;
 	++count;
 	++tcount;
@@ -526,37 +548,31 @@ int SMTPLoad::onStart(void) {
     return 0;
 }
 
-const tchar *SMTPLoad::format(ulong u) {
-    tsprintf(format_buf, T(" %7lu"), u);
-    return format_buf;
-}
+tstring SMTPLoad::format(ulong u) { return std::format(T(" {:7}"), u); }
 
-const tchar *SMTPLoad::format(float f) {
-    WARN_DISABLE(26467)
-    if (f - 0.0F < FLT_EPSILON)
-	tstrcpy(format_buf, T("       0"));
+tstring SMTPLoad::format(float f) {
+    if (f < FLT_EPSILON)
+	return T("       0");
     else if (f >= 100)
-	tsprintf(format_buf, T(" %7lu"), (ulong)round(f));
+	return std::format(T(" {:7}"), lround(f));
     else
-	tsprintf(format_buf, T(" %7.2g"), (double)f);
-    return format_buf;
+	return std::format(T(" {:7.2g}"), f);
 }
 
-static inline float round(ulong count, ulong div) {
-    return div ? (float)count / ((float)div * 1.0F) : 0;
+static inline float per(ulong count, ulong div) {
+    return div ? (float)count / (float)div : 0;
 }
 
 void SMTPLoad::print(tostream &os, usec_t last) {
-    tchar buf[32];
     bufferstream<tchar> bs;
     ulong lusec = (ulong)(uticks() - last);
     ulong minusec = 0, tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0;
 
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS MINMSEC MAXMSEC") << endl;
-    lock.lock();
+    statlock.lock();
     for (const auto &cmd : cmds) {
-	if (!tstricmp(cmd->cmd.c_str(), T("sleep")))
+	if (cmd->op == Op::Sleep)
 	    continue;
 	ops += cmd->count;
 	tops += cmd->tcount;
@@ -570,32 +586,33 @@ void SMTPLoad::print(tostream &os, usec_t last) {
 	    tminusec = cmd->tminusec;
 	if (cmd->tmaxusec > tmaxusec)
 	    tmaxusec = cmd->tmaxusec;
-	tsprintf(buf, T("%-7s"), cmd->cmd.c_str());
-	bs << buf << format(round(cmd->count, lusec) * 1000000) <<
-	    format(round(cmd->usec, cmd->count) / 1000) <<
+	bs << std::format(T("{:<7}"), cmd->cmd) <<
+	    format(per(cmd->count, lusec) * 1000000) <<
+	    format(per(cmd->usec, cmd->count) / 1000) <<
 	    format(cmd->maxusec / 1000) << format(cmd->err) <<
-	    format(round(cmd->tcount, tusec) * 1000000) <<
-	    format(round(cmd->tusec, cmd->tcount) / 1000) <<
+	    format(per(cmd->tcount, tusec) * 1000000) <<
+	    format(per(cmd->tusec, cmd->tcount) / 1000) <<
 	    format(cmd->terr) << format(cmd->tminusec / 1000) <<
 	    format(cmd->tmaxusec / 1000) << endl;
     }
-    lock.unlock();
-    bs << T("ALL    ") << format(round(count, lusec) * 1000000) <<
-	format(round(usec, count) / 1000) <<
+    statlock.unlock();
+    bs << T("ALL    ") << format(per(count, lusec) * 1000000) <<
+	format(per(usec, count) / 1000) <<
 	format(maxusec / 1000) << format(err) <<
-	format(round(tcount, tusec) * 1000000) <<
-	format(round(tusec, tcount) / 1000) << format(terr) <<
+	format(per(tcount, tusec) * 1000000) <<
+	format(per(tusec, tcount) / 1000) << format(terr) <<
 	format(tminusec / 1000) << format(tmaxusec / 1000) << endl;
-    bs << T("AVG/TOT") << format(round(ops, lusec) * 1000000) <<
-	format(round(usec, ops) / 1000) << format(maxusec / 1000) <<
-	format(err) << format(round(tops, tusec) * 1000000) <<
-	format(round(tusec, tops) / 1000) << format(terr) <<
+    bs << T("AVG/TOT") << format(per(ops, lusec) * 1000000) <<
+	format(per(usec, ops) / 1000) << format(maxusec / 1000) <<
+	format(err) << format(per(tops, tusec) * 1000000) <<
+	format(per(tusec, tops) / 1000) << format(terr) <<
 	format(tminusec / 1000) << format(tmaxusec / 1000) << endl << endl;
     os.write(bs.str(), bs.pcount());
     os.flush();
 }
 
 void SMTPLoad::reset(bool all) {
+    statlock.lock();
     for (const auto &cmd : cmds) {
 	cmd->count = 0;
 	cmd->err = 0;
@@ -606,6 +623,7 @@ void SMTPLoad::reset(bool all) {
 	    cmd->tusec = cmd->tminusec = cmd->tmaxusec = 0;
 	}
     }
+    statlock.unlock();
     usec = 0;
     count = 0;
     if (all) {
@@ -615,8 +633,6 @@ void SMTPLoad::reset(bool all) {
 }
 
 void SMTPLoad::uninit(void) {
-    for (const auto &b : bodies)
-	delete [] b.cache;
     bodies.clear();
     cmds.clear();
 }
@@ -662,12 +678,16 @@ int tmain(int argc, tchar *argv[]) {
 	    bodyfile = argv[++i];
 	} else if (!tstricmp(argv[i], T("-c"))) {
 	    cachesz = atoi<ulong>(argv[++i]);
+	} else if (!tstricmp(argv[i], T("-d"))) {
+	    dflag = true;
 	} else if (!tstricmp(argv[i], T("-h"))) {
 	    host = argv[++i];
 	} else if (!tstricmp(argv[i], T("-l"))) {
 	    loops = atoi<long>(argv[++i]);
 	} else if (!tstricmp(argv[i], T("-m"))) {
 	    maxuser = atoi<ulong>(argv[++i]);
+	} else if (!tstricmp(argv[i], T("-p"))) {
+	    pflag = true;
 	} else if (!tstricmp(argv[i], T("-q"))) {
 	    dlog.level(Log::Level(dlog.level() - 1));
 	} else if (!tstricmp(argv[i], T("-r"))) {
@@ -694,12 +714,12 @@ int tmain(int argc, tchar *argv[]) {
 	if (!program)
 	    program = tstrrchr(argv[0], '\\');
 	tcerr << T("usage: ") << (program ? program + 1 : argv[0]) <<
-	    T(" [-a [numfiles]] [-b bodyfile|bodydir] [-c cachemb]\n")
-	    T("\t[-h host[:port]] [-l loops] [-m maxuser] [-q|-v]* [-r]\n")
+	    T(" [-a [numfiles]] [-b bodyfile|bodydir] [-c cachemb] [-d]\n")
+	    T("\t[-h host[:port]] [-l loops] [-m maxuser] [-p] [-q|-v]* [-r]\n")
 	    T("\t[-s stattime] [-t threads] [-w timeout] cmdfile") << endl;
 	return 1;
     }
-    setvbuf(stdout, NULL, _IOFBF, 4096);
+    setvbuf(stdout, nullptr, _IOFBF, 4096);
     signal(SIGINT, signal_handler);
     signal(SIGHUP, signal_handler);
     if (!wld)

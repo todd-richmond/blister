@@ -272,7 +272,7 @@ int read(int fd, void *buf, uint len) {
  */
 long readv(int fd, iovec *io, int num) {
     char sbuf[4096];
-    char *buf = sbuf, *p;
+    char *buf;
     ullong total = 0;
     long in = 0;
 
@@ -293,14 +293,15 @@ long readv(int fd, iovec *io, int num) {
 	}
 	return in;
     }
-    if (total > sizeof (sbuf) && (buf = malloc((size_t)total)) == NULL) {
+    buf = total > sizeof (sbuf) ? malloc((size_t)total) : sbuf;
+    if (buf == NULL) {
 	errno = ENOMEM;
 	return -1;
     }
     if ((in = read(fd, buf, (uint)total)) > 0) {
 	ulong left = (ulong)in;
+	char *p = buf;
 
-	p = buf;
 	for (int i = 0; left; i++) {
 	    ulong n = io[i].iov_len < left ? io[i].iov_len : left;
 

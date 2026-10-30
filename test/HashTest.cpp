@@ -404,6 +404,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (map_iordered_hetero.contains(tstring_view(T("nokey"))))
 	    fail(T("FAIL: Negative case-insensitive heterogeneous lookup with ordered map"));
     }
+WARN_PUSH_DISABLE(-Warray-bounds)	// false positive
     // Partially filled arrays bind to the array overloads -- regression test
     // for hashing N - 1 chars instead of the actual string length
     {
@@ -412,14 +413,14 @@ int tmain(int argc, const tchar * const argv[]) {
 	const tchar *bufp = buf;
 
 	tests++;
-	if (strhash{}(buf) != strhash{}(T("key")) || strhash{}(buf) !=
-	    strhash{}(bufp))
+	if (strhash()(buf) != strhash()(T("key")) || strhash()(buf) !=
+	    strhash()(bufp))
 	    fail(T("FAIL: strhash mutable buffer test"));
 	tests++;
-	if (strihash{}(buf) != strihash{}(T("KEY")))
+	if (strihash()(buf) != strihash()(T("KEY")))
 	    fail(T("FAIL: strihash mutable buffer test"));
 	tests++;
-	if (striasciihash{}(buf) != striasciihash{}(T("KEY")))
+	if (striasciihash()(buf) != striasciihash()(T("KEY")))
 	    fail(T("FAIL: striasciihash mutable buffer test"));
 	unordered_map<tstring, tstring, strhash, streq> map_buf;
 	map_buf[T("key")] = T("value");
@@ -427,6 +428,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (!map_buf.contains(buf))
 	    fail(T("FAIL: Heterogeneous lookup with mutable buffer"));
     }
+WARN_POP()
     // Every key representation must hash identically across the 4 char
     // unrolled loop boundaries
     {
@@ -452,12 +454,12 @@ int tmain(int argc, const tchar * const argv[]) {
     {
 	tcout << T("Testing ASCII case folding range...\n");
 	tests++;
-	if (striasciihash{}(T("@")) == striasciihash{}(T("`")) ||
-	    strihash{}(T("[")) == strihash{}(T("{")))
+	if (striasciihash()(T("@")) == striasciihash()(T("`")) ||
+	    strihash()(T("[")) == strihash()(T("{")))
 	    fail(T("FAIL: ASCII fold outside A-Z test"));
 	tests++;
-	if (striasciihash{}(T("A")) != striasciihash{}(T("a")) ||
-	    striasciihash{}(T("Z")) != striasciihash{}(T("z")))
+	if (striasciihash()(T("A")) != striasciihash()(T("a")) ||
+	    striasciihash()(T("Z")) != striasciihash()(T("z")))
 	    fail(T("FAIL: ASCII fold A-Z test"));
     }
     // rapid_hash must be constexpr and match the void * runtime version for
@@ -562,7 +564,7 @@ int tmain(int argc, const tchar * const argv[]) {
     // aligned addresses must not leave the low hash bits constant
     {
 	tcout << T("Testing ptrhash functor...\n");
-	static char objs[1000][16];
+	static const char objs[1000][16] = {};
 	bool seen[64] = {};
 	int distinct = 0;
 

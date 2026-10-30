@@ -3,10 +3,10 @@ include $(top_srcdir)/build/Makefile.inc
 AM_CPPFLAGS = -I$(top_srcdir)/lib
 LDADD = $(top_builddir)/lib/libblister.la
 
-bin_PROGRAMS = cfg daemonize dlog dtiming httpload smtpload
+bin_PROGRAMS = cfg daemonize dlog dtiming httpload smtpload smtpsink
 noinst_PROGRAMS = echotest httpd httptest hashtest
 sysconf_DATA = http.wld smtp.wld
-EXTRA_DIST = echo.cfg httpd.cfg
+EXTRA_DIST = httpd.cfg
 
 cfg_SOURCES = Cfg.cpp
 daemonize_SOURCES = Daemonize.cpp
@@ -19,6 +19,8 @@ httpd_SOURCES = HTTPd.cpp
 httpload_SOURCES = HTTPLoad.cpp
 httptest_SOURCES = HTTPTest.cpp
 smtpload_SOURCES = SMTPLoad.cpp
+smtpsink_SOURCES = SMTPSink.cpp
+smtpsink_LDFLAGS = $(AM_LDFLAGS) -static
 
 if HAVE_LIBUV
 noinst_PROGRAMS += uvechotest

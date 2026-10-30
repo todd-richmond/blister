@@ -19,13 +19,15 @@
 #include <algorithm>
 #include <array>
 #include <random>
+#include <ranges>
 #include "Log.h"
 #include "SMTPClient.h"
 #include "Thread.h"
 
 #pragma warning(disable: 6328 6330)
 
-#define CMD_NOREPLY 0
+static constexpr int CMD_NOREPLY = 0;
+static constexpr size_t BDAT_CHUNK = 1 << 20;
 
 const char SMTPClient::crlf[] = "\r\n";
 
@@ -49,8 +51,6 @@ static bool highbit8(const char *p, size_t n) {
 
 #ifdef __AVX2__
     if (n >= 64) {
-	const __m256i zero = _mm256_setzero_si256();
-
 	for (; n >= 128; p += 128, n -= 128) {
 	    __m256i v = _mm256_or_si256(
 		_mm256_or_si256(_mm256_loadu_si256((const __m256i *)p),
@@ -58,7 +58,7 @@ static bool highbit8(const char *p, size_t n) {
 		_mm256_or_si256(_mm256_loadu_si256((const __m256i *)(p + 64)),
 		_mm256_loadu_si256((const __m256i *)(p + 96))));
 
-	    if (_mm256_movemask_epi8(_mm256_cmpgt_epi8(zero, v)))
+	    if (_mm256_movemask_epi8(v))
 		return true;
 	}
 	for (; n >= 32; p += 32, n -= 32) {
@@ -695,7 +695,12 @@ bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
     o = new uchar[(size_t)(end - p) * 3 / 4 + 8];
     out = o;
     for (;;) {
-	skipspace();
+	// skip to the next nonempty line; a line of spaces is data
+	const auto *nl = (const uchar *)memchr(p, '\n', (size_t)(end - p));
+
+	p = nl ? nl + 1 : end;
+	while (p < end && (*p == '\r' || *p == '\n'))
+	    ++p;
 	if (p == end)
 	    break;
 
@@ -1032,9 +1037,6 @@ tstring SMTPClient::numstr(size_t n) {
     return astringtotstring(to_string(n));
 }
 
-SMTPClient::SMTPClient(): sstrm(sock), datasent(false), lmtp(false),
-    mime(false) {}
-
 bool SMTPClient::add(vector<tstring> &v, const RFC822Addr &addrs) {
     bool ret = true;
 
@@ -1087,12 +1089,16 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 }
 
 bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
-    string asts;
-
     multi.erase();
     if (fstrm) {
 	multi = sts = numstr((size_t)retcode);
 	return true;
+    }
+    if (chunked) {
+	// a command abandons a message buffered for BDAT
+	chunked = false;
+	strm = &sstrm;
+	bstrm.str({});
     }
     if (s1) {
 	const char *as1 = tchartoachar(s1);
@@ -1128,38 +1134,83 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 	    return false;
 	}
 	if (pipelined && retcode != CMD_NOREPLY)
-	    resultsv.push_back(numstr((size_t)retcode));
+	    expectv.push_back({ {}, retcode, false });
 	return true;
     }
+    // replies to earlier pipelined commands arrive first
+    if (!expectv.empty())
+	replies();
+    return reply() && code() == retcode;
+}
+
+bool SMTPClient::reply() {
+    multi.erase();
     do {
-	sts.erase();
 	if (!sstrm) {
+	    sts.erase();
 	    dlogd(Log::mod(T("smtp")), Log::kv(T("status"), T("closed")));
 	    return false;
-	} else if (!getline(sstrm, asts)) {
+	}
+#ifdef UNICODE
+	string asts;
+
+	if (getline(sstrm, asts))
+	    sts = astringtotstring(asts);
+#else
+	getline(sstrm, sts);
+#endif
+	if (!sstrm) {
 	    sock.close();
 	    sts = T("000 socket disconnect");
 	    dlogd(Log::mod(T("smtp")), Log::kv(T("action"), T("disconnect")));
 	    return false;
 	}
-	sts = astringtotstring(asts);
-	if (sts.length() < 3 || (sts.length() > 3 && sts[3] != '-' && sts[3] !=
-	    ' ')) {
+	sts.erase(sts.find_last_not_of(T(" \t\r\n")) + 1);
+	// the text is optional: "250" is a complete reply
+	if (sts.length() < 3 || !istdigit(sts[0]) || (sts.length() > 3 &&
+	    sts[3] != '-' && sts[3] != ' ')) {
 	    dlogd(Log::mod(T("smtp")), Log::kv(T("data"), T("invalid")),
 		Log::kv(T("reply"), sts.c_str()));
+	    // the position in the reply stream is unknown
+	    sock.close();
 	    return false;
 	}
-	auto trim = sts.find_last_not_of(T(" \t\r\n"));
-	if (trim != sts.npos)
-	    sts.erase(trim + 1);
 	if (!multi.empty())
 	    multi += '\n';
 	if (sts.length() > 4)
-	    multi += sts.substr(4);
-	dlogt(Log::mod(T("smtp")), Log::kv(T("expected"), retcode),
-	    Log::kv(T("reply"), sts.c_str()));
+	    multi += tstring_view(sts).substr(4);
+	dlogt(Log::mod(T("smtp")), Log::kv(T("reply"), sts.c_str()));
     } while (sts[3] == '-');
-    return code() == retcode;
+    return true;
+}
+
+// read all pipelined replies to stay in sync
+bool SMTPClient::replies() {
+    tstring bad;
+
+    for (auto &e : expectv) {
+	if (!reply()) {
+	    expectv.clear();
+	    return false;
+	}
+	resultsv.push_back(sts);
+	if (code() == e.code) {
+	    if (!e.rcpt.empty() && !e.delivery)
+		acceptedv.push_back(std::move(e.rcpt));
+	    continue;
+	}
+	dlogd(Log::mod(T("smtp")), Log::kv(T("expected"), e.code),
+	    Log::kv(T("rcpt"), e.rcpt), Log::kv(T("reply"), sts));
+	if (!e.rcpt.empty())
+	    rejectedv.emplace_back(std::move(e.rcpt), sts);
+	else if (bad.empty())
+	    bad = sts;
+    }
+    expectv.clear();
+    if (bad.empty())
+	return true;
+    sts = std::move(bad);
+    return false;
 }
 
 bool SMTPClient::connect(const Sockaddr &addr, uint to) {
@@ -1183,7 +1234,9 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
     }
     sock.nodelay(true);
     exts.erase();
-    ext_chunking = ext_smtputf8 = false;
+    ext_chunking = ext_smtputf8 = lmtp = pipelined = false;
+    expectv.clear();
+    resultsv.clear();
     timeout(3 * 60 * 1000, 5 * 60 * 1000);
     sstrm.clear();
     sstrm.rdbuf()->str(nullptr, 4096);
@@ -1191,30 +1244,35 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
 }
 
 bool SMTPClient::ehlo(const tchar *domain) {
-    if (!domain)
-	domain = Sockaddr::hostname().c_str();
-    if (cmd(T("EHLO"), domain)) {
-	// skip the greeting line (npos + 1 == 0 when there is only one line)
-	exts = multi.substr(multi.find('\n') + 1);
-	ext_chunking = exts_find(T("CHUNKING"));
-	ext_smtputf8 = exts_find(T("SMTPUTF8"));
-	dlogd(Log::mod(T("smtp")), Log::cmd(T("ehlo")), Log::kv(T("exts"),
-	    exts), Log::kv(T("chunking"), ext_chunking), Log::kv(T("smtputf8"),
-	    ext_smtputf8));
-	return true;
-    } else {
+    return hello(T("EHLO"), domain);
+}
+
+bool SMTPClient::hello(const tchar *c, const tchar *domain) {
+    if (!cmd(c, domain ? domain : Sockaddr::hostname().c_str()))
 	return false;
-    }
+    // skip the greeting line (npos + 1 == 0 when there is only one line)
+    exts = multi.substr(multi.find('\n') + 1);
+    ext_chunking = exts_find(T("CHUNKING"));
+    ext_smtputf8 = exts_find(T("SMTPUTF8"));
+    lmtp = c[0] == 'L';
+    dlogd(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("exts"), exts),
+	Log::kv(T("chunking"), ext_chunking), Log::kv(T("smtputf8"),
+	ext_smtputf8));
+    return true;
 }
 
 bool SMTPClient::from(const tchar *id, const tchar *parms) {
     tstring sent(id), s;
 
+    // replies left from an abandoned pipelined transaction
+    replies();
     tov.clear();
     ccv.clear();
     bccv.clear();
     hdrv.clear();
     resultsv.clear();
+    acceptedv.clear();
+    rejectedv.clear();
     sub.erase();
     frm.erase();
     strm->flush();
@@ -1244,20 +1302,12 @@ bool SMTPClient::from(const RFC822Addr &addr, const tchar *parms) {
 
 bool SMTPClient::helo(const tchar *domain) {
     exts.erase();
-    ext_chunking = ext_smtputf8 = false;
+    ext_chunking = ext_smtputf8 = lmtp = false;
     return cmd(T("HELO"), domain ? domain : Sockaddr::hostname().c_str());
 }
 
 bool SMTPClient::lhlo(const tchar *domain) {
-    if (cmd(T("LHLO"), domain ? domain : Sockaddr::hostname().c_str())) {
-	exts = multi;
-	ext_chunking = exts_find(T("CHUNKING"));
-	ext_smtputf8 = exts_find(T("SMTPUTF8"));
-	lmtp = true;
-	return true;
-    } else {
-	return false;
-    }
+    return hello(T("LHLO"), domain);
 }
 
 bool SMTPClient::quit() {
@@ -1282,7 +1332,15 @@ bool SMTPClient::rcpt(const RFC822Addr &addr) {
 
 // id is replaced with the address sent to the server
 bool SMTPClient::rcptcmd(tstring &id) {
-    return downgrade(T("rcpt"), id) && cmd(T("RCPT TO:"), id.c_str());
+    if (!downgrade(T("rcpt"), id) || !cmd(T("RCPT TO:"), id.c_str())) {
+	rejectedv.emplace_back(id, sts);
+	return false;
+    }
+    if (pipelined && !fstrm)
+	expectv.back().rcpt = id;
+    else
+	acceptedv.push_back(id);
+    return true;
 }
 
 // Without server SMTPUTF8 support an internationalized domain is IDNA encoded.
@@ -1398,27 +1456,30 @@ bool SMTPClient::vrfy(const RFC822Addr &addr, const tchar *parms) {
 }
 
 bool SMTPClient::data(const void *start, size_t sz, bool dotstuff) {
-    if (!datasent) {
-	if (!startdata())
-	    return false;
-	datasent = true;
-    }
+    if (!datasent && !startdata())
+	return false;
     if (!start || !sz) {
 	return true;
     } else if (dotstuff) {
 	return stuff(start, sz);
+    } else if (chunked && strm == &bstrm && sz >= BDAT_CHUNK) {
+	return bigchunk(start, sz, false);
     } else {
 	strm->write((const char *)start, (streamsize)sz);
-	strm->write(crlf, 2);
-	return strm->good();
+	if (((const char *)start)[sz - 1] != '\n')
+	    strm->write(crlf, 2);
+	return strm->good() && (!chunked || bstrm.view().size() < BDAT_CHUNK ||
+	    sendchunk(false));
     }
 }
 
 bool SMTPClient::data(bool m, const tchar *txt) {
     static atomic nextmid(((uint64_t)seconds() << 18) ^ uticks());
+    static constexpr const char days[][4] = { "Sun", "Mon", "Tue", "Wed",
+	"Thu", "Fri", "Sat" };
+    static constexpr const char months[][4] = { "Jan", "Feb", "Mar", "Apr",
+	"May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
     char buf[64];
-    char *encbuf;
-    size_t encbufsz;
     uint64_t mid = nextmid++;
     time_t now = seconds();
     pid_t pid = getpid();
@@ -1429,34 +1490,47 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	return false;
     memcpy(buf, &pid, 4);
     memcpy(buf + 4, &mid, 8);
-    base64encode(buf, 12, encbuf, encbufsz);
-    encbuf[encbufsz - 2] = '\0';
-    *strm << "Message-ID: <" << encbuf << '@' <<
+    // 12 bytes are 16 base64 characters without padding
+    encode<false>((const uchar *)buf, 12, buf + 16, false);
+    *strm << "Message-ID: <" << string_view(buf + 16, 16) << '@' <<
 	tstringtoastring(Sockaddr::hostname()) << '>' << crlf;
-    delete [] encbuf;
     if (localtime_r(&now, &tmbuf) == nullptr)
 	return false;
 #ifdef _WIN32
-    const long gmtoff = -_timezone + (tmbuf.tm_isdst > 0 ? 3600L : 0L);
+    long off = -_timezone + (tmbuf.tm_isdst > 0 ? 3600L : 0L);
 #else
-    const long gmtoff = tmbuf.tm_gmtoff;
+    long off = tmbuf.tm_gmtoff;
 #endif
-    const auto off_min = (int)(gmtoff / 60);
-    *strm << "Date: " << format("{:%a, %d %b %Y %H:%M:%S}",
-	chrono::system_clock::from_time_t(now) +
-	chrono::seconds(gmtoff)) << ' ' << format("{:+03d}{:02d}",
-	off_min / 60, abs(off_min % 60)) << crlf;
+    char date[] = "Date: Ddd, DD Mmm YYYY HH:MM:SS +HHMM\r\n";
+    const auto two = [](char *p, long v) {
+	p[0] = (char)('0' + v / 10);
+	p[1] = (char)('0' + v % 10);
+    };
+
+    memcpy(date + 6, days[tmbuf.tm_wday], 3);
+    two(date + 11, tmbuf.tm_mday);
+    memcpy(date + 14, months[tmbuf.tm_mon], 3);
+    two(date + 18, (tmbuf.tm_year + 1900) / 100);
+    two(date + 20, tmbuf.tm_year % 100);
+    two(date + 23, tmbuf.tm_hour);
+    two(date + 26, tmbuf.tm_min);
+    two(date + 29, tmbuf.tm_sec);
+    date[32] = off < 0 ? '-' : '+';
+    off = labs(off) / 60;
+    two(date + 33, off / 60);
+    two(date + 35, off % 60);
+    strm->write(date, sizeof (date) - 1);
     *strm << "From: " << tstringtoastring(frm) << crlf;
     recip(T("To: "), tov);
     recip(T("Cc: "), ccv);
     *strm << "Subject: " << hdrtext(sub.c_str()) << crlf;
-    for (auto it = hdrv.begin(); it != hdrv.end(); ++it)
-	*strm << hdrtext(it->c_str()) << crlf;
+    for (const auto &h : hdrv)
+	*strm << hdrtext(h.c_str()) << crlf;
 
     // Only this text is scanned - the caller of the raw data() overloads is
     // responsible for content that is valid for the server
     string_view body;
-    string enc;
+    unique_ptr<char[]> enc;
     const char *cte = nullptr;
 #ifdef UNICODE
     string as;
@@ -1470,40 +1544,34 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	body = txt;
 #endif
 
-    size_t hicnt = (size_t)ranges::count_if(body, [](char c) {
-	return (uchar)c > 0x7f;
-    });
-
-    if (hicnt) {
+    if (highbit8(body)) {
 	if (canutf8()) {
 	    // SMTPUTF8 implies 8BITMIME
 	    cte = "8bit";
-	} else if (hicnt * 4 > body.size()) {
-	    char *out;
-	    size_t outsz;
-
-	    base64encode(body.data(), body.size(), out, outsz);
-	    enc.assign(out, outsz);
-	    delete [] out;
-	    cte = "base64";
 	} else {
+	    size_t hicnt = (size_t)ranges::count_if(body, [](char c) {
+		return (uchar)c > 0x7f;
+	    });
 	    char *out;
 	    size_t outsz;
 
-	    qpencode(body.data(), body.size(), out, outsz);
-	    enc.assign(out, outsz);
-	    delete [] out;
-	    cte = "quoted-printable";
+	    if (hicnt * 4 > body.size()) {
+		base64encode(body.data(), body.size(), out, outsz);
+		cte = "base64";
+	    } else {
+		qpencode(body.data(), body.size(), out, outsz);
+		cte = "quoted-printable";
+	    }
+	    enc.reset(out);
+	    body = { out, outsz };
 	}
-	if (!enc.empty())
-	    body = enc;
     }
     if (mime) {
 	thread_local mt19937 rng(random_device {}());
 	thread_local uniform_int_distribution<uint> dist;
 
-	sprintf(buf, "--%x%x%x%x", dist(rng), dist(rng), dist(rng), dist(rng));
-	boundary = buf;
+	boundary = format("--{:x}{:x}{:x}{:x}", dist(rng), dist(rng), dist(rng),
+	    dist(rng));
 	*strm << "MIME-Version: 1.0" << crlf;
 	*strm << "Content-Type: multipart/mixed; boundary=\"" << boundary <<
 	    '"' << crlf << crlf <<
@@ -1572,37 +1640,32 @@ bool SMTPClient::data(const void *p, uint sz, const tchar *type,
     return strm->good();
 }
 
-// send DATA and, if pipelining, validate the queued replies
 bool SMTPClient::startdata() {
-    if (!cmd(T("DATA"), nullptr, 354))
-	return false;
-    if (!pipelined)
+    if (usebdat && ext_chunking && !fstrm) {
+	chunked = datasent = true;
+	strm = &bstrm;
 	return true;
-    pipelined = false;
-    for (auto &r : resultsv) {
-	string asts;
-
-	do {
-	    if (!getline(sstrm, asts)) {
-		sock.close();
-		sts = T("000 socket disconnect");
-		dlogd(Log::mod(T("smtp")), Log::kv(T("action"),
-		    T("disconnect")));
-		return false;
-	    }
-	    sts = astringtotstring(asts);
-	    auto trim = sts.find_last_not_of(T(" \t\r\n"));
-	    if (trim != sts.npos)
-		sts.erase(trim + 1);
-	} while (sts.length() > 3 && sts[3] == '-');
-	if (sts.compare(0, 3, r)) {
-	    dlogd(Log::mod(T("smtp")), Log::kv(T("expected"), r),
-		Log::kv(T("reply"), sts));
-	    return false;
-	}
-	r = sts;
     }
-    return code() == 354;
+
+    bool ret = cmd(T("DATA"), nullptr, 354);
+
+    if (pipelined) {
+	pipelined = false;
+	ret = ret && replies();
+	if (ret && acceptedv.empty()) {
+	    sts = rejectedv.empty() ? T("554 5.5.1 No valid recipients") :
+		rejectedv.front().second;
+	    ret = false;
+	}
+	// only a disconnect aborts a DATA accepted for a failed transaction
+	if (!ret && !resultsv.empty() && resultsv.back().starts_with(T("354"))) {
+	    sock.close();
+	    dlogd(Log::mod(T("smtp")), Log::kv(T("action"), T("abort")),
+		Log::status(sts));
+	}
+    }
+    datasent = ret;
+    return ret;
 }
 
 bool SMTPClient::bdat(const void *start, size_t sz, bool last) {
@@ -1616,64 +1679,176 @@ bool SMTPClient::bdat(const void *start, size_t sz, bool last) {
 	    Log::status(sts));
 	return false;
     }
+    // the number of LMTP replies to LAST depends on the accepted recipients
+    if (last && lmtp && pipelined) {
+	pipelined = false;
+	if (!replies())
+	    return false;
+    }
     if (!cmd(c.c_str(), nullptr, CMD_NOREPLY))
 	return false;
     if (start && sz)
 	strm->write((const char *)start, (streamsize)sz);
-    return cmd(nullptr, nullptr, 250);
+    return last ? final(nullptr) : cmd(nullptr, nullptr, 250);
+}
+
+bool SMTPClient::sendchunk(bool last) {
+    string s = std::move(bstrm).str();
+
+    chunked = false;
+    strm = &sstrm;
+
+    bool ret = bdat(s.data(), s.size(), last);
+
+    s.clear();
+    bstrm.str(std::move(s));
+    if (ret && !last) {
+	chunked = true;
+	strm = &bstrm;
+    }
+    return ret;
+}
+
+// Send the buffered message and the data at p as one BDAT chunk, writing p
+// to the socket without copying it into the buffer
+bool SMTPClient::bigchunk(const void *p, size_t sz, bool dotstuff) {
+    const char *s = (const char *)p;
+    string buf = std::move(bstrm).str();
+    tstring c(T("BDAT ") + numstr(buf.size() + sz + (dotstuff ? barelfs(s,
+	s + sz) : 0) + (s[sz - 1] == '\n' ? 0 : 2)));
+    bool ret;
+
+    chunked = false;
+    strm = &sstrm;
+    ret = cmd(c.c_str(), nullptr, CMD_NOREPLY);
+    if (ret) {
+	sstrm.write(buf.data(), (streamsize)buf.size());
+	if (dotstuff) {
+	    // stuff() leaves dots alone and has nothing buffered to send
+	    chunked = true;
+	    ret = stuff(p, sz);
+	    chunked = false;
+	} else {
+	    sstrm.write(s, (streamsize)sz);
+	    if (s[sz - 1] != '\n')
+		sstrm.write(crlf, 2);
+	    ret = sstrm.good();
+	}
+	ret = ret && cmd(nullptr, nullptr, 250);
+    }
+    buf.clear();
+    bstrm.str(std::move(buf));
+    if (ret) {
+	chunked = true;
+	strm = &bstrm;
+    }
+    return ret;
 }
 
 bool SMTPClient::enddata() {
     if (mime)
 	*strm << "--" << boundary << "--" << crlf;
-    return cmd(T("."));
+    return chunked ? sendchunk(true) : final(T("."));
+}
+
+// succeeds if any recipient accepted the message
+bool SMTPClient::final(const tchar *c) {
+    if (fstrm || (!pipelined && !lmtp))
+	return cmd(c);
+    pipelined = true;
+
+    bool ret = cmd(c);
+
+    pipelined = false;
+    if (!ret)
+	return false;
+    if (lmtp && !acceptedv.empty()) {
+	expectv.pop_back();
+	for (const auto &r : acceptedv)
+	    expectv.push_back({ r, 250, true });
+    }
+
+    size_t refused = rejectedv.size();
+
+    if (!replies())
+	return false;
+    if (acceptedv.empty() || (lmtp && rejectedv.size() - refused ==
+	acceptedv.size())) {
+	sts = rejectedv.empty() ? T("554 5.5.1 No valid recipients") :
+	    rejectedv.back().second;
+	return false;
+    }
+    return true;
 }
 
 void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
     if (v.empty())
 	return;
-    *strm << tchartoachar(hdr);
-    for (auto it = v.begin(); it != v.end(); ++it) {
-	const tstring &s = *it;
-
-	if (it != v.begin())
-	    *strm << ",\r\n\t";
-	*strm << tstringtoachar(s);
-    }
+    *strm << tchartoachar(hdr) << tstringtoachar(v.front());
+    for (const auto &s : v | views::drop(1))
+	*strm << ",\r\n\t" << tstringtoachar(s);
     strm->write(crlf, 2);
 }
 
 #ifdef __AVX2__
-// bare LFs and leading dots in the 32 bytes at p, p[-1] must be readable
-inline __m256i SMTPClient::stuffhits(const char *p) {
+// bare LFs and, with dots, leading dots in the 32 bytes at p, p[-1] must be
+// readable
+template<bool dots> inline __m256i SMTPClient::stuffhits(const char *p) {
     __m256i v = _mm256_loadu_si256((const __m256i *)p);
     __m256i prev = _mm256_loadu_si256((const __m256i *)(p - 1));
+    __m256i h = _mm256_andnot_si256(_mm256_cmpeq_epi8(prev,
+	_mm256_set1_epi8('\r')), _mm256_cmpeq_epi8(v, _mm256_set1_epi8('\n')));
 
-    return _mm256_or_si256(_mm256_andnot_si256(_mm256_cmpeq_epi8(prev,
-	_mm256_set1_epi8('\r')), _mm256_cmpeq_epi8(v, _mm256_set1_epi8('\n'))),
-	_mm256_and_si256(_mm256_cmpeq_epi8(prev, _mm256_set1_epi8('\n')),
-	_mm256_cmpeq_epi8(v, _mm256_set1_epi8('.'))));
+    if constexpr (dots) {
+	h = _mm256_or_si256(h, _mm256_and_si256(_mm256_cmpeq_epi8(prev,
+	    _mm256_set1_epi8('\n')), _mm256_cmpeq_epi8(v,
+	    _mm256_set1_epi8('.'))));
+    }
+    return h;
 }
 #elif defined(__ARM_NEON)
-// bare LFs and leading dots in the 16 bytes at p, p[-1] must be readable
-inline uint8x16_t SMTPClient::stuffhits(const char *p) {
+// bare LFs and, with dots, leading dots in the 16 bytes at p, p[-1] must be
+// readable
+template<bool dots> inline uint8x16_t SMTPClient::stuffhits(const char *p) {
     uint8x16_t v = load16(p);
     uint8x16_t prev = load16(p - 1);
     const uint8x16_t lf = vdupq_n_u8('\n');
+    uint8x16_t h = vbicq_u8(vceqq_u8(v, lf), vceqq_u8(prev,
+	vdupq_n_u8('\r')));
 
-    return vorrq_u8(vbicq_u8(vceqq_u8(v, lf), vceqq_u8(prev,
-	vdupq_n_u8('\r'))), vandq_u8(vceqq_u8(prev, lf), vceqq_u8(v,
-	vdupq_n_u8('.'))));
+    if constexpr (dots)
+	h = vorrq_u8(h, vandq_u8(vceqq_u8(prev, lf), vceqq_u8(v,
+	    vdupq_n_u8('.'))));
+    return h;
 }
 #endif
 
-// Next position at or after p that needs fixing: a '.' at the start of a line
-// or an LF that does not follow a CR. start is the start of a line
-const char *SMTPClient::stuffscan(const char *p, const char *end,
-    const char *start) {
+// the number of bare LFs that stuff() changes to CRLF
+size_t SMTPClient::barelfs(const char *p, const char *end) {
+    size_t n = 0;
+
+    if (p < end)
+	n = *p++ == '\n';
+#ifdef __AVX2__
+    for (; end - p >= 32; p += 32)
+	n += (size_t)popcount((uint)_mm256_movemask_epi8(stuffhits<false>(p)));
+#elif defined(__ARM_NEON)
+    for (; end - p >= 16; p += 16)
+	n += (size_t)popcount(nibmask(stuffhits<false>(p))) / 4;
+#endif
+    for (; p < end; ++p)
+	n += *p == '\n' && p[-1] != '\r';
+    return n;
+}
+
+// Next position at or after p that needs fixing: an LF that does not follow
+// a CR or, with dots, a '.' at the start of a line. start is the start of a
+// line
+template<bool dots> const char *SMTPClient::stuffscan(const char *p,
+    const char *end, const char *start) {
 #if defined(__AVX2__) || defined(__ARM_NEON)
     if (p == start && p < end) {
-	if (*p == '.' || *p == '\n')
+	if ((dots && *p == '.') || *p == '\n')
 	    return p;
 	++p;
     }
@@ -1681,15 +1856,15 @@ const char *SMTPClient::stuffscan(const char *p, const char *end,
 #ifdef __AVX2__
     // mail is mostly clean, test 4 blocks at a time and find the hit below
     for (; end - p >= 128; p += 128) {
-	__m256i h = _mm256_or_si256(_mm256_or_si256(stuffhits(p),
-	    stuffhits(p + 32)), _mm256_or_si256(stuffhits(p + 64),
-	    stuffhits(p + 96)));
+	__m256i h = _mm256_or_si256(_mm256_or_si256(stuffhits<dots>(p),
+	    stuffhits<dots>(p + 32)), _mm256_or_si256(stuffhits<dots>(p + 64),
+	    stuffhits<dots>(p + 96)));
 
 	if (!_mm256_testz_si256(h, h))
 	    break;
     }
     for (; end - p >= 32; p += 32) {
-	uint m = (uint)_mm256_movemask_epi8(stuffhits(p));
+	uint m = (uint)_mm256_movemask_epi8(stuffhits<dots>(p));
 
 	if (m)
 	    return p + std::countr_zero(m);
@@ -1697,21 +1872,22 @@ const char *SMTPClient::stuffscan(const char *p, const char *end,
 #elif defined(__ARM_NEON)
     // mail is mostly clean, test 4 blocks at a time and find the hit below
     for (; end - p >= 64; p += 64) {
-	uint8x16_t h = vorrq_u8(vorrq_u8(stuffhits(p), stuffhits(p + 16)),
-	    vorrq_u8(stuffhits(p + 32), stuffhits(p + 48)));
+	uint8x16_t h = vorrq_u8(vorrq_u8(stuffhits<dots>(p),
+	    stuffhits<dots>(p + 16)), vorrq_u8(stuffhits<dots>(p + 32),
+	    stuffhits<dots>(p + 48)));
 
 	if (vmaxvq_u8(h))
 	    break;
     }
     for (; end - p >= 16; p += 16) {
-	uint64_t m = nibmask(stuffhits(p));
+	uint64_t m = nibmask(stuffhits<dots>(p));
 
 	if (m)
 	    return p + std::countr_zero(m) / 4;
     }
 #endif
     while (p < end) {
-	if (*p == '.' && (p == start || p[-1] == '\n'))
+	if (dots && *p == '.' && (p == start || p[-1] == '\n'))
 	    return p;
 
 	const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
@@ -1729,10 +1905,14 @@ bool SMTPClient::stuff(const void *data, size_t sz) {
     const char *start = (const char *)data;
     const char *end = start + sz;
     const char *p = start, *pp = start;
+    // BDAT data is not dot stuffed
+    const auto scan = chunked ? stuffscan<false> : stuffscan<true>;
 
     if (!sz)
 	return strm->good();
-    while ((p = stuffscan(p, end, start)) != end) {
+    if (chunked && strm == &bstrm && sz >= BDAT_CHUNK)
+	return bigchunk(data, sz, true);
+    while ((p = scan(p, end, start)) != end) {
 	strm->write(pp, p - pp);
 	strm->write(*p == '.' ? ".." : crlf, 2);
 	pp = ++p;
@@ -1740,7 +1920,8 @@ bool SMTPClient::stuff(const void *data, size_t sz) {
     strm->write(pp, end - pp);
     if (end[-1] != '\n')
 	strm->write(crlf, 2);
-    return strm->good();
+    return strm->good() && (!chunked || bstrm.view().size() < BDAT_CHUNK ||
+	sendchunk(false));
 }
 
 static constexpr const tchar *NonASCII = T("Non-ASCII character");
@@ -1834,6 +2015,7 @@ bool RFC821Addr::scan(const tchar *&input, bool smtputf8) {
 		if (bad(c))
 		    return false;
 		if (!c) {
+		    --input;
 		    err = T("Unbalanced '\"'");
 		    return false;
 		}
@@ -1856,6 +2038,7 @@ bool RFC821Addr::scan(const tchar *&input, bool smtputf8) {
 		if (bad(c))
 		    return false;
 		if (!c) {
+		    --input;
 		    err = T("Unbalanced '('");
 		    return false;
 		}

@@ -28,46 +28,45 @@ int tmain(int argc, const tchar * const argv[]) {
     ConfigFile cfg;
     bool boolean = false, check = false, integer = false, nonewline = false,
 	quiet = false, update = false;
-    bool exists;
     int i;
 
     for (i = 1; i < argc; i++) {
-	if (!tstrcmp(argv[i], T("-?")) || !tstrcmp(argv[i], T("--help"))) {
+	if (tstreq(argv[i], T("-?")) || tstreq(argv[i], T("--help"))) {
 	    break;
-	} else if (!tstrcmp(argv[i], T("-b")) ||
-	    !tstrcmp(argv[i], T("--boolean"))) {
+	} else if (tstreq(argv[i], T("-b")) ||
+	    tstreq(argv[i], T("--boolean"))) {
 	    boolean = true;
-	} else if (!tstrcmp(argv[i], T("-c")) ||
-	    !tstrcmp(argv[i], T("--check"))) {
+	} else if (tstreq(argv[i], T("-c")) ||
+	    tstreq(argv[i], T("--check"))) {
 	    check = true;
-	} else if (!tstrcmp(argv[i], T("-f")) ||
-	    !tstrcmp(argv[i], T("--file"))) {
+	} else if (tstreq(argv[i], T("-f")) ||
+	    tstreq(argv[i], T("--file"))) {
 	    if (i + 1 == argc)
 		break;
 	    file = argv[++i];
-	} else if (!tstrcmp(argv[i], T("-i")) ||
-	    !tstrcmp(argv[i], T("--integer"))) {
+	} else if (tstreq(argv[i], T("-i")) ||
+	    tstreq(argv[i], T("--integer"))) {
 	    integer = true;
-	} else if (!tstrcmp(argv[i], T("-n")) ||
-	    !tstrcmp(argv[i], T("--nonewline"))) {
+	} else if (tstreq(argv[i], T("-n")) ||
+	    tstreq(argv[i], T("--nonewline"))) {
 	    nonewline = true;
-	} else if (!tstrcmp(argv[i], T("-p")) ||
-	    !tstrcmp(argv[i], T("--prefix"))) {
+	} else if (tstreq(argv[i], T("-p")) ||
+	    tstreq(argv[i], T("--prefix"))) {
 	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
 	    prefix = argv[++i];
-	} else if (!tstrcmp(argv[i], T("-q")) ||
-	    !tstrcmp(argv[i], T("--quiet"))) {
+	} else if (tstreq(argv[i], T("-q")) ||
+	    tstreq(argv[i], T("--quiet"))) {
 	    quiet = true;
-	} else if (!tstrcmp(argv[i], T("-s")) ||
-	    !tstrcmp(argv[i], T("--section"))) {
+	} else if (tstreq(argv[i], T("-s")) ||
+	    tstreq(argv[i], T("--section"))) {
 	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
 	    section = argv[++i];
-	} else if (!tstrcmp(argv[i], T("-u")) || !tstrcmp(argv[i],
-	    T("--update"))) {
+	} else if (tstreq(argv[i], T("-u")) ||
+	    tstreq(argv[i], T("--update"))) {
 	    update = true;
-	} else if (argv[i][0] != '-') {
+	} else if (argv[i][0] != '-' && !attr) {
 	    attr = argv[i];
 	    if (i + 1 != argc)
 		val = argv[++i];
@@ -88,36 +87,31 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("\t[-u|--update]\n");
 	return -1;
     }
-    if (!(tstrcmp(file, T("-")) ? cfg.read(file, prefix) : cfg.read(tcin,
-	prefix))) {
+    bool stdio = tstreq(file, T("-"));
+
+    if (!(stdio ? cfg.read(tcin, prefix) : cfg.read(file, prefix))) {
 	tcerr << T("unable to read ") << file << T(": ") << tstrerror(errno) <<
 	    endl;
 	return -1;
     }
-    exists = cfg.exists(attr, section);
     if (check) {
-	return exists ? 0 : 1;
+	return cfg.exists(attr, section) ? 0 : 1;
     } else if (boolean) {
 	return cfg.get(attr, val && is_true(*val), section) ? 0 : 1;
     } else if (integer) {
-	long int_val = 0;
-
-	if (val)
-	    int_val = atoi<long>(val);
-	return cfg.get(attr, (int)int_val, section);
+	return cfg.get(attr, val ? atoi<int>(val) : 0, section);
     } else if (update) {
 	if (val)
 	    cfg.set(attr, val, section);
 	else
 	    cfg.erase(attr, section);
-	if (!(tstrcmp(file, T("-")) ? cfg.write() : cfg.write(tcout,
-	    cfg.iniformat()))) {
+	if (!(stdio ? cfg.write(tcout) : cfg.write())) {
 	    tcerr << T("unable to write ") << file << T(": ") <<
 		tstrerror(errno) << endl;
 	    return -1;
 	}
 	return 0;
-    } else if (exists || val) {
+    } else if (val || cfg.exists(attr, section)) {
 	tcout << cfg.get(attr, val, section);
 	if (!nonewline)
 	    tcout << endl;

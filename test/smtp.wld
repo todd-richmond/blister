@@ -1,12 +1,16 @@
-# smtpload [-a [numfiles]] [-b bodyfile|bodydir] [-h host[:port]] [-l loops]
-#    [-m maxuser] [-q|-v]* [-r] [-s stattime] [-t threads] [-w timeout] cmdfile
+# smtpload [-a [numfiles]] [-b bodyfile|bodydir] [-c cachemb] [-d]
+#    [-h host[:port]] [-l loops] [-m maxuser] [-p] [-q|-v]* [-r] [-s stattime]
+#    [-t threads] [-w timeout] cmdfile
 #
 # options:
 #    -a [numfiles]: send all files (or limit to numfiles) in bodydir
 #    -b bodyfile/dir: RFC822 message file or directory
+#    -c cachemb: MB of body files to cache in memory
+#    -d: send messages with DATA even if the server supports BDAT (CHUNKING)
 #    -h host[:port]: SMTP host and port - default is localhost:25
 #    -l loops: total number of messages to send
 #    -m maxuser: maximum user id
+#    -p: pipeline commands - from and rcpt time is included in body or data
 #    -q: quiet - don't output statistics results, just output 0 or 1 (failure)
 #    -r: randomize ids when used with variable expansion
 #    -s secs: print statistics at every n seconds
@@ -19,7 +23,7 @@ var user=user
 var addr=$$(user)@$(domain)
 
 connect
-helo example.com
+ehlo example.com
 from $(addr)
 rcpt $(addr)
 data

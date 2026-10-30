@@ -149,7 +149,7 @@ public:
 	bool append = false, ulong sz = 0);
     template<typename T> requires is_arithmetic_v<T>
     Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
-	char buf[64];
+	char buf[64] = {};
 	auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
 
 	if (UNLIKELY(ec != errc{}))

@@ -37,33 +37,39 @@ protected:
     void onStop(bool fast) override;
 };
 
+// options without a value; every other option is followed by one
+static bool flag_opt(const tchar *p) {
+    return tstreq(p, T("console")) || tstreq(p, T("daemon"));
+}
+
 WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
     *dname): Daemon(dname ? dname : T("")), interval(60), maxmem(0), cpid(0) {
     int ac;
 
-    for (ac = 2; ac < argc; ++ac) {
+    // skip global options before the command word, then the command itself
+    for (ac = 1; ac < argc && *argv[ac] == '-'; ++ac) {
+	if (!flag_opt(argv[ac] + tstrspn(argv[ac], T("-"))))
+	    ++ac;
+    }
+    for (++ac; ac < argc; ++ac) {
 	const tchar *p = argv[ac];
 
 	if (*p != '-')
 	    break;
-	while (*p == '-')
-	    ++p;
-	if (!tstrcmp(p, T("check")) && ac + 1 < argc)
+	p += tstrspn(p, T("-"));
+	if (tstreq(p, T("check")) && ac + 1 < argc)
 	    interval = atoi<ulong>(argv[++ac]);
-	else if (!tstrcmp(p, T("maxmem")) && ac + 1 < argc)
+	else if (tstreq(p, T("maxmem")) && ac + 1 < argc)
 	    maxmem = atoi<ulong>(argv[++ac]);
-	else if (!tstrcmp(p, T("name")) && ac + 1 < argc)
+	else if (tstreq(p, T("name")) && ac + 1 < argc)
 	    name = argv[++ac];
-	else if (tstrcmp(p, T("console")) && tstrcmp(p, T("daemon")))
+	else if (!flag_opt(p))
 	    ++ac;
     }
     if (ac >= argc) {
-	const tchar *prog = tstrrchr(argv[0], '/');
+	tstring_view prog(argv[0]);
 
-	if (!prog && (prog = tstrrchr(argv[0], '\\')) == nullptr)
-	    prog = argv[0];
-	else
-	    prog++;
+	prog.remove_prefix(prog.find_last_of(T("/\\")) + 1);
 	tcout << T("usage:\t") << prog << endl <<
 	    T("\tstart [--check seconds] [--maxmem kb] [--name str] cmd ...") <<
 	    endl <<
@@ -72,10 +78,10 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv, const tchar
 	exit(1);
     }
     if (name.empty()) {
-	tstring::size_type i;
-
 	name = argv[ac];
-	if ((i = name.find_last_of(T('.'))) != name.npos)
+	if (auto i = name.find_last_of(T("/\\")); i != name.npos)
+	    name.erase(0, i + 1);
+	if (auto i = name.find_last_of(T('.')); i != name.npos)
 	    name.erase(i);
     }
 }
@@ -98,9 +104,13 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
 
     if (ret)
 	return ret;
-    for (ac = 1; ac < argc; ac += 2) {
-	if (argv[ac][0] != '-')
-	    break;
+    for (ac = 1; ac < argc && argv[ac][0] == '-'; ++ac) {
+	if (!flag_opt(argv[ac] + tstrspn(argv[ac], T("-"))))
+	    ++ac;
+    }
+    if (ac >= argc) {
+	dloge(Log::mod(name), Log::cmd(T("exec")), Log::error(T("no command")));
+	return -1;
     }
     for (int i = ac + 1; i < argc; ++i) {
 	if (!args.empty())
@@ -108,26 +118,33 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
 	args += argv[i];
     }
     running();
-    dlogi(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[0]),
+    dlogi(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[ac]),
 	Log::kv(T("args"), args));
     (void)dlog.close();
 #ifdef _WIN32
-    if (tspawnvp(P_WAIT, argv[ac], (tchar *const *)&argv[ac]) == 0)
-	return 0;
+    if ((ret = (int)tspawnvp(P_WAIT, argv[ac], (tchar *const *)&argv[ac])) !=
+	-1)
+	return ret;
 #else
     cpid = fork();
     if (cpid == 0) {
 	unsetsignal();
 	texecvp(argv[ac], (tchar *const *)&argv[ac]);	// NOSONAR
+	dloge(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"),
+	    argv[ac]), Log::error(tstrerror(errno)));
+	dlog.flush();
+	_exit(127);
     } else if (cpid > 0) {
 	int sts;
 
-	while (waitpid(cpid, &sts, 0) == -1 && errno == EINTR)
+	while ((ret = waitpid(cpid, &sts, 0)) == -1 && errno == EINTR)
 	    ;
-	return WEXITSTATUS(sts);
+	cpid = 0;
+	if (ret != -1)
+	    return WIFSIGNALED(sts) ? 128 + WTERMSIG(sts) : WEXITSTATUS(sts);
     }
 #endif
-    dloge(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[0]),
+    dloge(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"), argv[ac]),
 	Log::error(tstrerror(errno)));
     return -1;
 }

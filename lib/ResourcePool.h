@@ -76,7 +76,7 @@ public:
 	const uint old = exchange(lmt, lim);
 
 	if (lim > old)
-	    avail.set(lim - old);
+	    avail.broadcast();
 	else if (pool.size() > lim)
 	    reap((uint)pool.size() - lim, dead);
     }
@@ -89,7 +89,7 @@ public:
 	while (used || pending)
 	    change.wait();
     }
-    void release(C *p) {
+    void release(const C *p) {
 	FastLocker lkr(lk);
 
 	--find(p)->inuse;
@@ -308,7 +308,7 @@ public:
 	return lmt;
     }
     void limit(uint lim) {
-	vector<Entry> dead;
+	vector<Entry> dead;		// cppcheck-suppress variableScope
 	Locker lkr(lk);
 	const uint old = exchange(lmt, lim);
 
@@ -328,7 +328,7 @@ public:
 	while (ninuse || pending)
 	    change.wait();
     }
-    void release(C *p) {
+    void release(const C *p) {
 	FastLocker lkr(lk);
 	auto it = find(p);
 

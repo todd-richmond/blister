@@ -19,8 +19,24 @@
 #include <fstream>
 #include "Timing.h"
 
-static void timing(const tchar *key, usec_t usec) {
-    dtiming.add(key, usec);
+// parse "key[= ]duration", skipping lines without a key
+static bool add_line(const tchar *line, uint mult) {
+    const tchar *p = line, *pp;
+
+    while (istspace(*p))
+	p++;
+    pp = p;
+    while (*pp && *pp != '=' && !istspace(*pp))
+	pp++;
+    if (pp == p)
+	return false;
+
+    uint klen = (uint)(pp - p);
+
+    while (*pp == '=' || istspace(*pp))
+	pp++;
+    dtiming.add(p, klen, (usec_t)atoi<ulong>(pp) * mult);
+    return true;
 }
 
 int tmain(int argc, const tchar * const argv[]) {
@@ -33,41 +49,46 @@ int tmain(int argc, const tchar * const argv[]) {
     tstring s;
 
     for (i = 1; i < argc; i++) {
-	if (!tstricmp(argv[i], T("-?")) || !tstricmp(argv[i], T("--help"))) {
+	if (tstrieq(argv[i], T("-?")) || tstrieq(argv[i], T("--help"))) {
 	    break;
-	} else if (!tstricmp(argv[i], T("-c")) || !tstricmp(argv[i],
-	    T("--columns"))) {
+	} else if (tstrieq(argv[i], T("-c")) ||
+	    tstrieq(argv[i], T("--columns"))) {
 	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
-	    columns = (uint)atoi<int>(argv[++i]);
-	} else if (!tstricmp(argv[i], T("-i")) || !tstricmp(argv[i],
-	    T("--input"))) {
+	    columns = atoi<uint>(argv[++i]);
+	} else if (tstrieq(argv[i], T("-i")) ||
+	    tstrieq(argv[i], T("--input"))) {
 	    if (++i == argc)
 		break;
-	    if (tstrcmp(argv[i], T("-")) != 0) {
+	    if (!tstreq(argv[i], T("-"))) {
 		ifs.open(tchartoachar(argv[i]));
 		if (!ifs.good()) {
 		    tcerr << T("unable to open ") << argv[i] << endl;
 		    return 1;
 		}
 	    }
-	} else if (!tstricmp(argv[i], T("-m")) || !tstricmp(argv[i],
-	    T("--msec"))) {
+	} else if (tstrieq(argv[i], T("-m")) ||
+	    tstrieq(argv[i], T("--msec"))) {
 	    mult = 1000;
-	} else if (!tstricmp(argv[i], T("-n")) || !tstricmp(argv[i],
-	    T("--sortbyname"))) {
+	} else if (tstrieq(argv[i], T("-n")) ||
+	    tstrieq(argv[i], T("--sortbyname"))) {
 	    byname = true;
-	} else if (!tstricmp(argv[i], T("-s")) || !tstricmp(argv[i],
-	    T("--sec"))) {
+	} else if (tstrieq(argv[i], T("-s")) ||
+	    tstrieq(argv[i], T("--sec"))) {
 	    mult = 1000000;
-	} else if (!tstricmp(argv[i], T("-u")) || !tstricmp(argv[i],
-	    T("--usec"))) {
+	} else if (tstrieq(argv[i], T("-u")) ||
+	    tstrieq(argv[i], T("--usec"))) {
 	    mult = 1;
 	} else if (argv[i][0] != '-') {
-	    if (i + 1 == argc || argv[i + 1][0] == '-')
+	    if (tstrpbrk(argv[i], T("= \t"))) {
+		if (!add_line(argv[i], mult))
+		    break;
+	    } else if (i + 1 == argc || argv[i + 1][0] == '-') {
 		break;
-	    timing(argv[i], (usec_t)atoi<ulong>(argv[i + 1]) * mult);
-	    i++;
+	    } else {
+		dtiming.add(argv[i], (usec_t)atoi<ulong>(argv[i + 1]) * mult);
+		i++;
+	    }
 	    out = true;
 	} else {
 	    break;
@@ -85,21 +106,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	return 1;
     }
     if (!out) {
-	while (getline(ifs.is_open() ? ifs : tcin, s)) {
-	    if (!s.empty()) {
-		const tchar *p = s.c_str(), *pp;
+	tistream &is = ifs.is_open() ? ifs : tcin;
 
-		while (istspace(*p))
-		    p++;
-		pp = p;
-		while (*pp && *pp != '=' && !istspace(*pp))
-		    pp++;
-		tstring_view key(p, (tstring_view::size_type)(pp - p));
-		while (*pp == '=' || istspace(*pp))
-		    pp++;
-		timing(tstring(key).c_str(), (usec_t)atoi<ulong>(pp) * mult);
-	    }
-	}
+	while (getline(is, s))
+	    add_line(s.c_str(), mult);
     }
     tcout << dtiming.data(byname, columns);
     return 0;

@@ -26,23 +26,24 @@
     exit(1);
 }
 
-static void log(Log::Level lvl, const tchar *str) {
-    const tchar *p;
+static void log(Log::Level lvl, tstring &s) {
+    const tchar *str = s.c_str();
 
-    if ((p = tstrchr(str, ' ')) != nullptr || (p = tstrchr(str, '\t')) != nullptr) {
-	Log::Level l;
-	tstring_view sv(str, (tstring_view::size_type)(p - str));
+    if (auto pos = s.find_first_of(T(" \t")); pos != s.npos) {
+	tchar c = s[pos];
 
-	l = Log::str2enum(tstring(sv).c_str());
-	if (l != Log::None) {
+	s[pos] = '\0';
+	if (Log::Level l = Log::str2enum(str); l != Log::None) {
 	    lvl = l;
-	    str += p - str + 1;
+	    str += pos + 1;
+	} else {
+	    s[pos] = c;
 	}
     }
     dlog.log(lvl, str);
 }
 
-int tmain(int argc, tchar *argv[]) {
+int tmain(int argc, const tchar * const argv[]) {
     int i;
     tifstream ifs;
     Log::Level lvl = Log::Info;
@@ -53,17 +54,17 @@ int tmain(int argc, tchar *argv[]) {
     signal(SIGINT, signal_handler);
     dlog.setmp(true);
     for (i = 1; i < argc; i++) {
-	if (!tstricmp(argv[i], T("-?")) || !tstricmp(argv[i], T("--help"))) {
+	if (tstrieq(argv[i], T("-?")) || tstrieq(argv[i], T("--help"))) {
 	    break;
-	} else if (!tstricmp(argv[i], T("-a")) || !tstricmp(argv[i],
-	    T("--alert"))) {
+	} else if (tstrieq(argv[i], T("-a")) ||
+	    tstrieq(argv[i], T("--alert"))) {
 	    Log::Level alvl = Log::Err;
 	    ulong cnt = 3, sz = 10UL * 1024 * 1024, tm = 0;
 	    const tchar *file;
 
-	    if (i + 1 == argc || argv[++i][0] == '-')
+	    if (i + 1 == argc || (argv[++i][0] == '-' && argv[i][1]))
 		break;
-	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stderr");
+	    file = tstreq(argv[i], T("-")) ? T("stderr") : argv[i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-' &&
 		(alvl = Log::str2enum(argv[++i])) == Log::None)
 		break;
@@ -74,8 +75,8 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		tm = tstrtoul(argv[++i], nullptr, 10);
 	    dlog.alertfile(alvl, file, (uint)cnt, sz, tm);
-	} else if (!tstricmp(argv[i], T("-b")) || !tstricmp(argv[i],
-	    T("--buffer"))) {
+	} else if (tstrieq(argv[i], T("-b")) ||
+	    tstrieq(argv[i], T("--buffer"))) {
 	    ulong msec = 1000, sz = 32UL * 1024;
 
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
@@ -84,8 +85,8 @@ int tmain(int argc, tchar *argv[]) {
 		msec = tstrtoul(argv[++i], nullptr, 10);
 	    dlog.setmp(false);
 	    dlog.buffer((uint)sz, msec);
-	} else if (!tstricmp(argv[i], T("-c")) || !tstricmp(argv[i],
-	    T("--config"))) {
+	} else if (tstrieq(argv[i], T("-c")) ||
+	    tstrieq(argv[i], T("--config"))) {
 	    const tchar *file, *pre = nullptr;
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
@@ -97,20 +98,20 @@ int tmain(int argc, tchar *argv[]) {
 	    ConfigFile cfg(file, pre);
 
 	    dlog.set(cfg);
-	} else if (!tstricmp(argv[i], T("-d")) || !tstricmp(argv[i],
-	    T("--date"))) {
+	} else if (tstrieq(argv[i], T("-d")) ||
+	    tstrieq(argv[i], T("--date"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    dlog.format(argv[i]);
-	} else if (!tstricmp(argv[i], T("-f")) || !tstricmp(argv[i],
-	    T("--file"))) {
+	} else if (tstrieq(argv[i], T("-f")) ||
+	    tstrieq(argv[i], T("--file"))) {
 	    ulong cnt = 3, sz = 10UL * 1024 * 1024, tm = 0;
 	    const tchar *file;
 	    Log::Level flvl = Log::Info;
 
-	    if (i + 1 == argc || argv[++i][0] == '-')
+	    if (i + 1 == argc || (argv[++i][0] == '-' && argv[i][1]))
 		break;
-	    file = tstrcmp(argv[i], T("-")) ? argv[i] : T("stdout");
+	    file = tstreq(argv[i], T("-")) ? T("stdout") : argv[i];
 	    if (i + 1 < argc && argv[i + 1][0] != '-' && (flvl =
 		Log::str2enum(argv[++i])) == Log::None)
 		break;
@@ -121,31 +122,31 @@ int tmain(int argc, tchar *argv[]) {
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		tm = tstrtoul(argv[++i], nullptr, 10);
 	    dlog.file(flvl, file, (uint)cnt, sz, tm);
-	} else if (!tstricmp(argv[i], T("-i")) || !tstricmp(argv[i],
-	    T("--input"))) {
+	} else if (tstrieq(argv[i], T("-i")) ||
+	    tstrieq(argv[i], T("--input"))) {
 	    if (++i == argc)
 		break;
-	    if (tstrcmp(argv[i], T("-")) != 0) {
+	    if (!tstreq(argv[i], T("-"))) {
 		ifs.open(tchartoachar(argv[i]));
 		if (!ifs.good()) {
 		    tcerr << T("unable to open ") << argv[i] << endl;
 		    return 1;
 		}
 	    }
-	} else if (!tstricmp(argv[i], T("-k")) || !tstricmp(argv[i],
-	    T("--keepalive"))) {
+	} else if (tstrieq(argv[i], T("-k")) ||
+	    tstrieq(argv[i], T("--keepalive"))) {
 	    ka = 1000;
 	    if (i + 1 < argc && argv[i + 1][0] != '-')
 		ka = tstrtoul(argv[++i], nullptr, 10);
-	} else if (!tstricmp(argv[i], T("-l")) || !tstricmp(argv[i],
-	    T("--level"))) {
+	} else if (tstrieq(argv[i], T("-l")) ||
+	    tstrieq(argv[i], T("--level"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    if ((lvl = Log::str2enum(argv[i])) == Log::None)
 		break;
 	    dlog.level(lvl);
-	} else if (!tstricmp(argv[i], T("-m")) || !tstricmp(argv[i],
-	    T("--mail"))) {
+	} else if (tstrieq(argv[i], T("-m")) ||
+	    tstrieq(argv[i], T("--mail"))) {
 	    const tchar *to;
 	    const tchar *from = T("<>");
 	    const tchar *host = T("localhost");
@@ -163,26 +164,26 @@ int tmain(int argc, tchar *argv[]) {
 		host = argv[++i];
 	    dlog.mail(true);
 	    dlog.mail(mlvl, to, from, host);
-	} else if (!tstricmp(argv[i], T("-n")) || !tstricmp(argv[i],
-	    T("--name"))) {
+	} else if (tstrieq(argv[i], T("-n")) ||
+	    tstrieq(argv[i], T("--name"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    dlog.source(argv[i]);
-	} else if (!tstricmp(argv[i], T("-o")) || !tstricmp(argv[i],
-	    T("--output"))) {
+	} else if (tstrieq(argv[i], T("-o")) ||
+	    tstrieq(argv[i], T("--output"))) {
 	    if (i + 1 == argc || argv[i + 1][0] == '-')
 		break;
-	} else if (!tstricmp(argv[i], T("-p")) || !tstricmp(argv[i],
-	    T("--prefix"))) {
+	} else if (tstrieq(argv[i], T("-p")) ||
+	    tstrieq(argv[i], T("--prefix"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    dlog.prefix(argv[i]);
-	} else if (!tstricmp(argv[i], T("-r")) || !tstricmp(argv[i],
-	    T("--roll"))) {
+	} else if (tstrieq(argv[i], T("-r")) ||
+	    tstrieq(argv[i], T("--roll"))) {
 	    dlog.roll();
 	    return 0;
-	} else if (!tstricmp(argv[i], T("-s")) || !tstricmp(argv[i],
-	    T("--syslog"))) {
+	} else if (tstrieq(argv[i], T("-s")) ||
+	    tstrieq(argv[i], T("--syslog"))) {
 	    uint fac = 1;
 	    const tchar *host = T("localhost");
 	    Log::Level slvl = Log::Err;
@@ -196,23 +197,27 @@ int tmain(int argc, tchar *argv[]) {
 		fac = (uint)tstrtoul(argv[++i], nullptr, 10);
 	    dlog.syslog(true);
 	    dlog.syslog(slvl, host, fac);
-	} else if (!tstricmp(argv[i], T("-t")) || !tstricmp(argv[i],
-	    T("--type"))) {
+	} else if (tstrieq(argv[i], T("-t")) ||
+	    tstrieq(argv[i], T("--type"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
-	    if (!tstricmp(argv[i], T("keyval")))
+	    if (tstrieq(argv[i], T("keyval")))
 		dlog.type(Log::KeyVal);
-	    else if (!tstricmp(argv[i], T("nolevel")))
+	    else if (tstrieq(argv[i], T("nolevel")))
 		dlog.type(Log::NoLevel);
-	    else if (!tstricmp(argv[i], T("notime")))
+	    else if (tstrieq(argv[i], T("notime")))
 		dlog.type(Log::NoTime);
-	    else if (!tstricmp(argv[i], T("syslog")))
+	    else if (tstrieq(argv[i], T("simple")))
+		dlog.type(Log::Simple);
+	    else if (tstrieq(argv[i], T("syslog")))
 		dlog.type(Log::Syslog);
-	} else if (!tstricmp(argv[i], T("-u")) || !tstricmp(argv[i],
-	    T("--unlocked"))) {
+	    else
+		break;
+	} else if (tstrieq(argv[i], T("-u")) ||
+	    tstrieq(argv[i], T("--unlocked"))) {
 	    dlog.setmp(false);
-	} else if (!tstricmp(argv[i], T("-w")) || !tstricmp(argv[i],
-	    T("--write"))) {
+	} else if (tstrieq(argv[i], T("-w")) ||
+	    tstrieq(argv[i], T("--write"))) {
 	    if (++i < argc) {
 		dlog.log(lvl, argv[i]);
 		out = true;
@@ -245,16 +250,18 @@ int tmain(int argc, tchar *argv[]) {
 	    T("\t[[-w|--write] logstr]*\n") << endl;
 	return 1;
     }
-    while (!out) {  //-V776
-	while (getline(ifs.is_open() ? ifs : tcin, s)) {
-	    if (!s.empty())
-		log(lvl, s.c_str());
-	}
-	if (ka) {   //-V776
-	    tcin.clear();
+    if (!out) {
+	tistream &is = ifs.is_open() ? ifs : tcin;
+
+	for (;;) {
+	    while (getline(is, s)) {
+		if (!s.empty())
+		    log(lvl, s);
+	    }
+	    if (!ka)
+		break;
+	    is.clear();
 	    msleep(ka);
-	} else {
-	    break;
 	}
     }
     dlog.stop();

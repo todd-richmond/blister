@@ -25,6 +25,9 @@ target_link_libraries(httpload blister_static)
 add_executable(smtpload SMTPLoad.cpp)
 target_link_libraries(smtpload blister_static)
 
+add_executable(smtpsink SMTPSink.cpp)
+target_link_libraries(smtpsink blister_static)
+
 add_executable(uhttpd HTTPd.cpp)
 target_link_libraries(uhttpd blister)
 
@@ -53,10 +56,11 @@ if(COMPILE_PCH)
     target_precompile_headers(httpload REUSE_FROM cfg)
     target_precompile_headers(httptest REUSE_FROM cfg)
     target_precompile_headers(smtpload REUSE_FROM cfg)
+    target_precompile_headers(smtpsink REUSE_FROM cfg)
     target_precompile_headers(uhttpd REUSE_FROM cfg)
     target_precompile_headers(hashtest REUSE_FROM cfg)
 endif()
 
 install(FILES http.wld smtp.wld DESTINATION etc)
-install(TARGETS cfg daemonize dlog httpload smtpload DESTINATION bin)
+install(TARGETS cfg daemonize dlog httpload smtpload smtpsink DESTINATION bin)
 
