@@ -166,6 +166,7 @@ public:
 #endif
 	SpinWLocker lkr(lck);
 
+	// cppcheck-suppress uninitvar
 	return set(key, tstrlen(key), tbuf, len, sect, sect ? tstrlen(sect) :
 	    0);
     }

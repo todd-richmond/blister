@@ -18,6 +18,7 @@
 // SMTP and LMTP server that accepts and discards mail for client load tests
 
 #include "stdapi.h"
+#include <array>
 #include <format>
 #include <signal.h>
 #include "Config.h"
