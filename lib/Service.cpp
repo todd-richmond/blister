@@ -37,8 +37,9 @@
 
 static constexpr uint STATUS_LOOPS = 400;
 
-ulong Service::Timer::dmsec = 120;
+ulong Service::Timer::dmsec = 120000;
 bool Service::aborted;
+atomic<bool> Service::aborting;
 bool Service::console;
 bool Service::exiting;
 bool Service::restart;
@@ -126,8 +127,8 @@ Service::Service(const tchar *servicename, const tchar *h): bPause(false),
 
 Service::Service(const tchar *servicename, bool pauseable): bPause(pauseable),
     errnum(0), gid(0), name(servicename), pid(0), stStatus(Stopped), uid(0),
-    ctrlfunc(nullptr), checkpoint(0), hService(0), hSCManager(0), hStatus(0),
-    map(nullptr), maphdl(0), mapsz(0) {
+    ctrlfunc(service_handler), checkpoint(0), hService(0), hSCManager(0),
+    hStatus(0), map(nullptr), maphdl(0), mapsz(0) {
     service = this;
     ZERO(ssStatus);
 }
@@ -442,7 +443,7 @@ bool Service::uninstall() {
 
 int Service::start(int argc, const tchar *const *argv) {
     if (!open())
-	return false;
+	return (int)errnum;
     errnum = StartService(hService, argc - 1, (LPCTSTR *)&argv[1]) ? // NOSONAR
 	0 : GetLastError();
     return errnum;
@@ -758,7 +759,15 @@ bool Service::open(const tchar *file) {
     fl.l_type = F_WRLCK;
     fl.l_whence = SEEK_SET;
     if (fcntl(fd, F_GETLK, &fl) != -1 && fl.l_pid && fl.l_type != F_UNLCK) {
-	pid = (pid_t)fl.l_pid;
+	char buf[24];
+	ssize_t len = read(fd, buf, sizeof (buf));
+	pid_t fpid = 0;
+
+	// 1st pid in file is the watcher, which must get signals, not the child
+	if (len > 0 && from_chars(buf, buf + len, fpid).ec == errc() && fpid > 0)
+	    pid = fpid;
+	else
+	    pid = (pid_t)fl.l_pid;
 	stStatus = (Status)fl.l_len;
     }
     ::close(fd);
@@ -771,20 +780,22 @@ bool Service::close(void) {
 }
 
 void Service::abort_handler(void) {
-    static bool aborting;
+    struct sigaction sa;
+    sigset_t sigs;
 
-    if (!aborting) {
-	struct sigaction sa;
-
-	aborting = true;
-	ZERO(sa);
-	sa.sa_handler = abort_handler;
-	sigaction(SIGALRM, &sa, nullptr);
-	alarm(5);
+    // a 2nd entry means logging or _exit() hung, so force the issue
+    if (aborting.exchange(true))
+	kill(getpid(), SIGKILL);
+    ZERO(sa);
+    sa.sa_handler = abort_handler;
+    sigaction(SIGALRM, &sa, nullptr);
+    sigemptyset(&sigs);
+    sigaddset(&sigs, SIGALRM);
+    pthread_sigmask(SIG_UNBLOCK, &sigs, nullptr);
+    alarm(5);
+    if (service)
 	dlog.crit(Log::mod(service->name), Log::cmd(T("abort")),
 	    Log::error(T("timeout")));
-	alarm(0);
-    }
     _exit(-2);
 }
 
@@ -942,6 +953,7 @@ int Service::ctrl_handler(void *) {
     sigset_t sigs;
 
     sigpid = getpid();
+    sigpid.notify_all();
     init_sigset(sigs);
     sigaddset(&sigs, SIGPIPE);
     while (!quit) {
@@ -964,7 +976,10 @@ int Service::ctrl_handler(void *) {
 	    str = T("abort");
 	    break;
 	case SIGALRM:
-	    str = "timer";
+	    // exit watchdog fired but this thread consumed it
+	    if (exiting || aborting)
+		abort_handler();
+	    str = T("timer");
 	    break;
 	case SIGBUS:
 	case SIGFPE:
@@ -1013,8 +1028,10 @@ int Service::ctrl_handler(void *) {
 	pid_t pid = si.si_pid;
 
 	if (pid == watchpid && si.si_code == SI_QUEUE) {
-	    uid = (uid_t)(si.si_value.sival_int >> 16) & 0xffff;
-	    pid = (pid_t)(si.si_value.sival_int & 0xffff);
+	    auto val = (uint64_t)(uintptr_t)si.si_value.sival_ptr;
+
+	    uid = (uid_t)(val >> 32);
+	    pid = (pid_t)(uint32_t)val;
 	}
 	// ignore signals we sent our own pg
 	if (pid != getpid() || si.si_code == SI_QUEUE) {
@@ -1031,6 +1048,7 @@ int Service::run(int argc, const tchar * const *argv) {
     int ret;
     rlimit rl;
     struct sigaction sa;
+    sigset_t sigs;
 
     if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
 	rl.rlim_cur = rl.rlim_max == RLIM_INFINITY ? 100UL * 1024 : rl.rlim_max;
@@ -1072,6 +1090,9 @@ int Service::run(int argc, const tchar * const *argv) {
     ZERO(sa);
     sa.sa_handler = abort_handler;
     sigaction(SIGALRM, &sa, nullptr);
+    sigemptyset(&sigs);
+    sigaddset(&sigs, SIGALRM);
+    pthread_sigmask(SIG_UNBLOCK, &sigs, nullptr);
     alarm(5);
     service->sigthread.wait();
     dlog.stop();
@@ -1114,8 +1135,9 @@ bool Service::uninstall() {
 int Service::start(int argc, const tchar * const *argv) {
     pid_t fpid;
     uint loop = 5;
-    int ret = 5;
-    struct sigaction sa;
+    int ret;
+    bool started = false;
+    uint stopped = 0;
     Status sts;
 
     while (loop-- && (sts = status()) == Stopping)
@@ -1129,33 +1151,40 @@ int Service::start(int argc, const tchar * const *argv) {
 	dlog.err(Log::mod(argv[0]), Log::cmd(T("fork")), Log::error(errstr()));
 	return 3;
     }
-    ZERO(sa);
-    sa.sa_handler = null_handler;
-    sigaction(SIGALRM, &sa, nullptr);
-    loop = 60;
-    for (uint u = 0; u < loop; u++) {
+    // run() forks again, so reap fpid and then poll the daemon lock status
+    for (uint u = 0; u < 600; u++) {
 	if ((sts = status()) == Running || sts == Pausing ||
 	    sts == Paused || sts == Refreshing || sts == Resuming)
 	    return 0;
-	alarm(1);
-	if (waitpid(pid, &ret, 0) > 0) {
+	if (fpid && waitpid(fpid, &ret, WNOHANG) == fpid) {
 	    ret = WIFEXITED(ret) ? WEXITSTATUS(ret) : WIFSIGNALED(ret) ?
 		WTERMSIG(ret) : 3;
-	    break;
+	    if (ret)
+		return ret;
+	    fpid = 0;
 	}
+	if (sts != Stopped) {
+	    started = true;
+	    stopped = 0;
+	} else if (!fpid && ++stopped == 10) {
+	    // never locked means status is unknown rather than failed
+	    return started;
+	}
+	msleep(100);
     }
-    alarm(0);
-    return ret;
+    return 5;
 }
 
 bool Service::send(int sig) {
     uint cnt = 0;
     Status newstatus = Running;
+    Status oldstatus;
     bool ret;
     bool stop = false;
 
     if (!open())
 	return false;
+    oldstatus = stStatus;
     if (sig == SERVICE_CONTROL_STOP) {
 	sig = SIGINT;
 	stop = true;
@@ -1192,8 +1221,12 @@ bool Service::send(int sig) {
 	msleep(100);
 	if (!open())
 	    return stop;
-    } while (stStatus != newstatus && ++cnt < STATUS_LOOPS);
+	// no state change means it is ignored, such as pause when unpauseable
+    } while (stStatus != newstatus && ++cnt < STATUS_LOOPS && (stop ||
+	stStatus != oldstatus || cnt < 20));
     ret = (stStatus == newstatus || (stop && kill(pid, SIGKILL) == 0));
+    if (!ret)
+	errnum = stStatus == oldstatus ? ENOTSUP : ETIMEDOUT;
     close();
     return ret;
 }
@@ -1215,10 +1248,10 @@ string Service::errstr() const {
 #endif
 
 int Service::execute(int argc, const tchar * const *argv) {
-    int ac = 1;
-    const tchar **av;
+    int ac;
+    vector<const tchar *> av;
     const tchar *cmd = T("?");
-    tstring prog;
+    tstring prog, root;
     int ret = 0;
     Service::Status sts;
 
@@ -1229,7 +1262,6 @@ int Service::execute(int argc, const tchar * const *argv) {
 	return 1;
     }
 #endif
-    av = new const tchar *[(size_t)argc + 1];
     path = argv[0];
     if (path[0] != '/' && path[1] != ':') {
 	tchar buf[PATH_MAX + 2];
@@ -1240,7 +1272,7 @@ int Service::execute(int argc, const tchar * const *argv) {
 	    path += argv[0];
 	}
     }
-    av[0] = path.c_str();
+    av.push_back(path.c_str());
     for (int i = 1; i < argc; i++) {
 	cmd = argv[i];
 	while (*cmd == '-')
@@ -1252,47 +1284,46 @@ int Service::execute(int argc, const tchar * const *argv) {
 	} else if (tstreq(cmd, T("installdir"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("install directory required"));
-		delete [] av;
 		return 1;
 	    }
 	    installdir = argv[++i];
 	} else if (tstreq(cmd, T("lockfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("lock filename required"));
-		delete [] av;
 		return 1;
 	    }
 	    lckfile = argv[++i];
 	} else if (tstreq(cmd, T("logfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("log filename required"));
-		delete [] av;
 		return 1;
 	    }
 	    logfile = argv[++i];
 	} else if (tstreq(cmd, T("outfile"))) {
 	    if (i == argc - 1) {
 		dlog.err(T("output filename required"));
-		delete [] av;
 		return 1;
 	    }
 	    outfile = argv[++i];
 	} else {
 	    while (++i < argc)
-		av[ac++] = argv[i];
+		av.push_back(argv[i]);
 	    break;
 	}
     }
-    av[ac] = nullptr;
-    splitpath(argv[0], name.c_str(), installdir, prog);
+    ac = (int)av.size();
+    av.push_back(nullptr);
+    splitpath(argv[0], name.c_str(), root, prog);
+    if (installdir.empty())
+	installdir = root;
     if (name.empty())
 	name = prog;	//  -V820
     dlog.source(name.c_str());
     set_files();
-    if ((ret = command(cmd, ac, av)) != -1) {
+    if ((ret = command(cmd, ac, av.data())) != -1) {
 	// handled by virtual method
     } else if (tstreq(cmd, T("install"))) {
-	ret = !install(nullptr, av[0], &av[1]);
+	ret = !install(nullptr, av[1], ac > 1 ? &av[2] : nullptr);
     } else if (tstreq(cmd, T("uninstall"))) {
 	ret = !uninstall();
     } else if (tstreq(cmd, T("abort")) || tstreq(cmd, T("kill"))) {
@@ -1300,7 +1331,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     } else if (tstreq(cmd, T("help")) || tstreq(cmd, T("?"))) {
 	tcout << T("usage:\t") << name << endl <<
 	    T("\t[--console|--daemon] [--installdir dir] [--logfile file]") <<
-	    endl << T("\t[--outfile file] --pidfile file]") << endl <<
+	    endl << T("\t[--outfile file] [--lockfile file]") << endl <<
 	    T("\tcondrestart|restart|start [args]") << endl <<
 	    T("\thelp") << endl <<
 	    T("\tinstall [description [dependencies]]") << endl <<
@@ -1318,10 +1349,10 @@ int Service::execute(int argc, const tchar * const *argv) {
 	if (ret)
 	    errnum = ESRCH;
 	else
-	    ret = start(ac, av);
+	    ret = start(ac, av.data());
     } else if (tstreq(cmd, T("restart"))) {
 	stop();
-	ret = start(ac, av);
+	ret = start(ac, av.data());
     } else if (tstreq(cmd, T("continue")) || tstreq(cmd, T("resume"))) {
 	ret = !resume();
     } else if (tstreq(cmd, T("roll")) || tstreq(cmd, T("sigusr1")) ||
@@ -1330,7 +1361,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     } else if (tstreq(cmd, T("sigusr2"))) {
 	ret = !sigusr2();
     } else if (tstreq(cmd, T("start"))) {
-	ret = start(ac, av);
+	ret = start(ac, av.data());
 	if (ret && (sts = status()) != Error) {
 	    if (sts == Stopped) {
 		errnum = 0;
@@ -1354,49 +1385,32 @@ int Service::execute(int argc, const tchar * const *argv) {
     } else if (tstreq(cmd, T("version"))) {
 	tcout << ver << endl;
     } else {
-	ret = run(ac, av);
+	ret = run(ac, av.data());
     }
     if (ret && errnum)
 	tcerr << name << T(": ") << errstr() << endl;
-    delete [] av;
     dlog.destruct();
     return ret;
 }
 
 void Service::set_files(void) {
-    if (lckfile.empty()) {
-	lckfile = T("/var/run");
-	if (taccess(lckfile.c_str(), R_OK | W_OK)) {
-	    lckfile = installdir + T("log");
-	    if (taccess(lckfile.c_str(), R_OK | W_OK))
-		lckfile = installdir;
+    auto set = [this](tstring &file, const tchar *dir, const tchar *ext) {
+	if (!file.empty())
+	    return;
+	file = dir;
+	if (taccess(file.c_str(), R_OK | W_OK)) {
+	    file = installdir + T("/log");
+	    if (taccess(file.c_str(), R_OK | W_OK))
+		file = installdir;
 	}
-	lckfile += '/';
-	lckfile += name;
-	lckfile += T(".pid");
-    }
-    if (logfile.empty()) {
-	logfile = T("/var/log");
-	if (taccess(logfile.c_str(), R_OK | W_OK)) {
-	    logfile = installdir + T("log");
-	    if (taccess(logfile.c_str(), R_OK | W_OK))
-		logfile = installdir;
-	}
-	logfile += '/';
-	logfile += name;
-	logfile += T(".log");
-    }
-    if (outfile.empty()) {
-	outfile = T("/var/log");
-	if (taccess(outfile.c_str(), R_OK | W_OK)) {
-	    outfile = installdir + T("log");
-	    if (taccess(outfile.c_str(), R_OK | W_OK))
-		outfile = installdir;
-	}
-	outfile += '/';
-	outfile += name;
-	outfile += T(".out");
-    }
+	file += '/';
+	file += name;
+	file += ext;
+    };
+
+    set(lckfile, T("/var/run"), T(".pid"));
+    set(logfile, T("/var/log"), T(".log"));
+    set(outfile, T("/var/log"), T(".out"));
 }
 
 int Service::onStart(int argc, const tchar * const *argv) {
@@ -1405,8 +1419,7 @@ int Service::onStart(int argc, const tchar * const *argv) {
     setsignal();
 #ifndef _WIN32
     sigthread.start(ctrl_handler);
-    while (!sigpid)
-	msleep(20);
+    sigpid.wait(0);
 #endif
     return 0;
 }
@@ -1416,7 +1429,7 @@ void Service::onTimer(ulong timer) {
 }
 
 const tchar *Service::status(Status s) {
-    static const tchar *StatusStr[] = {
+    static constexpr const tchar *StatusStr[] = {
 	T("Error"), T("Pausing"), T("Paused"), T("Refreshing"), T("Resuming"),
 	T("Running"), T("Starting"), T("Stopping"), T("Stopped")
     };
@@ -1444,7 +1457,7 @@ Daemon::~Daemon() {
 }
 
 bool Daemon::update(Status status) {
-    if (!child) {
+    if (lckfd == -1) {
 	stStatus = status;
 	return true;
     }
@@ -1502,20 +1515,19 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     for (int i = 1; i < argc; i++) {
 	const tchar *p = argv[i];
 
-	if (*p == '-')
-	    while (*p == '-')
-		p++;
-	else
+	if (*p != '-')
 	    continue;
-	if (tstreq(p, T("config"))) {
+	while (*p == '-')
+	    p++;
+	if (tstreq(p, T("config")) && i + 1 < argc) {
 	    cfgfile = argv[i + 1];
 	    break;
 	}
     }
     if (cfgfile.empty()) {
-	cfgfile = installdir + T("etc/") + name + T(".cfg");
+	cfgfile = installdir + T("/etc/") + name + T(".cfg");
 	if (access(tstringtoachar(cfgfile), R_OK)) {
-	    cfgfile = installdir + name + T(".cfg");
+	    cfgfile = installdir + T("/") + name + T(".cfg");
 	    if (access(tstringtoachar(cfgfile), R_OK)) {
 		cfgfile = name + T(".cfg");
 		if (access(tstringtoachar(cfgfile), R_OK))
@@ -1608,8 +1620,8 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		pthread_sigmask(SIG_UNBLOCK, &sigs, nullptr);
 		first = false;
 		snprintf(buf, sizeof (buf), "%lu\n%lu", (ulong)getpid(), (ulong)child);
-		if (lseek(lckfd, 0, SEEK_SET) || write(lckfd, buf, strlen(
-		    buf)) < 1) {
+		if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) ||
+		    write(lckfd, buf, strlen(buf)) < 1) {
 		    dlog.warn(Log::mod(name), Log::cmd(T("watch")),
 			Log::kv(T("pid"), child), Log::error(errno));
 		} else {
@@ -1633,8 +1645,12 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 
 		    (void)dlog.close();
 		    alarm(intvl);
-		    if (lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Running, 0) ==
-			-1) {
+		    // lockfile() retries EINTR so alarm could not interrupt it
+		    fl.l_type = F_WRLCK;
+		    fl.l_whence = SEEK_SET;
+		    fl.l_start = 0;
+		    fl.l_len = Running;
+		    if (fcntl(lckfd, F_SETLKW, &fl) == -1) {
 			alarm(0);
 			flg = WNOHANG;
 		    }
@@ -1799,10 +1815,12 @@ void Daemon::watch_handler(int sig, siginfo_t *si, void *) {
 	daemon->qflag = Fast;
 #ifdef __linux__
     // pass the original sender to the child for ctrl_handler() to log
+    // uid is lost on 32 bit platforms but the pid always fits
     sigval val;
 
     ZERO(val);
-    val.sival_int = (int)((uint)si->si_uid << 16 | ((uint)si->si_pid & 0xffff));
+    val.sival_ptr = (void *)(uintptr_t)((uint64_t)si->si_uid << 32 |
+	(uint32_t)si->si_pid);
     sigqueue(daemon->child, sig, val);
 #else
     (void)si;

@@ -105,6 +105,7 @@ protected:
     Status stStatus;
     uid_t uid;
     static bool aborted;
+    static atomic<bool> aborting;
     static bool console;
     static bool exiting;
     static bool restart;
