@@ -2,7 +2,7 @@
 
 Sample and load-test programs for `lib/`. Only `hashtest` (the `HashFunctors` ctest target) is an automated test.
 
-- `cfg` — `Config`: file lookup.
+- `cfg` — `Config`: look up, check, update or erase keys from the shell.
 - `dlog` — `Log`: rollover, multi-process writes, syslog and mail.
 - `dtiming` — `Timing`: pretty-prints timing data.
 - `hashtest` — `stdapi.h` hash functors.

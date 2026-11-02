@@ -18,6 +18,7 @@ ctest                              # only test: HashFunctors
 
 - `build/build [check|tsan] [BuildType]`: `make distclean` + reconfigure + `make -j8`. `check`→`-DCHECK_ALL=ON`, `tsan`→`-DCHECK_TSAN=ON`. Only re-run when `CMakeLists.txt`/build options change — otherwise just `make -j4`.
 - CMake options (default off): `CHECK_CLANG_TIDY`, `CHECK_CPPCHECK`, `CHECK_CPPLINT`, `CHECK_IWYU`/`CHECK_ALL`, `CHECK_TSAN=<sanitizer>`. `COMPILE_PCH` (default ON) auto-disables under static analysis.
+- PGO: `build/build Release -DPGO=generate`, run a workload (e.g. `test/echotest -h 127.0.0.1:8765 -l 200000 -e 50 -p 10 x`), then `build/build Release -DPGO=use`. Profiles live in `.pgo/` (kept by `distclean`). `CMAKE_SKIP_RULE_DEPENDENCY` means flag changes don't recompile objects — always clean-build when switching `PGO`.
 - C++23/C23, `-fno-exceptions -fno-rtti`, `-Werror`/`/WX` on GCC/Clang/MSVC — new warnings are build breaks.
 - No unit test framework. Only `test/HashTest.cpp` (`HashFunctors` ctest target, `EXCLUDE_FROM_ALL`) is automated; rest of `test/` is sample/load-test programs — see `test/README.md`.
 - Static analysis config at repo root: `.clang-tidy`, `.cppcheck-suppressions`, `CPPLINT.cfg`. CI runs CodeQL, MSVC Code Analysis, SonarQube on push/PR to `master`.
@@ -50,7 +51,7 @@ See `lib/README.md` for full per-class detail; summary below.
 - `lib/HTTPClient`/HTTPServer`/`SMTPClient` — protocol implementations on `Dispatch`.
 - `lib/LRUCache.h` — header-only size/time-bounded LRU cache.
 - `lib/ResourcePool.h` — header-only `ResourcePool<C>` (blocking) and `AsyncResourcePool<C>` (`Waiter` callbacks on an `AsyncCondvar`) pools of lazily created, shareable resources.
-- `test/` — sample/load-test programs, not unit tests (`cfg`, `dlog`, `dtiming`, `hashtest`, `daemonize`, `echotest`, `uvechotest`, `httptest`, `uhttpd`, `httpload`, `smtpload` — see `test/README.md`). `echotest` is the canonical Dispatch client+server example.
+- `test/` — sample/load-test programs, not unit tests (`cfg`, `dlog`, `dtiming`, `hashtest`, `daemonize`, `echotest`, `uvechotest`, `httptest`, `uhttpd`, `httpload`, `smtpload`, `smtpsink` — see `test/README.md`). `echotest` is the canonical Dispatch client+server example.
 
 ### Conventions
 - Prefer C++23 (concepts, ranges, `to_chars`, etc.) over older idioms in new/modified code.

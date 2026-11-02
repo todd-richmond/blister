@@ -95,15 +95,15 @@ public:
     static void version(const tstring &s) { ver = s; }
 
 protected:
-    bool bPause;
-    long errnum;
-    gid_t gid;
+    bool bPause = false;
+    long errnum = 0;
+    gid_t gid = 0;
     tstring installdir, lckfile, logfile, outfile;
     tstring name;
     tstring path;
-    pid_t pid;
-    Status stStatus;
-    uid_t uid;
+    pid_t pid = 0;
+    atomic<Status> stStatus = Stopped;
+    uid_t uid = 0;
     static bool aborted;
     static atomic<bool> aborting;
     static bool console;
@@ -115,7 +115,11 @@ protected:
     static tstring ver;
     static atomic<pid_t> watchpid;
 
+#ifdef _WIN32
+#ifdef _WIN32
     void *open(uint mapsz);
+#endif
+#endif
     [[noreturn]] void exit(int code);
     void handle(ulong sig);
     bool running(void) { return update(Running); }
@@ -135,6 +139,9 @@ protected:
     virtual void onTimer(ulong timer);
     virtual bool update(Status status);
     static void null_handler(int sig);
+#ifndef _WIN32
+    static void sigalrm(void (*fn)(int));
+#endif
     static int run(int argc = 0, const tchar * const *argv = nullptr);
 
 private:
@@ -147,15 +154,15 @@ private:
 #ifdef _WIN32
     using service_ctrl_t = void (__stdcall *)(ulong cmd);
 
-    service_ctrl_t ctrlfunc;
-    ulong checkpoint;
+    service_ctrl_t ctrlfunc = nullptr;
+    ulong checkpoint = 0;
     tstring host;
-    SC_HANDLE hService, hSCManager;
-    SERVICE_STATUS_HANDLE hStatus;
-    void *map;
-    HANDLE maphdl;
-    uint mapsz;
-    SERVICE_STATUS ssStatus;
+    SC_HANDLE hService = 0, hSCManager = 0;
+    SERVICE_STATUS_HANDLE hStatus = 0;
+    void *map = nullptr;
+    HANDLE maphdl = 0;
+    uint mapsz = 0;
+    SERVICE_STATUS ssStatus{};
     static int __stdcall ctrl_handler(ulong sig);
     static long __stdcall exception_handler(_EXCEPTION_POINTERS *info);
     static void __stdcall service_handler(ulong sig);
@@ -211,18 +218,18 @@ public:
 	bool pauseable = false);
     virtual ~Daemon();
 
-    atomic<Quit> qflag;
+    atomic<Quit> qflag = None;
 
     Config &config(void) { return cfg; }
 
 protected:
     ConfigFile cfg;
     tstring cfgfile, instance;
-    pid_t child;
-    int lckfd;
-    msec_t msec;
-    bool refreshed;
-    bool watch;
+    pid_t child = 0;
+    int lckfd = -1;
+    msec_t msec = mticks();
+    bool refreshed = false;
+    bool watch = false;
 
     bool setids(void);
 

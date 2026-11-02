@@ -1,17 +1,20 @@
-# httpload [-d] [-h host[:port]] [-k] [-l loops] [-m maxuser]
-#     [-r] [-s stattime] [-t threads] [-q|-v]* [-w timeout] cmdfile
+# httpload [-a [numfiles]] [-b bodyfile|bodydir] [-c cachemb] [-d]
+#    [-h host[:port]] [-k] [-l loops] [-m maxuser] [-q|-v]* [-r] [-s stattime]
+#    [-t threads] [-w timeout] cmdfile
 #
 # options:
+#    -a [numfiles]: post all files (or limit to numfiles) in bodydir
 #    -b bodyfile/dir: POST data file or directory
-#    -d: debug to debug.out
-#    -h host[:port]: SMTP host and port - default is localhost:25
-#    -l loops: total number of messages to send
+#    -c cachemb: MB of body files to cache in memory
+#    -d: debug first thread to debug.out
+#    -h host[:port]: sets $(host) - default is this file's host var
 #    -k: use HTTP keepalives
-#    -m maxuser: maximum user id
+#    -l loops: total number of request sequences to run
+#    -m maxuser: maximum user id - default is thread count
 #    -q: quiet - don't output statistics results, just return 0 or 1 (failure)
 #    -r: randomize ids when used with variable expansion
-#    -s secs: print statistics at every n seconds
-#    -t threads: number of sending threads
+#    -s secs: print rolling statistics every n seconds
+#    -t threads: number of client threads
 #    -v: verbose
 #    -w: HTTP timeout in ms
 

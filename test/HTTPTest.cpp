@@ -29,7 +29,6 @@
 #include "Log.h"
 #include "Timing.h"
 
-const int DELAY = 20;
 const int RETRY = 100;
 const int TIMEOUT = 10 * 1000;
 static const tchar *const URI = T("/echo");
@@ -100,14 +99,14 @@ private:
 static atomic<uint> errs, ops;
 static atomic loops(LLONG_MAX);
 static atomic_bool qflag;
-alignas(64) static atomic<usec_t> usecs;
+alignas(CACHELINE_SZ) static atomic<usec_t> usecs;
 
 static inline bool loop_exit(void) {
     return loops.fetch_sub(1, memory_order_relaxed) <= 0 || qflag;
 }
 
 static ulong stagger(uint u, uint count, ulong delay, ulong nap) {
-    return u * (!delay || count < nap / delay ? nap / count : delay);
+    return u * max(delay, nap / count);
 }
 
 // nullptr if the reply is the echoed data
@@ -164,18 +163,21 @@ int SyncClient::onStart(void) {
 	timing_t begin = Timing::now();
 
 	if (hc.connect(sa, true, (uint)tmt) && hc.post(URI, dbuf, dsz)) {
-	    if (const tchar *why = check(hc.status(), hc.data(), hc.size())) {
-		bad(why);
-	    } else {
+	    const tchar *why = check(hc.status(), hc.data(), hc.size());
+
+	    if (!why) {
 		good(Timing::now() - begin);
 		if (nap)
 		    msleep(nap);
+		continue;
 	    }
+	    bad(why);
 	} else {
 	    bad(T("io"));
-	    hc.close();
-	    msleep(max(nap, (ulong)RETRY));
 	}
+	// reconnect in case the error left the keepalive stream out of step
+	hc.close();
+	msleep(max(nap, (ulong)RETRY));
     }
     return 0;
 }
@@ -193,14 +195,10 @@ void HTTPTest::connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
 bool HTTPTest::listen(const Sockaddr &sa) {
     ListenSocket *ls = new ListenSocket(*this);
 
-    // detach before listen registers ls with the poller thread
-    ls->detach();
-    if (ls->listen(sa)) {
+    if (ls->listen(sa))
 	return true;	// -V::773
-    } else {
-	delete ls;
-	return false;
-    }
+    delete ls;
+    return false;
 }
 
 // only async-signal-safe work here so main notices qflag and stops
@@ -208,7 +206,7 @@ static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true, sync = false;
-    ulong delay = DELAY, tmt = TIMEOUT, nap = 0;
+    ulong delay = 0, tmt = TIMEOUT, nap = 0;
     Config config;
     HTTPTest ht(config);
     int fd;
@@ -244,15 +242,16 @@ int tmain(int argc, const tchar * const argv[]) {
 	} else if (!tstricmp(argv[i], T("-t")) && i + 1 < argc) {
 	    tmt = tstrtoul(argv[++i], nullptr, 10);
 	} else if (!tstricmp(argv[i], T("-v"))) {
-	    dlog.level(dlog.level() < Log::Trace ? Log::Level(dlog.level() + 1) :
-		Log::Trace);
+	    dlog.level(dlog.level() < Log::Trace ?
+		Log::Level(dlog.level() + 1) : Log::Trace);
 	} else if (!tstricmp(argv[i], T("-w")) && i + 1 < argc) {
 	    nap = tstrtoul(argv[++i], nullptr, 10);
 	} else if (*argv[i] != '-') {
 	    path = argv[i];
 	} else {
 	    tcerr << T("Usage: httptest\n")
-		T("\t[-b]\t\tblocking HTTPClient threads, not AsyncHTTPClient\n")
+		T("\t[-b]\t\tblocking HTTPClient threads, not ")
+		T("AsyncHTTPClient\n")
 		T("\t[-c]\n")
 		T("\t[-d delay]\n")
 		T("\t[-h host[:port]]\n")
@@ -271,11 +270,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (access(tchartoachar(path), 0) == 0) {
 	    tcerr << T("httptest: unable to open ") << path << endl;
 	    return 1;
-	} else {
-	    dsz = (uint)(tstrlen(path) * sizeof (tchar));
-	    dbuf = new char[dsz];
-	    memcpy(dbuf, path, dsz);
 	}
+	dsz = (uint)(tstrlen(path) * sizeof (tchar));
+	dbuf = new char[dsz];
+	memcpy(dbuf, path, dsz);
     } else {
 	if (fstat(fd, &sbuf) == -1) {
 	    close(fd);
@@ -285,9 +283,6 @@ int tmain(int argc, const tchar * const argv[]) {
 	dsz = (uint)sbuf.st_size;
 	dbuf = new char[dsz];
 	if ((dsz = (uint)read(fd, dbuf, dsz)) == (uint)-1) {
-	    delete [] dbuf;
-	    dbuf = nullptr;
-	    dsz = 0;
 	    close(fd);
 	    tcerr << T("httptest: unable to read ") << path << endl;
 	    return 1;
@@ -300,7 +295,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	tcerr << T("httptest: unknown host ") << host << endl;
 	return 1;
     }
-    if (sa.proto() != Sockaddr::UNIX && !sa.port())
+    if (!sa.port())
 	sa.port(8888);
     signal(SIGINT, signal_handler);
 #ifndef _WIN32

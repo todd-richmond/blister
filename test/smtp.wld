@@ -9,11 +9,11 @@
 #    -d: send messages with DATA even if the server supports BDAT (CHUNKING)
 #    -h host[:port]: SMTP host and port - default is localhost:25
 #    -l loops: total number of messages to send
-#    -m maxuser: maximum user id
+#    -m maxuser: maximum user id - default is thread count
 #    -p: pipeline commands - from and rcpt time is included in body or data
-#    -q: quiet - don't output statistics results, just output 0 or 1 (failure)
+#    -q: quiet - don't output statistics results, just return 0 or 1 (failure)
 #    -r: randomize ids when used with variable expansion
-#    -s secs: print statistics at every n seconds
+#    -s secs: print rolling statistics every n seconds
 #    -t threads: number of sending threads
 #    -v: verbose
 #    -w: SMTP timeout in ms

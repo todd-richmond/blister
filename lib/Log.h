@@ -298,10 +298,7 @@ private:
 	}
 	~LogFile() { close(); }
 
-	bool active(void) const { return fd != -1; }
 	const tchar *filename(void) const { return file.c_str(); }
-	ulong length(void) const { return len; }
-	void length(ulong l) { len = l; }
 	const tchar *pathname(void) const { return path.c_str(); }
 
 	bool close(void);
@@ -326,6 +323,8 @@ private:
 	ulong len = 0, sec = 0, sz = 0;
 	Level lvl;
 	tstring path;
+
+	bool lockend(void);
     };
 
     struct BLISTER Tlsdata {
@@ -345,12 +344,13 @@ private:
     bool bufenable = false, mailenable = false, syslogenable = false;
     uint bufsz = 32U * 1024;
     ulong buftm = 1000;
-    // dequeue allows threads to continue logging during slow file rolloever
+    // queue lets threads keep logging during a slow file rollover
     tbufferstream *bufcur = new tbufferstream;
     vector<tbufferstream *> buffree;
     deque<tbufferstream *> bufpending;
     bool flushpaused = false, pauserequested = false;
     tstring fmt;
+    ThreadGroup ftg;
     FlushThread ft;
     bool gmt = false, mp = true;
     tstring last_format;
@@ -369,6 +369,7 @@ private:
 
     void endlog(Tlsdata &tlsd);
     void drainbuffers(bool unlockedio);
+    void rotatebuf(void);
     void _mail(Level l, const tchar *to, const tchar *from, const tchar *host);
     void _syslog(Level l, const tchar *host, uint fac);
     template<typename... T>
@@ -404,31 +405,16 @@ private:
 	return *this;
     }
     Log &log(Tlsdata &tlsd, const tchar *val) {
-	if (LIKELY(tlsd.clvl != None)) {
-	    if (tlsd.sep == '=') {
-		if (LIKELY(val))
-		    quote(tlsd.strm, val);
-		tlsd.sep = ' ';
-	    } else if (LIKELY(val)) {
-		write_str(tlsd, val, (streamsize)tstrlen(val));
-	    }
-	}
+	if (LIKELY(val))
+	    return logstr(tlsd, val);
+	if (tlsd.clvl != None && tlsd.sep == '=')
+	    tlsd.sep = ' ';
 	return *this;
     }
     template<size_t N>
     Log &log(Tlsdata &tlsd, const tchar (&val)[N]) {
-	if (LIKELY(tlsd.clvl != None)) {
-	    if (tlsd.sep == '=') {
-		quote(tlsd.strm, val);
-		tlsd.sep = ' ';
-	    } else {
-		write_str(tlsd, val,
-		    (streamsize)char_traits<tchar>::length(val));
-	    }
-	}
-	return *this;
+	return logstr(tlsd, val);
     }
-#pragma warning(disable: 26461)
     __forceinline Log &log(Tlsdata &tlsd, tchar *val) {	// NOSONAR
 	return log(tlsd, (const tchar *)val);
     }
@@ -454,6 +440,17 @@ private:
     __forceinline void log(Tlsdata &tlsd, const T&... args) {
 	(log(tlsd, args), ...);
     }
+    Log &logstr(Tlsdata &tlsd, tstring_view val) {
+	if (LIKELY(tlsd.clvl != None)) {
+	    if (tlsd.sep == '=') {
+		quote(tlsd.strm, val);
+		tlsd.sep = ' ';
+	    } else {
+		write_str(tlsd, val.data(), (streamsize)val.size());
+	    }
+	}
+	return *this;
+    }
     __forceinline static void write_str(Tlsdata &tlsd, const tchar *data,
 	streamsize sz) {
 	if (LIKELY(sz > 0)) {
@@ -477,15 +474,7 @@ template<> inline Log &Log::log(Tlsdata &tlsd, const tstring &val) {
     return log(tlsd, val.c_str());
 }
 template<> inline Log &Log::log(Tlsdata &tlsd, const tstring_view &val) {
-    if (LIKELY(tlsd.clvl != None)) {
-	if (tlsd.sep == '=') {
-	    quote(tlsd.strm, val);
-	    tlsd.sep = ' ';
-	} else {
-	    write_str(tlsd, val.data(), (streamsize)val.size());
-	}
-    }
-    return *this;
+    return logstr(tlsd, val);
 }
 
 inline void endlog(Log &l) { l.endlog(); }
@@ -520,4 +509,4 @@ extern BLISTER Log &dlog;
 #define dlogd(...)	logd(dlog, __VA_ARGS__)
 #define dlogt(...)	logt(dlog, __VA_ARGS__)
 
-#endif // _Log_h
+#endif // Log_h

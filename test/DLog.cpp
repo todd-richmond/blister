@@ -21,10 +21,10 @@
 #include "Config.h"
 #include "Log.h"
 
-[[noreturn]] static void signal_handler(int) {
-    dlog.stop();
-    exit(1);
-}
+static volatile sig_atomic_t qflag;
+
+// only set a flag so the read loop returns and ~Log flushes
+static void signal_handler(int) { qflag = 1; }
 
 static void log(Log::Level lvl, tstring &s) {
     const tchar *str = s.c_str();
@@ -44,47 +44,68 @@ static void log(Log::Level lvl, tstring &s) {
 }
 
 int tmain(int argc, const tchar * const argv[]) {
-    int i;
+    int i = 1;
     tifstream ifs;
     Log::Level lvl = Log::Info;
     ulong ka = 0;
     bool out = false;
     tstring s;
+    const auto more = [&] { return i + 1 < argc && argv[i + 1][0] != '-'; };
+    // -a|-f file [level [count [size [time]]]]
+    const auto logfile = [&](bool alert) {
+	Log::Level flvl = alert ? Log::Err : Log::Info;
+	ulong cnt = 3, sz = 10UL * 1024 * 1024, tm = 0;
+	const tchar *file;
 
+	if (i + 1 == argc || (argv[++i][0] == '-' && argv[i][1]))
+	    return false;
+	file = !tstreq(argv[i], T("-")) ? argv[i] : alert ? T("stderr") :
+	    T("stdout");
+	if (more() && (flvl = Log::str2enum(argv[++i])) == Log::None)
+	    return false;
+	if (more())
+	    cnt = atoi<ulong>(argv[++i]);
+	if (more())
+	    sz = atoi<ulong>(argv[++i]);
+	if (more())
+	    tm = atoi<ulong>(argv[++i]);
+	if (alert)
+	    dlog.alertfile(flvl, file, (uint)cnt, sz, tm);
+	else
+	    dlog.file(flvl, file, (uint)cnt, sz, tm);
+	return true;
+    };
+
+#ifdef _WIN32
     signal(SIGINT, signal_handler);
-    dlog.setmp(true);
+#else
+    struct sigaction sa {};
+    sigset_t ss;
+
+    // no SA_RESTART so a blocked read returns and only main may take SIGINT
+    sa.sa_handler = signal_handler;
+    sigaction(SIGINT, &sa, nullptr);
+    sigemptyset(&ss);
+    sigaddset(&ss, SIGINT);
+    pthread_sigmask(SIG_BLOCK, &ss, nullptr);
+#endif
     for (i = 1; i < argc; i++) {
 	if (tstrieq(argv[i], T("-?")) || tstrieq(argv[i], T("--help"))) {
 	    break;
 	} else if (tstrieq(argv[i], T("-a")) ||
 	    tstrieq(argv[i], T("--alert"))) {
-	    Log::Level alvl = Log::Err;
-	    ulong cnt = 3, sz = 10UL * 1024 * 1024, tm = 0;
-	    const tchar *file;
-
-	    if (i + 1 == argc || (argv[++i][0] == '-' && argv[i][1]))
+	    if (!logfile(true))
 		break;
-	    file = tstreq(argv[i], T("-")) ? T("stderr") : argv[i];
-	    if (i + 1 < argc && argv[i + 1][0] != '-' &&
-		(alvl = Log::str2enum(argv[++i])) == Log::None)
-		break;
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		cnt = tstrtoul(argv[++i], nullptr, 10);
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		sz = tstrtoul(argv[++i], nullptr, 10);
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		tm = tstrtoul(argv[++i], nullptr, 10);
-	    dlog.alertfile(alvl, file, (uint)cnt, sz, tm);
 	} else if (tstrieq(argv[i], T("-b")) ||
 	    tstrieq(argv[i], T("--buffer"))) {
-	    ulong msec = 1000, sz = 32UL * 1024;
+	    ulong msec = 1000;
+	    uint sz = 32U * 1024;
 
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		sz = tstrtoul(argv[++i], nullptr, 10);
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		msec = tstrtoul(argv[++i], nullptr, 10);
-	    dlog.setmp(false);
-	    dlog.buffer((uint)sz, msec);
+	    if (more())
+		sz = atoi<uint>(argv[++i]);
+	    if (more())
+		msec = atoi<ulong>(argv[++i]);
+	    dlog.buffer(sz, msec);
 	} else if (tstrieq(argv[i], T("-c")) ||
 	    tstrieq(argv[i], T("--config"))) {
 	    const tchar *file, *pre = nullptr;
@@ -92,7 +113,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    file = argv[i];
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
+	    if (more())
 		pre = argv[++i];
 
 	    ConfigFile cfg(file, pre);
@@ -105,28 +126,13 @@ int tmain(int argc, const tchar * const argv[]) {
 	    dlog.format(argv[i]);
 	} else if (tstrieq(argv[i], T("-f")) ||
 	    tstrieq(argv[i], T("--file"))) {
-	    ulong cnt = 3, sz = 10UL * 1024 * 1024, tm = 0;
-	    const tchar *file;
-	    Log::Level flvl = Log::Info;
-
-	    if (i + 1 == argc || (argv[++i][0] == '-' && argv[i][1]))
+	    if (!logfile(false))
 		break;
-	    file = tstreq(argv[i], T("-")) ? T("stdout") : argv[i];
-	    if (i + 1 < argc && argv[i + 1][0] != '-' && (flvl =
-		Log::str2enum(argv[++i])) == Log::None)
-		break;
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		cnt = tstrtoul(argv[++i], nullptr, 10);
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		sz = tstrtoul(argv[++i], nullptr, 10);
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		tm = tstrtoul(argv[++i], nullptr, 10);
-	    dlog.file(flvl, file, (uint)cnt, sz, tm);
 	} else if (tstrieq(argv[i], T("-i")) ||
 	    tstrieq(argv[i], T("--input"))) {
-	    if (++i == argc)
+	    if (i + 1 == argc)
 		break;
-	    if (!tstreq(argv[i], T("-"))) {
+	    if (!tstreq(argv[++i], T("-"))) {
 		ifs.open(tchartoachar(argv[i]));
 		if (!ifs.good()) {
 		    tcerr << T("unable to open ") << argv[i] << endl;
@@ -136,8 +142,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	} else if (tstrieq(argv[i], T("-k")) ||
 	    tstrieq(argv[i], T("--keepalive"))) {
 	    ka = 1000;
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		ka = tstrtoul(argv[++i], nullptr, 10);
+	    if (more())
+		ka = atoi<ulong>(argv[++i]);
 	} else if (tstrieq(argv[i], T("-l")) ||
 	    tstrieq(argv[i], T("--level"))) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
@@ -155,12 +161,11 @@ int tmain(int argc, const tchar * const argv[]) {
 	    if (i + 1 == argc || argv[++i][0] == '-')
 		break;
 	    to = argv[i];
-	    if (i + 1 < argc && argv[i + 1][0] != '-' && (mlvl =
-		Log::str2enum(argv[++i])) == Log::None)
+	    if (more() && (mlvl = Log::str2enum(argv[++i])) == Log::None)
 		break;
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
+	    if (more())
 		from = argv[++i];
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
+	    if (more())
 		host = argv[++i];
 	    dlog.mail(true);
 	    dlog.mail(mlvl, to, from, host);
@@ -188,13 +193,12 @@ int tmain(int argc, const tchar * const argv[]) {
 	    const tchar *host = T("localhost");
 	    Log::Level slvl = Log::Err;
 
-	    if (i + 1 < argc && argv[i + 1][0] != '-' && (slvl =
-		Log::str2enum(argv[++i])) == Log::None)
+	    if (more() && (slvl = Log::str2enum(argv[++i])) == Log::None)
 		break;
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
+	    if (more())
 		host = argv[++i];
-	    if (i + 1 < argc && argv[i + 1][0] != '-')
-		fac = (uint)tstrtoul(argv[++i], nullptr, 10);
+	    if (more())
+		fac = atoi<uint>(argv[++i]);
 	    dlog.syslog(true);
 	    dlog.syslog(slvl, host, fac);
 	} else if (tstrieq(argv[i], T("-t")) ||
@@ -218,10 +222,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	    dlog.setmp(false);
 	} else if (tstrieq(argv[i], T("-w")) ||
 	    tstrieq(argv[i], T("--write"))) {
-	    if (++i < argc) {
-		dlog.log(lvl, argv[i]);
-		out = true;
-	    }
+	    if (i + 1 == argc)
+		break;
+	    dlog.log(lvl, argv[++i]);
+	    out = true;
 	} else if (argv[i][0] != '-') {
 	    dlog.log(lvl, argv[i]);
 	    out = true;
@@ -238,7 +242,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("\t[-f|--file file [level [count [size [time]]]]]\n")
 	    T("\t[-i|--input file]\n")
 	    T("\t[-k|--keepalive [polltime]]\n")
-	    T("\t[-l|--level emerg|alert|crit|err|warn|note|info|debug|trace]\n")
+	    T("\t[-l|--level emerg|alert|crit|err|warn|note|info|debug|")
+	    T("trace]\n")
 	    T("\t[-m|--mail to [level [from [host]]]]\n")
 	    T("\t[-n|--name sourcename]\n")
 	    T("\t[-o|--output logstr ...]\n")
@@ -250,20 +255,22 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("\t[[-w|--write] logstr]*\n") << endl;
 	return 1;
     }
+#ifndef _WIN32
+    pthread_sigmask(SIG_UNBLOCK, &ss, nullptr);
+#endif
     if (!out) {
 	tistream &is = ifs.is_open() ? ifs : tcin;
 
-	for (;;) {
+	while (!qflag) {
 	    while (getline(is, s)) {
 		if (!s.empty())
 		    log(lvl, s);
 	    }
-	    if (!ka)
+	    if (!ka || qflag)
 		break;
 	    is.clear();
 	    msleep(ka);
 	}
     }
-    dlog.stop();
-    return 0;
+    return qflag ? 1 : 0;
 }

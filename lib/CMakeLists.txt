@@ -6,7 +6,7 @@ set(blister_obj_LIB_SOURCE Config.cpp Dispatch.cpp HTTPClient.cpp HTTPServer.cpp
     Log.cpp MD5.c Service.cpp Socket.cpp SMTPClient.cpp Thread.cpp Timing.cpp)
 
 if(WIN32)
-    list(APPEND blister_obj_LIB_SOURCE Windows.c WindowsCPP.cpp)
+    list(APPEND blister_obj_LIB_SOURCE Windows.cpp)
 else()
     list(APPEND blister_obj_LIB_SOURCE Unix.c)
 endif()

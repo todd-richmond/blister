@@ -113,8 +113,12 @@ public:
     virtual ~SMTPClient() = default;
 
     int code(void) const { return atoi<int>(sts.c_str()); }
-    bool exts_find(const tchar *s) const { return exts.contains(s); }
+    bool exts_find(const tchar *s) const {
+	return ifind(exts, s) != tstring_view::npos;
+    }
     const tstring &extensions(void) const { return exts; }
+    // the server's SIZE limit or 0 if it has none
+    size_t maxsize(void) const { return maxsz; }
     const tchar *message(void) const {
 	return sts.length() > 4 ? sts.c_str() + 4 : T("");
     }
@@ -146,14 +150,27 @@ public:
     }
     bool from(const tchar *id, const tchar *parms = nullptr);
     bool from(const RFC822Addr &addrs, const tchar *parms = nullptr);
-    bool rcpt(const tchar *id);
-    bool rcpt(const RFC822Addr &addr);
-    bool bcc(const tchar *id) { return add(bccv, id); }
-    bool bcc(const RFC822Addr &addrs) { return add(bccv, addrs); }
-    bool cc(const tchar *id) { return add(ccv, id); }
-    bool cc(const RFC822Addr &addrs) { return add(ccv, addrs); }
-    bool to(const tchar *id) { return add(tov, id); }
-    bool to(const RFC822Addr &addrs) { return add(tov, addrs); }
+    // parms are RCPT parameters such as DSN NOTIFY= and ORCPT=
+    bool rcpt(const tchar *id, const tchar *parms = nullptr);
+    bool rcpt(const RFC822Addr &addr, const tchar *parms = nullptr);
+    bool bcc(const tchar *id, const tchar *parms = nullptr) {
+	return add(bccv, id, parms);
+    }
+    bool bcc(const RFC822Addr &addrs, const tchar *parms = nullptr) {
+	return add(bccv, addrs, parms);
+    }
+    bool cc(const tchar *id, const tchar *parms = nullptr) {
+	return add(ccv, id, parms);
+    }
+    bool cc(const RFC822Addr &addrs, const tchar *parms = nullptr) {
+	return add(ccv, addrs, parms);
+    }
+    bool to(const tchar *id, const tchar *parms = nullptr) {
+	return add(tov, id, parms);
+    }
+    bool to(const RFC822Addr &addrs, const tchar *parms = nullptr) {
+	return add(tov, addrs, parms);
+    }
     void attribute(const tchar *attr, const tchar *val);
     void header(const tchar *hdr) { hdrv.emplace_back(hdr); }
     void subject(const tchar *s) { sub = s; }
@@ -172,9 +189,8 @@ public:
 	const tchar *desc = nullptr, const tchar *encoding = nullptr,
 	const tchar *disp = nullptr, const tchar *name = nullptr);
     bool bdat(const void *p, size_t sz, bool last = true);
-    // send messages with BDAT instead of DATA when the server supports it.
-    // BDAT is faster at every size: small messages are pipelined with the
-    // envelope and large data() calls are sent without copying
+    // send with BDAT instead of DATA when supported. It is faster at any
+    // size: small messages pipeline with the envelope, large ones avoid copies
     void chunking(bool enable) { usebdat = enable; }
     bool enddata(void);
     bool quit(void);
@@ -197,13 +213,17 @@ protected:
     sockstream sstrm;
     fstream *fstrm = nullptr;
     iostream *strm = &sstrm;
-    bool ext_chunking = false, ext_smtputf8 = false;
+    bool ext_8bitmime = false, ext_chunking = false, ext_smtputf8 = false;
     static const char crlf[];
 
 private:
-    bool add(vector<tstring> &v, const tchar *id);
-    bool add(vector<tstring> &v, const RFC822Addr &addrs);
+    bool add(vector<tstring> &v, const tchar *id, const tchar *parms);
+    bool add(vector<tstring> &v, const RFC822Addr &addrs, const tchar *parms);
     bool bigchunk(const void *p, size_t sz, bool dotstuff);
+    void buffer(bool on) {
+	chunked = on;
+	strm = on ? static_cast<iostream *>(&bstrm) : &sstrm;
+    }
     bool final(const tchar *c);
     bool hello(const tchar *c, const tchar *domain);
     bool reply(void);
@@ -211,20 +231,23 @@ private:
     bool sendchunk(bool last);
     void recip(const tchar *hdr, const vector<tstring> &v);
     bool downgrade(const tchar *cmd, tstring &id);
+    bool can8bit(void) const { return ext_8bitmime || canutf8(); }
     bool canutf8(void) const { return ext_smtputf8 || fstrm; }
     bool envarg(const tchar *cmd, tstring &id, const tchar *parms, bool brkt,
 	bool always, tstring &arg);
     string hdrtext(const tchar *s) const;
     tstring hdraddr(const RFC822Addr &addr, uint u, const tstring &orig,
 	const tstring &sent) const;
-    bool rcptcmd(tstring &id);
+    bool fits(size_t sz);
+    bool rcptcmd(tstring &id, const tchar *parms);
     bool startdata(void);
-    bool stuff(const void *p, size_t sz);
+    bool stuff(const void *p, size_t sz, bool dotstuff = true);
     static size_t barelfs(const char *p, const char *end);
     static string base64line(string_view in);
     static void encodedwords(string &out, string_view text);
     static string encodewords(string_view text);
     static bool idna(string_view domain, string &out);
+    static size_t ifind(tstring_view s, tstring_view needle);
     static tstring numstr(size_t n);
     static bool punycode(const vector<char32_t> &in, string &out);
     static tstring sasl64(const string &in);
@@ -242,6 +265,7 @@ private:
     bool datasent = false, lmtp = false, mime = false;
     bool pipelined = false;
     bool chunked = false, usebdat = true;
+    size_t bdatsz = 0, maxsz = 0;
     stringstream bstrm;
     struct Expect {
 	tstring rcpt;

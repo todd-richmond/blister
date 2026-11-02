@@ -25,10 +25,9 @@
 #include "Dispatch.h"
 
 /*
- * Pools of lazily created resources, each shared by at most maxcount users.
- * Resources are constructed outside the pool lock. lock() waits for every
- * resource to be idle, then blocks other getters until unlock(); the holder
- * must not get() or clear() but release() still works
+ * pools of lazily created resources, each shared by at most maxcount users
+ * and constructed outside the pool lock. lock() waits until all are idle and
+ * blocks getters until unlock(); the holder may release() but not get/clear
  */
 template<default_initializable C>
 class BLISTER ResourcePool: nocopy {
@@ -325,7 +324,7 @@ public:
 	while (locked)
 	    change.wait();
 	locked = true;
-	while (ninuse || pending)
+	while (used || pending)
 	    change.wait();
     }
     void release(const C *p) {
@@ -333,7 +332,7 @@ public:
 	auto it = find(p);
 
 	--it->inuse;
-	--ninuse;
+	--used;
 	change.broadcast();
 	if (locked)
 	    return;
@@ -430,7 +429,7 @@ private:
     }
     C *take(Entry &e) {
 	++e.inuse;
-	++ninuse;
+	++used;
 	return e.obj.get();
     }
 
@@ -438,7 +437,7 @@ private:
     uint lmt;
     bool locked = false;
     const uint maxuse;
-    uint ninuse = 0, pending = 0;
+    uint pending = 0, used = 0;
     vector<Entry> pool;
     mutable Lock lk;
     Condvar change { lk };

@@ -26,7 +26,7 @@ public:
     static void pause(bool p) { paused = p; }
 
 protected:
-    static atomic<bool> paused;
+    static inline atomic<bool> paused = false;
 
     void exec(void) override {
 	if (paused) {
@@ -45,8 +45,14 @@ public:
 protected:
     Dispatcher dspr;
 
-    void onPause(void) override { HTTPDaemonSocket::pause(true); }
-    void onResume(void) override { HTTPDaemonSocket::pause(false); }
+    void onPause(void) override {
+	HTTPDaemonSocket::pause(true);
+	Daemon::onPause();
+    }
+    void onResume(void) override {
+	HTTPDaemonSocket::pause(false);
+	Daemon::onResume();
+    }
     int onStart(int argc, const tchar * const *argv) override;
     void onStop(bool fast) override { dspr.stop(); Daemon::onStop(fast); }
 };
@@ -55,11 +61,10 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     tchar buf[32];
     ushort port = 8080;
     int ret = Daemon::onStart(argc, argv);
-    SimpleDispatchListenSocket<Dispatcher, HTTPDaemonSocket> *hsock;
 
     if (ret)
 	return ret;
-    for (int i = 0; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i) {
 	if (!tstrcmp(argv[i], T("-p")) && i < argc - 1)
 	    port = (ushort)ttoi(argv[++i]);
     }
@@ -68,13 +73,13 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
 	dloge(name, Log::error(T("unable to start")));
 	return -1;
     }
-    hsock = new SimpleDispatchListenSocket<Dispatcher, HTTPDaemonSocket>(dspr);
-    if (!hsock->listen(buf, true)) {
+
+    auto *hsock = new SimpleDispatchListenSocket<Dispatcher,
+	HTTPDaemonSocket>(dspr);
+
+    if (!hsock->listen(buf)) {
 	delete hsock;
 	dspr.stop();
-	dlog << Log::Err << HTTPServerSocket::section() << " socket failed" <<
-	    endlog;
-	dspr.waitForMain();
 	return -1;
     }
     setids();
@@ -83,8 +88,6 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     // cppcheck-suppress memleak
     return 0;	//-V773
 }
-
-atomic<bool> HTTPDaemonSocket::paused = false;
 
 int tmain(int argc, const tchar * const argv[]) {
     HTTPDaemon hd(T("httpd"), T("Test HTTP Server"));

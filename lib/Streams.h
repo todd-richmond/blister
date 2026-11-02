@@ -29,10 +29,8 @@
 // NOLINTBEGIN(misc-multiple-inheritance)
 
 /*
- * faststreambuf is an optimized stream buffer that reads directly into user
- * buffers and coalesces writes from user buffers with writev to reduce
- * buffer copies when possible. Get and put areas share one buffer so all
- * buffered input must be consumed before writing
+ * streambuf that reads directly into user buffers and coalesces writes with
+ * writev. Get and put share one buffer: consume all input before writing
  */
 template<class C>
 class BLISTER faststreambuf: public streambuf, private nocopy {
@@ -66,10 +64,8 @@ public:
     streamsize write(const T &t) { return write(&t, sizeof (t)); }
 
     void reset(void) {
-	if (buf) {
-	    setg(buf, buf, buf);
-	    setp(buf, buf + bufsz);
-	}
+	setg(buf, buf, buf);
+	setp(buf, buf + bufsz);
     }
     streambuf *setbuf(char *p, streamsize sz) override {
 	if (p || !sz || bufsz < sz) {
@@ -81,8 +77,7 @@ public:
 	    buf = p;
 	}
 	bufsz = sz;
-	setg(buf, buf, buf);
-	setp(buf, buf + bufsz);
+	reset();
 	return this;
     }
 
@@ -191,10 +186,8 @@ private:
 	return (uint)min<streamsize>(n, INT_MAX);
     }
 
-    /*
-     * write the put area followed by p[0,n), retrying partial writes and
-     * buffering any unwritten tail of p that fits in the freed space
-     */
+    // write the put area then p[0,n), retrying partial writes and buffering
+    // any unwritten tail of p that fits in the freed space
     streamsize drain(const char *p, streamsize n) {
 	char *pb = pbase();
 	streamsize used = pptr() - pb;
@@ -231,7 +224,7 @@ private:
 	streamsize sent = done > used ? done - used : 0;
 	streamsize rest = n - sent;
 
-	if (rest > 0 && rest <= bufsz - pending) {
+	if (n && rest > 0 && rest <= bufsz - pending) {
 	    memcpy(pptr(), p + sent, (size_t)rest);
 	    pbump((int)rest);
 	    return n;
@@ -246,11 +239,7 @@ private:
     char ubuf = 0;
 };
 
-/*
- * bufferstream is a fast string stream providing cross platform compatibility
- * and works around broken MSVC sstream::seekp() that leaks memory. Use this as
- * a replacement for strstream / sstream
- */
+// fast portable string stream; avoids MSVC sstream::seekp() memory leaks
 template<class C>
 class BLISTER bufferstream: public basic_ostream<C> {
 public:
@@ -424,9 +413,7 @@ private:
     membuf mb;
 };
 
-/*
- * nullstream is a byte sink stream that ignores all writes
- */
+// byte sink stream that ignores all writes
 class BLISTER nullstream: public basic_ostream<tchar> {
 public:
     nullstream(): basic_ostream<tchar>(&nb) {}

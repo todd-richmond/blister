@@ -28,7 +28,6 @@
 #include "Log.h"
 #include "Timing.h"
 
-const int DELAY = 20;
 const int TIMEOUT = 10 * 1000;
 const int MAXREAD = 8 * 1024;
 
@@ -55,6 +54,7 @@ public:
 	char *rbuf;
 	ulong tmt, wait;
 
+	void fail(const tchar *what);
 	void onConnect(void) override;
 
 	DSP_DECLARE(EchoClientSocket, input);
@@ -68,8 +68,7 @@ public:
 	EchoServerSocket(Dispatcher &d, const Socket &sock):
 	    DispatchServerSocket(d, sock), buf(nullptr), bufsz(0), in(0),
 	    out(0), tmt(TIMEOUT) {}
-	EchoServerSocket(const EchoServerSocket &) = delete;
-	virtual ~EchoServerSocket() { delete [] buf; }
+	~EchoServerSocket() override { delete [] buf; }
 
 	void timeout(ulong timeout) { tmt = timeout; }
 	static constexpr const tchar *section(void) { return T("echo"); }
@@ -119,17 +118,21 @@ static inline bool loop_exit(void) {
     return loops.fetch_sub(1, memory_order_relaxed) <= 0 || qflag;
 }
 
+void EchoTest::EchoClientSocket::fail(const tchar *what) {
+    if (loop_exit()) {
+	erase();
+    } else {
+	errs.fetch_add(1, memory_order_relaxed);
+	dtiming.add(T("error"), 0);
+	dloge(T("client "), what, T("="), msg == DispatchTimeout ?
+	    T("timeout") : T("close"));
+	timeout(start, wait);
+    }
+}
+
 void EchoTest::EchoClientSocket::onConnect(void) {
     if (error()) {
-	if (loop_exit()) {
-	    erase();
-	} else {
-	    errs.fetch_add(1, memory_order_relaxed);
-	    dtiming.add(T("error"), 0);
-	    dloge(T("client connect="), msg == DispatchTimeout ? T("timeout") :
-		T("close"));
-	    timeout(start, wait);
-	}
+	fail(T("connect"));
     } else {
 	loopback(true);
 	nodelay(true);
@@ -144,15 +147,7 @@ void EchoTest::EchoClientSocket::input() {
     // read past the reply like a normal server so short reads skip re-arming
     if (UNLIKELY(error() || ((len = (uint)read(rbuf + in, dsz + MAXREAD -
 	in)) == (uint)-1))) {
-	if (loop_exit()) {
-	    erase();
-	} else {
-	    errs.fetch_add(1, memory_order_relaxed);
-	    dtiming.add(T("error"), 0);
-	    dloge(T("client read="), msg == DispatchTimeout ? T("timeout") :
-		T("close"));
-	    timeout(start, wait);
-	}
+	fail(T("read"));
     } else if (LIKELY((in += len) >= dsz)) {
 	timing_t usec = Timing::now() - begin;
 
@@ -169,9 +164,7 @@ void EchoTest::EchoClientSocket::input() {
 		timeout(repeat, wait + (wait < 2000 ? 0 :
 		    uniform_int_distribution<uint>(0, 49)(rng)));
 	    } else {
-		in = out = 0;
-		begin = Timing::now();
-		ready(output);
+		repeat();
 	    }
 	}
     } else if (UNLIKELY(loops.load(memory_order_relaxed) <= 0 || qflag)) {
@@ -191,15 +184,7 @@ void EchoTest::EchoClientSocket::output() {
 	erase();
     } else if (UNLIKELY(error() || ((len = (uint)write(dbuf + out, dsz -
 	out)) == (uint)-1))) {
-	if (loop_exit()) {
-	    erase();
-	} else {
-	    errs.fetch_add(1, memory_order_relaxed);
-	    dtiming.add(T("error"), 0);
-	    dloge(T("client write="), msg == DispatchTimeout ? T("timeout") :
-		T("close"));
-	    timeout(start, wait);
-	}
+	fail(T("write"));
     } else if (LIKELY((out += len) == dsz)) {
 	in = 0;
 	dlogt(T("client write="), len);
@@ -282,21 +267,17 @@ void EchoTest::connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
 	EchoClientSocket *ecs = new EchoClientSocket(*this, sa, tmt, wait);
 
 	ecs->detach();
-	ecs->start(u * (!delay || count < wait / delay ? wait / count : delay));
+	ecs->start(u * max(delay, wait / count));
     }
 }
 
 bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
     EchoListenSocket *els = new EchoListenSocket(*this, timeout);
 
-    // detach before listen registers els with the poller thread
-    els->detach();
-    if (els->listen(sa)) {
+    if (els->listen(sa))
 	return true;	// -V::773
-    } else {
-	delete els;
-	return false;
-    }
+    delete els;
+    return false;
 }
 
 // only async-signal-safe work here so main notices qflag and stops
@@ -304,7 +285,7 @@ static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true;
-    ulong delay = DELAY, tmt = TIMEOUT, wait = 0;
+    ulong delay = 0, tmt = TIMEOUT, wait = 0;
     Config config;
     EchoTest et(config);
     int fd;
@@ -359,11 +340,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (access(tchartoachar(path), 0) == 0) {
 	    tcerr << T("echotest: unable to open ") << path << endl;
 	    return 1;
-	} else {
-	    dsz = (uint)(tstrlen(path) * sizeof (tchar));
-	    dbuf = new char[dsz];
-	    memcpy(dbuf, path, dsz);
 	}
+	dsz = (uint)(tstrlen(path) * sizeof (tchar));
+	dbuf = new char[dsz];
+	memcpy(dbuf, path, dsz);
     } else {
 	if (fstat(fd, &sbuf) == -1) {
 	    close(fd);
@@ -373,9 +353,6 @@ int tmain(int argc, const tchar * const argv[]) {
 	dsz = (uint)sbuf.st_size;
 	dbuf = new char[dsz];
 	if ((dsz = (uint)read(fd, dbuf, dsz)) == (uint)-1) {
-	    delete [] dbuf;
-	    dbuf = nullptr;
-	    dsz = 0;
 	    close(fd);
 	    tcerr << T("echotest: unable to read ") << path << endl;
 	    return 1;

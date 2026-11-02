@@ -46,6 +46,7 @@ Makefile*
 *.obj
 *.slo
 .lto
+.pgo
 Win32
 x64
 

@@ -17,7 +17,6 @@
 
 #include "stdapi.h"
 #include <algorithm>
-#include <ranges>
 #include "Timing.h"
 #include "Log.h"
 
@@ -151,8 +150,8 @@ tstring Timing::data(bool sort_key, uint columns) const {
     }
     lck.unlock_shared();
     if (sort_key) {
-	ranges::sort(rows, [](const Row &a, const Row &b) {
-	    return stringless(a.stats->key, b.stats->key);
+	ranges::sort(rows, strless{}, [](const Row &r) {
+	    return r.stats->key;
 	});
     } else {
 	ranges::sort(rows, [](const Row &a, const Row &b) {
@@ -161,8 +160,7 @@ tstring Timing::data(bool sort_key, uint columns) const {
 	});
     }
     begin = (!columns || last < columns) ? 0 : last - columns + 1;
-    const size_t estimated_size = rows.size() * (columns ? 60 : 90) + 200;
-    s.reserve(estimated_size);
+    s.reserve(rows.size() * (columns ? 60 : 90) + 200);
 
     s = columns ? T("key                            msec   cnt   avg") :
 	T("key,msec,cnt,avg");
@@ -189,6 +187,7 @@ tstring Timing::data(bool sort_key, uint columns) const {
 	if (columns) {
 	    tchar cbuf[24];
 	    size_t klen = stats->klen;
+	    constexpr size_t bufsz = std::size(buf);
 
 	    for (uint u = 0; u <= begin; ++u)
 		sum += row.cnts[u];
@@ -200,26 +199,17 @@ tstring Timing::data(bool sort_key, uint columns) const {
 		tsprintf(cbuf, T("%5llu"), (ullong)scnt);
 	    if (tot) {
 		tchar abuf[16], sbuf[16];
-		constexpr size_t bufsz = sizeof (buf) / sizeof (buf[0]);
 
 		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key + (klen < bufsz
 		    - 19 ? 0 : klen - bufsz + 19), format(tot,
 		    sbuf), cbuf, format(scnt ? tot / scnt : 0, abuf));
 	    } else {
-		constexpr size_t bufsz = sizeof (buf) / sizeof (buf[0]);
-
 		tsprintf(buf, T("%-35s%6s"), stats->key + (klen < bufsz -
 		    7 ? 0 : klen - bufsz + 7), cbuf);
 	    }
 	} else {
-	    bool quote = false;
+	    const bool quote = tstrpbrk(stats->key, T(", \t\"")) != nullptr;
 
-	    for (const tchar *p = stats->key; *p; ++p) {
-		if (*p == ',' || *p == ' ' || *p == '\t' || *p == '"') {
-		    quote = true;
-		    break;
-		}
-	    }
 	    if (quote)
 		s += (tchar)'"';
 	    for (const tchar *p = stats->key; *p; ++p) {
@@ -296,36 +286,32 @@ const tchar *Timing::format(timing_t t, tchar *buf) {
     else if (t < 100000LLU)
 	tsprintf(buf, T("%.2f"), (double)t / 1000.0);
     else if (t < 1000000LLU)
-	tsprintf(buf, T("%llu"), t / 1000LLU);
+	tsprintf(buf, T("%llu"), (ullong)(t / 1000LLU));
     else if (t < 100000000LLU)
 	tsprintf(buf, T("%.1fk"), (double)t / 1000000.0);
     else if (t < 1000000000LLU)
-	tsprintf(buf, T("%lluk"), t / 1000000LLU);
+	tsprintf(buf, T("%lluk"), (ullong)(t / 1000000LLU));
     else if (t < 100000000000LLU)
 	tsprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
     else if (t < 1000000000000LLU)
-	tsprintf(buf, T("%llum"), t / 1000000000LLU);
+	tsprintf(buf, T("%llum"), (ullong)(t / 1000000000LLU));
     else
-	tsprintf(buf, T("%llug"), t / 1000000000000LLU);
+	tsprintf(buf, T("%llug"), (ullong)(t / 1000000000000LLU));
     return buf;
 }
 
 void Timing::record(void) {
     Tlsdata &tlsd(*tls);
 
-    if (tlsd.entries.empty()) {
-	dloge(Log::mod(T("Timing")), T("stack mismatch"));
-	return;
+    if (!tlsd.entries.empty()) {
+	const auto &entry = tlsd.entries.back();
+	const timing_t diff = now() - entry.start;
+
+	if (entry.pathlen)
+	    add(tlsd.path, diff);
+	add(entry.caller, 0, entry.hash, diff);
     }
-
-    const auto &entry = tlsd.entries.back();
-    const timing_t diff = now() - entry.start;
-
-    if (entry.pathlen)
-	add(tlsd.path, diff);
-    add(entry.caller, 0, entry.hash, diff);
-    tlsd.path.resize(entry.pathlen);
-    tlsd.entries.pop_back();
+    stop();
 }
 
 void Timing::restart() {

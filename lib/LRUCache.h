@@ -58,7 +58,7 @@ public:
 
     explicit LRUCache(ulong sz = LRUCACHE_SIZE, msec_t tm = LRUCACHE_TIME,
 	ulong cnt = LRUCACHE_COUNT): maxcnt(cnt), maxsz(sz), maxtm(tm) {
-	ulong heur = sz / 1024 > 128 ? sz / 1024 : 128;
+	const ulong heur = max(sz / 1024, 128UL);
 
 	cache_map.reserve(cnt && cnt < heur ? cnt : heur);
     }

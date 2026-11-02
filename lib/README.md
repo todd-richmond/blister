@@ -17,4 +17,4 @@ The Blister library. Link against `libblister`.
 - `LRUCache.h` — size, count and time-bounded LRU cache.
 - `ResourcePool.h` — header-only `ResourcePool<C>` (blocking) and `AsyncResourcePool<C>` (`Dispatcher`-integrated) pools of lazily created, shareable resources.
 - `MD5` — MD5 digest.
-- `Unix.c`, `Windows.c`, `WindowsCPP.cpp`, `Version.rc` — platform implementations behind `stdapi.h`.
+- `Unix.c`, `Windows.cpp`, `Version.rc` — platform implementations behind `stdapi.h`.

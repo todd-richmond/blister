@@ -149,6 +149,12 @@ public:
 	bool append = false, ulong sz = 0);
     template<typename T> requires is_arithmetic_v<T>
     Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
+	if constexpr (is_same_v<T, tchar>) {
+	    SpinWLocker lkr(lck);
+
+	    return set(key, tstrlen(key), &val, 1, sect, sect ?
+		tstrlen(sect) : 0);
+	}
 	char buf[64] = {};
 	auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
 
@@ -218,7 +224,7 @@ protected:
 
 private:
     // key is stored after val
-    struct BLISTER KV {
+    struct KV {
 	uint klen, vlen;
 	bool expand;
 	tchar quote;
@@ -232,10 +238,8 @@ private:
 	    const tchar *ap = tstrchr(a, '.');
 	    const tchar *bp = tstrchr(b, '.');
 
-	    if (!ap)
-		return bp ? true : stringless(a, b);
-	    else if (!bp)
-		return false;
+	    if (!ap != !bp)
+		return !ap;
 	    return stringless(a, b);
 	}
     };
@@ -290,12 +294,12 @@ private:
 class BLISTER ConfigFile: public Config {
 public:
     using Config::Config;
-    explicit ConfigFile(const tchar *file = nullptr, const tchar *_pre = nullptr,
-	bool cksum = false);
+    explicit ConfigFile(const tchar *file = nullptr, const tchar *_pre =
+	nullptr, bool cksum = false);
 
     using Config::read;
-    bool read(const tchar *file = nullptr, const tchar *_pre = nullptr, bool append =
-	false);
+    bool read(const tchar *file = nullptr, const tchar *_pre = nullptr,
+	bool append = false);
     using Config::write;
     bool write(void) const { return write(nullptr, iniformat()); }
     bool write(const tchar *file, bool ini = false) const;

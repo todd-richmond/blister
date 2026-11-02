@@ -182,17 +182,36 @@ private:
 	vector<Hdr> hdrs;
     };
 
+    enum class Body: uchar { Bad, None, Length, Chunked, Eof };
+
     Headers reshdrs;
 
+    static bool buildreq(string &out, const tchar *op, const tchar *path,
+	string_view host, bool keep, tstring_view hdrs, const void *data,
+	ulong &datasz);
+    static Body framing(const Headers &hdrs, uint sts, bool head, bool http11,
+	bool &keep, ulong &len);
+    static bool hashost(tstring_view hdrs);
+    static string hosthdr(const Sockaddr &sa);
+    static bool idempotent(const tchar *op);
+    static bool parsenum(string_view s, ulong &n, bool hex);
+    static bool parsestatus(string_view str, uint &code, bool &http11);
+    static bool readline(socketbuf *sb, string &s, size_t &left);
+    static bool sendall(const Socket &s, string_view hdr, const void *data,
+	ulong datasz, ulong off);
+    static void tappend(tstring &s, string_view sv);
+
     void grow(ulong need);
-    bool readbody(bool head, bool &keep);
+    bool readbody(bool head, bool http11, bool &keep);
     bool readchunked(void);
     bool readhdrs(bool &http11);
     void setup(void);
 };
 
-// Pipelines requests over one keep-alive connection. Must outlive its
-// Requests, which cannot be destroyed in flight
+/*
+ * Pipelines requests over one keep-alive connection. Must outlive its
+ * Requests, which cannot be destroyed in flight
+ */
 class BLISTER AsyncHTTPClient: nocopy {
 public:
     using attrmap = HTTPClient::attrmap;
@@ -267,7 +286,7 @@ public:
 	size_t hdrleft = 0;
 	Phase phase = Status;
 	uchar attempts = 0;
-	bool head = false, http11 = false, keep = false;
+	bool head = false, http11 = false, idem = true, keep = false;
     };
 
     // built on a Dispatcher it gets its own group, on a parent it shares it
@@ -399,10 +418,8 @@ bool hastoken(const A &l, const B &t) {
 	auto v = list.substr(0, pos);
 
 	list = pos == list.npos ? decltype(list)() : list.substr(pos + 1);
-	while (!v.empty() && (v.front() == ' ' || v.front() == '\t'))
-	    v.remove_prefix(1);
-	while (!v.empty() && (v.back() == ' ' || v.back() == '\t'))
-	    v.remove_suffix(1);
+	v.remove_prefix(min(v.find_first_not_of(" \t"), v.size()));
+	v = v.substr(0, v.find_last_not_of(" \t") + 1);
 	if (stringieq(v, token))
 	    return true;
     }

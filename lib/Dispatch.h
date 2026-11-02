@@ -27,10 +27,7 @@
 #include "Thread.h"
 
 #ifdef _WIN32
-/*
- * select() is faster on Windows for normal fd set sizes
- #define DSP_WIN32_ASYNC
- */
+// select() beats async on Windows for normal fd set sizes: DSP_WIN32_ASYNC
 #define DSP_POLL
 #elif defined(__linux__)
 #define DSP_EPOLL
@@ -109,8 +106,10 @@ private:
 	return it == smap.end() ? nullptr : it->second;
     }
 #endif
-    // SizedObjectList counter changed only under olock and read unlocked;
-    // wake() fences before reading it to pair with workers going idle
+    /*
+     * SizedObjectList counter changed only under olock and read unlocked;
+     * wake() fences before reading it to pair with workers going idle
+     */
     struct ObjectListAtomicSize {
 	__forceinline void inc(void) { add(1); }
 	__forceinline void dec(void) {
@@ -133,8 +132,6 @@ private:
 	using sorted_timerset = ::set<pair<msec_t, DispatchTimer *>>;
 	using unsorted_timerset = unordered_set<DispatchTimer *,
 	    ptrhash<DispatchTimer>>;
-
-	TimerSet() = default;
 
 	bool empty(void) const { return unsorted.empty(); }
 	msec_t half(void) const { return split; }
@@ -333,10 +330,7 @@ public:
     explicit DispatchTimer(DispatchObj &parent, ulong msec = DSP_NEVER):
 	DispatchObj(child, parent), to(msec) { init(); }
     DispatchTimer(DispatchObj &parent, ulong msec, DispatchObjCB cb):
-	DispatchObj(child, parent) {
-	init();
-	timeout(cb, msec);
-    }
+	DispatchObj(child, parent) { init(); timeout(cb, msec); }
     virtual ~DispatchTimer() { dspr.eraseTimer(*this); }
 
     msec_t expires(void) const { return due(); }
@@ -548,11 +542,9 @@ protected:
 };
 
 /*
- * AsyncCondvar acts like a std::condition_variable, but queues a callback
- * to be called instead of blocking the thread. The lock must be held
- * but wait() returns with it unlocked. A Waiter must not be destroyed or
- * cancelled while its thread holds the lock. A Waiter may wait on any
- * AsyncCondvar that shares its lock but wait(cb) uses the one it was built with
+ * condition_variable that queues a callback instead of blocking. wait() needs
+ * the lock held and returns with it unlocked. A Waiter must not be destroyed
+ * or cancelled while its thread holds the lock; wait(cb) uses its home cv
  */
 class BLISTER AsyncCondvar: nocopy {
 public:
@@ -564,10 +556,7 @@ public:
 	    parent), lck(a.lck), home(a), ac(&a), link(*this) {}
 	~Waiter() override { unwait(); }
 
-	void wait(DispatchObjCB cb) {
-	    callback(cb);
-	    home.wait(*this);
-	}
+	void wait(DispatchObjCB cb) { wait(cb, home); }
 	void wait(DispatchObjCB cb, AsyncCondvar &cv) {
 	    callback(cb);
 	    cv.wait(*this);
@@ -621,15 +610,11 @@ public:
     }
     // move all waiters to another AsyncCondvar sharing the same held lock
     void requeue(AsyncCondvar &other) {
-	if (!waiters)
-	    return;
 	for (const Waiter::Link &l : waiters)
 	    l.waiter.ac = &other;
 	other.waiters.push_back(waiters);
-	if (other.signaled) {
-	    other.signaled = false;
+	if (other.signaled)
 	    other.set();
-	}
     }
     uint set(uint count = 1) {
 	uint woken = 0;

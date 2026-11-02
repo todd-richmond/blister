@@ -313,22 +313,30 @@ void HTTPServerSocket::parse(void) {
     path = "/";
     prot = "HTTP/1.0";
     postsz = 0;
-    while (*buf == ' ' || *buf == '\t')
-	buf++;
-    for (cmd = p = buf; *p != ' ' && *p != '\t' && *p != '\r'; p++)
-	continue;
-    if (*p == '\r') {
+    // RFC 9112 2.2: ignore empty lines before the request line
+    buf += strspn(buf, " \t\r\n");
+    cmd = buf;
+    p = buf + strcspn(buf, " \t\r");
+    if (p == buf || (*p != ' ' && *p != '\t')) {
 	cmd = "BADCMD";
 	error(400, true);
 	return;
     }
     *p++ = '\0';
-    while (*p == ' ' || *p == '\t')
-	p++;
-    for (path = pp = p; *p != ' ' && *p != '\t' && *p != '\r'; p++)
-	continue;
+    p += strspn(p, " \t");
+    path = pp = p;
+    p += strcspn(p, " \t\r");
     noprot = (*p == '\r');
     *p++ = '\0';
+    // RFC 9112 3.2.2: absolute-form target so drop the scheme and authority
+    if (!strnicmp(pp, "http://", 7) || !strnicmp(pp, "https://", 8)) {
+	char *s = strchr(pp, ':') + 3;
+
+	s += strcspn(s, "/?");
+	if (*s != '/')
+	    *--s = '/';
+	path = pp = s;
+    }
     if ((pp = strchr(pp, '?')) == nullptr) {
 	argdata.clear();
 	args.clear();
@@ -338,10 +346,9 @@ void HTTPServerSocket::parse(void) {
 	urldecode(pp, args);
     }
     if (!noprot) {
-	while (*p == ' ' || *p == '\t')
-	    p++;
-	for (prot = p; *p != ' ' && *p != '\t' && *p != '\r'; p++)
-	    continue;
+	p += strspn(p, " \t");
+	prot = p;
+	p += strcspn(p, " \t\r");
 	// trailing blanks must not hide the headers
 	while (*p == ' ' || *p == '\t')
 	    *p++ = '\0';
@@ -352,10 +359,14 @@ void HTTPServerSocket::parse(void) {
 	}
 	*p++ = '\0';
     }
-    if (strnicmp(prot, "HTTP/1.", 7) != 0 || prot[7] < '0' || prot[7] > '9' ||
-	prot[8]) {
+    if (strnicmp(prot, "HTTP/", 5) != 0 || (uchar)(prot[5] - '0') > 9 ||
+	prot[6] != '.' || (uchar)(prot[7] - '0') > 9 || prot[8]) {
 	prot = "HTTP/1.0";
 	error(400, true);
+	return;
+    } else if (prot[5] != '1') {
+	prot = "HTTP/1.1";
+	error(505, true);
 	return;
     } else if (prot[7] > '1') {
 	prot = "HTTP/1.1";
@@ -378,58 +389,55 @@ void HTTPServerSocket::parse(void) {
 	    error(400, true);
 	    return;
 	}
-	while (*buf == ' ' || *buf == '\t')
-	    buf++;
 	p = end;
 	while (p > buf && (p[-1] == ' ' || p[-1] == '\t'))
 	    p--;
 	*p = '\0';
 	if (p == buf)
 	    break;
-	if ((p = strchr(buf, ':')) != nullptr) {
-	    pp = p + 1;
-	    while (p > buf && (p[-1] == ' ' || p[-1] == '\t'))
-		p--;
-	    *p = '\0';
-	    p = pp;
-	    while (*p == ' ' || *p == '\t')
-		p++;
+	// RFC 9112 5.1: reject whitespace in or around a field name
+	if ((p = strchr(buf, ':')) == nullptr || p == buf ||
+	    strcspn(buf, " \t") < (size_t)(p - buf)) {
+	    error(400, true);
+	    return;
+	}
+	*p++ = '\0';
+	p += strspn(p, " \t");
+	if (attrs.size() >= MaxHdrCount) {
+	    error(431, true);
+	    return;
+	}
 
-	    if (attrs.size() >= MaxHdrCount) {
-		error(431, true);
+	auto [it, added] = attrs.try_emplace(buf, p);
+
+	if (!added) {
+	    if (stringieq(buf, "content-length") ||
+		stringieq(buf, "host") ||
+		stringieq(buf, "transfer-encoding")) {
+		error(400, true);
 		return;
 	    }
-
-	    auto [it, added] = attrs.try_emplace(buf, p);
-
-	    if (!added) {
-		if (stringieq(buf, "content-length") ||
-		    stringieq(buf, "transfer-encoding")) {
-		    error(400, true);
-		    return;
-		}
-		it->second = p;
-	    }
+	    it->second = p;
 	}
 	if (!crlf || !end[1])
 	    break;
 	buf = end + 2;
     }
+    // RFC 9112 3.2: HTTP/1.1 requires a Host
+    if (prot[7] == '1' && !attr("host")) {
+	error(400, true);
+	return;
+    }
     val = attr("transfer-encoding");
     postchunking = false;
     if (val) {
-	string_view tv(val);
-	size_t comma = tv.rfind(',');
+	const char *last = strrchr(val, ',');
 
 	// only the final coding matters: earlier ones are passed through
-	if (comma != tv.npos)
-	    tv.remove_prefix(comma + 1);
-	while (!tv.empty() && (tv.front() == ' ' || tv.front() == '\t'))
-	    tv.remove_prefix(1);
 	if (attr("content-length")) {
 	    error(400, true);
 	    return;
-	} else if (!stringieq(tv, "chunked")) {
+	} else if (!hastoken(last ? last + 1 : val, "chunked")) {
 	    error(501, true);
 	    return;
 	}
@@ -488,7 +496,7 @@ void HTTPServerSocket::exec(void) {
     } else if (stringieq(cmd, "DELETE")) {
 	del();
     } else {
-	error(405);
+	error(501);
     }
 }
 
@@ -511,8 +519,7 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 
 	if (rest)
 	    *rest++ = '\0';
-	while (*buf == ' ' || *buf == '\t')
-	    buf++;
+	buf += strspn(buf, " \t");
 	if (*buf) {
 	    // split before unescaping so an encoded '=' stays in its field
 	    if ((eq = strchr(buf, '=')) != nullptr)
@@ -610,18 +617,24 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     char key[64];
     char *k = key;
     char *const last = key + sizeof (key) - 1;
+    // RFC 9110 6.4.1: these have no body and 204/304 no length either
+    const bool nolen = _status == 204 || _status == 304;
+    const bool nobody = nolen || stringieq(cmd, "HEAD");
 
     if (len == (ulong)-1)
 	len = p ? (ulong)strlen(p) : 0;
-    hdrs.write("Content-Length: ", 16);
-    hdrs.write((ulong)ss.size() + len);
-    hdrs.write("\r\n\r\n", 4);
+    if (!nolen) {
+	hdrs.write("Content-Length: ", 16);
+	hdrs.write((ulong)ss.size() + len);
+	hdrs.write(CRLF, 2);
+    }
+    hdrs.write(CRLF, 2);
     iov[0].iov_base = (char *)hdrs.str();	// NOSONAR
     iov[0].iov_len = (iovlen_t)hdrs.size();
     iov[1].iov_base = (char *)ss.str();		// NOSONAR
-    iov[1].iov_len = (iovlen_t)ss.size();
+    iov[1].iov_len = nobody ? 0 : (iovlen_t)ss.size();
     iov[2].iov_base = (char *)p;		// NOSONAR
-    iov[2].iov_len = (iovlen_t)len;
+    iov[2].iov_len = nobody ? 0 : (iovlen_t)len;
     elapsed = uticks() - begin;
     // Timing keeps every key forever: only 2xx replies use the client's path
     if (_status >= 200 && _status < 300) {
@@ -703,23 +716,14 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     hdrs.write(' ');
     hdrs.write(str, (streamsize)strlen(str));
     hdrs.write(CRLF, 2);
-    if (date) {
-	auto hdr = format("Date: {:%a, %d %b %Y %H:%M:%S} GMT\r\n",
-	    chrono::floor<chrono::seconds>(chrono::system_clock::now()));
-
-	hdrs.write(hdr.c_str(), (streamsize)hdr.size());
-    }
-    if (mime) {
-	hdrs.write("Content-Type: ", 14);
-	hdrs.write(mime, (streamsize)strlen(mime));
-	hdrs.write(CRLF, 2);
-    }
-    if (mtime) {
-	auto hdr = format("Last-Modified: {:%a, %d %b %Y %H:%M:%S} GMT\r\n",
-	    chrono::sys_seconds(chrono::seconds(mtime)));
-
-	hdrs.write(hdr.c_str(), (streamsize)hdr.size());
-    }
+    if (date)
+	header("Date", format("{:%a, %d %b %Y %H:%M:%S} GMT", chrono::floor<
+	    chrono::seconds>(chrono::system_clock::now())).c_str());
+    if (mime)
+	header("Content-Type", mime);
+    if (mtime)
+	header("Last-Modified", format("{:%a, %d %b %Y %H:%M:%S} GMT",
+	    chrono::sys_seconds(chrono::seconds(mtime))).c_str());
     _status = sts;
     // an unread body would be parsed as the next request
     if (close || postin < postsz) {
@@ -809,7 +813,7 @@ void HTTPServerSocket::get(bool head) {
     if (sts == 200 && !head)
 	reply(fd, (ulong)statbuf.st_size);
     else
-	reply(nullptr);
+	reply(nullptr, sts == 200 ? (ulong)statbuf.st_size : 0);
     ::close(fd);
 }
 

@@ -16,14 +16,9 @@
  */
 
 /*
- * uvechotest is a libuv-based echo client/server with the same command
- * line interface as echotest, so the two can be run side by side to
- * compare Dispatcher's shared-reactor model against libuv's one-loop-
- * per-thread model on identical workloads. Each worker thread owns an
- * independent uv_loop_t; when acting as a server every worker binds its
- * own listening socket with SO_REUSEPORT so the kernel load-balances
- * accepts across threads, and when acting as a client the requested
- * socket count is spread evenly across the worker loops.
+ * libuv echo client/server with echotest's command line to compare
+ * Dispatcher's shared reactor with libuv's loop per thread. Server workers
+ * each bind with SO_REUSEPORT and client sockets are spread across workers.
  */
 
 #include "stdapi.h"
@@ -40,7 +35,6 @@
 #include "Timing.h"
 #include <uv.h>
 
-constexpr ulong DELAY = 20;
 constexpr ulong TIMEOUT = 10UL * 1000;
 constexpr size_t MAXREAD = 8UL * 1024;
 constexpr uint STACKSZ = 32 * 1024;
@@ -49,14 +43,15 @@ constexpr int BACKLOG = 128;
 static char *dbuf;
 static uint dsz;
 
+static ulong delay = 0, tmt = TIMEOUT, waitms = 0;
+static uint sockets = 20;
+static Sockaddr bind_addr, connect_addr;
 static atomic<uint> gerrs, gops;
 static atomic loops(LLONG_MAX);
 static atomic qflag = false;
 alignas(CACHELINE_SZ) static atomic<usec_t> gusecs;
 
-// consumes one unit of the shared loop budget; every completed round trip
-// and every failed attempt counts as one unit, matching echotest's
-// loop_exit() so -l compares apples to apples between the two tools
+// every round trip or failure consumes one loop as in echotest
 static bool loop_exit(void) {
     return loops.fetch_sub(1, memory_order_relaxed) <= 0 ||
 	qflag.load(memory_order_relaxed);
@@ -79,7 +74,6 @@ struct EchoClient: nocopy {
     uv_timer_t timer;
     uv_connect_t connreq;
     uv_write_t writereq;
-    uv_buf_t wbuf;
     Worker *worker;
     char *rbuf;
     uint in;
@@ -100,11 +94,8 @@ struct EchoClient: nocopy {
 struct EchoServerConn: nocopy {
     Handle tcp;
     uv_write_t writereq;
-    char *buf;
-    uint write_len;
-
-    EchoServerConn(): buf(nullptr), write_len(0) {}
-    ~EchoServerConn() { delete [] buf; }
+    char buf[MAXREAD];
+    uint write_len = 0;
 };
 
 struct Worker {
@@ -113,11 +104,6 @@ struct Worker {
     Handle listener {};
     Thread thread;
     vector<EchoClient *> clients;
-    Sockaddr bind_addr;
-    Sockaddr connect_addr;
-    ulong tmt = TIMEOUT;
-    ulong wait = 0;
-    ulong delay = DELAY;
     uint base = 0;		// global stagger index of first client
     bool do_server = false;
 };
@@ -139,7 +125,7 @@ static void request_close_tcp(EchoClient *c) {
 
 	cl->closing_tcp = false;
 	if (!cl->done)
-	    uv_timer_start(&cl->timer, start_timer, cl->worker->wait, 0);
+	    uv_timer_start(&cl->timer, start_timer, waitms, 0);
     });
 }
 
@@ -164,14 +150,15 @@ static void on_io_error(EchoClient *c, const tchar *what, bool is_timeout =
     if (c->done || c->error_handled)
 	return;
     c->error_handled = true;
-    gerrs.fetch_add(1, memory_order_relaxed);
-    dtiming.add(T("error"), 0);
-    dloge(what, is_timeout ? T("timeout") : T("close"));
     uv_timer_stop(&c->timer);
-    if (loop_exit())
+    if (loop_exit()) {
 	begin_teardown(c);
-    else
+    } else {
+	gerrs.fetch_add(1, memory_order_relaxed);
+	dtiming.add(T("error"), 0);
+	dloge(what, is_timeout ? T("timeout") : T("close"));
 	request_close_tcp(c);
+    }
 }
 
 static void on_connect_timeout(uv_timer_t *t) {
@@ -199,25 +186,28 @@ static void write_client(EchoClient *c) {
     }
     c->begin = Timing::now();
     // like echotest, every round trip must finish within the timeout
-    uv_timer_start(&c->timer, on_io_timeout, c->worker->tmt, 0);
-    c->wbuf = uv_buf_init(dbuf, (unsigned int)dsz);
+    uv_timer_start(&c->timer, on_io_timeout, tmt, 0);
 
     // most writes complete synchronously; queue only the remainder
-    int n = uv_try_write((uv_stream_t *)&c->tcp, &c->wbuf, 1);
+    uv_buf_t wbuf = uv_buf_init(dbuf, (unsigned int)dsz);
+    int n = uv_try_write((uv_stream_t *)&c->tcp, &wbuf, 1);
 
     if (n == (int)dsz) {
 	dlogt(T("client write="), dsz);
 	return;
-    } else if (n < 0 && n != UV_EAGAIN) {
+    }
+    if (n < 0 && n != UV_EAGAIN) {
 	on_io_error(c, T("client write="));
 	return;
-    } else if (n > 0) {
-	c->wbuf.base += n;
-	c->wbuf.len -= (size_t)n;
+    }
+    if (n > 0) {
+	wbuf.base += n;
+	wbuf.len -= (size_t)n;
     }
     c->write_pending = true;
     c->writereq.data = c;
-    uv_write(&c->writereq, (uv_stream_t *)&c->tcp, &c->wbuf, 1,
+    // uv_write copies wbuf
+    uv_write(&c->writereq, (uv_stream_t *)&c->tcp, &wbuf, 1,
 	[](uv_write_t *req, int status) {
 	EchoClient *cl = (EchoClient *)req->data;
 
@@ -234,10 +224,8 @@ static void write_client(EchoClient *c) {
     });
 }
 
-// the echo response for a round can arrive and be processed before this
-// same round's write completion callback has been dispatched by libuv, so
-// starting the next round must wait for write_pending to clear rather than
-// reissuing a write on the still in-flight writereq
+// the echo can arrive before the write callback so wait for it rather than
+// reuse the in flight writereq
 static void start_next_round(EchoClient *c) {
     if (c->write_pending)
 	c->next_round_queued = true;
@@ -276,13 +264,12 @@ static void on_client_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *) {
     gusecs.fetch_add(usec, memory_order_relaxed);
     dtiming.add(T("echo"), usec);
     dlogt(T("client read="), dsz);
-    if (c->worker->wait) {
+    if (waitms) {
 	static thread_local mt19937 rng(random_device {}());
-	ulong wait = c->worker->wait;
-	ulong jitter = wait < 2000 ? 0 :
+	ulong jitter = waitms < 2000 ? 0 :
 	    uniform_int_distribution<ulong>(0, 49)(rng);
 
-	uv_timer_start(&c->timer, on_repeat_timer, wait + jitter, 0);
+	uv_timer_start(&c->timer, on_repeat_timer, waitms + jitter, 0);
     } else {
 	start_next_round(c);
     }
@@ -329,11 +316,11 @@ static void start_client(EchoClient *c) {
     c->tcp.tcp.data = c;
     c->connreq.data = c;
     dlogd(T("connecting"));
-    uv_timer_start(&c->timer, on_connect_timeout, w.tmt, 0);
+    uv_timer_start(&c->timer, on_connect_timeout, tmt, 0);
     if (unixsock)
-	connect_unix(c, w.connect_addr);
+	connect_unix(c, connect_addr);
     else
-	uv_tcp_connect(&c->connreq, &c->tcp.tcp, w.connect_addr,
+	uv_tcp_connect(&c->connreq, &c->tcp.tcp, connect_addr,
 	    on_client_connect);
 }
 
@@ -347,15 +334,12 @@ static void close_server_conn(EchoServerConn *sc) {
 }
 
 static void alloc_server(uv_handle_t *h, size_t, uv_buf_t *buf) {
-    EchoServerConn *sc = (EchoServerConn *)h->data;
-
-    if (!sc->buf)
-	sc->buf = new char[MAXREAD];
-    buf->base = sc->buf;
+    buf->base = ((EchoServerConn *)h->data)->buf;
     buf->len = MAXREAD;
 }
 
-static void on_server_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *buf) {
+static void on_server_read(uv_stream_t *s, ssize_t nread,
+    const uv_buf_t *buf) {
     EchoServerConn *sc = (EchoServerConn *)s->data;
 
     if (nread < 0) {
@@ -379,11 +363,13 @@ static void on_server_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *buf) {
     if (n == nread) {
 	dlogt(T("server write="), (uint)n);
 	return;
-    } else if (n < 0 && n != UV_EAGAIN) {
+    }
+    if (n < 0 && n != UV_EAGAIN) {
 	dloge(T("server write="), achartotchar(uv_strerror(n)));
 	close_server_conn(sc);
 	return;
-    } else if (n > 0) {
+    }
+    if (n > 0) {
 	wbuf.base += n;
 	wbuf.len -= (size_t)n;
     }
@@ -398,7 +384,8 @@ static void on_server_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *buf) {
 	    close_server_conn(conn);
 	} else {
 	    dlogt(T("server write="), conn->write_len);
-	    uv_read_start((uv_stream_t *)&conn->tcp, alloc_server, on_server_read);
+	    uv_read_start((uv_stream_t *)&conn->tcp, alloc_server,
+		on_server_read);
 	}
     });
 }
@@ -434,14 +421,14 @@ static void on_stop(uv_async_t *a) {
     for (EchoClient *c : w->clients)
 	begin_teardown(c);
     uv_close((uv_handle_t *)a, nullptr);
+    // only accepted server connections remain open
+    uv_walk(&w->loop, [](uv_handle_t *h, void *) {
+	if (!uv_is_closing(h))
+	    uv_close(h, on_server_conn_closed);
+    }, nullptr);
 }
 
-// UV_TCP_REUSEPORT is only implemented by libuv on Linux, DragonFlyBSD,
-// FreeBSD 12+, Solaris and AIX; on macOS uv_tcp_bind() returns UV_ENOTSUP,
-// which the unchecked original code let fall through to an unbound listen()
-// that autobinds an ephemeral port, so every client connect to the intended
-// port was refused. Bind natively with SO_REUSEPORT instead so every worker
-// still gets a duplicate listening socket load-balanced by the kernel.
+// macOS lacks UV_TCP_REUSEPORT so bind natively with SO_REUSEPORT
 #ifndef _WIN32
 static int bind_listener(Handle *listener, const Sockaddr &addr) {
     int fd = (int)socket(addr.family(), SOCK_STREAM, 0);
@@ -474,11 +461,12 @@ static bool start_listener(Worker *w) {
 	    uv_pipe_open(&w->listener.pipe, fd);
     } else {
 	uv_tcp_init(&w->loop, &w->listener.tcp);
-	err = bind_listener(&w->listener, w->bind_addr);
+	err = bind_listener(&w->listener, bind_addr);
     }
     w->listener.tcp.data = w;
     if (!err)
-	err = uv_listen((uv_stream_t *)&w->listener, BACKLOG, on_new_connection);
+	err = uv_listen((uv_stream_t *)&w->listener, BACKLOG,
+	    on_new_connection);
     if (err) {
 	dloge(T("server listen="), achartotchar(uv_strerror(err)));
 	return false;
@@ -489,16 +477,12 @@ static bool start_listener(Worker *w) {
 static int run_worker(void *arg) {
     Worker *w = (Worker *)arg;
 
-    uv_loop_init(&w->loop);
-    uv_async_init(&w->loop, &w->stopper, on_stop);
-    w->stopper.data = w;
-
     // a worker without a listener would only measure refused connects
     if (w->do_server && !start_listener(w))
 	qflag.store(true, memory_order_relaxed);
     for (size_t i = 0; i < w->clients.size(); i++) {
 	EchoClient *c = w->clients[i];
-	ulong ms = (w->base + i) * w->delay;
+	ulong ms = (w->base + i) * max(delay, waitms / sockets);
 
 	uv_timer_init(&w->loop, &c->timer);
 	c->timer.data = c;
@@ -519,8 +503,7 @@ static void signal_handler(int) {
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true;
-    ulong delay = DELAY, tmt = TIMEOUT, wait = 0;
-    uint sockets = 20, threads = 20;
+    uint threads = 20;
     const tchar *host = nullptr;
     const tchar *path = T("echo this short test string as quickly as possible");
     int fd, i;
@@ -546,7 +529,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	} else if (!tstricmp(argv[i], T("-v"))) {
 	    dlog.level(dlog.level() >= Log::Debug ? Log::Trace : Log::Debug);
 	} else if (!tstricmp(argv[i], T("-w")) && i + 1 < argc) {
-	    wait = tstrtoul(argv[++i], nullptr, 10);
+	    waitms = tstrtoul(argv[++i], nullptr, 10);
 	} else if (*argv[i] != '-') {
 	    path = argv[i];
 	} else {
@@ -571,11 +554,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	if (access(tchartoachar(path), 0) == 0) {
 	    tcerr << T("uvechotest: unable to open ") << path << endl;
 	    return 1;
-	} else {
-	    dsz = (uint)(tstrlen(path) * sizeof (tchar));
-	    dbuf = new char[dsz];
-	    memcpy(dbuf, path, dsz);
 	}
+	dsz = (uint)(tstrlen(path) * sizeof (tchar));
+	dbuf = new char[dsz];
+	memcpy(dbuf, path, dsz);
     } else {
 	if (fstat(fd, &sbuf) == -1) {
 	    close(fd);
@@ -585,9 +567,6 @@ int tmain(int argc, const tchar * const argv[]) {
 	dsz = (uint)sbuf.st_size;
 	dbuf = new char[dsz];
 	if ((dsz = (uint)read(fd, dbuf, dsz)) == (uint)-1) {
-	    delete [] dbuf;
-	    dbuf = nullptr;
-	    dsz = 0;
 	    close(fd);
 	    tcerr << T("uvechotest: unable to read ") << path << endl;
 	    return 1;
@@ -596,19 +575,13 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     if (!host)
 	host = T("unix:./socket");
-
-    Sockaddr bind_addr;
-
     if (!bind_addr.set(host)) {
 	tcerr << T("uvechotest: unknown host ") << host << endl;
-	delete [] dbuf;
 	return 1;
     }
     if (!bind_addr.port())
 	bind_addr.port(8888);
-
-    Sockaddr connect_addr(bind_addr);
-
+    connect_addr = bind_addr;
     if (connect_addr.host() == T("*"))
 	connect_addr.host(T("localhost"));
 
@@ -616,14 +589,14 @@ int tmain(int argc, const tchar * const argv[]) {
 #ifndef _WIN32
     unixsock = bind_addr.family() == AF_UNIX;
     if (unixsock && server) {
-	const sockaddr_un *sun = bind_addr;
+	const sockaddr_un *su = bind_addr;
 
 	unixfd = (int)socket(AF_UNIX, SOCK_STREAM, 0);
-	if (sun->sun_path[0])
-	    unlink(sun->sun_path);
-	if (unixfd == -1 || ::bind(unixfd, bind_addr, bind_addr.size()) == -1) {
+	if (su->sun_path[0])
+	    unlink(su->sun_path);
+	if (unixfd == -1 ||
+	    ::bind(unixfd, bind_addr, bind_addr.size()) == -1) {
 	    tcerr << T("uvechotest: unable to bind ") << host << endl;
-	    delete [] dbuf;
 	    return 1;
 	}
     }
@@ -648,20 +621,23 @@ int tmain(int argc, const tchar * const argv[]) {
 	uint count = sockets / threads + (u < sockets % threads ? 1 : 0);
 
 	w.do_server = server;
-	w.tmt = tmt;
-	w.wait = wait;
-	w.delay = delay;
 	w.base = base;
-	w.bind_addr = bind_addr;
-	w.connect_addr = connect_addr;
+	// before start so main can always signal stopper
+	uv_loop_init(&w.loop);
+	uv_async_init(&w.loop, &w.stopper, on_stop);
+	w.stopper.data = &w;
 	if (client) {
 	    for (uint j = 0; j < count; j++)
 		w.clients.push_back(new EchoClient(&w));
 	}
 	base += count;
     }
-    for (Worker &w : workers)
-	w.thread.start(run_worker, &w, STACKSZ);
+    for (Worker &w : workers) {
+	if (!w.thread.start(run_worker, &w, STACKSZ)) {
+	    tcerr << T("uvechotest: unable to start thread") << endl;
+	    qflag.store(true, memory_order_relaxed);
+	}
+    }
 
     if (client) {
 	dlogi(Log::mod(T("uvecho")), Log::cmd(T("echo")), Log::kv(T("addr"),

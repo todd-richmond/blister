@@ -418,7 +418,6 @@ static void signal_handler(int) { qflag = true; }
 int tmain(int argc, const tchar * const argv[]) {
     Config cfg;
     Dispatcher dspr(cfg);
-    tchar addr[32];
     uint port = 2525, threads = 32;
     ulong stattime = 0;
     auto *lsock = new SimpleDispatchListenSocket<Dispatcher, SMTPSinkSocket>(
@@ -449,13 +448,15 @@ int tmain(int argc, const tchar * const argv[]) {
     sig.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sig, nullptr);
 #endif
-    tsprintf(addr, T("*:%u"), port);
+
+    tstring addr = std::format(T("*:{}"), port);
+
     if (!dspr.start(threads, 32 * 1024)) {
 	tcerr << T("smtpsink: unable to start") << endl;
 	delete lsock;
 	return 1;
     }
-    if (!lsock->listen(Sockaddr(addr))) {
+    if (!lsock->listen(Sockaddr(addr.c_str()))) {
 	tcerr << T("smtpsink: unable to listen on ") << addr << endl;
 	delete lsock;
 	dspr.stop();

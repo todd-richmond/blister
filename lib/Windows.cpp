@@ -34,9 +34,49 @@
 #define to_fd(hdl)	    ((int)(ullong)hdl)
 #define to_handle(fd)	    ((HANDLE)(ullong)(fd))
 
+// hack to work around broken Microsoft libraries
+#ifndef _DLL
+
+#ifdef std
+#undef std
+#endif
+
+extern "C" {
+    fpos_t std::_Fpz = { 0, 0 };
+}
+
+#endif
+
+// UTF-16 never needs more code units than the UTF-8 input has bytes
+wstring _achartowstring(string_view s) {
+    wstring ret;
+
+    ret.resize_and_overwrite(s.size(), [&](wchar *buf, size_t n) {
+	return (size_t)MultiByteToWideChar(CP_UTF8, 0, s.data(),
+	    (int)s.size(), buf, (int)n);
+    });
+    return ret;
+}
+
+// each UTF-16 code unit expands to at most 3 UTF-8 bytes
+string _wchartoastring(wstring_view s) {
+    string ret;
+
+    ret.resize_and_overwrite(s.size() * 3, [&](char *buf, size_t n) {
+	return (size_t)WideCharToMultiByte(CP_UTF8, 0, s.data(), (int)s.size(),
+	    buf, (int)n, NULL, NULL);
+    });
+    return ret;
+}
+
+// POSIX emulation and CRT replacements keep C linkage
+extern "C" {
+
 #ifdef _DLL
 #define _dosmaperr	__dosmaperr
 static void _dosmaperr(ulong oserrno);
+#else
+void _dosmaperr(ulong oserrno);
 #endif
 
 static ulong local_to_time_t(const SYSTEMTIME *stm);
@@ -195,7 +235,7 @@ int fsync(int fd) {
 }
 
 int ftruncate(int fd, long len) {
-    if (SetFilePointer(to_handle(fd), len, 0, SEEK_SET) == -1 ||
+    if (SetFilePointer(to_handle(fd), len, 0, SEEK_SET) == (DWORD)-1 ||
 	!SetEndOfFile(to_handle(fd))) {
 	_dosmaperr(GetLastError());
 	return -1;
@@ -248,7 +288,8 @@ int lockfile(int fd, short op, short whence, ulong start, ulong len,
 long lseek(int fd, long pos, int from) {
     DWORD newpos;
 
-    if ((newpos = SetFilePointer(to_handle(fd), pos, 0, from)) == -1) {
+    if ((newpos = SetFilePointer(to_handle(fd), pos, 0, from)) ==
+	(DWORD)-1) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
@@ -293,7 +334,7 @@ long readv(int fd, iovec *io, int num) {
 	}
 	return in;
     }
-    buf = total > sizeof (sbuf) ? malloc((size_t)total) : sbuf;
+    buf = total > sizeof (sbuf) ? (char *)malloc((size_t)total) : sbuf;
     if (buf == NULL) {
 	errno = ENOMEM;
 	return -1;
@@ -354,7 +395,8 @@ long writev(int fd, const iovec *io, int num) {
 	}
 	return out;
     }
-    if (total > sizeof (sbuf) && (buf = malloc((size_t)total)) == NULL) {
+    if (total > sizeof (sbuf) && (buf = (char *)malloc((size_t)total)) ==
+	NULL) {
 	errno = ENOMEM;
 	return -1;
     }
@@ -372,7 +414,8 @@ long writev(int fd, const iovec *io, int num) {
 long tell(int fd) {
     DWORD newpos;
 
-    if ((newpos = SetFilePointer(to_handle(fd), 0, 0, FILE_CURRENT)) == -1) {
+    if ((newpos = SetFilePointer(to_handle(fd), 0, 0, FILE_CURRENT)) ==
+	(DWORD)-1) {
 	_dosmaperr(GetLastError());
 	return -1;
     }
@@ -405,7 +448,7 @@ DIR *opendir(const char *name) {
 	}
     }
     len = p - name;
-    if ((dirp = malloc(sizeof (struct DIR) + (len + 1 +
+    if ((dirp = (DIR *)malloc(sizeof (struct DIR) + (len + 1 +
 	(wild ? strlen(wild) : sizeof ("/*.*"))) * sizeof (char))) == NULL)
 	return dirp;
     memcpy(&dirp->path, name, len);
@@ -450,7 +493,7 @@ WDIR *wopendir(const wchar *name) {
 	}
     }
     len = p - name;
-    if ((dirp = malloc(sizeof (struct WDIR) + (len + 1 +
+    if ((dirp = (WDIR *)malloc(sizeof (struct WDIR) + (len + 1 +
 	(wild ? wcslen(wild) : sizeof (L"/*.*"))) * sizeof (wchar))) == NULL)
 	return dirp;
     memcpy(&dirp->path, name, len);
@@ -657,7 +700,8 @@ int wopen(const wchar *path, int oflag, ...) {	// NOSONAR
 	_dosmaperr(GetLastError());
 	return -1;
     }
-    if (oflag & O_APPEND && SetFilePointer(hdl, 0, 0, FILE_END) == -1) {
+    if (oflag & O_APPEND && SetFilePointer(hdl, 0, 0, FILE_END) ==
+	(DWORD)-1) {
 	CloseHandle(hdl);
 	return -1;
     }
@@ -1233,4 +1277,6 @@ void __dosmaperr(ulong oserrno) {
 }
 
 #endif
+
+}
 #endif

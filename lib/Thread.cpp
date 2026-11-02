@@ -160,11 +160,8 @@ bool SharedSemaphore::open(const tchar *name, uint init, bool exclusive) {
     int key = (int)(name ? stringhash(name) : IPC_PRIVATE);
 
     close();
-    if ((hdl = semget(key, 1, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR)) ==
+    if ((hdl = semget(key, 1, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR)) !=
 	-1) {
-	if (exclusive)
-	    return false;
-    } else {
 #ifdef __linux__
 	// new semaphores start at 0 so adding cannot clobber a racing opener
 	if (init <= SHRT_MAX) {
@@ -178,6 +175,8 @@ bool SharedSemaphore::open(const tchar *name, uint init, bool exclusive) {
 	semctl(hdl, 0, SETVAL, init);
 	return true;
     }
+    if (exclusive)
+	return false;
     hdl = semget(key, 1, IPC_CREAT | S_IRUSR | S_IWUSR);
     return hdl != -1;
 }
@@ -192,24 +191,29 @@ bool DLLibrary::open(const tchar *dll) {
 	file += T(".dll");
 	hdl = LoadLibrary(file.c_str());
     }
+    if (!hdl) {
+	err = T("LoadLibrary failed");
+	file.erase();
+    }
 #else
-    hdl = dlopen(dll, RTLD_LAZY | RTLD_GLOBAL);
 #ifdef __APPLE__
-    if (!hdl && dll && !file.contains(".dylib")) {
-	file += ".dylib";
-	hdl = dlopen(file.c_str(), RTLD_LAZY | RTLD_GLOBAL);
-    }
+    static constexpr char ext[] = ".dylib";
 #else
-    if (!hdl && dll && !file.contains(".so")) {
-	file += ".so";
+    static constexpr char ext[] = ".so";
+#endif
+
+    hdl = dlopen(dll, RTLD_LAZY | RTLD_GLOBAL);
+    if (!hdl && dll && !file.contains(ext)) {
+	file += ext;
 	hdl = dlopen(file.c_str(), RTLD_LAZY | RTLD_GLOBAL);
     }
-#endif
     if (!hdl) {
 	err = dlerror();
 	file.erase();
     }
 #endif
+    if (hdl)
+	err.erase();
     return hdl != nullptr;
 }
 
@@ -302,13 +306,12 @@ void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
 	    fmap = new ThreadLocalMap();
 	    flocal.set(fmap);
 	}
-	for (auto &[d, f] : *fmap) {
-	    if (d == data) {
-		f = func;
-		return;
-	    }
-	}
-	fmap->emplace_back(data, func);
+	auto it = ranges::find(*fmap, data, &ThreadLocalMap::value_type::first);
+
+	if (it != fmap->end())
+	    it->second = func;
+	else
+	    fmap->emplace_back(data, func);
     } else if (data && fmap) {
 	auto it = ranges::find(*fmap, data, &ThreadLocalMap::value_type::first);
 
@@ -321,15 +324,13 @@ void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
     WARN_POP();
 }
 
-Thread::Thread(thread_hdl_t handle, ThreadGroup *tg): cv(lck),
-    argument(nullptr), hdl(handle), id(NOID), main(nullptr), retval(0),
-    state(Running) {
+Thread::Thread(thread_hdl_t handle, ThreadGroup *tg): cv(lck), hdl(handle),
+    id(NOID), state(Running) {
     group = ThreadGroup::add(*this, tg);
 }
 
-Thread::Thread(void): cv(lck), argument(nullptr), group(nullptr), hdl(0),
-    id(NOID), main(nullptr), retval(0), state(Init) {
-}
+Thread::Thread(void): cv(lck), group(nullptr), hdl(0), id(NOID),
+    state(Init) {}
 
 Thread::~Thread() {
     if (hdl && getId() != NOID)
@@ -380,20 +381,11 @@ bool Thread::priority(int pri) {	// NOLINT
     if (!hdl)
 	return false;
 #ifdef _WIN32
-    if (pri < -10)
-	return SetThreadPriority(hdl, THREAD_PRIORITY_IDLE) != 0;
-    else if (pri < -5)
-	return SetThreadPriority(hdl, THREAD_PRIORITY_LOWEST) != 0;
-    else if (pri < 0)
-	return SetThreadPriority(hdl, THREAD_PRIORITY_BELOW_NORMAL) != 0;
-    else if (pri < 1)
-	return SetThreadPriority(hdl, THREAD_PRIORITY_NORMAL) != 0;
-    else if (pri < 6)
-	return SetThreadPriority(hdl, THREAD_PRIORITY_ABOVE_NORMAL) != 0;
-    else if (pri < 11)
-	return SetThreadPriority(hdl, THREAD_PRIORITY_HIGHEST) != 0;
-    else
-	return SetThreadPriority(hdl, THREAD_PRIORITY_TIME_CRITICAL) != 0;
+    return SetThreadPriority(hdl, pri < -10 ? THREAD_PRIORITY_IDLE :
+	pri < -5 ? THREAD_PRIORITY_LOWEST : pri < 0 ?
+	THREAD_PRIORITY_BELOW_NORMAL : pri < 1 ? THREAD_PRIORITY_NORMAL :
+	pri < 6 ? THREAD_PRIORITY_ABOVE_NORMAL : pri < 11 ?
+	THREAD_PRIORITY_HIGHEST : THREAD_PRIORITY_TIME_CRITICAL) != 0;
 #else
     int mn, mx;
     int policy;
@@ -555,7 +547,7 @@ bool Thread::wait(ulong timeout) {
 	// other pthreads do not support a timeout
 	ret = timeout == INFINITE && pthread_join(h, nullptr) == 0;
 #endif
-	if (ret) {			// a joined pthread cannot be joined again
+	if (ret) {		// a joined pthread cannot be joined again
 	    lkr.lock();
 	    setState(Terminated);
 	    hdl = 0;
@@ -647,8 +639,6 @@ void ThreadGroup::remove(Thread &thread) {
 }
 
 bool ThreadGroup::start(uint stacksz, bool suspend) {
-    if (master.getState() != Init && master.getState() != Terminated)
-	return false;
     return master.start(init, this, stacksz, this, suspend);
 }
 
@@ -695,12 +685,10 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 		batch[i]->wait();
 		batch[i]->group = nullptr;
 	    }
-	    if (all) {
-		lkr.lock();
-		continue;
-	    } else {
+	    if (!all)
 		return batch[0];
-	    }
+	    lkr.lock();
+	    continue;
 	}
 	if (!running || !msec) {
 	    break;

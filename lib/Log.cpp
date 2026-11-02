@@ -20,7 +20,6 @@
 #include <vector>
 #include <fcntl.h>
 #include <stdarg.h>
-#include <time.h>
 #ifndef _WIN32
 #include <dirent.h>
 #include <sys/file.h>
@@ -144,18 +143,22 @@ void Log::LogFile::lock() {
 
     if (reopened)
 	reopen();
-    // fcntl locking arbitrates with other processes sharing this file. mp
-    // mode takes and releases it around every write since other processes
-    // are actively interleaving writes. Single-process mode only needs it once
-    if (!mp || fd < 0 || reopened)
-	return;
-    if (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
-	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1) {
-	tcerr << T("unable to lock log ") << path << T(": ") <<
-	    tstrerror(errno) << endl;
-	close();
-	fd = -3;
-    }
+    // fcntl locks arbitrate with other processes sharing the file: mp mode
+    // locks around every write, single process mode only once at open
+    if (mp && fd >= 0 && !reopened)
+	(void)lockend();
+}
+
+// lock and seek to the end, logging to stderr on failure
+bool Log::LogFile::lockend(void) {
+    if (!lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) &&
+	(len = (ulong)lseek(fd, 0, SEEK_END)) != (ulong)-1)
+	return true;
+    tcerr << T("unable to lock log ") << path << T(": ") << tstrerror(errno) <<
+	endl;
+    close();
+    fd = -3;
+    return false;
 }
 
 void Log::LogFile::print(const tchar *buf, uint chars) {
@@ -203,15 +206,9 @@ bool Log::LogFile::reopen(void) {
 #ifdef POSIX_FADV_SEQUENTIAL
     posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-    if (lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) ||
-	(len = (ulong)lseek(fd, 0, SEEK_END)) == (ulong)-1) {
-	tcerr << T("unable to lock log ") << path << T(": ") <<
-	    tstrerror(errno) << endl;
-	close();
-	fd = -3;
+    if (!lockend())
 	return false;
-    }
-    newfile = fd >= 0 && len == 0;
+    newfile = len == 0;
 #ifdef _UNICODE
     if (newfile) {
 	static const char bom[] = { '\xFF', '\xFE' };
@@ -229,13 +226,13 @@ bool Log::LogFile::reopen(void) {
 	    const struct tm *tm = gmt ? gmtime_r(&now, &tmbuf) :
 		localtime_r(&now, &tmbuf);
 
-	    tstrftime(buf, sizeof (buf), file.c_str(), tm);
+	    tstrftime(buf, std::size(buf), file.c_str(), tm);
 	    if (!tlink(path.c_str(), buf)) {
 		break;
 	    } else if (errno == EEXIST) {
 		++now;
 	    } else {
-		::close(fd);
+		close();
 		fd = -3;
 		return false;
 	    }
@@ -280,8 +277,7 @@ void Log::LogFile::roll(void) {
 	vector<pair<ulong, tstring>> entries;
 
 	while ((ent = treaddir(dir)) != NULL) {
-	    if (tstrncmp(ent->d_name, s2.c_str(), s2.size()) != 0 ||
-		(path == ent->d_name && path != file))
+	    if (tstrncmp(ent->d_name, s2.c_str(), s2.size()) != 0)
 		continue;
 	    if (s1.empty()) {
 		s3 = ent->d_name;
@@ -290,7 +286,7 @@ void Log::LogFile::roll(void) {
 		s3 += sep;
 		s3 += ent->d_name;
 	    }
-	    if ((s3 == path && path != file))
+	    if (s3 == path && path != file)
 		continue;
 	    if (!sec && path == file) {
 		// optimized path for plain numbered file rotation
@@ -330,18 +326,16 @@ void Log::LogFile::roll(void) {
 	}
     }
     if (cnt && path == file) {
-	tchar buf[16];
-	auto [ep, ec] = to_chars(buf, buf + std::size(buf), files);
+	auto numbered = [this](uint n) {
+	    tchar buf[16];
+	    auto [ep, ec] = to_chars(buf, buf + std::size(buf), n);
 
-	s1 = file;
-	s1 += '.';
-	s1.append(buf, (size_t)(ep - buf));
+	    return file + T('.') + tstring(buf, (size_t)(ep - buf));
+	};
+
+	s1 = numbered(files);
 	for (uint u = files; u > 1; u--) {
-	    auto [ep2, ec2] = to_chars(buf, buf + std::size(buf), u - 1);
-
-	    s2 = file;
-	    s2 += '.';
-	    s2.append(buf, (size_t)(ep2 - buf));
+	    s2 = numbered(u - 1);
 	    (void)tunlink(s1.c_str());
 	    if (trename(s2.c_str(), s1.c_str()))
 		break;
@@ -360,16 +354,15 @@ void Log::LogFile::roll(void) {
 
 void Log::LogFile::set(const Config &cfg, const tchar *sect,
     const tchar *sub, bool denable, const tchar *dlvl, const tchar *dfile) {
-    tstring f, s(sub);
+    tstring s(sub);
 
     s += '.';
-    cnt = cfg.get((s + T("count")).c_str(), 0U, sect);
-    f = cfg.get((s + T("name")).c_str(), dfile, sect);
     gmt = cfg.get(T("gmt"), false, sect);
-    lvl = str2enum(cfg.get((s + T("level")).c_str(), dlvl, sect).c_str());
-    sz = cfg.get((s + T("size")).c_str(), 10UL * 1024 * 1024, sect);
-    sec = cfg.get((s + T("time")).c_str(), 0UL, sect);
-    set(lvl, f.c_str(), cnt, sz, sec);
+    set(str2enum(cfg.get((s + T("level")).c_str(), dlvl, sect).c_str()),
+	cfg.get((s + T("name")).c_str(), dfile, sect).c_str(),
+	cfg.get((s + T("count")).c_str(), 0U, sect),
+	cfg.get((s + T("size")).c_str(), 10UL * 1024 * 1024, sect),
+	cfg.get((s + T("time")).c_str(), 0UL, sect));
     if (fd == -1 && !tstrchr(file.c_str(), '/') && !tstrchr(file.c_str(),
 	'\\')) {
 	tstring dir(cfg.get(T("installdir")));
@@ -423,48 +416,14 @@ void Log::LogFile::unlock(void) const {
 	(void)lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
 }
 
-// force all buffer threads into MainThreadGroup rather than whatever caller
-// started them to prevent deadlock waiting for them to quit during destruction
-struct FlushRegistry {
-    SpinLock lck;
-    vector<Log *> logs;
-};
-
-// constructed by Log::Log() so it outlives every Log destroyed at exit
-static FlushRegistry &flushreg(void) {
-    static FlushRegistry reg;
-
-    return reg;
-}
-
-static void flush_stop(void) {
-    FlushRegistry &reg(flushreg());
-    vector<Log *> logs;
-
-    {
-	SpinLocker lkr(reg.lck);
-
-	logs = reg.logs;
-    }
-    for (Log *l : logs)
-	l->stop();
-}
-
 WARN_PUSH_DISABLE(-Wstrict-overflow)
 Log::Log(Level level): cv(lck), ft(*this), lvl(level) {
-    (void)flushreg();
     format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
 }
 WARN_POP()
 
 Log::~Log() {
     stop();
-    {
-	FlushRegistry &reg(flushreg());
-	SpinLocker lkr(reg.lck);
-
-	erase(reg.logs, this);
-    }
     // prevent close -> flush from restarting FlushThread
     bufenable = false;
     (void)close();
@@ -493,6 +452,9 @@ void Log::buffer(bool enable) {
 
 bool Log::close(void) {
     flush();
+
+    Locker lkr(lck);
+
     afd.close();
     return ffd.close();
 }
@@ -543,7 +505,7 @@ void Log::strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz) 
     }
 #endif
 #endif
-    while (q < end && LIKELY(!((uchar)*q < ' ' && *q != '\t')))
+    while (q < end && LIKELY(!((tuchar)*q < ' ' && *q != '\t')))
 	++q;
 #if !defined(_WIN32) && (defined(__AVX2__) || defined(__ARM_NEON))
 scan_done:
@@ -558,7 +520,7 @@ scan_done:
 
     strm.write(data, (streamsize)(q - data));
     while (p < end) {
-	if (UNLIKELY((uchar)*p < ' ' && *p != '\t')) {
+	if (UNLIKELY((tuchar)*p < ' ' && *p != '\t')) {
 	    if (p > start)
 		strm.write(start, (streamsize)(p - start));
 	    if (*p == '\n') {
@@ -661,18 +623,13 @@ void Log::endlog(Tlsdata &tlsd) {
 	    struct tm tmbuf2 {};
 	    const struct tm *tm2;
 
-	    memcpy(&tmbuf, tm, sizeof (tmbuf));
-	    tm = &tmbuf;
 	    tm2 = gmt ? localtime_r(&now_sec, &tmbuf2) : tm;
 	    tm = gmt ? tm : gmtime_r(&now_sec, &tmbuf2);
 	    diff = (tm2->tm_hour - tm->tm_hour) * 100 + tm2->tm_min - tm->tm_min;
 	    if (tm->tm_wday != tm2->tm_wday)
 		diff -= 2400 * (tm->tm_wday > tm2->tm_wday ||
 		    (tm->tm_wday == 0 && tm2->tm_wday == 6) ? 1 : -1);
-	    if (diff < 0)
-		tsprintf(gmtoff, T("-%04d"), -1 * diff);
-	    else
-		tsprintf(gmtoff, T("+%04d"), diff);
+	    tsprintf(gmtoff, T("%+05d"), diff);
 	    last_format.replace(zpos, 2, gmtoff);
 	}
 #endif
@@ -723,13 +680,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	    bufcur->write(strbuf.data(), (streamsize)tmlen);
 	    bufcur->write(tailbuf.data(), (streamsize)tailbuf.size());
 	    if ((uint)bufcur->size() > bufsz) {
-		bufpending.push_back(bufcur);
-		if (buffree.empty()) {
-		    bufcur = new tbufferstream;
-		} else {
-		    bufcur = buffree.back();
-		    buffree.pop_back();
-		}
+		rotatebuf();
 		cv.broadcast();
 	    } else if (b) {
 		cv.broadcast();
@@ -756,7 +707,6 @@ void Log::endlog(Tlsdata &tlsd) {
     tlsd.suppress = true;
     if (syslogenable && clvl <= sysloglvl) {
 	string ss;
-	string::size_type pos;
 	char buf[64], cbuf[32];
 	uint u = (syslogfac << 3) | (uint)(clvl - (clvl <= Debug ? 1 : 2));
 
@@ -768,10 +718,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	    ss += ' ';
 	    if (_type == KeyVal)
 		ss += "nm=";
-	    if ((pos = mailfrom.find_first_of('@')) == mailfrom.npos)
-		ss += tstringtoastring(mailfrom);
-	    else
-		ss += tstringtoastring(mailfrom.substr(0, pos));
+	    ss += tstringtoastring(mailfrom.substr(0, mailfrom.find('@')));
 	}
 	sprintf(buf, "[%d]: ", getpid());
 	ss += buf;
@@ -802,6 +749,17 @@ void Log::endlog(Tlsdata &tlsd) {
     tlsd.suppress = false;
 }
 
+// queue the current buffer and continue writing into a free one
+void Log::rotatebuf(void) {
+    bufpending.push_back(bufcur);
+    if (buffree.empty()) {
+	bufcur = new tbufferstream;
+    } else {
+	bufcur = buffree.back();
+	buffree.pop_back();
+    }
+}
+
 void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong sec) {
     PauseFlush pf(*this);
     Locker lkr(lck);
@@ -812,15 +770,8 @@ void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong sec) {
 
 // drain all pending buffers and allow other threads to continue writing
 void Log::drainbuffers(bool unlockedio) {
-    if (bufcur->size()) {
-	bufpending.push_back(bufcur);
-	if (buffree.empty()) {
-	    bufcur = new tbufferstream;
-	} else {
-	    bufcur = buffree.back();
-	    buffree.pop_back();
-	}
-    }
+    if (bufcur->size())
+	rotatebuf();
     while (!bufpending.empty()) {
 	tbufferstream *buf = bufpending.front();
 
@@ -910,13 +861,11 @@ tbufferstream &Log::quote(tbufferstream &os, tstring_view s) {
 	if (UNLIKELY(c >= 0x80 || needquote[c])) {
 	    streamsize bsz = 0;
 	    tchar buf[128];
-	    static const tchar dquote = '"';
 	    static constexpr streamsize bufcnt =
 		(streamsize)std::size(buf);	// cppcheck-suppress uninitvar
 
-	    os.write(dquote);
+	    os.write(T('"'));
 	    os.write((const tchar *)start, p - start);
-	    auto flush = [&] { if (bsz) { os.write(buf, bsz); bsz = 0; } };
 	    auto putc = [&](tchar cc) {
 		if (UNLIKELY(bsz == bufcnt)) {
 		    os.write(buf, bsz);
@@ -949,8 +898,9 @@ tbufferstream &Log::quote(tbufferstream &os, tstring_view s) {
 		    }
 		}
 	    }
-	    flush();
-	    os.write(dquote);
+	    if (bsz)
+		os.write(buf, bsz);
+	    os.write(T('"'));
 	    return os;
 	}
 	++p;
@@ -971,10 +921,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
     bufenable = cfg.get(T("file.buffer.enable"), false, sect);
     gmt = cfg.get(T("gmt"), false, sect);
     s = Sockaddr::hostname();
-    if ((pos = s.find_first_of('.')) == s.npos)
-	hostname = s;
-    else
-	hostname = s.substr(0, pos);
+    hostname = s.substr(0, s.find('.'));
     mailenable = cfg.get(T("mail.enable"), false, sect);
     _mail(str2enum(cfg.get(T("mail.level"), T("err"), sect).c_str()),
 	cfg.get(T("mail.to"), T("logger"), sect).c_str(),
@@ -995,7 +942,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
 	s == T("syslog") ? Syslog : s == T("keyval") ? KeyVal : Simple;
     afd.set(cfg, sect, T("alert"), false, T("warn"), T("stderr"));
     ffd.set(cfg, sect, T("file"), true, T("info"), T("stdout"));
-    lvl = afd.lvl > ffd.lvl ? afd.lvl : ffd.lvl;
+    lvl = max(afd.lvl, ffd.lvl);
     lck.unlock();
     buffer(bufenable);
 }
@@ -1023,16 +970,9 @@ void Log::start(void) {
 
     if (bufenable && ft.getState() != Running) {
 	ft.rearm();
-	ft.start(16U * 1024, &ThreadGroup::MainThreadGroup);
-
-	FlushRegistry &reg(flushreg());
-	SpinLocker slkr(reg.lck);
-
-	if (ranges::find(reg.logs, this) == reg.logs.end()) {
-	    if (reg.logs.empty())
-		atexit(flush_stop);
-	    reg.logs.push_back(this);
-	}
+	// own group so neither the caller's nor MainThreadGroup's destructor
+	// can block on it before ~Log stops it
+	ft.start(16U * 1024, &ftg);
     }
 }
 

@@ -93,8 +93,8 @@ constexpr bool blocked(int e) {
 constexpr bool interrupted(int e) { return e == WSAEINTR; }
 
 /*
- * Socket address class to wrap sockaddr structures and deal with Win32 startup
- * requirements. Limited to IPV4/6 TCP or UDP addresses and UNIX domain paths
+ * sockaddr wrapper that also handles Win32 startup. Limited to IPv4/6 TCP or
+ * UDP addresses and UNIX domain paths
  */
 class BLISTER Sockaddr {
 public:
@@ -152,7 +152,7 @@ public:
     bool ipv4(void) const { return family() == AF_INET; }
     bool ipv6(void) const { return family() == AF_INET6; }
     bool localhost(void) const {
-	if (proto() == Sockaddr::UNIX) {
+	if (proto() == UNIX) {
 	    return true;
 	} else if (v4mapped()) {
 	    in_addr a4;
@@ -280,13 +280,13 @@ private:
     };
 
     vector<Range> ranges;			// sorted and disjoint
+
+    static bool parse_ip(const tchar *&p, uint32_t &ip);
 };
 
 /*
- * Berkeley/WinSock Socket class manages stream or datagram server and client
- * sockets. Deals with OS dependent behavior for non-blocking sockets and
- * readv/writev emulation for improved performance. SIGINT retries are handled
- * automatically. Object copies are supported by using a reference counted subclass
+ * Berkeley/WinSock stream or datagram socket with portable non-blocking I/O
+ * and EINTR retries. Copies share a reference counted SocketBuf
  */
 class BLISTER Socket {
 public:
@@ -373,15 +373,11 @@ public:
     bool loopback(void) const;
     bool loopback(bool on);
     bool nodelay(void) const {
-	int i;
-
-	return getsockopt(IPPROTO_TCP, TCP_NODELAY, i) && i != 0;
+	return getsockopt(IPPROTO_TCP, TCP_NODELAY) > 0;
     }
     bool nodelay(bool on) { return setsockopt(IPPROTO_TCP, TCP_NODELAY, on); }
     bool reuseaddr(void) const {
-	int i;
-
-	return getsockopt(SOL_SOCKET, SO_REUSEADDR, i) && i != 0;
+	return getsockopt(SOL_SOCKET, SO_REUSEADDR) > 0;
     }
     bool reuseaddr(bool on) { return setsockopt(SOL_SOCKET, SO_REUSEADDR, on); }
     int type(void) const { return getsockopt(SOL_SOCKET, SO_TYPE); }
@@ -498,13 +494,17 @@ protected:
 	return (out ? sbuf->wto : sbuf->rto) != SOCK_INFINITE && sbuf->blck &&
 	    sbuf->err == EAGAIN;
     }
+    long wrret(long out) const {
+	return UNLIKELY(out < 0 && blocked() && !timedout(true)) ? 0 : out;
+    }
+    static bool stalesock(const char *path);
 
     SocketBuf *sbuf;
 };
 
 /*
- * SocketSet manages system dependent fd_set/select() and pollfd/poll()
- * differences and is optimized for very large file descriptor sets
+ * portable fd_set/select() or pollfd/poll() set optimized for very large
+ * file descriptor sets
  */
 class BLISTER SocketSet {
 public:
@@ -512,7 +512,6 @@ public:
     SocketSet(const SocketSet &ss) { *this = ss; }
     SocketSet(SocketSet &&ss) noexcept: fds(std::move(ss.fds)),
 	maxsz(std::exchange(ss.maxsz, 0U)), sz(std::exchange(ss.sz, 0U)) {}
-    ~SocketSet() = default;
 
     SocketSet &operator =(const SocketSet &ss);
     SocketSet &operator =(SocketSet &&ss) noexcept {
@@ -588,17 +587,13 @@ inline bool SocketSet::get(socket_t fd) const {
 inline SocketSet &SocketSet::operator =(const SocketSet &ss) {
     if (&ss != this) {
 	sz = ss.sz;
-#ifdef _WIN32
-	if (maxsz < sz) {
+	if (!fds || maxsz < sz) {
 	    maxsz = ss.maxsz;
 	    fds = alloc(maxsz);
 	}
+#ifdef _WIN32
 	memcpy(fds.get(), ss.fds.get(), ((size_t)sz + 1) * sizeof (socket_t));
 #else
-	if (maxsz < sz) {
-	    maxsz = ss.maxsz;
-	    fds = alloc(maxsz);
-	}
 	if (sz)
 	    memcpy(fds.get(), ss.fds.get(), sz * sizeof (pollfd));
 #endif
@@ -657,7 +652,7 @@ public:
     void str(char *p, streamsize sz) { sb.setbuf(p, sz); }
     streamsize read(void *p, streamsize sz) { return sb.read(p, sz); }
     template<class C> requires is_trivially_copyable_v<C>
-    streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
+    streamsize read(C &c) { return sb.read(c); }
 
     socketbuf *rdbuf(void) { return &sb; }
     const socketbuf *rdbuf(void) const { return &sb; }
@@ -710,7 +705,7 @@ public:
 	return n;
     }
     template<class C> requires is_trivially_copyable_v<C>
-    streamsize read(C &c) { return sb.read(&c, sizeof (c)); }
+    streamsize read(C &c) { return sb.read(c); }
     template<class C> requires is_trivially_copyable_v<C>
     streamsize write(const C &c) { return write(&c, (streamsize)sizeof (c)); }
 

@@ -18,7 +18,6 @@
 #ifndef Timing_h
 #define Timing_h
 
-#include <atomic>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -121,24 +120,12 @@ public:
     }
     void erase(strhash_t hash);
     void record(void);
-    template<size_t N>
-    __forceinline timing_t record(const tchar (&key)[N], timing_t begin) {
+    // K is a literal, pointer or string key as accepted by add()
+    template<typename K>
+    __forceinline timing_t record(const K &key, timing_t begin) {
 	timing_t n = now();
 
-	add(key, (uint)strview(key).size(), stringhash(key), n - begin);
-	return n;
-    }
-    template<timing_key_ptr P>
-    __forceinline timing_t record(const P &key, timing_t begin) {
-	timing_t n = now();
-
-	add(key, 0, stringhash(key), n - begin);
-	return n;
-    }
-    __forceinline timing_t record(const tstring &key, timing_t begin) {
-	timing_t n = now();
-
-	add(key.c_str(), (uint)key.length(), stringhash(key), n - begin);
+	add(key, n - begin);
 	return n;
     }
     void restart(void);
@@ -215,10 +202,7 @@ public:
     template<size_t N> __forceinline explicit TimingEntry(const tchar (&k)[N],
 	Timing &t = dtiming): key(k), hash(stringhash(k)), start(t.start()),
 	timing(t) {}
-    __forceinline ~TimingEntry() {
-	if (start != STOPPED)
-	    timing.add(key, 0, hash, Timing::now() - start);
-    }
+    __forceinline ~TimingEntry() { record(); }
 
     __forceinline void record(void) {
 	if (start != STOPPED) {
@@ -241,22 +225,9 @@ private:
 // time a stack call including destructors
 class BLISTER TimingFrame: nocopy {
 public:
-    template<timing_key_ptr P> __forceinline explicit TimingFrame(const P &key,
-	Timing &t = dtiming): timing(t) {
-	timing.start(key);
-    }
-    __forceinline explicit TimingFrame(const tstring &key, Timing &t =
-	dtiming): timing(t) {
-	timing.start(key);
-    }
-    template<size_t N> __forceinline explicit TimingFrame(const tchar (&key)[N],
-	Timing &t = dtiming): timing(t) {
-	timing.start(key);
-    }
-    __forceinline ~TimingFrame() {
-	if (started)
-	    timing.record();
-    }
+    template<typename K> __forceinline explicit TimingFrame(const K &key,
+	Timing &t = dtiming): timing(t) { timing.start(key); }
+    __forceinline ~TimingFrame() { record(); }
 
     __forceinline void record(void) {
 	if (started) {
@@ -280,4 +251,4 @@ private:
     Timing &timing;
 };
 
-#endif // _Timing_h
+#endif // Timing_h

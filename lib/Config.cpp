@@ -17,7 +17,6 @@
 
 #include "stdapi.h"
 #include <algorithm>
-#include <ranges>
 #include <fstream>
 #include <memory>
 #include <vector>
@@ -95,8 +94,6 @@ void Config::expandkv(const KV *kv, tstring &val) const {
 
 	uint off = (spos + 3 < val.size() && val[spos + 2] == '*' &&
 	    val[spos + 3] == '.') ? 2 : 0;
-	const tchar *repl;
-	size_t repllen;
 	tstring_view sv(val.data() + spos + 2 + off, epos - spos - 2 - off);
 
 	if (!pre.empty() && sv.starts_with(pre) && sv.size() > pre.size() + 1 &&
@@ -110,9 +107,7 @@ void Config::expandkv(const KV *kv, tstring &val) const {
 	// stop runaway expansion of self referencing values
 	if (++expansions > MAXEXPAND)
 	    break;
-	repl = it->second->val;
-	repllen = it->second->vlen;
-	val.replace(spos, epos - spos + 1, repl, repllen);
+	val.replace(spos, epos - spos + 1, it->second->val, it->second->vlen);
 	search = spos;
     }
 }
@@ -150,6 +145,7 @@ const Config::KV *Config::getkv(tstring_view key, const tchar *sect) const {
 }
 
 // 1 allocation for key, val, state
+WARN_PUSH_DISABLE(26402)
 Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     size_t vlen) {
     KV *kv;
@@ -184,9 +180,9 @@ Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
 	    }
 	}
     }
-#pragma warning(disable: 26402)
     return kv;
 }
+WARN_POP()
 
 bool Config::open_file(const tstring &file, tifstream &is, unique_ptr<tchar[]>
     &fbuf, ulong &sz) {
@@ -359,7 +355,7 @@ bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
 Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     vlen, const tchar *sect, size_t slen, bool append) {
     tchar kbuf[KEYSZ];
-    tstring kstr;
+    tstring kstr, s;
     KV *kv, *oldkv;
     tstring_view fkey = UNLIKELY(slen) ? joinkey(kbuf, kstr, sect, slen, key,
 	klen) : tstring_view(key, klen);
@@ -375,8 +371,6 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     }
     oldkv = it->second;
     if (append) {
-	tstring s;
-
 	s.reserve(oldkv->vlen + vlen + (oldkv->quote ? 2 : 0));
 	if (oldkv->quote)
 	    s += oldkv->quote;
@@ -388,10 +382,10 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	    s.append(val, vlen);
 	if (oldkv->quote)
 	    s += oldkv->quote;
-	kv = newkv(oldkv->key(), oldkv->klen, s.c_str(), s.size());
-    } else {
-	kv = newkv(fkey.data(), fkey.size(), val, vlen);
+	val = s.c_str();
+	vlen = s.size();
     }
+    kv = newkv(fkey.data(), fkey.size(), val, vlen);
     // reuse the map node rather than erase + emplace
     auto nh = amap.extract(it);
 
@@ -428,9 +422,8 @@ bool Config::write(tostream &os, bool inistyle) const {
     if (inistyle)
 	ranges::sort(keys, keyless{}, &pair<const tchar *, const KV *>::first);
     else
-	ranges::sort(keys, [](const tchar *a, const tchar *b) {
-	    return stringless(a, b);
-	}, &pair<const tchar *, const KV *>::first);
+	ranges::sort(keys, strless{},
+	    &pair<const tchar *, const KV *>::first);
     for (size_t u = 0; u < keys.size(); ++u) {
 	const tchar *dot;
 	const tchar *key = keys[u].first;
@@ -492,28 +485,20 @@ bool ConfigFile::read(const tchar *file, const tchar *_pre, bool app) {
 }
 
 bool ConfigFile::write(const tchar *file, bool inistyle) const {
-    if (file) {
-	tofstream os(tchartoachar(file));
+    const tstring out(file ? tstring(file) : path + T(".tmp"));
+    tofstream os(tstringtoachar(out));
+    bool ok;
+
 #ifdef _UNICODE
-	os.put(L'\xFEFF');
+    os.put(L'\xFEFF');
 #endif
+    if (file)
 	return write(os, inistyle);
-    } else {
-	tstring tmp(path + T(".tmp"));
-	tofstream os(tstringtoachar(tmp));
-#ifdef _UNICODE
-	os.put(L'\xFEFF');
-#endif
-	if (!write(os, inistyle)) {
-	    os.close();
-	    unlink(tstringtoachar(tmp));
-	    return false;
-	}
-	os.close();
-	if (rename(tstringtoachar(tmp), tstringtoachar(path))) {
-	    unlink(tstringtoachar(tmp));
-	    return false;
-	}
-	return true;
+    ok = write(os, inistyle);
+    os.close();
+    if (!ok || rename(tstringtoachar(out), tstringtoachar(path))) {
+	unlink(tstringtoachar(out));
+	return false;
     }
+    return true;
 }

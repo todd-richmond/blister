@@ -23,8 +23,8 @@ static bool is_true(tchar c) {
 }
 
 int tmain(int argc, const tchar * const argv[]) {
-    const tchar *attr = nullptr, *file = T("-"), *prefix = nullptr, *section = nullptr,
-	*val = nullptr;
+    const tchar *attr = nullptr, *file = T("-"), *prefix = nullptr,
+	*section = nullptr, *val = nullptr;
     ConfigFile cfg;
     bool boolean = false, check = false, integer = false, nonewline = false,
 	quiet = false, update = false;

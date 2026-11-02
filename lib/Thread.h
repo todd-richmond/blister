@@ -137,8 +137,8 @@ inline void spin_release(bool = true, bool yield = false) {
 #endif
 
 /*
- * The DLLibrary class loads shared libraries and dynamically fetches function
- * pointers. Do not specify file extensions in the constructor
+ * loads shared libraries and fetches function pointers. Omit the file
+ * extension in the constructor
  */
 class BLISTER DLLibrary: nocopy {
 public:
@@ -491,7 +491,6 @@ using UnfairLocker = LockerTemplate<UnfairLock>;
 class BLISTER Condvar: nocopy {
 public:
     explicit Condvar(Lock &lck): lock(lck) {}
-    ~Condvar() = default;
 
     __forceinline void broadcast(void) { cv.notify_all(); }
     __forceinline void set(uint count = 1) {
@@ -500,15 +499,13 @@ public:
     }
     __forceinline bool wait(ulong msec = INFINITE) {
 	unique_lock ulck(lock, adopt_lock);
-	bool ret;
+	bool ret = true;
 
-	if (msec == INFINITE) {
+	if (msec == INFINITE)
 	    cv.wait(ulck);		// NOSONAR
-	    ulck.release();
-	    return true;
-	}
-	ret = cv.wait_for(ulck, chrono::milliseconds(msec)) !=
-	    cv_status::timeout;		// NOSONAR
+	else
+	    ret = cv.wait_for(ulck, chrono::milliseconds(msec)) !=
+		cv_status::timeout;	// NOSONAR
 	ulck.release();
 	return ret;
     }
@@ -542,8 +539,7 @@ using Semaphore = TimedSemaphore<counting_semaphore<>>;
 // semaphore with tracking counter
 class BLISTER CountedSemaphore: nocopy {
 public:
-    explicit CountedSemaphore() = default;
-    ~CountedSemaphore() = default;
+    CountedSemaphore() = default;
 
     explicit __forceinline operator bool(void) const { return waiting() != 0; }
     __forceinline uint waiting(void) const {
@@ -553,11 +549,8 @@ public:
     }
 
     void acquire(void) {
-	int_fast32_t c = cnt.fetch_sub(1, memory_order_acq_rel);
-
-	if (LIKELY(c > 0))
-	    return;
-	sema4.acquire();
+	if (UNLIKELY(cnt.fetch_sub(1, memory_order_acq_rel) <= 0))
+	    sema4.acquire();
     }
     // wake only current waiters so a racing timeout cannot leave a permit
     uint broadcast(void) {
@@ -580,9 +573,7 @@ public:
 	c = cnt.fetch_add((int_fast32_t)count, memory_order_acq_rel);
 	if (LIKELY(c >= 0))
 	    return count;
-	wake = (uint)-c;
-	if (wake > count)
-	    wake = count;
+	wake = min((uint)-c, count);
 	sema4.release(wake);
 	return count - wake;
     }
@@ -623,7 +614,7 @@ private:
 // LIFO semaphore useful for thread pools
 class BLISTER LifoSemaphore: nocopy {
 public:
-    explicit LifoSemaphore() = default;
+    LifoSemaphore() = default;
     // wait for woken and cancelled waiters to finish with their nodes
     ~LifoSemaphore() {
 	Node *n = allnodes.load(memory_order_acquire);
@@ -1094,12 +1085,12 @@ protected:
 private:
     mutable Lock lck;
     Condvar cv;
-    void *argument;
+    void *argument = nullptr;
     ThreadGroup *group;
     thread_hdl_t hdl;
     atomic<thread_id_t> id;
-    ThreadRoutine main;
-    int retval;
+    ThreadRoutine main = nullptr;
+    int retval = 0;
     atomic<ThreadState> state;
     uint stacksize = 0;
     FastSemaphore started;

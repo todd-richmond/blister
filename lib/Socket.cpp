@@ -67,17 +67,25 @@ const tstring &Sockaddr::host(void) const {
 addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
     proto) {
     struct addrinfo *ai, hints;
+    bool any = false;
 
     ZERO(hints);
     hints.ai_family = families[proto];
-    if (!host || !*host || *host == '*' || !tstricmp(host, T("IN6ADDR_ANY"))) {
-	hints.ai_family = proto == TCP || proto == TCP4 || proto == TCP6 ?
-	    families[TCP6] : families[UDP6];
+    if (!host || !*host || *host == '*') {
+	// prefer dual-stack "::" but fall back to IPv4 on hosts without IPv6
+	if (hints.ai_family == AF_UNSPEC) {
+	    any = true;
+	    hints.ai_family = AF_INET6;
+	    hints.ai_flags = AI_ADDRCONFIG;
+	}
+	hints.ai_flags |= AI_PASSIVE;
+	host = nullptr;
+    } else if (!tstricmp(host, T("IN6ADDR_ANY"))) {
+	hints.ai_family = AF_INET6;
 	hints.ai_flags = AI_PASSIVE;
 	host = nullptr;
     } else if (!tstricmp(host, T("INADDR_ANY"))) {
-	hints.ai_family = proto == TCP || proto == TCP4 ? families[TCP4] :
-	    families[UDP4];
+	hints.ai_family = AF_INET;
 	hints.ai_flags = AI_PASSIVE;
 	host = nullptr;
     } else if (istdigit(*host)) {
@@ -85,10 +93,10 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
     } else {
 	hints.ai_flags = AI_CANONNAME | AI_ADDRCONFIG;
 	if (!tstrnicmp(host, T("ipv4:"), 5)) {
-	    hints.ai_family = families[TCP4];
+	    hints.ai_family = AF_INET;
 	    host += 5;
 	} else if (!tstrnicmp(host, T("ipv6:"), 5)) {
-	    hints.ai_family = families[TCP6];
+	    hints.ai_family = AF_INET6;
 	    host += 5;
 	}
     }
@@ -96,8 +104,15 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
     if (service && istdigit(*service))
 	hints.ai_flags |= AI_NUMERICSERV;
     hints.ai_socktype = dgram(proto) ? SOCK_DGRAM : SOCK_STREAM;
-    return ::getaddrinfo(host ? tchartoachar(host) : NULL, service ?
-	tchartoachar(service) : NULL, &hints, &ai) ? NULL : ai;
+    if (!::getaddrinfo(host ? tchartoachar(host) : NULL, service ?
+	tchartoachar(service) : NULL, &hints, &ai))
+	return ai;
+    if (!any)
+	return NULL;
+    hints.ai_family = AF_INET;
+    hints.ai_flags &= ~AI_ADDRCONFIG;
+    return ::getaddrinfo(NULL, service ? tchartoachar(service) : NULL, &hints,
+	&ai) ? NULL : ai;
 }
 
 const tstring &Sockaddr::hostname() {
@@ -133,9 +148,8 @@ tstring Sockaddr::ip(void) const {
 	const char *s = inet_ntop(fam, &addr.sa6.sin6_addr, buf, sizeof (buf));
 
 	return achartotstring(v4mapped() ? s + 7 : s);
-    } else {
-	return T("");
     }
+    return {};
 }
 
 ushort Sockaddr::port(void) const {
@@ -166,12 +180,10 @@ Sockaddr::Proto Sockaddr::proto(void) const {
 bool Sockaddr::service(const tchar *service, Proto proto) {
     Sockaddr sa;
 
-    if (sa.set(nullptr, service, proto)) {
-	port(sa.port());
-	return true;
-    } else {
+    if (!sa.set(nullptr, service, proto))
 	return false;
-    }
+    port(sa.port());
+    return true;
 }
 
 bool Sockaddr::set(const addrinfo *ai) {
@@ -194,11 +206,9 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
     const tchar *p;
     tstring s;
 
-    if (host && !tstrncmp(host, T("unix:"), 5))
+    if (!host || !tstrncmp(host, T("unix:"), 5))
 	return set(host, (const tchar *)nullptr, proto);
-    if (!host) {
-	p = nullptr;
-    } else if (*host == ':' && host[1] == ':') {
+    if (*host == ':' && host[1] == ':') {
 	if ((p = tstrchr(host + 2, ':')) != nullptr) {
 	    s.assign(host, (tstring::size_type)(p - host));
 	    host = s.c_str();
@@ -222,14 +232,12 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
 }
 
 bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
-    if (portno) {
-	tchar portstr[8];
+    tchar portstr[8];
 
-	to_str(portstr, portstr + 8, portno);
-	return set(host, portstr, proto);
-    } else {
-	return set(host, (tchar *)nullptr, proto);
-    }
+    if (!portno)
+	return set(host, (const tchar *)nullptr, proto);
+    to_str(portstr, portstr + 8, portno);
+    return set(host, portstr, proto);
 }
 
 bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
@@ -326,16 +334,7 @@ tstring Sockaddr::str(const tstring &val) const {
     if (!p)
 	return val;
     *to_chars(buf + 1, buf + std::size(buf) - 1, p).ptr = 0;
-    if (!val.contains(':')) {
-	return val + buf;
-    } else {
-	tstring s(T("["));
-
-	s += val;
-	s += ']';
-	s += buf;
-	return s;
-    }
+    return val.contains(':') ? T("[") + val + T("]") + buf : val + buf;
 }
 
 bool SockaddrList::insert(const tchar *host, ushort port, Sockaddr::Proto
@@ -359,7 +358,7 @@ bool SockaddrList::insert(const tchar *host, const tchar *service,
 }
 
 // parse a dotted quad with up to 3 digits per octet
-static bool parse_ip(const tchar *&p, uint32_t &ip) {
+bool CIDR::parse_ip(const tchar *&p, uint32_t &ip) {
     uint32_t v = 0;
 
     for (int i = 0; i < 4; i++) {
@@ -511,7 +510,7 @@ bool Socket::accept(Socket &sock, bool _cloexec, bool nonblock) {
 }
 
 // socket file left behind by a crashed process
-static bool stalesock(const char *path) {
+bool Socket::stalesock(const char *path) {
 #ifdef _WIN32
 #ifndef IO_REPARSE_TAG_AF_UNIX
 #define IO_REPARSE_TAG_AF_UNIX	0x80000023L
@@ -536,9 +535,12 @@ bool Socket::bind(const Sockaddr &sa, bool reuse) {
 	return false;
     if (reuse && sa.proto() != Sockaddr::UNIX && !reuseaddr(true))
 	return false;
+    // accept IPv4 on "::" where IPV6_V6ONLY defaults on (Windows, BSD)
+    if (sa.family() == AF_INET6 &&
+	IN6_IS_ADDR_UNSPECIFIED((const in6_addr *)sa))
+	(void)setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, false);
     if (sa.proto() == Sockaddr::UNIX &&
 	((const sockaddr_un *)sa)->sun_path[0]) {
-	// remove a stale socket file left by a crashed process
 	if (stalesock(sa.path()))
 	    (void)::unlink(sa.path());
 	sbuf->unlink(sa.path());
@@ -672,9 +674,7 @@ bool Socket::cloexec(void) {
 
 bool Socket::cork(void) const {
 #ifdef CORK_VAL
-    int i;
-
-    return getsockopt(IPPROTO_TCP, CORK_VAL, i) && i != 0;
+    return getsockopt(IPPROTO_TCP, CORK_VAL) > 0;
 #else
     return true;
 #endif
@@ -692,21 +692,14 @@ bool Socket::cork(bool on) {
 bool Socket::linger(ushort sec) {
     struct linger lg;
 
-    if (sec == (ushort)-1) {
-	lg.l_onoff = 0;
-	lg.l_linger = 0;
-    } else {
-	lg.l_onoff = 1;
-	lg.l_linger = sec;
-    }
+    lg.l_onoff = sec != (ushort)-1;
+    lg.l_linger = lg.l_onoff ? sec : 0;
     return setsockopt(SOL_SOCKET, SO_LINGER, lg);
 }
 
 bool Socket::loopback(void) const {
 #ifdef SO_USELOOPBACK
-    int i;
-
-    return getsockopt(SOL_SOCKET, SO_USELOOPBACK, i) && i != 0;
+    return getsockopt(SOL_SOCKET, SO_USELOOPBACK) > 0;
 #else
     return true;
 #endif
@@ -901,7 +894,7 @@ long Socket::sendmsg(const msghdr &msgh, int flags) const {
 	if (check((int)(out = ::sendmsg(sbuf->sock, &msgh, flags))))
 	    break;
     } while (interrupted());
-    return out <= 0 && blocked() && !timedout(true) ? 0 : out;
+    return wrret(out);
 }
 #endif
 
@@ -921,7 +914,7 @@ int Socket::write(const void *buf, uint sz) const {
 	    (SOCK_SIZE_T)sz, 0)))
 	    break;
     } while (interrupted());
-    return UNLIKELY(out < 0 && blocked() && !timedout(true)) ? 0 : out;
+    return (int)wrret(out);
 }
 
 int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
@@ -934,7 +927,7 @@ int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
 	    (SOCK_SIZE_T)sz, 0, sa, sa.size())))
 	    break;
     } while (interrupted());
-    return UNLIKELY(out < 0 && blocked() && !timedout(true)) ? 0 : out;
+    return (int)wrret(out);
 }
 
 long Socket::writev(const iovec *iov, int count) const {
@@ -952,7 +945,7 @@ long Socket::writev(const iovec *iov, int count) const {
 	    break;
     } while (interrupted());
 #endif
-    return out <= 0 && blocked() && !timedout(true) ? 0 : out;
+    return wrret(out);
 }
 
 long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
@@ -961,7 +954,7 @@ long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
 
     check(WSASendTo(sbuf->sock, (iovec *)iov, count, (ulong *)&out, // NOSONAR
 	0, sa, sa.size(), NULL, NULL));
-    return out <= 0 && blocked() && !timedout(true) ? 0 : out;
+    return wrret(out);
 #else
     msghdr msgh {};
 
@@ -1091,10 +1084,9 @@ bool SocketSet::iopoll(const SocketSet &rset, SocketSet &iset,
     wset.fds->fd_count = wset.sz;
     eset = iset = rset;
     oset = wset;
-    for (u = 0; u < oset.sz; u++) {
-	if (!eset.set(oset[u]))
+    for (u = 0; u < oset.sz; u++)
+	if (!eset.get(oset[u]))
 	    eset.set(oset[u]);
-    }
     if (select(0, iset.fds.get(), oset.fds.get(), eset.fds.get(),
 	msec == SOCK_INFINITE ? NULL : &tv) == -1)
 	return false;
@@ -1142,26 +1134,19 @@ bool SocketSet::iopoll(const SocketSet &rset, SocketSet &iset,
     iset.clear();
     oset.clear();
     eset.clear();
-    ret = ro ? poll(rset.fds.get(), rset.sz, (int)msec) :
-	poll(sset.fds.get(), sset.sz, (int)msec);
-    if (ret <= 0)
+    const SocketSet &ps = ro ? rset : sset;
+
+    if ((ret = poll(ps.fds.get(), ps.sz, (int)msec)) <= 0)
 	return ret == 0 || (!msec && interrupted(sockerrno()));
-    if (ro) {
-	for (u = 0; u < rset.sz; u++) {
-	    if (rset.fds[u].revents & POLLIN)
-		iset.set(rset.fds[u].fd);
-	    if (rset.fds[u].revents & (POLLERR | POLLHUP))
-		eset.set(rset.fds[u].fd);
-	}
-    } else {
-	for (u = 0; u < sset.sz; u++) {
-	    if (sset.fds[u].revents & POLLIN)
-		iset.set(sset.fds[u].fd);
-	    if (sset.fds[u].revents & POLLOUT)
-		oset.set(sset.fds[u].fd);
-	    if (sset.fds[u].revents & (POLLERR | POLLHUP))
-		eset.set(sset.fds[u].fd);
-	}
+    for (u = 0; u < ps.sz; u++) {
+	const pollfd &pfd = ps.fds[u];
+
+	if (pfd.revents & POLLIN)
+	    iset.set(pfd.fd);
+	if (pfd.revents & POLLOUT)
+	    oset.set(pfd.fd);
+	if (pfd.revents & (POLLERR | POLLHUP))
+	    eset.set(pfd.fd);
     }
     return true;
 #endif

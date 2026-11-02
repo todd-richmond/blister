@@ -11,11 +11,15 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPLoad", "..\test\HTTPLoa
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SMTPLoad", "..\test\SMTPLoad.vcxproj", "{2DEFA78C-76D2-9926-B726-ADC00593B082}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SMTPSink", "..\test\SMTPSink.vcxproj", "{40D1847C-9449-435B-B1A1-7FADC1447925}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DLog", "..\test\DLog.vcxproj", "{16F7F227-CF35-4BBB-A39D-BDDB64CD3D30}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Cfg", "..\test\Cfg.vcxproj", "{F85C5F47-02F6-41E6-BD56-6B67FD30B4EA}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DTiming", "..\test\DTiming.vcxproj", "{3C1E9C53-05EC-4D42-B531-731157DE3521}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPTest", "..\test\HTTPTest.vcxproj", "{A2E234EA-EF55-42E3-8756-56558D85BEF8}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPd", "..\test\HTTPd.vcxproj", "{2DBF271C-51D2-9A26-A726-ADF085F3B082}"
 EndProject
@@ -99,6 +103,38 @@ Global
 		{2DEFA78C-76D2-9926-B726-ADC00593B082}.Release|Win32.Build.0 = Release|Win32
 		{2DEFA78C-76D2-9926-B726-ADC00593B082}.Release|x64.ActiveCfg = Release|x64
 		{2DEFA78C-76D2-9926-B726-ADC00593B082}.Release|x64.Build.0 = Release|x64
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Debug Unicode|Win32.ActiveCfg = Debug Unicode|Win32
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Debug Unicode|Win32.Build.0 = Debug Unicode|Win32
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Debug Unicode|x64.ActiveCfg = Debug Unicode|x64
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Debug Unicode|x64.Build.0 = Debug Unicode|x64
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Debug|Win32.ActiveCfg = Debug|Win32
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Debug|Win32.Build.0 = Debug|Win32
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Debug|x64.ActiveCfg = Debug|x64
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Debug|x64.Build.0 = Debug|x64
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Release Unicode|Win32.ActiveCfg = Release Unicode|Win32
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Release Unicode|Win32.Build.0 = Release Unicode|Win32
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Release Unicode|x64.ActiveCfg = Release Unicode|x64
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Release Unicode|x64.Build.0 = Release Unicode|x64
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Release|Win32.ActiveCfg = Release|Win32
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Release|Win32.Build.0 = Release|Win32
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Release|x64.ActiveCfg = Release|x64
+		{40D1847C-9449-435B-B1A1-7FADC1447925}.Release|x64.Build.0 = Release|x64
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Debug Unicode|Win32.ActiveCfg = Debug Unicode|Win32
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Debug Unicode|Win32.Build.0 = Debug Unicode|Win32
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Debug Unicode|x64.ActiveCfg = Debug Unicode|x64
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Debug Unicode|x64.Build.0 = Debug Unicode|x64
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Debug|Win32.ActiveCfg = Debug|Win32
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Debug|Win32.Build.0 = Debug|Win32
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Debug|x64.ActiveCfg = Debug|x64
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Debug|x64.Build.0 = Debug|x64
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Release Unicode|Win32.ActiveCfg = Release Unicode|Win32
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Release Unicode|Win32.Build.0 = Release Unicode|Win32
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Release Unicode|x64.ActiveCfg = Release Unicode|x64
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Release Unicode|x64.Build.0 = Release Unicode|x64
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Release|Win32.ActiveCfg = Release|Win32
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Release|Win32.Build.0 = Release|Win32
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Release|x64.ActiveCfg = Release|x64
+		{A2E234EA-EF55-42E3-8756-56558D85BEF8}.Release|x64.Build.0 = Release|x64
 		{16F7F227-CF35-4BBB-A39D-BDDB64CD3D30}.Debug Unicode|Win32.ActiveCfg = Debug Unicode|Win32
 		{16F7F227-CF35-4BBB-A39D-BDDB64CD3D30}.Debug Unicode|Win32.Build.0 = Debug Unicode|Win32
 		{16F7F227-CF35-4BBB-A39D-BDDB64CD3D30}.Debug Unicode|x64.ActiveCfg = Debug Unicode|x64

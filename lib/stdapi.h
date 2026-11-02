@@ -25,8 +25,8 @@
 #define LIKELY(c)		__builtin_expect(!!(c), 1)
 #define UNLIKELY(c)		__builtin_expect(!!(c), 0)
 #else
-#define LIKELY(x)		(x)
-#define UNLIKELY(x)		(x)
+#define LIKELY(c)		(c)
+#define UNLIKELY(c)		(c)
 #endif
 
 #ifdef _MSC_VER
@@ -597,11 +597,11 @@ EXTERNC_
 #define tmain		wmain
 
 #define tfprintf	fwprintf
-#define tprintf		fwprintf
+#define tprintf		wprintf
 #define tsnprintf	snwprintf
 #define tsprintf	swprintf
 #define tvfprintf	vfwprintf
-#define tvprintf	vfwprintf
+#define tvprintf	vwprintf
 #define tvsprintf	vswprintf
 #define tfscanf		fwscanf
 #define tscanf		wscanf
@@ -622,7 +622,7 @@ EXTERNC_
 #define tstatvfs	wstatvfs
 #define tunlink		wunlink
 
-#define tspawnl		_wspawnvl
+#define tspawnl		_wspawnl
 #define tspawnle	_wspawnle
 #define tspawnlp	_wspawnlp
 #define tspawnlpe	_wspawnlpe
@@ -690,11 +690,11 @@ typedef wchar tuchar;
 #define tmain		main
 
 #define tfprintf	fprintf
-#define tprintf		fprintf
+#define tprintf		printf
 #define tsnprintf	snprintf
 #define tsprintf	sprintf
 #define tvfprintf	vfprintf
-#define tvprintf	vfprintf
+#define tvprintf	vprintf
 #define tvsprintf	vsprintf
 #define tfscanf		fscanf
 #define tscanf		scanf
@@ -715,7 +715,7 @@ typedef wchar tuchar;
 #define tstatvfs	statvfs
 #define tunlink		unlink
 
-#define tspawnl		_spawnvl
+#define tspawnl		_spawnl
 #define tspawnle	_spawnle
 #define tspawnlp	_spawnlp
 #define tspawnlpe	_spawnlpe
@@ -830,10 +830,10 @@ inline string wstringtoastring(const wstring &s) { return _wchartoastring(s); }
 #define tstringtoastring(s)	wstringtoastring(s)
 #define tstringtowchar(s)	wstringtowchar(s)
 #define tstringtowstring(s)	(s)
-#define wchartotchar(s)		wchartowchar(s)
-#define wchartotstring(s)	wchartowstring(s)
+#define wchartotchar(s)		(s)
+#define wchartotstring(s)	wstring(s)
 #define wstringtotchar(s)	wstringtowchar(s)
-#define wstringtotstring(s)	wstringtowstring(s)
+#define wstringtotstring(s)	(s)
 
 #define tcerr			wcerr
 #define tcin			wcin
@@ -848,9 +848,6 @@ inline string wstringtoastring(const wstring &s) { return _wchartoastring(s); }
 #define tstringstream		wstringstream
 #define tistringstream		wistringstream
 #define tostringstream		wostringstream
-#define tstrstream		wstrstream
-#define tistrstream		wistrstream
-#define tostrstream		wostrstream
 #define tstringbuf		wstringbuf
 
 #else
@@ -884,9 +881,6 @@ inline string wstringtoastring(const wstring &s) { return _wchartoastring(s); }
 #define tstringstream		stringstream
 #define tistringstream		istringstream
 #define tostringstream		ostringstream
-#define tstrstream		strstream
-#define tistrstream		istrstream
-#define tostrstream		ostrstream
 #define tstringbuf		stringbuf
 #endif
 
@@ -1374,11 +1368,8 @@ constexpr strhash_t rapidshort(const B *p, size_t len,
 	(RAPID_SECRET0 ^ (strhash_t)len), RAPID_SECRET1);
 }
 
-// rapidhash V3 Micro (seed 0) for keys over 16 bytes - bit exact with the
-// reference, and faster than the full rapidhash for any size. Shorter keys use
-// rapidshort which beats it by 10-25%
-// seed = previous hash to chain from
-// fold = ASCII case insensitive
+// rapidhash V3 Micro, bit exact with the reference, for keys over 16 bytes;
+// rapidshort is faster below that. sd chains a hash, fold = ASCII nocase
 template<bool fold = false, typename B> requires (sizeof (B) == 1)
 constexpr strhash_t rapid_hash(const B *p, size_t len, strhash_t sd = 0) {
     static constexpr strhash_t secret[] = {

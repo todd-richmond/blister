@@ -58,9 +58,9 @@ int tmain(int argc, const tchar * const argv[]) {
 	    columns = atoi<uint>(argv[++i]);
 	} else if (tstrieq(argv[i], T("-i")) ||
 	    tstrieq(argv[i], T("--input"))) {
-	    if (++i == argc)
+	    if (i + 1 == argc)
 		break;
-	    if (!tstreq(argv[i], T("-"))) {
+	    if (!tstreq(argv[++i], T("-"))) {
 		ifs.open(tchartoachar(argv[i]));
 		if (!ifs.good()) {
 		    tcerr << T("unable to open ") << argv[i] << endl;
