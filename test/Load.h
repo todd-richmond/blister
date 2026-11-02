@@ -53,13 +53,13 @@ protected:
     class LoadCmd {
     public:
 	LoadCmd(const tchar *c, const tchar *a, bool s = false):
-	    arg(a ? a : T("")), cmd(c), sleep(s) {}
+	    arg(a ? a : T("")), cmd(c), delay(s) {}
 	virtual ~LoadCmd() = default;
 
 	tstring arg, cmd;
 	ulong count = 0, err = 0, tcount = 0, terr = 0;
 	ulong maxusec = 0, tmaxusec = 0, tminusec = 0, tusec = 0, usec = 0;
-	bool sleep;
+	bool delay;			// sleep command
 
 	void complete(bool sts, ulong diff) {
 	    count++;
@@ -372,7 +372,7 @@ inline int Load::onStart(void) {
 
 	    if (qflag)
 		break;
-	    if (cmd->sleep) {
+	    if (cmd->delay) {
 		const tchar *p = cmd->arg.c_str();
 		ulong len;
 
@@ -439,7 +439,7 @@ inline void Load::print(tostream &os, usec_t last) {
 	T("MINMSEC MAXMSEC") << endl;
     statlock.lock();
     for (const auto &cmd : cmds) {
-	if (cmd->sleep)
+	if (cmd->delay)
 	    continue;
 	ops += cmd->count;
 	tops += cmd->tcount;
