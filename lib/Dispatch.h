@@ -232,6 +232,8 @@ private:
     int evtfd = -1;
 #ifdef DSP_EPOLL
     int wfd = -1;
+#elif defined(DSP_DEVPOLL)
+    Socket rsock, wsock;
 #endif
 #endif
     alignas(CACHELINE_SZ) SpinLock olock;

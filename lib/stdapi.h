@@ -1002,9 +1002,11 @@ auto to_chars(wchar_t *first, wchar_t *last, T value) {
     auto [char_end, char_ec] = to_chars(buf, buf + sizeof (buf), value);
     result r = {first, char_ec};
 
-    for (char *p = buf; p != char_end && r.ptr != last; ++p)
+    char *p = buf;
+
+    for (; p != char_end && r.ptr != last; ++p)
 	*r.ptr++ = (wchar_t)(uchar)*p;
-    if (r.ptr == last && char_ec == errc())
+    if (p != char_end && char_ec == errc())
 	r.ec = errc::value_too_large;
     return r;
 }

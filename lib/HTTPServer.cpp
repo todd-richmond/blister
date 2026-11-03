@@ -251,7 +251,8 @@ void HTTPServerSocket::readpost() {
 		error(413, true);
 		return;
 	    }
-	    if (ec != errc() || (e < lf && !strchr("\r; \t", *e))) {
+	    if (ec != errc() ||
+		(e < lf && !string_view("\r; \t").contains(*e))) {
 		error(400, true);
 		return;
 	    }
@@ -313,6 +314,12 @@ void HTTPServerSocket::parse(void) {
     path = "/";
     prot = "HTTP/1.0";
     postsz = 0;
+    // scan() ended the header block with a NUL, so any earlier one is injected
+    if (strlen(data) != (size_t)(postdata - 3 - data)) {
+	cmd = "BADCMD";
+	error(400, true);
+	return;
+    }
     // RFC 9112 2.2: ignore empty lines before the request line
     buf += strspn(buf, " \t\r\n");
     cmd = buf;
@@ -337,6 +344,7 @@ void HTTPServerSocket::parse(void) {
 	    *--s = '/';
 	path = pp = s;
     }
+    postargs.clear();
     if ((pp = strchr(pp, '?')) == nullptr) {
 	argdata.clear();
 	args.clear();
@@ -382,7 +390,17 @@ void HTTPServerSocket::parse(void) {
 	    end = buf + strlen(buf);
 	    crlf = false;
 	} else if (end[1] != '\n') {
+	    // only the final CR is followed by the NUL scan() inserted
+	    if (end[1]) {
+		error(400, true);
+		return;
+	    }
 	    crlf = false;
+	}
+	// a bare LF would be a line end to a lenient peer
+	if (memchr(buf, '\n', (size_t)(end - buf))) {
+	    error(400, true);
+	    return;
 	}
 	// obsolete line folding is a request smuggling vector
 	if (crlf && (end[2] == ' ' || end[2] == '\t')) {
@@ -393,8 +411,14 @@ void HTTPServerSocket::parse(void) {
 	while (p > buf && (p[-1] == ' ' || p[-1] == '\t'))
 	    p--;
 	*p = '\0';
-	if (p == buf)
+	if (p == buf) {
+	    // a blank line ends the headers but a blank-looking one is bogus
+	    if (end != buf) {
+		error(400, true);
+		return;
+	    }
 	    break;
+	}
 	// RFC 9112 5.1: reject whitespace in or around a field name
 	if ((p = strchr(buf, ':')) == nullptr || p == buf ||
 	    strcspn(buf, " \t") < (size_t)(p - buf)) {
@@ -431,13 +455,12 @@ void HTTPServerSocket::parse(void) {
     val = attr("transfer-encoding");
     postchunking = false;
     if (val) {
-	const char *last = strrchr(val, ',');
-
-	// only the final coding matters: earlier ones are passed through
 	if (attr("content-length")) {
 	    error(400, true);
 	    return;
-	} else if (!hastoken(last ? last + 1 : val, "chunked")) {
+	}
+	// bare chunked only
+	if (!stringieq(val, "chunked")) {
 	    error(501, true);
 	    return;
 	}
@@ -488,8 +511,6 @@ void HTTPServerSocket::exec(void) {
 	if (val != nullptr &&
 	    stringieq(val, "application/x-www-form-urlencoded"))
 	    urldecode(postdata, postargs);
-	else
-	    postargs.clear();
 	post();
     } else if (stringieq(cmd, "PUT")) {
 	put();
@@ -642,7 +663,7 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
 	    *k++ = (char)tolower((uchar)*s);
 	for (const char *s = "::"; *s && k < last; s++)
 	    *k++ = *s;
-	for (const char *s = path + (*path == '/'); *s && k < last; s++)
+	for (const char *s = path + (*path == '/' ? 1 : 0); *s && k < last; s++)
 	    *k++ = *s;
     } else {
 	memcpy(key, "http::", 6);
@@ -767,7 +788,7 @@ void HTTPServerSocket::get(bool head) {
     uint sts = 200;
 
 #ifdef _WIN32
-    if (strchr(path, '\\')) {
+    if (string_view(path).contains('\\')) {
 	error(403);
 	return;
     }
@@ -786,8 +807,9 @@ void HTTPServerSocket::get(bool head) {
 	}
     }
     // s always contains a '/' so only dots in the file name are extensions
-    if ((ext = strrchr(strrchr(s.c_str(), '/'), '.')) != nullptr)
-	ext++;
+    size_t dot = s.rfind('.');
+
+    ext = dot != s.npos && dot > s.rfind('/') ? s.c_str() + dot + 1 : nullptr;
     if ((fd = ::open(s.c_str(), O_RDONLY | O_CLOEXEC | O_SEQUENTIAL)) == -1) {
 	error(404);
 	return;

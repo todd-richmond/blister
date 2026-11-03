@@ -181,7 +181,7 @@ public:
     bool reopen(void);
     void roll(void);
     void set(const Config &cfg, const tchar *sect = T("log"));
-    bool setids(uid_t uid, gid_t gid) const;
+    bool setids(uid_t uid, gid_t gid);
     void setmp(bool b = false);
     void start(void);
     void stop(void);

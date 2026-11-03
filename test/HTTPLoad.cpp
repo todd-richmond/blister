@@ -201,7 +201,7 @@ bool HTTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
 }
 
 int tmain(int argc, tchar *argv[]) {
-    return Load::main<HTTPLoad>(argc, argv, T("http.wld"), T("localhost:80"),
+    return Load::run<HTTPLoad>(argc, argv, T("http.wld"), T("localhost:80"),
 	T("[-d] [-k]"), [](const tchar *arg) {
 	if (!tstricmp(arg, T("-d")))
 	    dbg = true;

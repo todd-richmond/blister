@@ -154,27 +154,28 @@ public:
 
 	    return set(key, tstrlen(key), &val, 1, sect, sect ?
 		tstrlen(sect) : 0);
-	}
-	char buf[64] = {};
-	auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
+	} else {
+	    char buf[64] = {};
+	    auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
 
-	if (UNLIKELY(ec != errc{}))
-	    return *this;
+	    if (UNLIKELY(ec != errc{}))
+		return *this;
 
-	size_t len = (size_t)(ptr - buf);
+	    size_t len = (size_t)(ptr - buf);
 #ifdef _UNICODE
-	tchar tbuf[std::size(buf)];
+	    tchar tbuf[std::size(buf)];
 
-	for (size_t u = 0; u < len; ++u)
-	    tbuf[u] = (tchar)buf[u];
+	    for (size_t u = 0; u < len; ++u)
+		tbuf[u] = (tchar)buf[u];
 #else
-	const tchar *tbuf = buf;
+	    const tchar *tbuf = buf;
 #endif
-	SpinWLocker lkr(lck);
+	    SpinWLocker lkr(lck);
 
-	// cppcheck-suppress uninitvar
-	return set(key, tstrlen(key), tbuf, len, sect, sect ? tstrlen(sect) :
-	    0);
+	    // cppcheck-suppress uninitvar
+	    return set(key, tstrlen(key), tbuf, len, sect, sect ? tstrlen(sect) :
+		0);
+	}
     }
     Config &set(const tchar *key, const tchar *val, const tchar *sect =
 	nullptr) {

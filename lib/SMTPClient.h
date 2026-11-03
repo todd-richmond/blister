@@ -102,7 +102,7 @@ private:
     int parse_domain(tchar *&in, tchar *&domain, tchar *&comment,
 	bool smtputf8);
     int parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials,
-	bool smtputf8, bool &hi);
+	bool smtputf8, bool &hi) const;
     int parse_route(tchar *&in, tchar *&route, bool smtputf8);
     static bool skip_whitespace(tchar *&in);
 };
@@ -176,14 +176,12 @@ public:
     void subject(const tchar *s) { sub = s; }
     bool data(bool mime = false, const tchar *txt = nullptr);
     bool data(const void *p, size_t sz, bool dotstuff = true);
+    // an exact match so a string never converts to the bool mime parameter
+    bool data(const tchar *txt) { return data(false, txt); }
     bool data(const tstring &s) {
-#ifdef UNICODE
-	string as(tstringtoastring(s));
+	const auto &as = tstringtoastring(s);
 
-	return data(as.c_str(), as.size());
-#else
-	return data(s.c_str(), s.size());
-#endif
+	return data(as.data(), as.size());
     }
     bool data(const void *p, uint sz, const tchar *type,
 	const tchar *desc = nullptr, const tchar *encoding = nullptr,
@@ -224,7 +222,7 @@ private:
 	chunked = on;
 	strm = on ? static_cast<iostream *>(&bstrm) : &sstrm;
     }
-    bool final(const tchar *c);
+    bool finish(const tchar *c);
     bool hello(const tchar *c, const tchar *domain);
     bool reply(void);
     bool replies(void);

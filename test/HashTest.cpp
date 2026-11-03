@@ -421,7 +421,7 @@ WARN_POP()
 			c = (C)(c >= 'A' && c <= 'Z' ? c + 32 : c);
 
 		    int rc = sa.compare(sb), ric = la.compare(lb);
-		    auto sgn = [](int v) { return (v > 0) - (v < 0); };
+		    auto sgn = [](int v) { return clamp(v, -1, 1); };
 		    auto miss = [&](const auto &a, const auto &b) {
 			return stringeq(a, b) == (rc == 0) &&
 			    stringieq(a, b) == (ric == 0) &&

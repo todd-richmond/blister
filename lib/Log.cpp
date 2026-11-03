@@ -277,7 +277,7 @@ void Log::LogFile::roll(void) {
 	vector<pair<ulong, tstring>> entries;
 
 	while ((ent = treaddir(dir)) != NULL) {
-	    if (tstrncmp(ent->d_name, s2.c_str(), s2.size()) != 0)
+	    if (!tstring_view(ent->d_name).starts_with(s2))
 		continue;
 	    if (s1.empty()) {
 		s3 = ent->d_name;
@@ -363,8 +363,7 @@ void Log::LogFile::set(const Config &cfg, const tchar *sect,
 	cfg.get((s + T("count")).c_str(), 0U, sect),
 	cfg.get((s + T("size")).c_str(), 10UL * 1024 * 1024, sect),
 	cfg.get((s + T("time")).c_str(), 0UL, sect));
-    if (fd == -1 && !tstrchr(file.c_str(), '/') && !tstrchr(file.c_str(),
-	'\\')) {
+    if (fd == -1 && !file.contains('/') && !file.contains('\\')) {
 	tstring dir(cfg.get(T("installdir")));
 
 	if (!dir.empty()) {
@@ -699,7 +698,6 @@ void Log::endlog(Tlsdata &tlsd) {
 	mhost = mailhost;
 	mto = mailto;
     }
-    lck.unlock();
     tailbuf.pop_back();
     tlsd.clvl = None;
     tlsd.sep = '\0';
@@ -710,8 +708,8 @@ void Log::endlog(Tlsdata &tlsd) {
 	char buf[64], cbuf[32];
 	uint u = (syslogfac << 3) | (uint)(clvl - (clvl <= Debug ? 1 : 2));
 
-	sprintf(buf, "<%u>%.15s.%06u ", u, ctime_r(&now_sec, cbuf) + 4,
-	    (uint)now_usec);
+	snprintf(buf, sizeof (buf), "<%u>%.15s.%06u ", u,
+	    ctime_r(&now_sec, cbuf) + 4, (uint)now_usec);
 	ss = buf;
 	ss += tstringtoastring(hostname);
 	if (!mailfrom.empty() && mailfrom != T("<>")) {
@@ -720,11 +718,13 @@ void Log::endlog(Tlsdata &tlsd) {
 		ss += "nm=";
 	    ss += tstringtoastring(mailfrom.substr(0, mailfrom.find('@')));
 	}
-	sprintf(buf, "[%d]: ", getpid());
+	snprintf(buf, sizeof (buf), "[%d]: ", getpid());
 	ss += buf;
 	ss += tstringtoastring(tailbuf);
 	syslogsock.write(ss.data(), (uint)ss.size(), syslogaddr);
     }
+    // syslog state is only stable under the lock; SMTP is slow so unlock first
+    lck.unlock();
     if (mailit) {
 	SMTPClient smtp;
 
@@ -947,13 +947,23 @@ void Log::set(const Config &cfg, const tchar *sect) {
     buffer(bufenable);
 }
 
-bool Log::setids(uid_t uid, gid_t gid) const {
+bool Log::setids(uid_t uid, gid_t gid) {
 #ifdef _WIN32
     (void)uid; (void)gid;
     return true;
 #else
-    return (!alertfile() || chown(alertpath(), uid, gid) == 0) &&
-	(!file() || chown(filepath(), uid, gid) == 0);
+    PauseFlush pf(*this);
+    Locker lkr(lck);
+    // files open lazily: create them before the privilege drop
+    auto own = [&](LogFile &f) {
+	if (f.enable && f.fd == -1)
+	    (void)f.reopen();
+	return !f.enable || f.fd < 0 || f.file[0] == '>' ||
+	    fchown(f.fd, uid, gid) == 0;
+    };
+    const bool alert = own(afd);
+
+    return own(ffd) && alert;
 #endif
 }
 
@@ -1014,9 +1024,7 @@ Log::Level Log::str2enum(const tchar *l) {
 
 	if (!sv.empty() && sv.back() == ' ')
 	    sv.remove_suffix(1);
-	if ((!tstrnicmp(l, sv.data(), sv.size()) && l[sv.size()] == '\0') ||
-	    (!tstrnicmp(l, LevelStr2[u].data(), LevelStr2[u].size()) &&
-	    l[LevelStr2[u].size()] == '\0'))
+	if (stringieq(l, sv) || stringieq(l, LevelStr2[u]))
 	    return (Level)u;
     }
     return None;
@@ -1039,7 +1047,7 @@ void Log::_syslog(Level l, const tchar *host, uint fac) {
     }
     if (!syslogenable || sysloghost.empty() ||
 	!syslogaddr.set(sysloghost.c_str(), T("syslog"), Sockaddr::UDP) ||
-	!syslogsock.open(AF_INET)) {
+	!syslogsock.open(syslogaddr.family())) {
 	syslogenable = false;
 	syslogsock.close();
     }

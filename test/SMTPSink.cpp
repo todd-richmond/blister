@@ -91,7 +91,8 @@ static const char *dotscan(const char *p, const char *end) {
 class SMTPSinkSocket: public DispatchServerSocket {
 public:
     SMTPSinkSocket(Dispatcher &d, const Socket &sock):
-	DispatchServerSocket(d, sock), buf(new char[BUFSZ]) {}
+	DispatchServerSocket(d, sock),
+	buf(make_unique_for_overwrite<char[]>(BUFSZ)) {}
 
     void start(void) override {
 	nodelay(true);
@@ -206,7 +207,7 @@ void SMTPSinkSocket::command(const char *p, uint len) {
     case verb("auth"): {
 	// AUTH mechanism [initial-response]
 	string_view mech = line.substr(min(vlen + 1, len));
-	bool initial = mech.find(' ') != mech.npos;
+	bool initial = mech.contains(' ');
 
 	mech = mech.substr(0, mech.find(' '));
 	if (stringieq(mech, string_view("PLAIN"))) {
@@ -347,7 +348,11 @@ void SMTPSinkSocket::parse(void) {
 		break;
 	    }
 	    pos = (uint)(nl - b) + 1;
-	    command(p, (uint)(nl - p - (nl > p && nl[-1] == '\r')));
+	    uint len = (uint)(nl - p);
+
+	    if (len && nl[-1] == '\r')
+		--len;
+	    command(p, len);
 	    // the dot scan needs the LF before the message
 	    if (state == State::Data)
 		scan = pos;

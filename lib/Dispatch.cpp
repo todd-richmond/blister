@@ -33,9 +33,6 @@ uint Dispatcher::socketmsg;
 #ifndef EPOLLRDHUP
 #define EPOLLRDHUP 0x2000
 #endif
-#ifndef EPOLLONESHOT
-#define EPOLLONESHOT (1 << 30)
-#endif
 
 using event_t = epoll_event;
 
@@ -423,11 +420,13 @@ int Dispatcher::onStart() {
     sigaddset(&sigs, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &sigs, NULL);
 #endif
-#ifdef DSP_POLL
+#if defined(DSP_POLL) || defined(DSP_DEVPOLL)
     Sockaddr addr(T("localhost"));
     Socket asock(SOCK_STREAM);
-    SocketSet irset, iwset, orset, owset, oeset;
     uint u = 0;
+#ifdef DSP_POLL
+    SocketSet irset, iwset, orset, owset, oeset;
+#endif
 
     if (!asock.listen(addr) || !asock.sockname(addr) ||
 	!asock.blocking(false))
@@ -440,11 +439,12 @@ int Dispatcher::onStart() {
     }
     asock.close();
     rsock.blocking(false);
-    rsock.cloexec();
+#ifdef DSP_POLL
     rset.set(rsock);
+#endif
     wsock.blocking(false);
-    wsock.cloexec();
-#else
+#endif
+#ifndef DSP_POLL
     event_t evts[MAX_EVENTS];
     int nevts = 0;
 
@@ -453,7 +453,8 @@ int Dispatcher::onStart() {
 #ifdef DSP_DEVPOLL
     evtfd = open("/dev/poll", O_RDWR);
 #elif defined(DSP_EPOLL)
-    evtfd = epoll_create(1024);
+    if ((evtfd = epoll_create1(EPOLL_CLOEXEC)) == -1)
+	return -1;
 #elif defined(DSP_KQUEUE)
     evtfd = kqueue();
     EV_SET(&evts[0], 1, EVFILT_USER, EV_ADD | EV_CLEAR, NOTE_TRIGGER, 0,
@@ -927,7 +928,7 @@ DispatchTimer *Dispatcher::handleTimers(msec_t now) {
 
 #ifndef DSP_WIN32_ASYNC
 void Dispatcher::reset(void) {
-#ifdef DSP_POLL
+#if defined(DSP_POLL) || defined(DSP_DEVPOLL)
     char buf[16];
 
     RETRY(rsock.read(buf, sizeof (buf)));
@@ -969,7 +970,7 @@ void Dispatcher::wakeup(ulong msec) {
     if (!polling.load(memory_order_acquire))
 	return;
     polling.store(false, memory_order_relaxed);
-#ifdef DSP_POLL
+#if defined(DSP_POLL) || defined(DSP_DEVPOLL)
     wsock.write("", 1);
 #elif defined(DSP_EPOLL)
     RETRY(eventfd_write(wfd, 1));
@@ -1111,10 +1112,11 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
 	    EV_SET(&chgs[nevts++], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
 	ds.flags &= ~DSP_SelectAll;
 	olock.unlock();
-	RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS,
-	    &zerots));
-	if (nevts > 0)
-	    handleEvents(evts, nevts);
+	int n;
+
+	RETRY(n = kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS, &zerots));
+	if (n > 0)
+	    handleEvents(evts, (uint)n);
 #endif
     } else {
 	olock.unlock();
@@ -1345,10 +1347,11 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 	    (ulong)(tmt - now), NULL);
 	tmt = 0;
     }
-    RETRY(nevts = (uint)kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS,
-	&zerots));
-    if (LIKELY(nevts > 0))
-	handleEvents(evts, nevts);
+    int n;
+
+    RETRY(n = kevent(evtfd, chgs, (int)nevts, evts, MIN_EVENTS, &zerots));
+    if (LIKELY(n > 0))
+	handleEvents(evts, (uint)n);
 #endif
     if (tmt)
 	wakeup((ulong)(tmt - now));
@@ -1513,7 +1516,9 @@ void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB
 	cb = connected;
     if (mapped)
 	(void)close();
-    if (open(sa.family()) && blocking(false) && Socket::connect(sa))
+    if (!open(sa.family()) || !blocking(false))
+	ready(cb, false, DispatchClose);
+    else if (Socket::connect(sa))
 	ready(cb, false, DispatchConnect);
     else if (!blocked())
 	ready(cb, false, DispatchClose);
@@ -1533,7 +1538,6 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
     if (!Socket::listen(addr, reuse, queue))
 	return false;
     blocking(false);
-    cloexec();
     if (start)
 	poll(cb, DispatchTimer::DSP_NEVER, DispatchAccept);
     else
@@ -1543,7 +1547,8 @@ bool DispatchListenSocket::listen(const Sockaddr &sa, bool reuse, int queue,
 
 DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &sa,
     int type, bool reuse, int qlen, DispatchObjCB cb): DispatchSocket(d, type) {
-    (void)listen(sa, reuse, qlen, cb);
+    // not accepting yet: subclass must call acceptable(nullptr, DSP_NEVER)
+    (void)listen(sa, reuse, qlen, cb, false);
 }
 
 void DispatchListenSocket::connection() {

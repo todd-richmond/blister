@@ -26,7 +26,7 @@ public:
     static void pause(bool p) { paused = p; }
 
 protected:
-    static inline atomic<bool> paused = false;
+    static inline atomic paused = false;
 
     void exec(void) override {
 	if (paused) {

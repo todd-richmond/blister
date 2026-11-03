@@ -989,14 +989,23 @@ public:
 	    }
 	}
 #else
-	timespec ts{};
+	const msec_t end = mticks() + msec;
 
-	time_adjust_msec(&ts, msec);
-	do {
+	for (;;) {
+	    timespec ts{};
+
+	    time_adjust_msec(&ts, msec);
 	    if (LIKELY(!semtimedop(hdl, &op, 1, &ts)))
 		return true;
-	} while (errno == EINTR);
-	return false;
+	    if (errno != EINTR)
+		return false;
+
+	    const msec_t now = mticks();
+
+	    if (now >= end)
+		return false;
+	    msec = (ulong)(end - now);
+	}
 #endif
     }
 
@@ -1165,7 +1174,7 @@ public:
 
     __forceinline C &operator *(void) const { return get(); }
     __forceinline C *operator ->(void) const { return &get(); }
-    void erase(void) {
+    void erase(void) const {
 	C *c = (C *)tls_get(key);
 
 	tls_set(key, 0);

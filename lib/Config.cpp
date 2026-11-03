@@ -173,8 +173,8 @@ Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
 	    pos = v.find('$', pos + 1)) {
 	    tchar open = v[pos + 1];
 
-	    if ((open == '{' || open == '(') && v.find(open == '(' ? ')' : '}',
-		pos + 2) != v.npos) {
+	    if ((open == '{' || open == '(') &&
+		v.substr(pos + 2).contains(open == '(' ? ')' : '}')) {
 		kv->expand = true;
 		break;
 	    }
@@ -285,7 +285,7 @@ bool Config::parse(tistream &is, uint depth) {
 
 	    app = false;
 	    if (UNLIKELY(pos == key.npos)) {
-		val = tstring_view();
+		val = tstring_view(T(""));
 	    } else {
 		const tchar *kstart, *kend, *vstart, *vend;
 
@@ -417,8 +417,8 @@ bool Config::write(tostream &os, bool inistyle) const {
     tstring sect;
 
     keys.reserve(amap.size());
-    for (const auto &kv : amap)
-	keys.emplace_back(kv.first, kv.second);
+    for (const auto &[k, v] : amap)
+	keys.emplace_back(k, v);
     if (inistyle)
 	ranges::sort(keys, keyless{}, &pair<const tchar *, const KV *>::first);
     else
@@ -435,13 +435,13 @@ bool Config::write(tostream &os, bool inistyle) const {
 	    } else {
 		sect.assign(key);
 		if (cnt > 1 || (cnt == 1 && u + 1 < keys.size() &&
-		    !tstrncmp(keys[u + 1].first, sect.c_str(), sect.size()) &&
+		    tstring_view(keys[u + 1].first).starts_with(sect) &&
 		    keys[u + 1].first[sect.size()] == '.'))
 		    os << '\n';
 		cnt = 0;
 	    }
 	} else {
-	    if (tstrncmp(key, sect.c_str(), (size_t)(dot - key)) != 0) {
+	    if (tstring_view(key, (size_t)(dot - key)) != sect) {
 		sect.assign(key, (size_t)(dot - key));
 		if (cnt) {
 		    os << '\n';

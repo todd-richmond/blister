@@ -79,11 +79,11 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
 	    lck.unlock_shared();
 	    stats = Stats::newstats(key, klen, hash);
 	    lck.lock();
-	    auto result = tmap.try_emplace(hash, stats);
+	    auto [pos, inserted] = tmap.try_emplace(hash, stats);
 	    lck.downlock();
-	    if (!result.second) {
+	    if (!inserted) {
 		Stats::delstats(stats);
-		stats = result.first->second;
+		stats = pos->second;
 	    }
 	} else {
 	    stats = it->second;
@@ -114,7 +114,7 @@ void Timing::clear() {
     prior = flist.exchange(nullptr, memory_order_acquire);
     lck.unlock();
     release(dead);
-    for (auto &[k, stats] : old)
+    for (const auto &[k, stats] : old)
 	defer(stats);
 }
 

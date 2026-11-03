@@ -308,6 +308,7 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
 // RFC 9112 6.3 body length. keep is whether the server allows reuse
 HTTPClient::Body HTTPClient::framing(const Headers &hdrs, uint sts, bool head,
     bool http11, bool &keep, ulong &len) {
+    using enum Body;
     const tchar *p = hdrs.find(T("Connection"));
     const tchar *te = hdrs.find(T("Transfer-Encoding"));
 
@@ -315,21 +316,21 @@ HTTPClient::Body HTTPClient::framing(const Headers &hdrs, uint sts, bool head,
 	hastoken(p, T("keep-alive"))));
     len = 0;
     if (head || sts == 204 || sts == 304 || sts / 100 == 1)
-	return Body::None;
+	return None;
     if (te) {
 	const tstring_view v(te);
 	const size_t pos = v.rfind(',');
 
 	// only a final chunked coding delimits the body
 	if (hastoken(pos == v.npos ? v : v.substr(pos + 1), T("chunked")))
-	    return Body::Chunked;
+	    return Chunked;
     } else if ((p = hdrs.find(T("Content-Length"))) != nullptr) {
 	if (!parsenum(tchartoachar(p), len, false))
-	    return Body::Bad;
-	return len ? Body::Length : Body::None;
+	    return Bad;
+	return len ? Length : None;
     }
     keep = false;
-    return Body::Eof;
+    return Eof;
 }
 
 void HTTPClient::grow(ulong need) {
@@ -407,27 +408,29 @@ bool HTTPClient::parsestatus(string_view str, uint &code, bool &http11) {
     http11 = str.compare(5, 3, "1.1") == 0;
     code = (uint)(str[pos] - '0') * 100 + (uint)(str[pos + 1] - '0') * 10 +
 	(uint)(str[pos + 2] - '0');
-    return code != 0;
+    return code >= 100 && (str.size() == pos + 3 || str[pos + 3] == ' ');
 }
 
 bool HTTPClient::readbody(bool head, bool http11, bool &keep) {
     streamsize in;
     ulong len;
 
+    using enum Body;
+
     switch (framing(reshdrs, sts, head, http11, keep, len)) {
-    case Body::Bad:
+    case Bad:
 	return false;
-    case Body::None:
+    case None:
 	return true;
-    case Body::Chunked:
+    case Chunked:
 	return readchunked();
-    case Body::Length:
+    case Length:
 	grow(len);
 	in = sstrm.read(result.get(), (streamsize)len);
 	if (in > 0)
 	    ressz = (ulong)in;
 	return (ulong)in == len;
-    case Body::Eof:
+    case Eof:
 	break;
     }
     for (;;) {
@@ -570,7 +573,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 		    dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
 			Log::kv(T("path"), path), Log::kv(T("sts"), sts));
 		    ret = readbody(head, http11, keep);
-		    keep = keep && ka;
+		    keep = keep && ka && sstrm.rdbuf()->avail().empty();
 		}
 		break;
 	    }
@@ -903,7 +906,8 @@ void AsyncHTTPClient::down(int err, Down how) {
 	    !r->idem)) {
 	    dead.push_back(r);
 	} else {
-	    r->attempts += sent;
+	    if (sent)
+		++r->attempts;
 	    r->rewind();
 	    wq.push_back(r);
 	}
@@ -1107,7 +1111,7 @@ AsyncHTTPClient::Flow AsyncHTTPClient::readall(void) {
     const int n = rdpos == rdend ? fill() : 1;
 
     if (n)
-	down(n > 0 ? EPROTO : sock.err(), Down::Resend);
+	down(n > 0 ? EPROTO : sock.err(), Down::Retry);
     return n ? Stop : Wait;
 }
 

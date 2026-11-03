@@ -101,7 +101,8 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	arg = buf;
     }
     switch (cmd.op) {
-    case Op::Auth:
+    using enum Op;
+    case Auth:
 	if (const tchar *p = tstrchr(arg, ' '); p) {
 	    tstring user(arg, p);
 
@@ -110,13 +111,13 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	    return sc.auth(user.c_str(), p);
 	}
 	return false;
-    case Op::Bcc:
+    case Bcc:
 	return sc.bcc(arg);
-    case Op::Body:
+    case Body:
 	if (*arg || bodies.empty())
 	    return sc.data(false, arg) && sc.enddata();
 	[[fallthrough]];
-    case Op::Data: {
+    case Data: {
 	unique_ptr<char[]> rbuf;
 	uint u = pick();
 	const char *d = load(u, io, rbuf);
@@ -164,9 +165,9 @@ bool SMTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
     const auto &cmd = static_cast<const SMTPCmd &>(lc);
 
     if (ret && pflag && (cmd.op == Op::Body || cmd.op == Op::Data)) {
-	for (const auto &r : sc.rejected())
+	for (const auto &[rcpt, why] : sc.rejected())
 	    dlog << Log::Warn << Log::cmd(T("rcpt")) << Log::kv(T("arg"),
-		r.first) << Log::kv(T("result"), r.second) << endlog;
+		rcpt) << Log::kv(T("result"), why) << endlog;
     }
     if (!ret) {
 	dlog << Log::Err << Log::cmd(cmd.cmd) << Log::kv(T("arg"), arg) <<
@@ -182,7 +183,7 @@ bool SMTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
 }
 
 int tmain(int argc, tchar *argv[]) {
-    return Load::main<SMTPLoad>(argc, argv, T("smtp.wld"), T("localhost:25"),
+    return Load::run<SMTPLoad>(argc, argv, T("smtp.wld"), T("localhost:25"),
 	T("[-d] [-p]"), [](const tchar *a) {
 	if (!tstricmp(a, T("-d")))
 	    dflag = true;

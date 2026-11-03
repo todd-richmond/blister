@@ -77,16 +77,16 @@ public:
 	C entry(data, sz);
 	lru_list freed;		// NOSONAR: destroyed after lkr unlocks
 	const msec_t tm = maxtm.load(memory_order_relaxed);
-	msec_t now = LIKELY(tm) ? mticks() : 0;
+	const msec_t now = LIKELY(tm) ? mticks() : 0;
 	FastSpinLocker lkr(lock);
 
-	if (LIKELY(tm) && now - last_purge > tm / 2) {
+	if (LIKELY(tm) && expired(now, last_purge, tm / 2)) {
 	    purge(now, freed);
 	    last_purge = now;
 	}
 	auto it = cache_map.find(entry);
 	if (it != cache_map.end() &&
-	    (!tm || now - it->second->touch() <= tm)) {
+	    (!tm || !expired(now, it->second->touch(), tm))) {
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
 	    if (LIKELY(tm))
 		it->second->touch(now);
@@ -101,8 +101,8 @@ public:
 	    return false;
 	}
 
-	msec_t now = maxtm.load(memory_order_relaxed) ? mticks() : 0;
 	lru_list freed, node;	// NOSONAR: destroyed after lkr unlocks
+	const msec_t now = maxtm.load(memory_order_relaxed) ? mticks() : 0;
 
 	entry.data = shared_ptr<const void>(data, [](const void *p) {
 	    delete [] (const char *)p;
@@ -112,6 +112,7 @@ public:
 	node.emplace_front(entry);
 
 	FastSpinLocker lkr(lock);
+
 	auto [it, added] = cache_map.try_emplace(lruhash_t(entry));
 
 	cache_list.splice(cache_list.begin(), node);
@@ -127,7 +128,7 @@ public:
     void resize(ulong sz, msec_t tm = LRUCACHE_TIME,
 	ulong cnt = LRUCACHE_COUNT) {
 	lru_list freed;
-	msec_t now = tm ? mticks() : 0;
+	const msec_t now = tm ? mticks() : 0;
 	FastSpinLocker lkr(lock);
 
 	maxcnt.store(cnt, memory_order_relaxed);
@@ -146,6 +147,10 @@ private:
     atomic<ulong> maxcnt, maxsz;
     atomic<msec_t> maxtm;
 
+    // now is read before locking and can trail a later holder's: signed age
+    static bool expired(msec_t now, msec_t then, msec_t tm) {
+	return (int64_t)(now - then) > (int64_t)tm;
+    }
     void evict(lru_list &freed) {
 	cursz -= cache_list.back().sz;
 	cache_map.erase(lruhash_t(cache_list.back()));
@@ -158,7 +163,7 @@ private:
 
 	if (tm && now) {
 	    while (!cache_list.empty() &&
-		LIKELY(now - cache_list.back().touch() > tm))
+		LIKELY(expired(now, cache_list.back().touch(), tm)))
 		evict(freed);
 	}
 	while (UNLIKELY(cursz > sz || (cnt && cache_map.size() > cnt)) &&

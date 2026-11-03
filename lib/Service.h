@@ -244,8 +244,8 @@ protected:
     bool update(Status status) override;
     static ulong addTimer(ulong msec = 0);
 
-private:
 #ifndef _WIN32
+private:
     static void watch_handler(int sig, siginfo_t *si, void *context);
 #endif
 };

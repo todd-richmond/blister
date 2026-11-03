@@ -248,11 +248,11 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 	host += 5;
 	proto = UNIX;
     }
-    if (host && (proto == UNIX || tstrchr(host, '/'))) {
+    if (host && (proto == UNIX || tstring_view(host).contains('/'))) {
 	const uint sz = sizeof (addr.sau.sun_path);
 	const string path = tchartoachar(host);
 #ifdef __linux__	// anonymous file support
-	const uint anon = !tstrchr(host, '/');
+	const uint anon = !tstring_view(host).contains('/');
 #else
 	const uint anon = 0;
 #endif
@@ -407,7 +407,7 @@ bool CIDR::add(const tchar *addrs) {
 	    p++;
 	    ok = parse_ip(p, hi) && hi >= lo;
 	}
-	if (ok && *p && !tstrchr(delims, *p))
+	if (ok && *p && !tstring_view(delims).contains(*p))
 	    ok = false;
 	if (ok)
 	    ranges.push_back({lo, hi});
@@ -543,9 +543,12 @@ bool Socket::bind(const Sockaddr &sa, bool reuse) {
 	((const sockaddr_un *)sa)->sun_path[0]) {
 	if (stalesock(sa.path()))
 	    (void)::unlink(sa.path());
-	sbuf->unlink(sa.path());
     }
-    return check(::bind(sbuf->sock, sa, sa.size()));
+    if (!check(::bind(sbuf->sock, sa, sa.size())))
+	return false;
+    if (sa.proto() == Sockaddr::UNIX && ((const sockaddr_un *)sa)->sun_path[0])
+	sbuf->unlink(sa.path());
+    return true;
 }
 
 bool Socket::connect(const Sockaddr &sa, uint msec) {
@@ -634,11 +637,18 @@ bool Socket::movehigh(void) {
 
 bool Socket::open(int family) {
     close();
+#ifdef SOCK_CLOEXEC
+    sbuf->sock = ::socket(family, sbuf->type | SOCK_CLOEXEC, 0);
+#else
     sbuf->sock = ::socket(family, sbuf->type, 0);
+#endif
     sbuf->own = true;
     sbuf->blck = true;
     if (!check(sbuf->sock == SOCK_INVALID ? -1 : 0))
 	return false;
+#ifndef SOCK_CLOEXEC
+    (void)cloexec();
+#endif
 #ifdef SO_NOSIGPIPE
     (void)setsockopt(SOL_SOCKET, SO_NOSIGPIPE, true);
 #endif
@@ -650,7 +660,11 @@ bool Socket::shutdown(bool in, bool out) {
 }
 
 bool Socket::blocking(bool on) {
+#ifdef _WIN32
     ulong mode = on ? 0 : 1;
+#else
+    int mode = on ? 0 : 1;
+#endif
 
     if (!check(ioctlsocket(sbuf->sock, FIONBIO, &mode)))
 	return false;
@@ -990,9 +1004,10 @@ bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
 	fds[u].events = POLLIN;
     iset.clear();
     eset.clear();
-    ret = poll(fds.get(), sz, (int)msec);
+    while ((ret = poll(fds.get(), sz, (int)msec)) < 0 && ::interrupted(errno))
+	;
     if (ret <= 0)
-	return ret == 0 || (!msec && interrupted(sockerrno()));
+	return ret == 0;
     for (u = 0; u < sz; u++) {
 	if (fds[u].revents & POLLIN)
 	    iset.set(fds[u].fd);
@@ -1023,9 +1038,10 @@ bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
 	fds[u].events = POLLOUT;
     oset.clear();
     eset.clear();
-    ret = poll(fds.get(), sz, (int)msec);
+    while ((ret = poll(fds.get(), sz, (int)msec)) < 0 && ::interrupted(errno))
+	;
     if (ret <= 0)
-	return ret == 0 || (!msec && interrupted(sockerrno()));
+	return ret == 0;
     for (u = 0; u < sz; u++) {
 	if (fds[u].revents & POLLOUT)
 	    oset.set(fds[u].fd);
@@ -1059,9 +1075,10 @@ bool SocketSet::iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
     iset.clear();
     oset.clear();
     eset.clear();
-    ret = poll(fds.get(), sz, (int)msec);
+    while ((ret = poll(fds.get(), sz, (int)msec)) < 0 && ::interrupted(errno))
+	;
     if (ret <= 0)
-	return ret == 0 || (!msec && interrupted(sockerrno()));
+	return ret == 0;
     for (u = 0; u < sz; u++) {
 	if (fds[u].revents & POLLIN)
 	    iset.set(fds[u].fd);
@@ -1136,8 +1153,11 @@ bool SocketSet::iopoll(const SocketSet &rset, SocketSet &iset,
     eset.clear();
     const SocketSet &ps = ro ? rset : sset;
 
-    if ((ret = poll(ps.fds.get(), ps.sz, (int)msec)) <= 0)
-	return ret == 0 || (!msec && interrupted(sockerrno()));
+    while ((ret = poll(ps.fds.get(), ps.sz, (int)msec)) < 0 &&
+	::interrupted(errno))
+	;
+    if (ret <= 0)
+	return ret == 0;
     for (u = 0; u < ps.sz; u++) {
 	const pollfd &pfd = ps.fds[u];
 

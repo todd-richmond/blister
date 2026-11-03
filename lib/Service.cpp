@@ -125,7 +125,7 @@ Service::Service(const tchar *servicename, const tchar *h):
 }
 
 Service::Service(const tchar *servicename, bool pauseable): bPause(pauseable),
-    name(servicename), ctrlfunc(service_handler) {
+    name(servicename), ctrlfunc(&service_handler) {
     service = this;
 }
 
@@ -232,7 +232,7 @@ int Service::run(int argc, const tchar * const *argv) {
 	dlog.stop();
     } else {
 	SERVICE_TABLE_ENTRY entry[] = {
-	    { (tchar *)service->name.c_str(), srv_main },
+	    { service->name.data(), srv_main },
 	    { NULL, NULL }
 	};
 
@@ -668,6 +668,7 @@ void ServiceData::add(uint size, uint type, uint level) {
 
 #else	// Unix
 
+#include <grp.h>
 #include <pwd.h>
 #include <sys/file.h>
 #ifdef __linux__
@@ -1065,8 +1066,8 @@ int Service::run(int argc, const tchar * const *argv) {
     exiting = true;
     if (!console)
 	setsignal(true);
-    if (sigpid)
-	kill(sigpid, SIGINT);
+    if (pid_t p = sigpid)
+	kill(p, SIGINT);
     sigalrm(abort_handler);
     alarm(5);
     service->sigthread.wait();
@@ -1434,10 +1435,20 @@ bool Daemon::update(Status status) {
     return Service::update(status);
 }
 
+// root would otherwise keep its supplementary groups after dropping privileges
+static int dropgroups(void) {
+#ifdef _WIN32
+    return 0;
+#else
+    return geteuid() == 0 ? setgroups(0, nullptr) : 0;
+#endif
+}
+
 bool Daemon::setids() {
     if (uid != (uid_t)-1) {
 	dlog.setids(uid, gid);
-	if (fchown(lckfd, uid, gid) || setgid(gid) || setuid(uid)) {
+	if (fchown(lckfd, uid, gid) || dropgroups() || setgid(gid) ||
+	    setuid(uid)) {
 	    dlog.err(Log::mod(name), Log::error(T("unable to set uid")));
 	    return false;
 	}
@@ -1539,6 +1550,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 		dlog.err(Log::mod(name), T(" unable to chown to uid "), uidname);
 	} else {
 	    dloge(Log::mod(name), T(" unknown uid "), uidname);
+	    return 5;
 	}
     }
 #ifndef OPEN_MAX
@@ -1701,14 +1713,14 @@ void Daemon::onAbort() {
     update(Stopped);
     if (restart && !exiting) {
 #ifdef _WIN32
-	if (tspawnlp(P_NOWAIT, srvcpath.c_str(), srvcpath.c_str(), T("restart"),
-	    NULL) < 0)
+	int rc = tspawnlp(P_NOWAIT, srvcpath.c_str(), srvcpath.c_str(),
+	    T("restart"), NULL);
 #else
 	string s(srvcpath + " restart");
-
-	if (execl("/bin/sh", "/bin/sh", "-c", s.c_str(), (char *)0) < 0)
+	int rc = execl("/bin/sh", "/bin/sh", "-c", s.c_str(), (char *)0);
 #endif
-	{   // NOLINT
+
+	if (rc < 0) {
 	    dlog.err(Log::mod(name), Log::error(T("restart failed ")));
 	    _exit(1);
 	}

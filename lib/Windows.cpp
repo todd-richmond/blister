@@ -51,7 +51,7 @@ extern "C" {
 wstring _achartowstring(string_view s) {
     wstring ret;
 
-    ret.resize_and_overwrite(s.size(), [&](wchar *buf, size_t n) {
+    ret.resize_and_overwrite(s.size(), [&s](wchar *buf, size_t n) {
 	return (size_t)MultiByteToWideChar(CP_UTF8, 0, s.data(),
 	    (int)s.size(), buf, (int)n);
     });
@@ -62,7 +62,7 @@ wstring _achartowstring(string_view s) {
 string _wchartoastring(wstring_view s) {
     string ret;
 
-    ret.resize_and_overwrite(s.size() * 3, [&](char *buf, size_t n) {
+    ret.resize_and_overwrite(s.size() * 3, [&s](char *buf, size_t n) {
 	return (size_t)WideCharToMultiByte(CP_UTF8, 0, s.data(), (int)s.size(),
 	    buf, (int)n, NULL, NULL);
     });
@@ -94,14 +94,11 @@ static int A_TO_W(const char *path, wchar *buf) {
 #define EPOCH_BIAS  116444736000000000i64
 
 int gettimeofday(struct timeval *tv, struct timezone *tz) {
-    union {
-	uint64_t u64;
-	FILETIME ft;
-    } ft;
+    FILETIME ft;
     usec_t usec;
 
-    GetSystemTimeAsFileTime(&ft.ft);
-    usec = (ft.u64 - EPOCH_BIAS) / 10;
+    GetSystemTimeAsFileTime(&ft);
+    usec = (bit_cast<uint64_t>(ft) - EPOCH_BIAS) / 10;
     tv->tv_sec = (long)(usec / 1000000I64);
     tv->tv_usec = (long)(usec % 1000000I64);
     if (tz) {
@@ -261,9 +258,10 @@ int lockfile(int fd, short op, short whence, ulong start, ulong len,
 	LARGE_INTEGER li;
 
 	GetFileSizeEx(to_handle(fd), &li);
-	li.QuadPart -= start;
-	ov.Offset = li.LowPart;
-	ov.OffsetHigh = li.HighPart;
+	ULONGLONG off = (ULONGLONG)li.QuadPart - start;
+
+	ov.Offset = (DWORD)off;
+	ov.OffsetHigh = (DWORD)(off >> 32);
     }
     if (op == F_UNLCK) {
 	if (!UnlockFileEx(to_handle(fd), 0, len, 0, &ov)) {
@@ -341,7 +339,7 @@ long readv(int fd, iovec *io, int num) {
     }
     if ((in = read(fd, buf, (uint)total)) > 0) {
 	ulong left = (ulong)in;
-	char *p = buf;
+	const char *p = buf;
 
 	for (int i = 0; left; i++) {
 	    ulong n = io[i].iov_len < left ? io[i].iov_len : left;
@@ -741,10 +739,9 @@ int rename(const char *from, const char *to) {
 
 /* atomically replace an existing target even if it is open, like POSIX */
 int wrename(const wchar *from, const wchar *to) {
-    union {
-	FILE_RENAME_INFO fri;
-	char buf[sizeof (FILE_RENAME_INFO) + MAX_PATH * sizeof (wchar)];
-    } u;
+    alignas(FILE_RENAME_INFO) char buf[sizeof (FILE_RENAME_INFO) +
+	MAX_PATH * sizeof (wchar)];
+    auto *fri = (FILE_RENAME_INFO *)buf;
     wchar path[MAX_PATH];
     HANDLE hdl;
     DWORD len, sz;
@@ -764,16 +761,16 @@ int wrename(const wchar *from, const wchar *to) {
 	_dosmaperr(GetLastError());
 	return ret;
     }
-    u.fri.Flags = FILE_RENAME_FLAG_REPLACE_IF_EXISTS |
+    fri->Flags = FILE_RENAME_FLAG_REPLACE_IF_EXISTS |
 	FILE_RENAME_FLAG_POSIX_SEMANTICS |
 	FILE_RENAME_FLAG_IGNORE_READONLY_ATTRIBUTE;
-    u.fri.RootDirectory = NULL;
-    u.fri.FileNameLength = len * sizeof (wchar);
+    fri->RootDirectory = NULL;
+    fri->FileNameLength = len * sizeof (wchar);
     sz = (DWORD)(offsetof(FILE_RENAME_INFO, FileName) + (len + 1) *
 	sizeof (wchar));
-    memcpy((char *)&u + offsetof(FILE_RENAME_INFO, FileName), path,
+    memcpy(buf + offsetof(FILE_RENAME_INFO, FileName), path,
 	(len + 1) * sizeof (wchar));
-    if (SetFileInformationByHandle(hdl, FileRenameInfoEx, &u.fri, sz))
+    if (SetFileInformationByHandle(hdl, FileRenameInfoEx, fri, sz))
 	ret = 0;
     CloseHandle(hdl);
     // file systems without POSIX semantics such as FAT reject FileRenameInfoEx
@@ -978,9 +975,9 @@ int wstatvfs(const wchar *path, struct statvfs *buf) {
 	wchar rootdir[4];
 	size_t size = cp - path + 1;
 
-	if (size >= sizeof (rootdir) / sizeof (wchar))
-	    size = (sizeof (rootdir) / sizeof (wchar)) - 1;
-	wcsncpy(rootdir, path, size);
+	if (size >= std::size(rootdir))
+	    size = std::size(rootdir) - 1;
+	memcpy(rootdir, path, size * sizeof (wchar));
 	rootdir[size] = '\0';
 	rc = GetDiskFreeSpaceW(rootdir, &sectorsPerCluster, &bytesPerSector,
 	    &freeClusters, &totalClusters);

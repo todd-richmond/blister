@@ -828,7 +828,8 @@ size_t SMTPClient::barelfs(const char *p, const char *end) {
 	n += (size_t)popcount(nibmask(stuffhits<false>(p))) / 4;
 #endif
     for (; p < end; ++p)
-	n += *p == '\n' && p[-1] != '\r';
+	if (*p == '\n' && p[-1] != '\r')
+	    ++n;
     return n;
 }
 
@@ -1215,25 +1216,25 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 	bstrm.str({});
     }
     if (s1) {
-	const char *as1 = tchartoachar(s1);
-	size_t s1len = strlen(as1);
+	const string as1(tchartoachar(s1));
+	const string as2(s2 ? tchartoachar(s2) : "");
 
 	// prevent SMTP command injection via CR/LF in addresses
-	if (strpbrk(as1, "\r\n") || (s2 && strpbrk(tchartoachar(s2), "\r\n"))) {
+	if (as1.find_first_of("\r\n") != as1.npos ||
+	    as2.find_first_of("\r\n") != as2.npos) {
 	    sts = T("501 5.5.2 Invalid character in command");
 	    return false;
 	}
-	strm->write(as1, (streamsize)s1len);
+	strm->write(as1.data(), (streamsize)as1.size());
 	if (s2) {
-	    const char *as2 = tchartoachar(s2);
-	    bool colon = as1[s1len - 1] == ':';
+	    bool colon = as1.back() == ':';
 	    bool addbracket = colon && as2[0] != '<';
 
 	    if (addbracket)
 		strm->put('<');
 	    else if (!colon)
 		strm->put(' ');
-	    strm->write(as2, (streamsize)strlen(as2));
+	    strm->write(as2.data(), (streamsize)as2.size());
 	    if (addbracket)
 		strm->put('>');
 	}
@@ -1411,7 +1412,8 @@ bool SMTPClient::from(const tchar *id, const tchar *parms) {
 }
 
 bool SMTPClient::xclient(const tchar *xclient_cmd) {
-    return cmd(T("XCLIENT"), xclient_cmd);
+    // a server that resets the session after XCLIENT replies with a 220
+    return cmd(T("XCLIENT"), xclient_cmd) || code() == 220;
 }
 
 bool SMTPClient::from(const RFC822Addr &addr, const tchar *parms) {
@@ -1434,6 +1436,8 @@ bool SMTPClient::lhlo(const tchar *domain) {
 }
 
 bool SMTPClient::quit() {
+    pipelined = false;
+
     bool ret = cmd(T("QUIT"), nullptr, 221);
 
     sock.close();
@@ -1531,9 +1535,15 @@ bool SMTPClient::envarg(const tchar *c, tstring &id, const tchar *parms,
     return true;
 }
 
+// bare CR/LF in caller text would inject headers or end the DATA early
+static string noeol(string s) {
+    erase_if(s, [](char c) { return c == '\r' || c == '\n'; });
+    return s;
+}
+
 // header text - without SMTPUTF8 any UTF-8 is RFC 2047 encoded
 string SMTPClient::hdrtext(const tchar *s) const {
-    string a(tchartoachar(s));
+    string a(noeol(tchartoachar(s)));
 
     return canutf8() || !highbit8(a) ? a : encodewords(a);
 }
@@ -1626,7 +1636,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     two(date + 33, off / 60);
     two(date + 35, off % 60);
     strm->write(date, sizeof (date) - 1);
-    *strm << "From: " << tstringtoastring(frm) << crlf;
+    *strm << "From: " << noeol(tstringtoastring(frm)) << crlf;
     recip(T("To: "), tov);
     recip(T("Cc: "), ccv);
     *strm << "Subject: " << hdrtext(sub.c_str()) << crlf;
@@ -1708,19 +1718,25 @@ bool SMTPClient::data(const void *p, uint sz, const tchar *type,
     if (mime)
 	*strm << "--" << boundary << crlf;
     if (type && *type)
-	*strm << "Content-Type: " << tchartoachar(type) << crlf;
+	*strm << "Content-Type: " << noeol(tchartoachar(type)) << crlf;
     if (desc && *desc)
 	*strm << "Content-Description: " << hdrtext(desc) << crlf;
     if (encoding && *encoding)
-	*strm << "Content-Transfer-Encoding: " << tchartoachar(encoding) <<
-	    crlf;
-    *strm << "Content-Disposition: " << tchartoachar(disp && *disp ? disp :
-	T("inline"));
+	*strm << "Content-Transfer-Encoding: " <<
+	    noeol(tchartoachar(encoding)) << crlf;
+    *strm << "Content-Disposition: " << noeol(tchartoachar(disp && *disp ?
+	disp : T("inline")));
     if (name && *name) {
-	string aname(tchartoachar(name));
+	string aname(noeol(tchartoachar(name)));
 
 	if (canutf8() || !highbit8(aname)) {
-	    *strm << "; filename=" << aname;
+	    *strm << "; filename=\"";
+	    for (char c : aname) {
+		if (c == '"' || c == '\\')
+		    strm->put('\\');
+		strm->put(c);
+	    }
+	    strm->put('"');
 	} else {
 	    // RFC 2231 extended parameter value
 	    static constexpr const char hex[] = "0123456789ABCDEF";
@@ -1729,7 +1745,7 @@ bool SMTPClient::data(const void *p, uint sz, const tchar *type,
 	    for (char ch : aname) {
 		uchar c = (uchar)ch;
 
-		if (isalnum(c) || strchr("!#$&+-.^_`|~", c)) {
+		if (isalnum(c) || string_view("!#$&+-.^_`|~").contains(ch)) {
 		    strm->put(ch);
 		} else {
 		    strm->put('%');
@@ -1792,7 +1808,7 @@ bool SMTPClient::bdat(const void *start, size_t sz, bool last) {
 	return false;
     if (start && sz)
 	strm->write((const char *)start, (streamsize)sz);
-    return last ? final(nullptr) : cmd(nullptr, nullptr, 250);
+    return last ? finish(nullptr) : cmd(nullptr, nullptr, 250);
 }
 
 bool SMTPClient::sendchunk(bool last) {
@@ -1839,7 +1855,7 @@ bool SMTPClient::bigchunk(const void *p, size_t sz, bool dotstuff) {
 bool SMTPClient::enddata() {
     if (mime)
 	*strm << "--" << boundary << "--" << crlf;
-    return chunked ? sendchunk(true) : final(T("."));
+    return chunked ? sendchunk(true) : finish(T("."));
 }
 
 // RFC 1870: refuse a BDAT message larger than the server accepts before
@@ -1854,7 +1870,7 @@ bool SMTPClient::fits(size_t sz) {
 }
 
 // succeeds if any recipient accepted the message
-bool SMTPClient::final(const tchar *c) {
+bool SMTPClient::finish(const tchar *c) {
     if (fstrm || (!pipelined && !lmtp))
 	return cmd(c);
     pipelined = true;
@@ -1867,7 +1883,7 @@ bool SMTPClient::final(const tchar *c) {
     if (lmtp && !acceptedv.empty()) {
 	expectv.pop_back();
 	for (const auto &r : acceptedv)
-	    expectv.push_back({ r, 250, true });
+	    expectv.emplace_back(r, 250, true);
     }
 
     size_t refused = rejectedv.size();
@@ -1886,9 +1902,9 @@ bool SMTPClient::final(const tchar *c) {
 void SMTPClient::recip(const tchar *hdr, const vector<tstring> &v) {
     if (v.empty())
 	return;
-    *strm << tchartoachar(hdr) << tstringtoachar(v.front());
+    *strm << tchartoachar(hdr) << noeol(tstringtoastring(v.front()));
     for (const auto &s : v | views::drop(1))
-	*strm << ",\r\n\t" << tstringtoachar(s);
+	*strm << ",\r\n\t" << noeol(tstringtoastring(s));
     strm->write(crlf, 2);
 }
 
@@ -1931,7 +1947,7 @@ static void append_local(tstring &out, tstring_view s) {
 	    quote = i == 0 || i + 1 == s.size() || s[i + 1] == '.';
 	else
 	    quote = !(isalnum((tuchar)c) || nonascii(c) ||
-		atext.find(c) != atext.npos);
+		atext.contains(c));
     }
     if (!quote) {
 	out += s;
@@ -2310,7 +2326,7 @@ uint RFC822Addr::parse(const tchar *addrs, bool smtputf8) {
     tchar *s;
     auto append = [this](const tchar *p, const tchar *r, const tchar *l,
 	const tchar *d) {
-	entries.push_back({ view(d), view(l), view(p), view(r) });
+	entries.emplace_back(view(d), view(l), view(p), view(r));
     };
     // flag UTF-8 in a mailbox and, unless allowed, mask it
     auto mailbox = [&](tchar *p, bool hi) {
@@ -2393,7 +2409,7 @@ uint RFC822Addr::parse(const tchar *addrs, bool smtputf8) {
 
 // copy a phrase or mailbox - hi is set if any high bit characters were seen
 int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
-    *specials, bool smtputf8, bool &hi) {
+    *specials, bool smtputf8, bool &hi) const {
     tchar c;
     tchar *dst, *src = in;
     auto put = [&](tchar ch) {
@@ -2429,7 +2445,7 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
 		if (c != '\r' && c != '\n')
 		    put(c);
 	    }
-	} else if (!c || tstrchr(specials, c)) {
+	} else if (!c || tstring_view(specials).contains(c)) {
 	    if (dst > phrase && dst[-1] == ' ')
 		dst--;
 	    *dst = '\0';

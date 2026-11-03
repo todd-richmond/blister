@@ -46,7 +46,7 @@ public:
     Load(): id(threads++) {}
 
     template <class L, class F>
-    static int main(int argc, tchar *argv[], const tchar *wld,
+    static int run(int argc, tchar *argv[], const tchar *wld,
 	const tchar *defhost, const tchar *flags, F opt);
 
 protected:
@@ -88,7 +88,7 @@ protected:
     static inline attrmap vars;
 
     // per request $() values from str into buf
-    bool subst(const tstring &str, tchar *buf, size_t sz) {
+    bool subst(const tstring &str, tchar *buf, size_t sz) const {
 	if (str.size() >= sz)
 	    return false;
 	tstrcpy(buf, str.c_str());
@@ -510,7 +510,7 @@ inline void Load::signal_handler(int sig) {
 
 // opt handles the subclass flags listed in the usage text
 template <class L, class F>
-int Load::main(int argc, tchar *argv[], const tchar *wld,
+int Load::run(int argc, tchar *argv[], const tchar *wld,
     const tchar *defhost, const tchar *flags, F opt) {
     const tchar *bodyfile = nullptr, *file = nullptr, *host = nullptr;
     ulong cachesz = 64, stattime = 3000;

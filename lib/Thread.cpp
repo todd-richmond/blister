@@ -298,7 +298,7 @@ bool Processor::affinity(ullong mask) {
 
 // register func to free data at thread exit or free data now if func is null
 void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
-    WARN_PUSH_DISABLE(26430);
+    WARN_PUSH_DISABLE(26430)
     ThreadLocalMap *fmap = flocal.get();
 
     if (func) {
@@ -321,7 +321,7 @@ void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
 	    func(data);
 	}
     }
-    WARN_POP();
+    WARN_POP()
 }
 
 Thread::Thread(thread_hdl_t handle, ThreadGroup *tg): cv(lck), hdl(handle),

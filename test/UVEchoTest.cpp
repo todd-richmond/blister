@@ -136,7 +136,8 @@ static void begin_teardown(EchoClient *c) {
     c->done = true;
     if (c->tcp_open && !c->error_handled &&
 	uv_is_writable((uv_stream_t *)&c->tcp)) {
-	uv_buf_t mark = uv_buf_init((char *)"", 1);
+	char nul = 0;
+	uv_buf_t mark = uv_buf_init(&nul, 1);
 
 	uv_try_write((uv_stream_t *)&c->tcp, &mark, 1);
     }
