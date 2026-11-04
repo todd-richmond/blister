@@ -152,7 +152,7 @@ public:
 
     bool close(void);
     // main thread does not call TLS destruction
-    void destruct(void) { tls.erase(); }
+    void destruct(void) const { tls.erase(); }
     __forceinline void endlog(void) {
 	Tlsdata &tlsd(*tls);
 

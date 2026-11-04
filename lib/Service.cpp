@@ -1447,6 +1447,7 @@ static int dropgroups(void) {
 bool Daemon::setids() {
     if (uid != (uid_t)-1) {
 	dlog.setids(uid, gid);
+	// cppcheck-suppress knownConditionTrueFalse
 	if (fchown(lckfd, uid, gid) || dropgroups() || setgid(gid) ||
 	    setuid(uid)) {
 	    dlog.err(Log::mod(name), Log::error(T("unable to set uid")));

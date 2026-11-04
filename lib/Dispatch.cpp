@@ -927,7 +927,7 @@ DispatchTimer *Dispatcher::handleTimers(msec_t now) {
 }
 
 #ifndef DSP_WIN32_ASYNC
-void Dispatcher::reset(void) {
+void Dispatcher::reset(void) const {
 #if defined(DSP_POLL) || defined(DSP_DEVPOLL)
     char buf[16];
 

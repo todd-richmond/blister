@@ -540,10 +540,8 @@ bool Socket::bind(const Sockaddr &sa, bool reuse) {
 	IN6_IS_ADDR_UNSPECIFIED((const in6_addr *)sa))
 	(void)setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, false);
     if (sa.proto() == Sockaddr::UNIX &&
-	((const sockaddr_un *)sa)->sun_path[0]) {
-	if (stalesock(sa.path()))
-	    (void)::unlink(sa.path());
-    }
+	((const sockaddr_un *)sa)->sun_path[0] && stalesock(sa.path()))
+	(void)::unlink(sa.path());
     if (!check(::bind(sbuf->sock, sa, sa.size())))
 	return false;
     if (sa.proto() == Sockaddr::UNIX && ((const sockaddr_un *)sa)->sun_path[0])

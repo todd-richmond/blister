@@ -4,6 +4,7 @@
  */
 
 #include "stdapi.h"
+#include <algorithm>
 #include <map>
 #include <unordered_map>
 #include <fstream>

@@ -411,7 +411,7 @@ EXTERNC_
 #define asctime_r(tm, buf, sz)	asctime_s(buf, sz, tm)
 #define ctime_r(clock, buf)	(ctime_s(buf, 26, clock), (buf))
 #define gmtime_r(clock, buf)	(gmtime_s((buf), (clock)), (buf))
-#define localtime_r(clock, buf)	(localtime_s((buf), (clock)), (buf))
+#define localtime_r(clock, buf)	(localtime_s((buf), (clock)) ? nullptr : (buf))
 #define strerror_r(e, buf, sz)	strlcpy(buf, strerror(e), sz)
 
 #else // _WIN32

@@ -192,7 +192,7 @@ private:
     DispatchTimer *handleTimers(msec_t now);
     void reap(DispatchObj &obj);
     void reclaim(void);
-    void reset(void);
+    void reset(void) const;
     int run(void);
     void wake(uint cnt = 1);
     void wakeup(ulong msec);
