@@ -765,6 +765,7 @@
 		F7AA212513149F2C00272F6A /* Debug configuration for PBXProject "Blister" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
 				CLANG_CXX_STANDARD_LIBRARY_HARDENING = debug;
@@ -818,6 +819,7 @@
 					"-fno-standalone-debug",
 					"-fno-optimize-sibling-calls",
 				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
 				USER_HEADER_SEARCH_PATHS = ../lib;
@@ -841,6 +843,7 @@
 		F7AA212613149F2C00272F6A /* Release configuration for PBXProject "Blister" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
 				CLANG_DEBUG_INFORMATION_LEVEL = "line-tables-only";
@@ -889,6 +892,7 @@
 				LD_WARN_UNUSED_DYLIBS = YES;
 				LLVM_LTO = YES_THIN;
 				MACOSX_DEPLOYMENT_TARGET = 26.6;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
 				USER_HEADER_SEARCH_PATHS = ../lib;
