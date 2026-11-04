@@ -189,6 +189,10 @@ private:
     void cleanup(void);
     bool exec(void);
     void handleEvents(const void *evts, uint cnt);
+#ifdef DSP_POLL
+    void handlePoll(const SocketSet &rs, const SocketSet &ws,
+	const SocketSet &es);
+#endif
     DispatchTimer *handleTimers(msec_t now);
     void reap(DispatchObj &obj);
     void reclaim(void);
