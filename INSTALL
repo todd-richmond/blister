@@ -8,7 +8,7 @@ To build on UNIX from distribution, run configure and then make
 
 To build on UNIX with Eclipse, run configure and then load the project
 
-To build on OSX with XCode, use the build/Blister.xcworkspace project file
+To build on OSX with XCode, use the build/Blister.xcodeproj project
 
 To build on Windows with Visual Studio, use the build/Blister.sln project file
 

@@ -59,6 +59,16 @@ if test "$(uname -s)" = Darwin; then
 fi
 AC_SUBST([MACOSX_DEPLOYMENT_TARGET])
 
+# CMake adds the llvm libc++ directory to the link path on macOS
+LLVM_LDFLAGS=
+if test "$(uname -s)" = Darwin; then
+    AC_PATH_PROG([LLVM_CONFIG], [llvm-config])
+    if test -n "$LLVM_CONFIG"; then
+	llvm_libdir=`"$LLVM_CONFIG" --libdir`
+	test -n "$llvm_libdir" && LLVM_LDFLAGS="-L$llvm_libdir/c++"
+    fi
+fi
+
 AC_CHECK_LIB([dl], [dlopen])
 AC_CHECK_LIB([pthread], [pthread_create])
 AC_CHECK_LIB([rt], [clock_gettime])
@@ -110,10 +120,18 @@ AC_ARG_ENABLE([optimize],
 AC_MSG_RESULT([$optimize])
 AC_SUBST([optimize])
 
-# -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 is CMake's SANITIZE_FLAGS default
-# (used whenever a sanitizer build isn't requested, which the autotools
-# build never does)
-SANITIZE_FLAGS="-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3"
+# mirrors CMake's CHECK_TSAN; the fortify flags are SANITIZE_FLAGS' default
+# whenever a sanitizer build isn't requested
+AC_ARG_ENABLE([tsan],
+    [AS_HELP_STRING([--enable-tsan@<:@=SANITIZER@:>@],[sanitizer build: -fsanitize=SANITIZER @<:@default=thread@:>@])],
+    [],
+    [enable_tsan=no]
+)
+case $enable_tsan in
+    no) SANITIZE_FLAGS="-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3" ;;
+    yes|on|true|1) SANITIZE_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" ;;
+    *) SANITIZE_FLAGS="-fsanitize=$enable_tsan -fno-omit-frame-pointer" ;;
+esac
 COMMON_CFLAGS="$SANITIZE_FLAGS -ffast-math -march=native -pipe -Wall -Wconversion -Werror -Wextra -Wno-attributes -Wformat=2 -Wno-format-nonliteral -Wformat-security -Wno-format-y2k -Wmultichar -Wno-pragmas -Wredundant-decls -Wsign-conversion -Wstrict-aliasing -Wstrict-overflow=2 -Wno-unknown-pragmas -Wwrite-strings -fvisibility=hidden"
 COMMON_CXXFLAGS="-fno-exceptions -fno-rtti -Wno-deprecated -Wno-deprecated-declarations -Wnon-virtual-dtor -Woverloaded-virtual -Wsign-promo -fvisibility-inlines-hidden"
 COMMON_LDFLAGS="$SANITIZE_FLAGS"
@@ -123,10 +141,13 @@ if test "$compiler_clang" = yes; then
     COMMON_CFLAGS="$COMMON_CFLAGS -fno-standalone-debug -Wdouble-promotion -Wnull-dereference -Wno-null-pointer-subtraction -Wodr -Wshadow -Wno-unknown-warning-option"
     COMMON_CXXFLAGS="$COMMON_CXXFLAGS -Wno-c++11-extensions -Wextra-semi"
     COMMON_LDFLAGS="$COMMON_LDFLAGS -fno-plt"
+    if test "$(uname -s)" != Darwin; then
+	SHARED_LDFLAGS="-Wl,-Bsymbolic-functions"
+    fi
     lto_flag="-flto=thin"
 else
     if test "$gcc_major" -ge 5; then
-	COMMON_CFLAGS="$COMMON_CFLAGS -fmax-errors=8 -fstack-protector-strong -Wdouble-promotion -Wformat-overflow=2 -Wformat-signedness -Wformat-truncation=2 -Wlogical-op -Wodr -Wshadow -Wstack-usage=16384 -Wtrampolines"
+	COMMON_CFLAGS="$COMMON_CFLAGS -fmax-errors=8 -fno-semantic-interposition -fstack-protector-strong -Wdouble-promotion -Wformat-overflow=2 -Wformat-signedness -Wformat-truncation=2 -Wlogical-op -Wodr -Wshadow -Wstack-usage=16384 -Wtrampolines"
     fi
     if test "$gcc_major" -ge 6; then
 	COMMON_CFLAGS="$COMMON_CFLAGS -Wduplicated-branches -Wduplicated-cond -Wnull-dereference -Wstringop-overflow=3"
@@ -142,16 +163,36 @@ else
 	COMMON_CFLAGS="$COMMON_CFLAGS -fstrict-flex-arrays=2"
     fi
     COMMON_LDFLAGS="$COMMON_LDFLAGS -Wl,--as-needed,-gc-sections,-z,relro"
-    SHARED_LDFLAGS="-Wl,--no-undefined"
+    SHARED_LDFLAGS="-Wl,--no-undefined,-Bsymbolic-functions"
     lto_flag="-flto=auto"
 fi
 
+# profile-guided optimization, as CMake's PGO setting; profiles live in .pgo
+AC_ARG_WITH([pgo],
+    [AS_HELP_STRING([--with-pgo=generate|use],[profile-guided optimization using profiles in .pgo])],
+    [],
+    [with_pgo=no]
+)
+pgo_dir=$ac_pwd/.pgo
+case $with_pgo in
+    no) ;;
+    generate)
+	COMMON_CFLAGS="$COMMON_CFLAGS -fprofile-generate=$pgo_dir -fprofile-update=atomic" ;;
+    use)
+	if test "$compiler_clang" = yes; then
+	    COMMON_CFLAGS="$COMMON_CFLAGS -fprofile-use=$pgo_dir/default.profdata"
+	else
+	    COMMON_CFLAGS="$COMMON_CFLAGS -fprofile-use=$pgo_dir -fprofile-partial-training -Wno-missing-profile"
+	fi ;;
+    *) AC_MSG_ERROR([--with-pgo must be generate or use]) ;;
+esac
+
 # mirror CMakeLists.txt's check_ipo_supported(): only try LTO for a
-# non-debug build, and only keep it if the compiler/linker actually accept
-# the flag
+# non-debug, non-sanitizer build, and only keep it if the compiler/linker
+# actually accept the flag
 LTO_CFLAGS=
 LTO_LDFLAGS=
-if test "$build_debug" != yes; then
+if test "$build_debug" != yes -a "$enable_tsan" = no; then
     save_CFLAGS=$CFLAGS
     CFLAGS="$CFLAGS $lto_flag"
     AC_MSG_CHECKING([whether $CC supports $lto_flag])
@@ -163,12 +204,16 @@ if test "$build_debug" != yes; then
     if test -n "$LTO_CFLAGS" -a "$compiler_clang" = yes -a \
 	"$(uname -s)" = Darwin; then
 	LTO_LDFLAGS="-Wl,-cache_path_lto,$ac_pwd/.lto"
+    elif test -n "$LTO_CFLAGS" -a "$compiler_clang" != yes -a \
+	"$gcc_major" -ge 15; then
+	mkdir -p .lto
+	LTO_LDFLAGS="-flto-incremental=$ac_pwd/.lto"
     fi
 fi
 
 AM_CFLAGS="$AM_CFLAGS -std=gnu23 $COMMON_CFLAGS $optimize $LTO_CFLAGS"
 AM_CXXFLAGS="$AM_CXXFLAGS -std=gnu++23 $COMMON_CXXFLAGS $COMMON_CFLAGS $optimize $LTO_CFLAGS"
-AM_LDFLAGS="$COMMON_LDFLAGS $LTO_LDFLAGS"
+AM_LDFLAGS="$COMMON_LDFLAGS $LTO_LDFLAGS $LLVM_LDFLAGS"
 
 AC_SUBST([AM_CFLAGS])
 AC_SUBST([AM_CXXFLAGS])

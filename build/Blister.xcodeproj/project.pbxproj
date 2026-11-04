@@ -120,81 +120,6 @@
 		};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-		9079E31B1FDB1261008FA996 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		9079E33A1FDB1B9A008FA996 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		9079E3471FDB1BAA008FA996 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		9079E3541FDB1BB8008FA996 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		9079E3611FDB1BC3008FA996 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		9079E36E1FDB1BCD008FA996 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		9079E3801FDB1C1F008FA996 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		90F85B0E3084802100281C4E /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-		F7AA217D131C246200272F6A /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolder = None;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
-/* End PBXCopyFilesBuildPhase section */
-
 /* Begin PBXFileReference section */
 		9079E31F1FDB1261008FA996 /* DLog */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = DLog; sourceTree = BUILT_PRODUCTS_DIR; };
 		9079E3231FDB144C008FA996 /* DLog.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = DLog.cpp; sourceTree = "<group>"; };
@@ -215,8 +140,6 @@
 		90F85B173084835C00281C4E /* LRUCache.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = LRUCache.h; sourceTree = "<group>"; };
 		90F85B19308581D300281C4E /* ResourcePool.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ResourcePool.h; sourceTree = "<group>"; };
 		F7AA211913149F2C00272F6A /* Blister.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = Blister.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
-		F7AA211E13149F2C00272F6A /* BlisterProj.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = BlisterProj.xcconfig; path = Blister.xcodeproj/BlisterProj.xcconfig; sourceTree = SOURCE_ROOT; };
-		F7AA211F13149F2C00272F6A /* BlisterTarget.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = BlisterTarget.xcconfig; path = Blister.xcodeproj/BlisterTarget.xcconfig; sourceTree = SOURCE_ROOT; };
 		F7AA212A13149FAF00272F6A /* Config.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Config.cpp; path = ../lib/Config.cpp; sourceTree = "<group>"; };
 		F7AA212B13149FAF00272F6A /* Config.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.h; fileEncoding = 4; name = Config.h; path = ../lib/Config.h; sourceTree = "<group>"; };
 		F7AA212C13149FAF00272F6A /* Dispatch.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Dispatch.cpp; path = ../lib/Dispatch.cpp; sourceTree = "<group>"; };
@@ -368,8 +291,6 @@
 				F7AA214013149FAF00272F6A /* Timing.cpp */,
 				F7AA214113149FAF00272F6A /* Timing.h */,
 				F7AA214213149FAF00272F6A /* Unix.c */,
-				F7AA211E13149F2C00272F6A /* BlisterProj.xcconfig */,
-				F7AA211F13149F2C00272F6A /* BlisterTarget.xcconfig */,
 			);
 			name = Blister;
 			path = ../lib;
@@ -424,7 +345,6 @@
 			buildPhases = (
 				9079E3171FDB1261008FA996 /* Sources */,
 				9079E3191FDB1261008FA996 /* Frameworks */,
-				9079E31B1FDB1261008FA996 /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -442,7 +362,6 @@
 			buildPhases = (
 				9079E3351FDB1B9A008FA996 /* Sources */,
 				9079E3381FDB1B9A008FA996 /* Frameworks */,
-				9079E33A1FDB1B9A008FA996 /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -460,7 +379,6 @@
 			buildPhases = (
 				9079E3421FDB1BAA008FA996 /* Sources */,
 				9079E3451FDB1BAA008FA996 /* Frameworks */,
-				9079E3471FDB1BAA008FA996 /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -478,7 +396,6 @@
 			buildPhases = (
 				9079E34F1FDB1BB8008FA996 /* Sources */,
 				9079E3521FDB1BB8008FA996 /* Frameworks */,
-				9079E3541FDB1BB8008FA996 /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -496,7 +413,6 @@
 			buildPhases = (
 				9079E35C1FDB1BC3008FA996 /* Sources */,
 				9079E35F1FDB1BC3008FA996 /* Frameworks */,
-				9079E3611FDB1BC3008FA996 /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -514,7 +430,6 @@
 			buildPhases = (
 				9079E3691FDB1BCD008FA996 /* Sources */,
 				9079E36C1FDB1BCD008FA996 /* Frameworks */,
-				9079E36E1FDB1BCD008FA996 /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -532,7 +447,6 @@
 			buildPhases = (
 				9079E37C1FDB1C1F008FA996 /* Sources */,
 				9079E37E1FDB1C1F008FA996 /* Frameworks */,
-				9079E3801FDB1C1F008FA996 /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -550,7 +464,6 @@
 			buildPhases = (
 				90F85B0A3084802100281C4E /* Sources */,
 				90F85B0C3084802100281C4E /* Frameworks */,
-				90F85B0E3084802100281C4E /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -583,7 +496,6 @@
 			buildPhases = (
 				F7AA217B131C246200272F6A /* Sources */,
 				F7AA217C131C246200272F6A /* Frameworks */,
-				F7AA217D131C246200272F6A /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -757,237 +669,111 @@
 		9079E31D1FDB1261008FA996 /* Debug configuration for PBXNativeTarget "DLog" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Debug;
 		};
 		9079E31E1FDB1261008FA996 /* Release configuration for PBXNativeTarget "DLog" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Release;
 		};
 		9079E33C1FDB1B9A008FA996 /* Debug configuration for PBXNativeTarget "Daemonize" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Debug;
 		};
 		9079E33D1FDB1B9A008FA996 /* Release configuration for PBXNativeTarget "Daemonize" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Release;
 		};
 		9079E3491FDB1BAA008FA996 /* Debug configuration for PBXNativeTarget "DTiming" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Debug;
 		};
 		9079E34A1FDB1BAA008FA996 /* Release configuration for PBXNativeTarget "DTiming" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Release;
 		};
 		9079E3561FDB1BB8008FA996 /* Debug configuration for PBXNativeTarget "HTTPd" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Debug;
 		};
 		9079E3571FDB1BB8008FA996 /* Release configuration for PBXNativeTarget "HTTPd" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Release;
 		};
 		9079E3631FDB1BC3008FA996 /* Debug configuration for PBXNativeTarget "HTTPLoad" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Debug;
 		};
 		9079E3641FDB1BC3008FA996 /* Release configuration for PBXNativeTarget "HTTPLoad" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Release;
 		};
 		9079E3701FDB1BCD008FA996 /* Debug configuration for PBXNativeTarget "SMTPLoad" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Debug;
 		};
 		9079E3711FDB1BCD008FA996 /* Release configuration for PBXNativeTarget "SMTPLoad" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Release;
 		};
 		9079E3821FDB1C1F008FA996 /* Debug configuration for PBXNativeTarget "Cfg" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Debug;
 		};
 		9079E3831FDB1C1F008FA996 /* Release configuration for PBXNativeTarget "Cfg" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Release;
 		};
 		90F85B103084802100281C4E /* Debug configuration for PBXNativeTarget "HTTPTest" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_ATOMIC_IMPLICIT_SEQ_CST = NO;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Debug;
 		};
 		90F85B113084802100281C4E /* Release configuration for PBXNativeTarget "HTTPTest" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_ATOMIC_IMPLICIT_SEQ_CST = NO;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Release;
 		};
 		F7AA212513149F2C00272F6A /* Debug configuration for PBXProject "Blister" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ADDRESS_SANITIZER_CONTAINER_OVERFLOW = YES;
-				CLANG_ANALYZER_GCD_PERFORMANCE = YES;
-				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
 				CLANG_CXX_STANDARD_LIBRARY_HARDENING = debug;
-				CLANG_OPTIMIZATION_PROFILE_FILE = "";
-				"CLANG_OPTIMIZATION_PROFILE_FILE[arch=*]" = "";
-				CLANG_TIDY_MISC_REDUNDANT_EXPRESSION = NO;
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER = YES;
-				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY = YES;
 				CLANG_WARN_ASSIGN_ENUM = YES;
 				CLANG_WARN_ATOMIC_IMPLICIT_SEQ_CST = NO;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_CXX0X_EXTENSIONS = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_FLOAT_CONVERSION = YES;
@@ -995,97 +781,59 @@
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_INTERFACE_IVARS = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS = YES;
-				CLANG_WARN_OBJC_REPEATED_USE_OF_WEAK = YES;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_SEMICOLON_BEFORE_METHOD_BODY = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CLANG_X86_VECTOR_INSTRUCTIONS = avx2;
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				GCC_C_LANGUAGE_STANDARD = c23;
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_INCREASE_PRECOMPILED_HEADER_SHARING = YES;
 				GCC_INLINES_ARE_PRIVATE_EXTERN = YES;
-				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 1;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = ../lib/stdapi.h;
 				GCC_PREPROCESSOR_DEFINITIONS = (
-					BUILD_BLISTER,
 					DEBUG,
 				);
 				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
 				GCC_TREAT_IMPLICIT_FUNCTION_DECLARATIONS_AS_ERRORS = YES;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_MISSING_FIELD_INITIALIZERS = YES;
-				GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
 				GCC_WARN_ABOUT_MISSING_PROTOTYPES = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES;
-				GCC_WARN_FOUR_CHARACTER_CONSTANTS = YES;
 				GCC_WARN_HIDDEN_VIRTUAL_FUNCTIONS = YES;
 				GCC_WARN_INITIALIZER_NOT_FULLY_BRACKETED = YES;
 				GCC_WARN_NON_VIRTUAL_DESTRUCTOR = YES;
 				GCC_WARN_SHADOW = YES;
-				GCC_WARN_SIGN_COMPARE = YES;
-				GCC_WARN_STRICT_SELECTOR_MATCH = YES;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_LABEL = YES;
-				GCC_WARN_UNUSED_PARAMETER = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
 				LD_WARN_DUPLICATE_LIBRARIES = YES;
 				LD_WARN_UNUSED_DYLIBS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
 					"-fno-standalone-debug",
-					"-fvisibility=hidden",
-					"-pipe",
-					"-fno-omit-frame-pointer",
-				);
-				OTHER_LDFLAGS = (
-					"-dead_strip",
-					"-fno-plt",
+					"-fno-optimize-sibling-calls",
 				);
 				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SYMROOT = xcode;
+				USER_HEADER_SEARCH_PATHS = ../lib;
 				WARNING_CFLAGS = (
 					"-Wall",
 					"-Wconversion",
-					"-Wno-deprecated",
 					"-Wdouble-promotion",
 					"-Wextra",
 					"-Wextra-semi",
 					"-Wformat=2",
+					"-Wno-deprecated",
 					"-Wno-format-nonliteral",
-					"-Wformat-security",
-					"-Wmultichar",
-					"-Wnull-dereference",
-					"-Wodr",
-					"-Wredundant-decls",
-					"-Wshadow",
-					"-Wsign-conversion",
-					"-Wstrict-aliasing",
-					"-Wstrict-overflow=2",
-					"-Wno-unknown-pragmas",
-					"-Wno-unknown-warning-option",
-					"-Wwrite-strings",
 					"-Wno-null-pointer-subtraction",
+					"-Wno-unknown-pragmas",
+					"-Wnull-dereference",
+					"-Wsign-conversion",
 				);
 			};
 			name = Debug;
@@ -1093,25 +841,14 @@
 		F7AA212613149F2C00272F6A /* Release configuration for PBXProject "Blister" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ANALYZER_GCD_PERFORMANCE = YES;
-				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
 				CLANG_DEBUG_INFORMATION_LEVEL = "line-tables-only";
-				CLANG_OPTIMIZATION_PROFILE_FILE = "";
-				CLANG_TIDY_MISC_REDUNDANT_EXPRESSION = NO;
-				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER = YES;
-				CLANG_USE_OPTIMIZATION_PROFILE = YES;
 				CLANG_WARN_ASSIGN_ENUM = YES;
 				CLANG_WARN_ATOMIC_IMPLICIT_SEQ_CST = NO;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
 				CLANG_WARN_BOOL_CONVERSION = YES;
 				CLANG_WARN_COMMA = YES;
 				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_CXX0X_EXTENSIONS = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
 				CLANG_WARN_FLOAT_CONVERSION = YES;
@@ -1119,98 +856,55 @@
 				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_INTERFACE_IVARS = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_MISSING_PROPERTY_SYNTHESIS = YES;
-				CLANG_WARN_OBJC_REPEATED_USE_OF_WEAK = YES;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_SEMICOLON_BEFORE_METHOD_BODY = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_IMPLICIT_CONVERSION = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CLANG_X86_VECTOR_INSTRUCTIONS = avx2;
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				GCC_C_LANGUAGE_STANDARD = c23;
 				GCC_ENABLE_CPP_EXCEPTIONS = NO;
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_INCREASE_PRECOMPILED_HEADER_SHARING = YES;
 				GCC_INLINES_ARE_PRIVATE_EXTERN = YES;
-				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = fast;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = ../lib/stdapi.h;
 				GCC_PREPROCESSOR_DEFINITIONS = (
-					BUILD_BLISTER,
 					NDEBUG,
 				);
 				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
 				GCC_TREAT_IMPLICIT_FUNCTION_DECLARATIONS_AS_ERRORS = YES;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
-				GCC_UNROLL_LOOPS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_MISSING_FIELD_INITIALIZERS = YES;
-				GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
 				GCC_WARN_ABOUT_MISSING_PROTOTYPES = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES;
-				GCC_WARN_FOUR_CHARACTER_CONSTANTS = YES;
 				GCC_WARN_HIDDEN_VIRTUAL_FUNCTIONS = YES;
 				GCC_WARN_INITIALIZER_NOT_FULLY_BRACKETED = YES;
 				GCC_WARN_NON_VIRTUAL_DESTRUCTOR = YES;
 				GCC_WARN_SHADOW = YES;
-				GCC_WARN_SIGN_COMPARE = YES;
-				GCC_WARN_STRICT_SELECTOR_MATCH = YES;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_LABEL = YES;
-				GCC_WARN_UNUSED_PARAMETER = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
 				LD_WARN_DUPLICATE_LIBRARIES = YES;
 				LD_WARN_UNUSED_DYLIBS = YES;
 				LLVM_LTO = YES_THIN;
 				MACOSX_DEPLOYMENT_TARGET = 26.6;
-				OTHER_CFLAGS = (
-					"-fno-standalone-debug",
-					"-fvisibility=hidden",
-					"-pipe",
-					"-fdata-sections",
-					"-ffunction-sections",
-				);
-				OTHER_LDFLAGS = (
-					"-dead_strip",
-					"-fno-plt",
-				);
 				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SYMROOT = xcode;
+				USER_HEADER_SEARCH_PATHS = ../lib;
 				WARNING_CFLAGS = (
 					"-Wall",
 					"-Wconversion",
-					"-Wno-deprecated",
 					"-Wdouble-promotion",
 					"-Wextra",
 					"-Wextra-semi",
 					"-Wformat=2",
+					"-Wno-deprecated",
 					"-Wno-format-nonliteral",
-					"-Wformat-security",
-					"-Wmultichar",
-					"-Wnull-dereference",
-					"-Wodr",
-					"-Wredundant-decls",
-					"-Wshadow",
-					"-Wsign-conversion",
-					"-Wstrict-aliasing",
-					"-Wstrict-overflow=2",
-					"-Wno-unknown-pragmas",
-					"-Wno-unknown-warning-option",
-					"-Wwrite-strings",
 					"-Wno-null-pointer-subtraction",
+					"-Wno-unknown-pragmas",
+					"-Wnull-dereference",
+					"-Wsign-conversion",
 				);
 			};
 			name = Release;
@@ -1218,49 +912,32 @@
 		F7AA212813149F2C00272F6A /* Debug configuration for PBXNativeTarget "Blister" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					BUILD_BLISTER,
+				);
 			};
 			name = Debug;
 		};
 		F7AA212913149F2C00272F6A /* Release configuration for PBXNativeTarget "Blister" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_USE_OPTIMIZATION_PROFILE = NO;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					BUILD_BLISTER,
+				);
 			};
 			name = Release;
 		};
 		F7AA2186131C246200272F6A /* Debug configuration for PBXNativeTarget "Echotest" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_ATOMIC_IMPLICIT_SEQ_CST = NO;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Debug;
 		};
 		F7AA2187131C246200272F6A /* Release configuration for PBXNativeTarget "Echotest" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_ATOMIC_IMPLICIT_SEQ_CST = NO;
-				CODE_SIGN_IDENTITY = "-";
-				DEAD_CODE_STRIPPING = YES;
-				HEADER_SEARCH_PATHS = "";
-				LIBRARY_SEARCH_PATHS = .;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				USER_HEADER_SEARCH_PATHS = ../lib;
 			};
 			name = Release;
 		};

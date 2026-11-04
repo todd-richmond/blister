@@ -20,7 +20,9 @@
 #include <fcntl.h>
 #include <time.h>
 #include <sys/times.h>
-#if defined(__APPLE__)
+#ifdef sun
+#include <procfs.h>
+#elif defined(__APPLE__)
 #include <stdatomic.h>
 #include <mach/task.h>
 #include <mach/mach_init.h>
@@ -91,14 +93,29 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
     // NOLINTNEXTLINE(readability-suspicious-call-argument)
     mach_port_deallocate(mach_task_self(), task);
 #elif defined(sun)
-    // TODO incomplete
     char buf[PATH_MAX];
-    struct stat sbuf;
+    FILE *f;
+    psinfo_t psinfo;
+    prusage_t usage;
 
-    snprintf(buf, sizeof (buf), "/proc/%ld/as", (long)pid);
-    if (stat(buf, &sbuf) == -1)
+    snprintf(buf, sizeof (buf), "/proc/%ld/psinfo", (long)pid);
+    if ((f = fopen(buf, "r")) == NULL)
 	return -1;
-    psbuf->sz = sbuf.st_size / 1024;
+    if (fread(&psinfo, sizeof (psinfo), 1, f) == 1) {
+	psbuf->sz = psinfo.pr_size;
+	psbuf->pss = psbuf->rss = psinfo.pr_rssize;
+    }
+    fclose(f);
+    snprintf(buf, sizeof (buf), "/proc/%ld/usage", (long)pid);
+    if ((f = fopen(buf, "r")) != NULL) {
+	if (fread(&usage, sizeof (usage), 1, f) == 1) {
+	    psbuf->stime = (uint64_t)usage.pr_stime.tv_sec * 1000 +
+		(uint64_t)usage.pr_stime.tv_nsec / 1000000;
+	    psbuf->utime = (uint64_t)usage.pr_utime.tv_sec * 1000 +
+		(uint64_t)usage.pr_utime.tv_nsec / 1000000;
+	}
+	fclose(f);
+    }
 #elif defined(__linux__)
     char buf[512];
     FILE *f;
