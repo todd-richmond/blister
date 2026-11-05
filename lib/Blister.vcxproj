@@ -482,9 +482,6 @@
     <ClCompile Include="HTTPClient.cpp" />
     <ClCompile Include="HTTPServer.cpp" />
     <ClCompile Include="Log.cpp" />
-    <ClCompile Include="MD5.c">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="Service.cpp" />
     <ClCompile Include="SMTPClient.cpp" />
     <ClCompile Include="Socket.cpp" />
@@ -501,7 +498,6 @@
     <ClInclude Include="HTTPServer.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="LRUCache.h" />
-    <ClInclude Include="MD5.h" />
     <ClInclude Include="Service.h" />
     <ClInclude Include="SMTPClient.h" />
     <ClInclude Include="Socket.h" />

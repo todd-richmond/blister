@@ -16,5 +16,4 @@ The Blister library. Link against `libblister`.
 - `SMTPClient` — blocking SMTP/LMTP client with SMTPUTF8, pipelining and BDAT, RFC 821/822 address parsers, and base64, quoted-printable and uuencode codecs with AVX2 paths.
 - `LRUCache.h` — size, count and time-bounded LRU cache.
 - `ResourcePool.h` — header-only `ResourcePool<C>` (blocking) and `AsyncResourcePool<C>` (`Dispatcher`-integrated) pools of lazily created, shareable resources.
-- `MD5` — MD5 digest.
 - `Unix.c`, `Windows.cpp`, `Version.rc` — platform implementations behind `stdapi.h`.

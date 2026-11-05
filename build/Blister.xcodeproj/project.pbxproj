@@ -35,8 +35,6 @@
 		F7AA214A13149FAF00272F6A /* HTTPServer.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213113149FAF00272F6A /* HTTPServer.h */; };
 		F7AA214B13149FAF00272F6A /* Log.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213213149FAF00272F6A /* Log.cpp */; };
 		F7AA214C13149FAF00272F6A /* Log.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213313149FAF00272F6A /* Log.h */; };
-		F7AA214D13149FAF00272F6A /* MD5.c in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213413149FAF00272F6A /* MD5.c */; };
-		F7AA214E13149FAF00272F6A /* MD5.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213513149FAF00272F6A /* MD5.h */; };
 		F7AA214F13149FAF00272F6A /* Service.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213613149FAF00272F6A /* Service.cpp */; };
 		F7AA215013149FAF00272F6A /* Service.h in Headers */ = {isa = PBXBuildFile; fileRef = F7AA213713149FAF00272F6A /* Service.h */; };
 		F7AA215113149FAF00272F6A /* SMTPClient.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA213813149FAF00272F6A /* SMTPClient.cpp */; };
@@ -150,8 +148,6 @@
 		F7AA213113149FAF00272F6A /* HTTPServer.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.h; fileEncoding = 4; name = HTTPServer.h; path = ../lib/HTTPServer.h; sourceTree = "<group>"; };
 		F7AA213213149FAF00272F6A /* Log.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Log.cpp; path = ../lib/Log.cpp; sourceTree = "<group>"; };
 		F7AA213313149FAF00272F6A /* Log.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.h; fileEncoding = 4; name = Log.h; path = ../lib/Log.h; sourceTree = "<group>"; };
-		F7AA213413149FAF00272F6A /* MD5.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = MD5.c; path = ../lib/MD5.c; sourceTree = "<group>"; };
-		F7AA213513149FAF00272F6A /* MD5.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MD5.h; path = ../lib/MD5.h; sourceTree = "<group>"; };
 		F7AA213613149FAF00272F6A /* Service.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Service.cpp; path = ../lib/Service.cpp; sourceTree = "<group>"; };
 		F7AA213713149FAF00272F6A /* Service.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.h; fileEncoding = 4; name = Service.h; path = ../lib/Service.h; sourceTree = "<group>"; };
 		F7AA213813149FAF00272F6A /* SMTPClient.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SMTPClient.cpp; path = ../lib/SMTPClient.cpp; sourceTree = "<group>"; };
@@ -275,8 +271,6 @@
 				F7AA213213149FAF00272F6A /* Log.cpp */,
 				F7AA213313149FAF00272F6A /* Log.h */,
 				90F85B173084835C00281C4E /* LRUCache.h */,
-				F7AA213413149FAF00272F6A /* MD5.c */,
-				F7AA213513149FAF00272F6A /* MD5.h */,
 				90F85B19308581D300281C4E /* ResourcePool.h */,
 				F7AA213613149FAF00272F6A /* Service.cpp */,
 				F7AA213713149FAF00272F6A /* Service.h */,
@@ -324,7 +318,6 @@
 				F7AA214813149FAF00272F6A /* HTTPClient.h in Headers */,
 				F7AA214A13149FAF00272F6A /* HTTPServer.h in Headers */,
 				F7AA214C13149FAF00272F6A /* Log.h in Headers */,
-				F7AA214E13149FAF00272F6A /* MD5.h in Headers */,
 				F7AA215013149FAF00272F6A /* Service.h in Headers */,
 				F7AA215213149FAF00272F6A /* SMTPClient.h in Headers */,
 				F7AA215413149FAF00272F6A /* Socket.h in Headers */,
@@ -600,7 +593,6 @@
 				F7AA214713149FAF00272F6A /* HTTPClient.cpp in Sources */,
 				F7AA214913149FAF00272F6A /* HTTPServer.cpp in Sources */,
 				F7AA214B13149FAF00272F6A /* Log.cpp in Sources */,
-				F7AA214D13149FAF00272F6A /* MD5.c in Sources */,
 				F7AA214F13149FAF00272F6A /* Service.cpp in Sources */,
 				F7AA215113149FAF00272F6A /* SMTPClient.cpp in Sources */,
 				F7AA215313149FAF00272F6A /* Socket.cpp in Sources */,
