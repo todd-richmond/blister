@@ -121,9 +121,9 @@ void Timing::clear() {
 tstring Timing::data(bool sort_key, uint columns) const {
     // snapshot so sorting and each row see stable values
     struct Row {
-	const Stats *stats;
+	const Stats *stats = nullptr;
 	uint64_t tot = 0, cnt = 0;
-	uint64_t cnts[TIMINGSLOTS];
+	uint64_t cnts[TIMINGSLOTS] = {};
     };
     uint begin = 0, last = 0;
     tstring s;

@@ -444,9 +444,9 @@ static constexpr array<uchar, 256> hexvalues = [] {
     array<uchar, 256> t {};
 
     ranges::fill(t, (uchar)0xff);
-    for (uint i = 0; i < 10; ++i)
+    for (size_t i = 0; i < 10; ++i)
 	t['0' + i] = (uchar)i;
-    for (uint i = 0; i < 6; ++i)
+    for (size_t i = 0; i < 6; ++i)
 	t['A' + i] = t['a' + i] = (uchar)(10 + i);
     return t;
 }();
@@ -1462,9 +1462,9 @@ bool SMTPClient::rcptcmd(tstring &id, const tchar *parms) {
     tstring arg;
 
     if (downgrade(T("rcpt"), id)) {
-	arg = id[0] == '<' ? id : '<' + id + '>';
+	arg = id[0] == '<' ? id : T('<') + id + T('>');
 	if (parms && *parms) {
-	    arg += ' ';
+	    arg += T(' ');
 	    arg += parms;
 	}
     }
@@ -1496,7 +1496,7 @@ bool SMTPClient::downgrade(const tchar *c, tstring &id) {
 	sts = T("501 5.1.2 Invalid internationalized domain name");
     } else {
 	a.setDomain(astringtotstring(puny).c_str());
-	id = id[0] == '<' ? '<' + a.address() + '>' : a.address();
+	id = id[0] == '<' ? T('<') + a.address() + T('>') : a.address();
 	dlogt(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("downgrade"), id));
 	return true;
     }
@@ -1520,9 +1520,9 @@ bool SMTPClient::envarg(const tchar *c, tstring &id, const tchar *parms,
     }
     if (!downgrade(c, id))
 	return false;
-    arg = !brkt || (!id.empty() && id[0] == '<') ? id : '<' + id + '>';
+    arg = !brkt || (!id.empty() && id[0] == '<') ? id : T('<') + id + T('>');
     if (parms && *parms) {
-	arg += ' ';
+	arg += T(' ');
 	arg += parms;
     }
     // an address is only still UTF-8 if the server supports SMTPUTF8
@@ -1558,7 +1558,7 @@ tstring SMTPClient::hdraddr(const RFC822Addr &addr, uint u, const tstring &orig,
 	string enc;
 
 	encodedwords(enc, tstringtoastring(phrase));
-	return astringtotstring(enc) + ' ' + sent;
+	return astringtotstring(enc) + T(' ') + sent;
     }
 
     tstring hdr = addr.address(u, true);
@@ -1831,7 +1831,7 @@ bool SMTPClient::bigchunk(const void *p, size_t sz, bool dotstuff) {
     const char *s = (const char *)p;
     string buf = std::move(bstrm).str();
     const size_t n = buf.size() + sz + (dotstuff ? barelfs(s, s + sz) : 0) +
-	(s[sz - 1] == '\n' ? 0 : 2);
+	(size_t)(s[sz - 1] == '\n' ? 0 : 2);
     tstring c(T("BDAT ") + numstr(n));
     bool ret;
 

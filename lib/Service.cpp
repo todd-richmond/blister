@@ -1698,7 +1698,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 #endif
     } else {
 	ret = Service::onStart(argc, argv);
-	snprintf(buf, sizeof (buf), "%lu", (ulong)sigpid);
+	sprintf(buf, "%lu", (ulong)sigpid);
 	if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) < 0 || write(lckfd,
 	    buf, (uint)strlen(buf)) < 1)
 	    ret = 0;
@@ -1714,7 +1714,7 @@ void Daemon::onAbort() {
     update(Stopped);
     if (restart && !exiting) {
 #ifdef _WIN32
-	int rc = tspawnlp(P_NOWAIT, srvcpath.c_str(), srvcpath.c_str(),
+	int rc = (int)tspawnlp(P_NOWAIT, srvcpath.c_str(), srvcpath.c_str(),
 	    T("restart"), NULL);
 #else
 	string s(srvcpath + " restart");

@@ -70,7 +70,7 @@ class BLISTER HTTPClient: nocopy {
 public:
     using attrmap = unordered_multimap<tstring, tstring, strihash, strieq>;
 
-    HTTPClient(): sstrm(3L * 1460) {}
+    HTTPClient(): sstrm((streamsize)(3L * 1460)) {}
 
     friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
 	os << hc.sts << '\n';
@@ -416,10 +416,12 @@ bool hastoken(const A &l, const B &t) {
     while (!list.empty()) {
 	size_t pos = list.find(',');
 	auto v = list.substr(0, pos);
+	using C = decltype(list)::value_type;
+	static constexpr C ws[] = { ' ', '\t', 0 };
 
 	list = pos == list.npos ? decltype(list)() : list.substr(pos + 1);
-	v.remove_prefix(min(v.find_first_not_of(" \t"), v.size()));
-	v = v.substr(0, v.find_last_not_of(" \t") + 1);
+	v.remove_prefix(min(v.find_first_not_of(ws), v.size()));
+	v = v.substr(0, v.find_last_not_of(ws) + 1);
 	if (stringieq(v, token))
 	    return true;
     }

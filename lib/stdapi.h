@@ -30,6 +30,8 @@
 #endif
 
 #ifdef _MSC_VER
+#define _CRT_NONSTDC_NO_DEPRECATE
+#define _CRT_SECURE_NO_WARNINGS
 #define __builtin_prefetch(p, i, j)
 #define __no_sanitize(check)
 #define __no_sanitize_address
@@ -104,11 +106,12 @@
 #pragma inline_depth(69)
 #pragma warning(disable: 4018 4068 4081 4097 4100 4103 4127 4146 4200 4201 4250)
 #pragma warning(disable: 4251 4335 4324 4503 4511 4512 4530 4577 4619 4625 4626)
-#pragma warning(disable: 4668 4710 4711 4786 4820 4996 5026 5027 26110 26135)
-#pragma warning(disable: 26400 26401 26408 26409 26426 26429 26432 26433 26434)
-#pragma warning(disable: 26438 26440 26443 26446 26447 26455 26457 26462 26472)
-#pragma warning(disable: 26494 26496 26497 28125 26477 26481 26482 26485 26486)
-#pragma warning(disable: 26487 26489 26492 26493 26812 26814 26818 26819 26826)
+#pragma warning(disable: 4668 4702 4710 4711 4786 4820 4996 5026 5027 26110)
+#pragma warning(disable: 26135 26400 26401 26402 26408 26409 26426 26429 26432)
+#pragma warning(disable: 26433 26434 26438 26440 26443 26446 26447 26455 26457)
+#pragma warning(disable: 26462 26472 26475 26494 26496 26497 28125 26477 26481)
+#pragma warning(disable: 26482 26485 26486 26487 26489 26492 26493 26812 26814)
+#pragma warning(disable: 26818 26819 26826)
 
 #ifndef WIN32
 #define WIN32

@@ -23,8 +23,8 @@
 #include "Log.h"
 
 static constexpr ulong MaxBody = 256UL * 1024 * 1024;
-static constexpr size_t MaxCopy = 4UL * 1024;		// request with small body
-static constexpr size_t MaxHdrs = 64UL * 1024;		// status + header bytes
+static constexpr size_t MaxCopy = 4UL * 1024;	// request with small body
+static constexpr size_t MaxHdrs = 64UL * 1024;	// status + header bytes
 static constexpr size_t MaxPipeline = 16;
 static constexpr size_t MinRead = 512;
 static constexpr ulong MaxKeep = 64UL * 1024;	// reused response buffer
@@ -1191,7 +1191,7 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
 	auto add = [&](const void *p, size_t len) {
 	    iov[cnt].iov_base = (char *)p;	// NOSONAR
 	    iov[cnt++].iov_len = (iovlen_t)len;
-	    total += len;
+	    total += (ulong)len;
 	};
 
 	for (size_t i = 0; i < min(wq.size(), room); i++) {
@@ -1205,10 +1205,10 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
 		add(r.req.data() + off, r.req.size() - off);
 		off = 0;
 	    } else {
-		off -= r.req.size();
+		off -= (ulong)r.req.size();
 	    }
 	    if (r.datasz > off)
-		add((const char *)r.datap + off, r.datasz - off);
+		add((const char *)r.datap + off, r.datasz - (size_t)off);
 	    if (!r.idem)
 		break;
 	}
@@ -1221,7 +1221,7 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
 	    return broke(sock.err());
 	for (ulong left = (ulong)n; left; ) {
 	    Request &r = *wq.front();
-	    const ulong len = r.req.size() + r.datasz - r.written;
+	    const ulong len = (ulong)(r.req.size() + r.datasz - r.written);
 
 	    if (left < len) {
 		r.written += left;

@@ -49,6 +49,7 @@ Checks: >
   -clang-analyzer-valist.Uninitialized,
   -clang-diagnostic-error,
   -clang-diagnostic-ignored-optimization-argument,
+  -clang-diagnostic-inconsistent-dllimport,
   -clang-diagnostic-microsoft-cast,
   -clang-diagnostic-pragma-pack,
   -clang-diagnostic-unknown-pragmas,

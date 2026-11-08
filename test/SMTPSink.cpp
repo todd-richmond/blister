@@ -330,15 +330,16 @@ void SMTPSinkSocket::parse(void) {
 	    uint dot = (uint)(d - b);
 
 	    if (verify)
-		body.append(b + pos, dot - pos);
-	    size += dot - pos;
+		body.append(b + pos, (size_t)(dot - pos));
+	    size += (size_t)(dot - pos);
 	    pos = dot + 3;
 	    scan = 0;
 	    state = State::Cmd;
 	    delivered();
 	} else {
 	    const char *p = b + pos;
-	    const char *nl = (const char *)memchr(p, '\n', have - pos);
+	    const char *nl = (const char *)memchr(p, '\n', (size_t)(have -
+		pos));
 
 	    if (!nl) {
 		if (pos == 0 && have == BUFSZ) {
@@ -364,12 +365,12 @@ void SMTPSinkSocket::parse(void) {
 
     if (state == State::Data && keep > pos) {
 	if (verify)
-	    body.append(b + pos, keep - pos);
-	size += keep - pos;
+	    body.append(b + pos, (size_t)(keep - pos));
+	size += (size_t)(keep - pos);
 	pos = keep;
     }
     keep = min(keep, pos);
-    memmove(b, b + keep, have - keep);
+    memmove(b, b + keep, (size_t)(have - keep));
     have -= keep;
     pos -= keep;
     if (state == State::Data)
