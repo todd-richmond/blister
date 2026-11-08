@@ -259,7 +259,7 @@ int Dispatcher::run() {
     // it is a registered waiter so recheck rlist once registered
     auto pending = [this] { return !rlist.empty(); };
 
-    priority(-1);
+    Thread::current()->priority(-1);
     while (exec()) {
 	dspsema4_t::WaitResult r;
 

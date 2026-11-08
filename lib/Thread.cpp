@@ -23,6 +23,7 @@
 using ThreadLocalMap = vector<pair<void *, ThreadLocalFree>>;
 
 static thread_local ThreadGroup *curgroup;
+static thread_local Thread *curthread;
 
 // cleans up threads not started by Thread; key deleted at library unload
 static class ThreadLocalKey: nocopy {
@@ -132,10 +133,32 @@ Process Process::start(tchar *const *args, const int *fds) {
 		si.hStdError = (HANDLE)(ullong)fds[2];
 	}
     }
-    while (*args) {
-	cmd += *(args++);
-	if (*args)
-	    cmd += ' ';
+    // quote args using CommandLineToArgvW() backslash and quote rules
+    for (tchar * const *a = args; *a; ++a) {
+	const tchar *s = *a;
+
+	if (a != args)
+	    cmd += T(' ');
+	if (*s && !tstrpbrk(s, T(" \t\n\v\""))) {
+	    cmd += s;
+	    continue;
+	}
+	cmd += T('"');
+	for (;; ++s) {
+	    size_t slashes = 0;
+
+	    while (*s == T('\\')) {
+		++s;
+		++slashes;
+	    }
+	    if (!*s) {
+		cmd.append(slashes * 2, T('\\'));
+		break;
+	    }
+	    cmd.append(*s == T('"') ? slashes * 2 + 1 : slashes, T('\\'));
+	    cmd += *s;
+	}
+	cmd += T('"');
     }
     if (CreateProcess(NULL, cmd.data(), NULL, NULL, TRUE, // NOSONAR
 	0, NULL, NULL, &si, &proc)) {
@@ -434,6 +457,7 @@ Thread::~Thread() {
 // the Thread or its group while notify() is still running
 void Thread::clear(void) {
     flocal.run();
+    curthread = nullptr;
     lck.lock();
 #ifdef _WIN32
     CloseHandle(hdl);
@@ -458,6 +482,8 @@ void Thread::end(int status) {
     pthread_exit(nullptr);
 #endif
 }
+
+Thread *Thread::current(void) { return curthread; }
 
 // call into ThreadMain with correct class scope
 int Thread::init(void *thisp) {
@@ -497,7 +523,7 @@ bool Thread::priority(int pri) {	// NOLINT
 	return setpriority(PRIO_PROCESS, (id_t)tid, -pri) == 0;
     }
 #endif
-    sched.sched_priority = mn + (mx - mn) * (pri + 20) / 41;
+    sched.sched_priority = mn + (mx - mn) * (pri + 20) / 40;
     return pthread_setschedparam(hdl, policy, &sched) == 0;
 #endif
 }
@@ -508,6 +534,7 @@ THREAD_FUNC Thread::thread_init(void *arg) {
     thread_id_t self = THREAD_ID();
 
     curgroup = thread->group;
+    curthread = thread;
     thread->id.store(self, memory_order_release);
 #ifdef _WIN32
     srand((uint)((ulong)uticks() ^ (ulong)(usec_t)self));	// NOSONAR
@@ -593,15 +620,18 @@ bool Thread::resume(void) {
     return getState() == Suspended && launch(lkr);
 }
 
+// onStop() runs unlocked so overrides may call back into the Thread
 bool Thread::stop(void) {
+    if (getState() == Terminated)
+	return true;
+    onStop();
+
     Locker lkr(lck);
+    ThreadState s = getState();
 
-    if (getState() != Terminated) {
-	bool suspended = getState() == Suspended;
-
-	onStop();
+    if (s != Terminated) {
 	setState(Terminated);
-	if (suspended) {		// no thread exists to report exit
+	if (s == Suspended) {		// no thread exists to report exit
 	    group->notify(*this);
 	    cv.broadcast();
 	}
@@ -609,54 +639,57 @@ bool Thread::stop(void) {
     return true;
 }
 
-// wait for thread to exit
+// wait for thread to exit. Wrapped threads have no id and are joined by one
+// waiter at a time while others wait for it to finish
 bool Thread::wait(ulong timeout) {
     Locker lkr(lck);
+    const msec_t end = mticks() + timeout;
 
     if (getState() == Init || getState() == Suspended)
 	return true;
-    if (hdl && getId() == NOID) {			// wrapped thread
+    while (hdl) {
+	ulong left = INFINITE;
+
+	if (timeout != INFINITE) {
+	    msec_t now = mticks();
+
+	    if (now >= end)
+		return false;
+	    left = (ulong)(end - now);
+	}
+	if (getId() != NOID || joining) {
+	    cv.wait(left);
+	    continue;
+	}
+
 	thread_hdl_t h = hdl;
 	bool ret;
 
+	joining = true;
 	lkr.unlock();
 #ifdef _WIN32
-	ret = WaitForSingleObject(h, timeout) == WAIT_OBJECT_0;
+	ret = WaitForSingleObject(h, left) == WAIT_OBJECT_0;
 #elif defined(__linux__)
-	if (timeout == INFINITE) {
+	if (left == INFINITE) {
 	    ret = pthread_join(h, nullptr) == 0;
 	} else {
 	    timespec ts;
 
 	    clock_gettime(CLOCK_REALTIME, &ts);
-	    time_adjust_msec(&ts, timeout);
+	    time_adjust_msec(&ts, left);
 	    ret = pthread_timedjoin_np(h, nullptr, &ts) == 0;
 	}
 #else
 	// other pthreads do not support a timeout
-	ret = timeout == INFINITE && pthread_join(h, nullptr) == 0;
+	ret = left == INFINITE && pthread_join(h, nullptr) == 0;
 #endif
-	if (ret) {		// a joined pthread cannot be joined again
-	    lkr.lock();
-	    setState(Terminated);
-	    hdl = 0;
-	    cv.broadcast();
-	}
-	return ret;
-    }
-
-    msec_t end = mticks() + timeout;
-
-    while (hdl) {
-	if (timeout == INFINITE) {
-	    cv.wait();
-	} else {
-	    msec_t now = mticks();
-
-	    if (now >= end)
-		return false;
-	    cv.wait((ulong)(end - now));
-	}
+	lkr.lock();
+	joining = false;
+	cv.broadcast();
+	if (!ret)
+	    return false;
+	setState(Terminated);		// a joined pthread cannot be joined again
+	hdl = 0;
     }
     return true;
 }
@@ -752,7 +785,9 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	for (auto it = threads.begin(); it != threads.end(); ) {
 	    Thread *thread = *it;
 
-	    if (thread->terminated() && thread != pinned) {
+	    // stop() marks a live thread terminated so also require it exited
+	    if (thread->terminated() && thread->getId() == Thread::NOID &&
+		thread != pinned) {
 		it = threads.erase(it);
 		batch[count++] = thread;
 		if (!all || count == 64)

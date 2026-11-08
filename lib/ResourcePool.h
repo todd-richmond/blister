@@ -45,12 +45,10 @@ public:
     }
     [[nodiscard]] vector<C *> all(bool lockit = true, bool hold = false) {
 	vector<C *> ret;
+	Locker lkr(lk);
 
 	if (lockit)
-	    lock();
-
-	FastLocker lkr(lk);
-
+	    drain();
 	ret.reserve(pool.size());
 	for (Entry &e : pool)
 	    ret.push_back(hold ? take(e) : e.obj.get());
@@ -62,8 +60,24 @@ public:
 
 	reap(cnt, dead);
     }
-    [[nodiscard]] C *get(void) { return acquire(nullptr); }
-    [[nodiscard]] C *getsticky(const C *prefer) { return acquire(prefer); }
+    [[nodiscard]] C *get(void) { return getsticky(nullptr); }
+    // waits for prefer while it is still pooled, else gets any resource
+    [[nodiscard]] C *getsticky(const C *prefer) {
+	Locker lkr(lk);
+
+	for (;;) {
+	    iterator it = prefer ? find(prefer) : pool.end();
+
+	    if (it == pool.end()) {
+		prefer = nullptr;
+		if (C *p = grab())
+		    return p;
+	    } else if (!locked && it->inuse < maxuse) {
+		return take(*it);
+	    }
+	    (prefer ? change : avail).wait();
+	}
+    }
     uint limit(void) const {
 	FastLocker lkr(lk);
 
@@ -82,11 +96,7 @@ public:
     void lock(void) {
 	Locker lkr(lk);
 
-	while (locked)
-	    change.wait();
-	locked = true;
-	while (used || pending)
-	    change.wait();
+	drain();
     }
     void release(const C *p) {
 	FastLocker lkr(lk);
@@ -112,27 +122,11 @@ public:
 
 private:
     struct Entry {
-	unique_ptr<C> obj;
 	uint inuse = 0;
+	unique_ptr<C> obj;
     };
     using iterator = vector<Entry>::iterator;
 
-    C *acquire(const C *prefer) {
-	Locker lkr(lk);
-
-	for (;;) {
-	    iterator it = prefer ? find(prefer) : pool.end();
-
-	    if (it == pool.end()) {
-		prefer = nullptr;
-		if (C *p = grab())
-		    return p;
-	    } else if (!locked && it->inuse < maxuse) {
-		return take(*it);
-	    }
-	    (prefer ? change : avail).wait();
-	}
-    }
     // lk held but released while constructing: returns the new resource, taken
     C *create(void) {
 	++pending;
@@ -142,7 +136,15 @@ private:
 
 	lk.lock();
 	--pending;
-	return take(pool.emplace_back(std::move(obj)));
+	return take(pool.emplace_back(0U, std::move(obj)));
+    }
+    // lk held: set locked once free, then wait for all users to release
+    void drain(void) {
+	while (locked)
+	    change.wait();
+	locked = true;
+	while (used || pending)
+	    change.wait();
     }
     iterator find(const C *p) {
 	return ranges::find(pool, p, [](const Entry &e) {
@@ -167,7 +169,9 @@ private:
 	}
 	return n + pending < lmt ? create() : nullptr;
     }
+    // remove up to cnt idle entries that exist now, waiting for busy ones
     void reap(uint cnt, vector<Entry> &dead) {
+	cnt = (uint)min<size_t>(cnt, pool.size());
 	for (;;) {
 	    if (!locked) {
 		size_t keep = 0;
@@ -198,15 +202,16 @@ private:
 	return e.obj.get();
     }
 
+    Condvar avail { lk };
+    Condvar change { lk };
     size_t cursor = 0;
+    mutable Lock lk;
     uint lmt;
     bool locked = false;
     const uint maxuse;
-    uint pending = 0, used = 0;
+    uint pending = 0;
     vector<Entry> pool;
-    mutable Lock lk;
-    Condvar avail { lk };
-    Condvar change { lk };
+    uint used = 0;
 };
 
 template<default_initializable C>
@@ -219,6 +224,17 @@ public:
 	    pool(p) {}
 	Waiter(AsyncResourcePool &p, DispatchObj &parent):
 	    AsyncCondvar::Waiter(p.acv, parent), pool(p) {}
+	~Waiter() override { Waiter::cancel(); }
+
+	// pass on a wakeup this waiter received but did not consume
+	void cancel(void) override {
+	    AsyncCondvar::Waiter::cancel();
+
+	    FastLocker lkr(pool.lk);
+
+	    if (exchange(queued, false))
+		pool.wake(prefer ? pool.find(prefer) : pool.pool.end());
+	}
 
 	void get(DispatchObjCB cb, DispatchObj &co, C *&retp) {
 	    begin(cb, co, retp, nullptr);
@@ -239,6 +255,7 @@ public:
 
 	DSP_DECLARE(Waiter, retry) {
 	    pool.lk.lock();
+	    queued = false;
 	    tryget();
 	}
 
@@ -249,12 +266,14 @@ public:
 	    if (it == pool.pool.end()) {
 		prefer = nullptr;
 		if (!(*ret = pool.grab())) {
+		    queued = true;
 		    wait(retry, pool.acv);
 		    return;
 		}
 	    } else if (!pool.locked && it->inuse < pool.maxuse) {
 		*ret = pool.take(*it);
 	    } else {
+		queued = true;
 		wait(retry, *it->cv);
 		return;
 	    }
@@ -262,17 +281,18 @@ public:
 	    caller->ready(callercb);
 	}
 
-	AsyncResourcePool &pool;
 	DispatchObj *caller = nullptr;
 	DispatchObjCB callercb = nullptr;
+	AsyncResourcePool &pool;
 	const C *prefer = nullptr;
+	bool queued = false;
 	C **ret = nullptr;
 
 	friend class AsyncResourcePool;
     };
 
     explicit AsyncResourcePool(Dispatcher &d, uint lim = 32, uint maxcount = 1):
-	lmt(lim), maxuse(maxcount), acv(d, lk) {}
+	acv(d, lk), lmt(lim), maxuse(maxcount) {}
     ~AsyncResourcePool() { clear(); }
 
     [[nodiscard]] C *allocate(void) {
@@ -284,12 +304,10 @@ public:
     }
     [[nodiscard]] vector<C *> all(bool lockit = true, bool hold = false) {
 	vector<C *> ret;
+	Locker lkr(lk);
 
 	if (lockit)
-	    lock();
-
-	FastLocker lkr(lk);
-
+	    drain();
 	ret.reserve(pool.size());
 	for (Entry &e : pool)
 	    ret.push_back(hold ? take(e) : e.obj.get());
@@ -321,11 +339,7 @@ public:
     void lock(void) {
 	Locker lkr(lk);
 
-	while (locked)
-	    change.wait();
-	locked = true;
-	while (used || pending)
-	    change.wait();
+	drain();
     }
     void release(const C *p) {
 	FastLocker lkr(lk);
@@ -334,12 +348,7 @@ public:
 	--it->inuse;
 	--used;
 	change.broadcast();
-	if (locked)
-	    return;
-	if (*it->cv)
-	    it->cv->set();
-	else if (acv)
-	    acv.set();
+	wake(it);
     }
     uint size(void) const {
 	FastLocker lkr(lk);
@@ -358,9 +367,9 @@ public:
 
 private:
     struct Entry {
-	unique_ptr<C> obj;
 	unique_ptr<AsyncCondvar> cv;
 	uint inuse = 0;
+	unique_ptr<C> obj;
     };
     using iterator = vector<Entry>::iterator;
 
@@ -375,7 +384,15 @@ private:
 
 	lk.lock();
 	--pending;
-	return take(pool.emplace_back(std::move(obj), std::move(rcv)));
+	return take(pool.emplace_back(std::move(rcv), 0U, std::move(obj)));
+    }
+    // lk held: set locked once free, then wait for all users to release
+    void drain(void) {
+	while (locked)
+	    change.wait();
+	locked = true;
+	while (used || pending)
+	    change.wait();
     }
     iterator find(const C *p) {
 	return ranges::find(pool, p, [](const Entry &e) {
@@ -400,7 +417,9 @@ private:
 	}
 	return n + pending < lmt ? create() : nullptr;
     }
+    // remove up to cnt idle entries that exist now, waiting for busy ones
     void reap(uint cnt, vector<Entry> &dead) {
+	cnt = (uint)min<size_t>(cnt, pool.size());
 	for (;;) {
 	    if (!locked) {
 		size_t keep = 0;
@@ -432,16 +451,26 @@ private:
 	++used;
 	return e.obj.get();
     }
+    // pass one wakeup to a sticky waiter on it, else to any waiter
+    void wake(iterator it) {
+	if (locked)
+	    return;
+	if (it != pool.end() && *it->cv)
+	    it->cv->set();
+	else if (acv)
+	    acv.set();
+    }
 
+    AsyncCondvar acv;
+    Condvar change { lk };
     size_t cursor = 0;
+    mutable Lock lk;
     uint lmt;
     bool locked = false;
     const uint maxuse;
-    uint pending = 0, used = 0;
+    uint pending = 0;
     vector<Entry> pool;
-    mutable Lock lk;
-    Condvar change { lk };
-    AsyncCondvar acv;
+    uint used = 0;
 };
 
 #endif // ResourcePool_h

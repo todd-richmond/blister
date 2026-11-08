@@ -372,11 +372,12 @@ public:
 	return state.compare_exchange_strong(expected, WRITE_BIT,
 	    memory_order_acquire, memory_order_relaxed);
     }
+    // increment like lock_shared() so racing readers cannot cause failure
     __forceinline bool try_lock_shared(void) {
-	uint32_t expected = state.load(memory_order_relaxed);
-
-	return !(expected & WRITE_BIT) && state.compare_exchange_strong(expected,
-	    expected + 1, memory_order_acquire, memory_order_relaxed);
+	if (LIKELY(!(state.fetch_add(1, memory_order_acquire) & WRITE_BIT)))
+	    return true;
+	state.fetch_sub(1, memory_order_relaxed);
+	return false;
     }
     __forceinline bool try_uplock(void) {
 	uint32_t expected = 1;
@@ -417,7 +418,7 @@ public:
 	uint pos;
 
 	while ((pos = ticket - current.load(memory_order_acquire)) != 0)
-	    spin_release(LIKELY(pos < yield), true);
+	    spin_release(LIKELY(pos <= yield), true);
     }
     __forceinline bool try_lock() {
 	uint32_t n = next.load(memory_order_relaxed);
@@ -433,9 +434,10 @@ public:
     }
 
 private:
+    // separate lines so arrivals taking tickets do not disturb spinners
     alignas(CACHELINE_SZ) atomic<uint32_t> current = 0;
-    atomic<uint32_t> next = 0;
     const uint yield;
+    alignas(CACHELINE_SZ) atomic<uint32_t> next = 0;
 };
 
 using FastTicketLocker = FastLockerTemplate<TicketLock>;
@@ -666,8 +668,7 @@ public:
 	    }
 	    spin_release();
 	}
-	if (LIKELY(msec == INFINITE ? (n->sema4.acquire(), true) :
-	    n->sema4.try_acquire_for(msec))) {
+	if (LIKELY(n->sema4.try_acquire_for(msec))) {
 	    recycle(n);
 	    return Released;
 	}
@@ -680,21 +681,23 @@ public:
 private:
     enum : uint { CANCELLED, PENDING, TAKEN };
 
-    struct Node {
+    // cacheline aligned so spinning waiters do not share with releasers
+    struct alignas(CACHELINE_SZ) Node {
 	Node *allnext = nullptr;
 	atomic<Node *> next = nullptr;
 	FastSemaphore sema4;
 	atomic<uint> state = TAKEN;
     };
 
-    // ABA-safe lock-free Treiber stack head (64-bit: 48-bit ptr + 16-bit tag)
+    // ABA-safe lock-free Treiber stack head: 48-bit ptr + 16-bit tag on
+    // 64-bit or 32-bit ptr + 32-bit tag on 32-bit platforms
     template<class N>
     class TaggedStack: nocopy {
 	static_assert(atomic<uint64_t>::is_always_lock_free);
-	static_assert(sizeof(N *) == 8, "TaggedStack requires 64-bit pointers");
 
-	static constexpr uint64_t ONE = (uint64_t)1 << 48;
-	static constexpr uint64_t PMASK = 0xFFFFFFFFFFFFULL;
+	static constexpr uint SHIFT = sizeof(N *) == 8 ? 48 : 32;
+	static constexpr uint64_t ONE = (uint64_t)1 << SHIFT;
+	static constexpr uint64_t PMASK = ONE - 1;
 	atomic<uint64_t> head = 0;
 
 	static __forceinline uint64_t pack(N *p, uint64_t tagged) {
@@ -718,6 +721,18 @@ private:
 		    return p;
 	    }
 	    return nullptr;
+	}
+	// pop n only if on top; caller owns n so it cannot be re-pushed
+	bool pop_if(N *n) {
+	    uint64_t old = head.load(memory_order_acquire);
+
+	    while (unpack(old) == n) {
+		if (head.compare_exchange_weak(old, pack(n->next.load(
+		    memory_order_relaxed), old + ONE), memory_order_acq_rel,
+		    memory_order_acquire))
+		    return true;
+	    }
+	    return false;
 	}
 
 	void push(N *n) {
@@ -774,10 +789,17 @@ private:
 	waitstack.push(n);
     }
     __forceinline void recycle(Node *n) { freelist.push(n); }
-    // cancel a pending wait or consume a release already in flight
+    // cancel a pending wait or consume a release already in flight. A node
+    // still on top is unlinked and reused directly, otherwise it is marked
+    // cancelled for a later release() to recycle
     bool unwait(Node *n) {
 	uint s = PENDING;
 
+	if (LIKELY(waitstack.pop_if(n))) {
+	    waiters.fetch_sub(1, memory_order_acq_rel);
+	    recycle(n);
+	    return true;
+	}
 	if (LIKELY(n->state.compare_exchange_strong(s, CANCELLED,
 	    memory_order_acq_rel, memory_order_acquire))) {
 	    waiters.fetch_sub(1, memory_order_acq_rel);
@@ -946,8 +968,13 @@ public:
     __forceinline void reference(void) {
 	cnt.fetch_add(1, memory_order_relaxed);
     }
+    // only the final release needs acquire; an acquire load is used instead
+    // of a fence since tsan does not model fences
     __forceinline bool release(void) {
-	return cnt.fetch_sub(1, memory_order_acq_rel) == 1;
+	if (LIKELY(cnt.fetch_sub(1, memory_order_release) != 1))
+	    return false;
+	(void)cnt.load(memory_order_acquire);
+	return true;
     }
 
 private:
@@ -971,6 +998,9 @@ public:
 
     static Thread MainThread;
 
+    // Thread started by start() that is running the caller or nullptr
+    static Thread *current(void);
+
     int exitStatus(void) const { return retval; }
     thread_hdl_t getHandle(void) const { return hdl; }
     thread_id_t getId(void) const { return id.load(memory_order_acquire); }
@@ -982,8 +1012,11 @@ public:
     bool terminated(void) const { return getState() == Terminated; }
 
     explicit operator thread_hdl_t(void) const { return hdl; }
+    // wrapped and idle Threads have no id so only match themselves
     friend bool operator ==(const Thread &a, const Thread &b) {
-	return THREAD_EQUAL(a.getId(), b.getId());
+	thread_id_t tid = a.getId();
+
+	return &a == &b || (tid != NOID && THREAD_EQUAL(tid, b.getId()));
     }
 
     bool priority(int pri = 0);			// -20 -> 20
@@ -1013,6 +1046,7 @@ private:
     ThreadRoutine main = nullptr;
     int retval = 0;
     uint stacksize = 0;
+    bool joining = false;		// a wrapped thread may only be joined once
     FastSemaphore started;
     atomic<ThreadState> state { Init };
 

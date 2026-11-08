@@ -62,7 +62,6 @@ public:
 
 	cache_map.reserve(cnt && cnt < heur ? cnt : heur);
     }
-    ~LRUCache() { clear(); }
 
     void clear(void) {
 	lru_list freed;
@@ -94,6 +93,7 @@ public:
 	}
 	return entry;
     }
+    // takes ownership of new[] allocated data unless returning false
     bool put(C &entry, const void *data, ulong sz) {
 	if (UNLIKELY(sz > maxsz.load(memory_order_relaxed))) {
 	    entry.data = nullptr;
