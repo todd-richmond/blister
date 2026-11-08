@@ -1002,7 +1002,7 @@ protected:
     virtual void onStop(void) {}
 
 private:
-    static constexpr thread_id_t NOID = (thread_id_t)-1;
+    static inline const thread_id_t NOID = (thread_id_t)-1;
 
     void *argument = nullptr;
     Condvar cv { lck };
