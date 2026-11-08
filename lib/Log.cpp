@@ -416,7 +416,7 @@ void Log::LogFile::unlock(void) const {
 }
 
 WARN_PUSH_DISABLE(-Wstrict-overflow)
-Log::Log(Level level): cv(lck), ft(*this), lvl(level) {
+Log::Log(Level level): lvl(level) {
     format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
 }
 WARN_POP()

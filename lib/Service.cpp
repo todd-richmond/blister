@@ -531,8 +531,7 @@ void *Service::open(uint size) {
 Lock ServiceData::lock;
 
 ServiceData::ServiceData(const tchar *service, uint num, uint size):
-    count(0), counter(0), data(nullptr), ctrs(num), datasz(0), mapsz(size),
-    help(0), init(false), last(0), offset(0), map(nullptr), name(service) {}
+    ctrs(num), mapsz(size), name(service) {}
 
 DWORD ServiceData::open(LPWSTR lpDeviceNames) {
     FastLocker lkr(lock);

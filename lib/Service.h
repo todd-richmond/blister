@@ -196,14 +196,14 @@ public:
 	PERF_DETAIL_NOVICE);
 
 private:
-    atomic_int count;
-    uint counter;
-    char *data;
-    uint ctrs, datasz, mapsz;
-    uint help;
-    bool init;
-    uint last, offset;
-    void *map;
+    atomic_int count = 0;
+    uint counter = 0;
+    char *data = nullptr;
+    uint ctrs, datasz = 0, mapsz;
+    uint help = 0;
+    bool init = false;
+    uint last = 0, offset = 0;
+    void *map = nullptr;
     tstring name;
     static Lock lock;
 };

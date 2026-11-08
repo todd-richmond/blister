@@ -102,10 +102,7 @@ public:
 
     explicit Sockaddr(const addrinfo *ai) { set(ai); }
     explicit Sockaddr(const hostent *h) { set(h); }
-    explicit Sockaddr(Proto proto = TCP) {
-	ZERO(addr);
-	family(proto);
-    }
+    explicit Sockaddr(Proto proto = TCP): addr() { family(proto); }
     explicit Sockaddr(const sockaddr &sa) { set(sa); }
     explicit Sockaddr(const tchar *host, Proto proto = TCP) {
 	set(host, proto);
@@ -229,6 +226,7 @@ private:
     static SockInit init;
 #endif
 
+    // only Sockaddr(Proto) zeroes - every other constructor sets all of it
     sockaddr_any addr;
     mutable tstring name;
     static constexpr sa_family_t families[] = {

@@ -337,7 +337,7 @@ private:
     };
 
     Lock lck;
-    Condvar cv;
+    Condvar cv { lck };
     ThreadLocalClass<Tlsdata> tls;
     LogFile afd{false, Err, T("stderr"), true}, ffd{true, Info, T("stdout"),
 	true};
@@ -351,7 +351,7 @@ private:
     bool flushpaused = false, pauserequested = false;
     tstring fmt;
     ThreadGroup ftg;
-    FlushThread ft;
+    FlushThread ft { *this };
     bool gmt = false, mp = true;
     tstring last_format;
     time_t last_sec = 0;

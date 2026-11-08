@@ -70,8 +70,6 @@ class BLISTER HTTPClient: nocopy {
 public:
     using attrmap = unordered_multimap<tstring, tstring, strihash, strieq>;
 
-    HTTPClient(): sstrm((streamsize)(3L * 1460)) {}
-
     friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
 	os << hc.sts << '\n';
 	for (const auto &[key, value] : hc.responses())
@@ -138,7 +136,7 @@ protected:
     unique_ptr<char[]> result;
     uint rto = 90 * 1000;
     Socket sock;
-    sockstream sstrm;
+    sockstream sstrm { (streamsize)(3L * 1460) };
     uint sts = 0;
     ulong sz = 0;
     uint wto = 60 * 1000;

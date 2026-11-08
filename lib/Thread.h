@@ -542,11 +542,6 @@ public:
     CountedSemaphore() = default;
 
     explicit __forceinline operator bool(void) const { return waiting() != 0; }
-    __forceinline uint waiting(void) const {
-	int_fast32_t c = cnt.load(memory_order_acquire);
-
-	return c < 0 ? (uint)-c : 0;
-    }
 
     void acquire(void) {
 	if (UNLIKELY(cnt.fetch_sub(1, memory_order_acq_rel) <= 0))
@@ -605,6 +600,11 @@ public:
 	sema4.acquire();
 	return true;
     }
+    __forceinline uint waiting(void) const {
+	int_fast32_t c = cnt.load(memory_order_acquire);
+
+	return c < 0 ? (uint)-c : 0;
+    }
 
 private:
     atomic_int_fast32_t cnt = 0;
@@ -615,40 +615,13 @@ private:
 class BLISTER LifoSemaphore: nocopy {
 public:
     LifoSemaphore() = default;
-    // wait for woken and cancelled waiters to finish with their nodes
-    ~LifoSemaphore() {
-	Node *n = allnodes.load(memory_order_acquire);
-	uint total = 0;
+    ~LifoSemaphore();
 
-	for (const Node *a = n; a; a = a->allnext)
-	    ++total;
-	for (;;) {
-	    uint idle = 0;
-
-	    broadcast();
-	    for (const Node *f = freelist.top(); f; f =
-		f->next.load(memory_order_acquire))
-		++idle;
-	    if (idle >= total && !waiters.load(memory_order_acquire))
-		break;
-	    THREAD_YIELD();
-	}
-	while (n) {
-	    Node *a = n->allnext;
-
-	    delete n;
-	    n = a;
-	}
-    }
+    enum WaitResult: uint { Cancelled, Released, Timeout };
 
     explicit __forceinline operator bool(void) const {
 	return waiters.load(memory_order_acquire) != 0;
     }
-    __forceinline uint waiting(void) const {
-	return (uint)waiters.load(memory_order_acquire);
-    }
-
-    enum WaitResult: uint { Released, Timeout, Cancelled };
 
     void acquire(uint spin = 0) {
 	(void)wait(INFINITE, spin, [] { return false; });
@@ -672,7 +645,6 @@ public:
 	}
 	return 0;
     }
-
     __forceinline bool try_acquire(void) { return false; }  // NOSONAR
     bool try_acquire_for(ulong msec, uint spin = 0) {
 	return wait(msec, spin, [] { return false; }) == Released;
@@ -701,15 +673,18 @@ public:
 	}
 	return unwait(n) ? Timeout : Released;
     }
+    __forceinline uint waiting(void) const {
+	return (uint)waiters.load(memory_order_acquire);
+    }
 
 private:
-    enum : uint { PENDING, TAKEN, CANCELLED };
+    enum : uint { CANCELLED, PENDING, TAKEN };
 
     struct Node {
-	atomic<Node *> next = nullptr;
-	atomic<uint> state = TAKEN;
-	FastSemaphore sema4;
 	Node *allnext = nullptr;
+	atomic<Node *> next = nullptr;
+	FastSemaphore sema4;
+	atomic<uint> state = TAKEN;
     };
 
     // ABA-safe lock-free Treiber stack head (64-bit: 48-bit ptr + 16-bit tag)
@@ -718,21 +693,32 @@ private:
 	static_assert(atomic<uint64_t>::is_always_lock_free);
 	static_assert(sizeof(N *) == 8, "TaggedStack requires 64-bit pointers");
 
+	static constexpr uint64_t ONE = (uint64_t)1 << 48;
 	static constexpr uint64_t PMASK = 0xFFFFFFFFFFFFULL;
-	static constexpr uint64_t ONE   = (uint64_t)1 << 48;
-	atomic<uint64_t> head;
+	atomic<uint64_t> head = 0;
 
-	static __forceinline N *unpack(uint64_t v) {
-	    return (N *)(uintptr_t)(v & PMASK);
-	}
 	static __forceinline uint64_t pack(N *p, uint64_t tagged) {
 	    return ((uint64_t)(uintptr_t)p & PMASK) | (tagged & ~PMASK);
 	}
+	static __forceinline N *unpack(uint64_t v) {
+	    return (N *)(uintptr_t)(v & PMASK);
+	}
 
     public:
-	TaggedStack() { head.store(0, memory_order_relaxed); }
+	N *pop(void) {
+	    uint64_t old = head.load(memory_order_acquire);
+	    N *p;
 
-	N *top(void) const { return unpack(head.load(memory_order_acquire)); }
+	    while ((p = unpack(old)) != nullptr) {
+		uint64_t nw = pack(p->next.load(memory_order_acquire), old +
+		    ONE);
+
+		if (head.compare_exchange_weak(old, nw,
+		    memory_order_acq_rel, memory_order_acquire))
+		    return p;
+	    }
+	    return nullptr;
+	}
 
 	void push(N *n) {
 	    uint64_t old = head.load(memory_order_relaxed);
@@ -743,25 +729,13 @@ private:
 		memory_order_release, memory_order_relaxed));
 	}
 
-	N *pop(void) {
-	    uint64_t old = head.load(memory_order_acquire);
-	    N *p;
-
-	    while ((p = unpack(old)) != nullptr) {
-		uint64_t nw = pack(p->next.load(memory_order_acquire), old + ONE);
-
-		if (head.compare_exchange_weak(old, nw,
-		    memory_order_acq_rel, memory_order_acquire))
-		    return p;
-	    }
-	    return nullptr;
-	}
+	N *top(void) const { return unpack(head.load(memory_order_acquire)); }
     };
 
-    alignas(CACHELINE_SZ) TaggedStack<Node> waitstack;
-    alignas(CACHELINE_SZ) TaggedStack<Node> freelist;
     alignas(CACHELINE_SZ) atomic<Node *> allnodes { nullptr };
+    alignas(CACHELINE_SZ) TaggedStack<Node> freelist;
     alignas(CACHELINE_SZ) atomic_uint_fast32_t waiters { 0 };
+    alignas(CACHELINE_SZ) TaggedStack<Node> waitstack;
 
     Node *claim(void) {
 	Node *n = freelist.pop();
@@ -784,11 +758,22 @@ private:
 	    return n;
 	}
     }
-    __forceinline void recycle(Node *n) { freelist.push(n); }
+    Node *popwait(void) {
+	for (uint i = 0; ; ++i) {
+	    Node *n = waitstack.pop();
+
+	    if (LIKELY(n != nullptr))
+		return n;
+	    if (LIKELY(!waiters.load(memory_order_seq_cst)))
+		return nullptr;
+	    spin_release(LIKELY(i < 128), true);
+	}
+    }
     __forceinline void pushwait(Node *n) {
 	waiters.fetch_add(1, memory_order_seq_cst);
 	waitstack.push(n);
     }
+    __forceinline void recycle(Node *n) { freelist.push(n); }
     // cancel a pending wait or consume a release already in flight
     bool unwait(Node *n) {
 	uint s = PENDING;
@@ -801,17 +786,6 @@ private:
 	n->sema4.acquire();
 	recycle(n);
 	return false;
-    }
-    Node *popwait(void) {
-	for (uint i = 0; ; ++i) {
-	    Node *n = waitstack.pop();
-
-	    if (LIKELY(n != nullptr))
-		return n;
-	    if (LIKELY(!waiters.load(memory_order_seq_cst)))
-		return nullptr;
-	    spin_release(LIKELY(i < 128), true);
-	}
     }
 };
 
@@ -935,20 +909,7 @@ public:
 	return h == -1 || semctl(h, 0, IPC_RMID) == 0;
     }
     bool open(const tchar *name = nullptr, uint init = 0, bool excl = false);
-    // sem_op 0 waits for zero so post in SHRT_MAX chunks
-    bool set(uint cnt = 1) {				// NOSONAR
-	sembuf op;
-
-	op.sem_num = 0;
-	op.sem_flg = 0;
-	while (cnt) {
-	    op.sem_op = (short)min(cnt, (uint)SHRT_MAX);
-	    if (!semop(op))
-		return false;
-	    cnt -= (uint)op.sem_op;
-	}
-	return true;
-    }
+    bool set(uint cnt = 1);
     __forceinline bool trywait(void) {			// NOSONAR
 	sembuf op;
 
@@ -957,58 +918,7 @@ public:
 	op.sem_flg = IPC_NOWAIT;
 	return semop(op);
     }
-    __forceinline bool wait(ulong msec = INFINITE) {	// NOSONAR
-	sembuf op;
-
-	op.sem_num = 0;
-	op.sem_op = -1;
-	op.sem_flg = 0;
-	if (msec == INFINITE)
-	    return semop(op);
-#ifdef BSD_BASE
-	// no semtimedop() so poll with a short backoff until the deadline
-	msec_t end = mticks() + msec;
-	ulong nap = 1;
-
-	op.sem_flg = IPC_NOWAIT;
-	for (;;) {
-	    if (::semop(hdl, &op, 1) == 0)
-		return true;
-	    if (errno != EAGAIN && errno != EINTR)
-		return false;
-	    msec_t now = mticks();
-
-	    if (now >= end)
-		return false;
-	    if (errno == EAGAIN) {
-		ulong left = (ulong)(end - now);
-
-		msleep(nap < left ? nap : left);
-		if (nap < 10)
-		    nap *= 2;
-	    }
-	}
-#else
-	const msec_t end = mticks() + msec;
-
-	for (;;) {
-	    timespec ts{};
-
-	    time_adjust_msec(&ts, msec);
-	    if (LIKELY(!semtimedop(hdl, &op, 1, &ts)))
-		return true;
-	    if (errno != EINTR)
-		return false;
-
-	    const msec_t now = mticks();
-
-	    if (now >= end)
-		return false;
-	    msec = (ulong)(end - now);
-	}
-#endif
-    }
-
+    bool wait(ulong msec = INFINITE);			// NOSONAR
 protected:
     int hdl = -1;
 
@@ -1056,7 +966,7 @@ enum ThreadState: uint8_t { Init, Running, Suspended, Terminated };
 class BLISTER Thread: nocopy {
 public:
     explicit Thread(thread_hdl_t handle, ThreadGroup *tg = nullptr);
-    Thread(void);
+    Thread() = default;
     virtual ~Thread();
 
     static Thread MainThread;
@@ -1077,11 +987,11 @@ public:
     }
 
     bool priority(int pri = 0);			// -20 -> 20
+    bool resume(void);
     bool start(uint stacksz = 0, ThreadGroup *tg = nullptr, bool suspend =
 	false);
     bool start(ThreadRoutine main, void *data = nullptr, uint stacksz = 0,
 	ThreadGroup *tg = nullptr, bool suspend = false);
-    bool resume(void);
     bool stop(void);
     bool wait(ulong timeout = INFINITE);
     static void thread_cleanup(void *data, ThreadLocalFree func);
@@ -1092,17 +1002,19 @@ protected:
     virtual void onStop(void) {}
 
 private:
-    mutable Lock lck;
-    Condvar cv;
+    static constexpr thread_id_t NOID = (thread_id_t)-1;
+
     void *argument = nullptr;
-    ThreadGroup *group;
-    thread_hdl_t hdl;
-    atomic<thread_id_t> id;
+    Condvar cv { lck };
+    ThreadGroup *group = nullptr;
+    thread_hdl_t hdl {};
+    atomic<thread_id_t> id { NOID };
+    mutable Lock lck;
     ThreadRoutine main = nullptr;
     int retval = 0;
-    atomic<ThreadState> state;
     uint stacksize = 0;
     FastSemaphore started;
+    atomic<ThreadState> state { Init };
 
     void clear(void);
     bool launch(Locker &lkr);
@@ -1116,16 +1028,16 @@ private:
 // manage a group of one or more, possibly dissimilar threads
 class BLISTER ThreadGroup: nocopy {
 public:
-    ThreadGroup(void);
+    ThreadGroup() = default;
     virtual ~ThreadGroup();
 
     static ThreadGroup MainThreadGroup;
 
+    ulong getId(void) const { return id; }
+    const Thread &getMainThread(void) const { return master; }
     ThreadState getState(void) const {
 	return state.load(memory_order_acquire);
     }
-    ulong getId(void) const { return id; }
-    const Thread &getMainThread(void) const { return master; }
     size_t size(void) const { Locker lkr(cvlck); return threads.size(); }
 
     friend bool operator ==(const ThreadGroup &a, const ThreadGroup &b) {
@@ -1151,12 +1063,13 @@ protected:
     virtual void onSuspend(void) {}
 
 private:
+    Condvar cv { cvlck };
     mutable Lock cvlck;
-    Condvar cv;
-    ulong id;
+    ulong id = ++next_id;
     const Thread *pinned = nullptr;
-    atomic<ThreadState> state;
+    atomic<ThreadState> state { Init };
     set<Thread *> threads;
+    // last since it is destroyed first and its destructor uses the above
     Thread master;
     static atomic_ulong next_id;
 

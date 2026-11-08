@@ -272,7 +272,7 @@ public:
     static constexpr child_t child{};
 
     explicit DispatchObj(Dispatcher &d, DispatchObjCB cb = nullptr): dcb(cb),
-	dspr(d), flags(0) {}
+	dspr(d) {}
     DispatchObj(child_t, DispatchObj &parent, DispatchObjCB cb = nullptr);
     virtual ~DispatchObj();
 
@@ -299,7 +299,7 @@ protected:
 
     DispatchObjCB dcb;
     Dispatcher &dspr;
-    dspflag_t flags;
+    dspflag_t flags = 0;
     DispatchMsg msg = DispatchNone;
 
 private:

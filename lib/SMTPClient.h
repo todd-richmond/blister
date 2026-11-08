@@ -109,7 +109,6 @@ private:
 
 class BLISTER SMTPClient: nocopy {
 public:
-    SMTPClient(): sstrm(sock) {}
     virtual ~SMTPClient() = default;
 
     int code(void) const { return atoi<int>(sts.c_str()); }
@@ -208,7 +207,7 @@ public:
 protected:
     tstring exts, multi, sts;
     Socket sock;
-    sockstream sstrm;
+    sockstream sstrm { sock };
     fstream *fstrm = nullptr;
     iostream *strm = &sstrm;
     bool ext_8bitmime = false, ext_chunking = false, ext_smtputf8 = false;

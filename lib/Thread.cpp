@@ -22,7 +22,6 @@
 
 using ThreadLocalMap = vector<pair<void *, ThreadLocalFree>>;
 
-static const thread_id_t NOID = (thread_id_t)-1;
 static thread_local ThreadGroup *curgroup;
 
 // cleans up threads not started by Thread; key deleted at library unload
@@ -180,7 +179,100 @@ bool SharedSemaphore::open(const tchar *name, uint init, bool exclusive) {
     hdl = semget(key, 1, IPC_CREAT | S_IRUSR | S_IWUSR);
     return hdl != -1;
 }
+
+// sem_op 0 waits for zero so post in SHRT_MAX chunks
+bool SharedSemaphore::set(uint cnt) {
+    sembuf op;
+
+    op.sem_num = 0;
+    op.sem_flg = 0;
+    while (cnt) {
+	op.sem_op = (short)min(cnt, (uint)SHRT_MAX);
+	if (!semop(op))
+	    return false;
+	cnt -= (uint)op.sem_op;
+    }
+    return true;
+}
+
+bool SharedSemaphore::wait(ulong msec) {
+    sembuf op;
+
+    op.sem_num = 0;
+    op.sem_op = -1;
+    op.sem_flg = 0;
+    if (msec == INFINITE)
+	return semop(op);
+#ifdef BSD_BASE
+    // no semtimedop() so poll with a short backoff until the deadline
+    msec_t end = mticks() + msec;
+    ulong nap = 1;
+
+    op.sem_flg = IPC_NOWAIT;
+    for (;;) {
+	if (::semop(hdl, &op, 1) == 0)
+	    return true;
+	if (errno != EAGAIN && errno != EINTR)
+	    return false;
+	msec_t now = mticks();
+
+	if (now >= end)
+	    return false;
+	if (errno == EAGAIN) {
+	    ulong left = (ulong)(end - now);
+
+	    msleep(nap < left ? nap : left);
+	    if (nap < 10)
+		nap *= 2;
+	}
+    }
+#else
+    const msec_t end = mticks() + msec;
+
+    for (;;) {
+	timespec ts{};
+
+	time_adjust_msec(&ts, msec);
+	if (LIKELY(!semtimedop(hdl, &op, 1, &ts)))
+	    return true;
+	if (errno != EINTR)
+	    return false;
+
+	const msec_t now = mticks();
+
+	if (now >= end)
+	    return false;
+	msec = (ulong)(end - now);
+    }
 #endif
+}
+#endif
+
+// wait for woken and cancelled waiters to finish with their nodes
+LifoSemaphore::~LifoSemaphore() {
+    Node *n = allnodes.load(memory_order_acquire);
+    uint total = 0;
+
+    for (const Node *a = n; a; a = a->allnext)
+	++total;
+    for (;;) {
+	uint idle = 0;
+
+	broadcast();
+	for (const Node *f = freelist.top(); f; f =
+	    f->next.load(memory_order_acquire))
+	    ++idle;
+	if (idle >= total && !waiters.load(memory_order_acquire))
+	    break;
+	THREAD_YIELD();
+    }
+    while (n) {
+	Node *a = n->allnext;
+
+	delete n;
+	n = a;
+    }
+}
 
 bool DLLibrary::open(const tchar *dll) {
     close();
@@ -324,13 +416,10 @@ void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
     WARN_POP()
 }
 
-Thread::Thread(thread_hdl_t handle, ThreadGroup *tg): cv(lck), hdl(handle),
-    id(NOID), state(Running) {
+Thread::Thread(thread_hdl_t handle, ThreadGroup *tg): hdl(handle),
+    state(Running) {
     group = ThreadGroup::add(*this, tg);
 }
-
-Thread::Thread(void): cv(lck), group(nullptr), hdl(0), id(NOID),
-    state(Init) {}
 
 Thread::~Thread() {
     if (hdl && getId() != NOID)
@@ -572,8 +661,6 @@ bool Thread::wait(ulong timeout) {
     return true;
 }
 
-ThreadGroup::ThreadGroup(void): cv(cvlck), id(++next_id), state(Init) {}
-
 ThreadGroup::~ThreadGroup() {
     wait(INFINITE, true);
     waitForMain(INFINITE);
@@ -673,7 +760,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	    } else {
 		thread_id_t tid = thread->getId();
 
-		if (thread == pinned || (tid != NOID &&
+		if (thread == pinned || (tid != Thread::NOID &&
 		    !THREAD_EQUAL(tid, self)))
 		    running = true;
 		++it;
