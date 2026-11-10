@@ -59,17 +59,11 @@ void Config::clear(void) {
     clear_locked();
 }
 
-void Config::erase(const tchar *key, const tchar *sect) {
-    tchar buf[KEYSZ];
-    tstring str;
-    tstring_view fkey = sect && *sect ? joinkey(buf, str, sect, tstrlen(sect),
-	key, tstrlen(key)) : tstring_view(key);
+void Config::erase(const strkey &key, const tchar *sect) {
     SpinWLocker lkr(lck);
 
-    if (auto it = amap.find(fkey); it != amap.end()) {
-	KV *kv = it->second;
-
-	amap.erase(it);
+    if (const KV *kv = getkv(key, sect)) {
+	amap.erase(kv->key());
 	delkv(kv);
     }
 }
@@ -107,12 +101,15 @@ void Config::expandkv(const KV *kv, tstring &val) const {
 	// stop runaway expansion of self referencing values
 	if (++expansions > MAXEXPAND)
 	    break;
-	val.replace(spos, epos - spos + 1, it->second->val, it->second->vlen);
-	search = spos;
+	const KV *ekv = it->second;
+
+	val.replace(spos, epos - spos + 1, ekv->val, ekv->vlen);
+	// rescan only values that themselves expand so '' stays literal
+	search = ekv->expand ? spos : spos + ekv->vlen;
     }
 }
 
-tstring Config::getstr(tstring_view key, const tchar *def, const tchar *sect)
+tstring Config::getstr(const strkey &key, const tchar *def, const tchar *sect)
     const {
     SpinRLocker lkr(lck);
     const KV *kv = getkv(key, sect);
@@ -127,19 +124,12 @@ tstring Config::getstr(tstring_view key, const tchar *def, const tchar *sect)
     return def ? tstring(def) : tstring();
 }
 
-const Config::KV *Config::getkv(const tchar *key, const tchar *sect) const {
-    if (sect && *sect)
-	return getkv(tstring_view(key, tstrlen(key)), sect);
-    auto it = amap.find(key);
-
-    return it == amap.end() ? nullptr : it->second;
-}
-
-const Config::KV *Config::getkv(tstring_view key, const tchar *sect) const {
+// a literal key hash is only usable without a section
+const Config::KV *Config::getkv(const strkey &key, const tchar *sect) const {
     tchar buf[KEYSZ];
     tstring str;
-    auto it = amap.find(sect && *sect ? joinkey(buf, str, sect, tstrlen(sect),
-	key.data(), key.size()) : key);
+    auto it = sect && *sect ? amap.find(joinkey(buf, str, sect, tstrlen(sect),
+	key.data(), key.size())) : amap.find(key);
 
     return it == amap.end() ? nullptr : it->second;
 }
@@ -356,21 +346,15 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     vlen, const tchar *sect, size_t slen, bool append) {
     tchar kbuf[KEYSZ];
     tstring kstr, s;
-    KV *kv, *oldkv;
     tstring_view fkey = UNLIKELY(slen) ? joinkey(kbuf, kstr, sect, slen, key,
 	klen) : tstring_view(key, klen);
-    auto it = amap.find(fkey);
 
     if (UNLIKELY(ck))
 	sum = rapid_hash(val, vlen * sizeof (tchar), rapid_hash(fkey.data(),
 	    fkey.size() * sizeof (tchar), sum));
-    if (it == amap.end()) {
-	kv = newkv(fkey.data(), fkey.size(), val, vlen);
-	amap.emplace(kv->key(), kv);
-	return *this;
-    }
-    oldkv = it->second;
-    if (append) {
+    if (auto it = append ? amap.find(fkey) : amap.end(); it != amap.end()) {
+	const KV *oldkv = it->second;
+
 	s.reserve(oldkv->vlen + vlen + (oldkv->quote ? 2 : 0));
 	if (oldkv->quote)
 	    s += oldkv->quote;
@@ -385,14 +369,20 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	val = s.c_str();
 	vlen = s.size();
     }
-    kv = newkv(fkey.data(), fkey.size(), val, vlen);
-    // reuse the map node rather than erase + emplace
-    auto nh = amap.extract(it);
 
-    nh.key() = kv->key();
-    nh.mapped() = kv;
-    amap.insert(std::move(nh));
-    delkv(oldkv);
+    KV *kv = newkv(fkey.data(), fkey.size(), val, vlen);
+    auto [it, inserted] = amap.try_emplace(kv->key(), kv);
+
+    if (!inserted) {
+	// reuse the map node rather than erase + emplace
+	const KV *oldkv = it->second;
+	auto nh = amap.extract(it);
+
+	nh.key() = kv->key();
+	nh.mapped() = kv;
+	amap.insert(std::move(nh));
+	delkv(oldkv);
+    }
     return *this;
 }
 

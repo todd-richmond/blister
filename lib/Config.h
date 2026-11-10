@@ -101,30 +101,27 @@ public:
 	return sum;
     }
     void clear(void);
-    void erase(const tchar *key, const tchar *sect = nullptr);
-    bool exists(const tchar *key, const tchar *sect = nullptr) const {
+    void erase(const strkey &key, const tchar *sect = nullptr);
+    bool exists(const strkey &key, const tchar *sect = nullptr) const {
 	SpinRLocker lkr(lck);
 
 	return getkv(key, sect) != nullptr;
     }
-    template<typename K> requires is_convertible_v<const K &, tstring_view>
-    tstring get(const K &key, const tchar *def = nullptr, const tchar *sect =
-	nullptr) const {
-	return getstr(tstring_view(key), def, sect);
+    tstring get(const strkey &key, const tchar *def = nullptr,
+	const tchar *sect = nullptr) const {
+	return getstr(key, def, sect);
     }
-    tstring get(const tstring &key, const tstring &def) const {
-	return get(key.c_str(), def.c_str());
+    tstring get(const strkey &key, const tstring &def,
+	const tchar *sect = nullptr) const {
+	return getstr(key, def.c_str(), sect);
     }
-    tstring get(const tstring &key, const tstring &def, const tstring &sect)
+    tstring get(const strkey &key, const tstring &def, const tstring &sect)
 	const {
-	return get(key.c_str(), def.c_str(), sect.c_str());
+	return getstr(key, def.c_str(), sect.c_str());
     }
-    template<typename K, typename T> requires (is_arithmetic_v<T> &&
-	is_convertible_v<const K &, tstring_view>)
-    __forceinline T get(const K &key, T def, const tchar *sect = nullptr)
+    template<typename T> requires is_arithmetic_v<T>
+    __forceinline T get(const strkey &k, T def, const tchar *sect = nullptr)
 	const {
-	tstring_view k(key);
-
 	if constexpr (is_same_v<T, bool>)
 	    return get_num(k, def, sect, tobool);
 	else if constexpr (is_same_v<T, tchar>)
@@ -259,11 +256,12 @@ private:
     void clear_locked(void);
     void expandkv(const KV *kv, tstring &val) const;
     void reserve(ulong sz) { amap.reserve(amap.size() + sz / 64); }
-    const KV *getkv(const tchar *key, const tchar *sect) const;
-    const KV *getkv(tstring_view key, const tchar *sect) const;
-    tstring getstr(tstring_view key, const tchar *def, const tchar *sect) const;
-    template<typename K, typename T, typename F>
-    __forceinline T get_num(K key, T def, const tchar *sect, F conv) const {
+    const KV *getkv(const strkey &key, const tchar *sect) const;
+    tstring getstr(const strkey &key, const tchar *def, const tchar *sect)
+	const;
+    template<typename T, typename F>
+    __forceinline T get_num(const strkey &key, T def, const tchar *sect, F conv)
+	const {
 	SpinRLocker lkr(lck);
 	const KV *kv = getkv(key, sect);
 
@@ -279,7 +277,7 @@ private:
     bool parse(tistream &is, uint depth = 0);
     Config &set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
 	const tchar *sect, size_t slen, bool append = false);
-    static void delkv(KV *kv) { delete [] (char *)kv; }
+    static void delkv(const KV *kv) { delete [] (const char *)kv; }
     static KV *newkv(const tchar *key, size_t klen, const tchar *val, size_t
 	vlen);
     static tstring_view joinkey(tchar (&buf)[KEYSZ], tstring &str, const tchar

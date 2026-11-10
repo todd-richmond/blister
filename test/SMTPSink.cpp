@@ -60,7 +60,7 @@ static const char *dotscan(const char *p, const char *end) {
 	if (m)
 	    return p + countr_zero(m);
     }
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
     const auto hits = [](const char *s) {
 	return vandq_u8(vceqq_u8(vld1q_u8((const uint8_t *)s), vdupq_n_u8('.')),
 	    vceqq_u8(vld1q_u8((const uint8_t *)(s - 1)), vdupq_n_u8('\n')));
@@ -275,15 +275,22 @@ void SMTPSinkSocket::delivered(void) {
     if (chunks)
 	end = format_to(end, "{}", chunks);
     if (verify) {
-	if (!chunks) {
+	if (!chunks && !body.empty()) {
 	    // remove the dot that starts each stuffed line
-	    size_t o = 0;
+	    char *b = body.data(), *o = b;
+	    const char *e = b + body.size();
+	    const char *p = b + (*b == '.');
+	    const char *d = dotscan(b + 1, e);
 
-	    for (size_t i = 0; i < body.size(); ++i) {
-		if (body[i] != '.' || (i && body[i - 1] != '\n'))
-		    body[o++] = body[i];
+	    for (;;) {
+		memmove(o, p, (size_t)(d - p));
+		o += d - p;
+		if (d == e)
+		    break;
+		p = d + 1;
+		d = dotscan(p, e);
 	    }
-	    body.resize(o);
+	    body.resize((size_t)(o - b));
 	}
 	end = format_to_n(end, reply + sizeof (reply) - 2 - end,
 	    " len={} hash={:016x}", body.size(), rapid_hash(body.data(),

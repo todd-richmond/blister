@@ -186,8 +186,7 @@ private:
 	return (uint)min<streamsize>(n, INT_MAX);
     }
 
-    // write the put area then p[0,n), retrying partial writes and buffering
-    // any unwritten tail of p that fits in the freed space
+    // write put area then p[0,n) retrying; buffer any unwritten tail that fits
     streamsize drain(const char *p, streamsize n) {
 	char *pb = pbase();
 	streamsize used = pptr() - pb;
@@ -367,7 +366,8 @@ private:
 	void write(const C *s, streamsize n) {
 	    C *pp = basic_stringbuf<C>::pptr();
 
-	    if (LIKELY(n <= basic_stringbuf<C>::epptr() - pp)) {
+	    // strict: pp is null with no put area
+	    if (LIKELY(n < basic_stringbuf<C>::epptr() - pp)) {
 		memcpy(pp, s, (size_t)n * sizeof (C));
 		basic_stringbuf<C>::pbump((int)n);
 	    } else {

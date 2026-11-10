@@ -287,8 +287,7 @@ public:
 	bool head = false, http11 = false, idem = true, keep = false;
     };
 
-    // built on a Dispatcher it gets its own group, on a parent it shares it
-    // and the parent's callbacks run within client io so must not delete it
+    // on a parent shares its group; parent callbacks must not delete the client
     AsyncHTTPClient(Dispatcher &d, const Sockaddr &sa, Timing *tm = nullptr):
 	AsyncHTTPClient(new IOSocket(d, *this), sa, tm) {}
     AsyncHTTPClient(DispatchObj &parent, const Sockaddr &sa, Timing *tm =
@@ -303,8 +302,7 @@ public:
     void status(tostream &out, uint indent) const;
     void timeout(uint connect, uint io) { cto = connect; rto = io; }
 
-    // pending is requests plus one for the owner. A client deletes itself
-    // once idle after the last release() so the owner must then forget it
+    // pending counts requests + owner; self deletes once idle after release()
     void acquire(void) { pending++; }
     void release(void) {
 	if (!--pending)

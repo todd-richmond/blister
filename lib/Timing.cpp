@@ -17,6 +17,7 @@
 
 #include "stdapi.h"
 #include <algorithm>
+#include <format>
 #include "Timing.h"
 #include "Log.h"
 
@@ -161,90 +162,73 @@ tstring Timing::data(bool sort_key, uint columns) const {
     }
     begin = (!columns || last < columns) ? 0 : last - columns + 1;
     s.reserve(rows.size() * (columns ? 60 : 90) + 200);
-
     s = columns ? T("key                            msec   cnt   avg") :
 	T("key,msec,cnt,avg");
-    for (uint u = begin; u <= last; ++u) {
-	if (columns) {
-	    const tchar *header = hdrs[u];
-	    size_t header_len = tstrlen(header);
 
-	    while (header_len++ < 4)
-		s += ' ';
-	    s += header;
-	} else {
-	    s += (tchar)',';
-	    s += hdrs[u];
-	}
+    auto out = back_inserter(s);
+
+    for (uint u = begin; u <= last; ++u) {
+	if (columns)
+	    format_to(out, T("{:>4}"), hdrs[u]);
+	else
+	    format_to(out, T(",{}"), hdrs[u]);
     }
-    s += (tchar)'\n';
+    s += '\n';
     for (const Row &row : rows) {
-	tchar buf[128];
 	const Stats *stats = row.stats;
 	const uint64_t scnt = row.cnt, tot = row.tot;
 	uint64_t sum = 0;
 
 	if (columns) {
-	    tchar cbuf[24];
-	    size_t klen = stats->klen;
-	    constexpr size_t bufsz = std::size(buf);
+	    // keep the leaf end of long stack paths
+	    static constexpr size_t MAXKEY = 109;
+	    tstring_view key(stats->key, stats->klen);
+	    const tstring cnt = scnt >= 10000000ULL ?
+		std::format(T("{:4}m"), scnt / 1000000) : scnt >= 10000ULL ?
+		std::format(T("{:4}k"), scnt / 1000) :
+		std::format(T("{:5}"), scnt);
 
+	    if (key.size() > MAXKEY)
+		key.remove_prefix(key.size() - MAXKEY);
 	    for (uint u = 0; u <= begin; ++u)
 		sum += row.cnts[u];
-	    if (scnt >= 10000000ULL)
-		tsprintf(cbuf, T("%4llum"), (ullong)(scnt / 1000000));
-	    else if (scnt >= 10000ULL)
-		tsprintf(cbuf, T("%4lluk"), (ullong)(scnt / 1000));
+	    if (tot)
+		format_to(out, T("{:<29}{:>6}{:>6}{:>6}"), key, format(tot),
+		    cnt, format(scnt ? tot / scnt : 0));
 	    else
-		tsprintf(cbuf, T("%5llu"), (ullong)scnt);
-	    if (tot) {
-		tchar abuf[16], sbuf[16];
-
-		tsprintf(buf, T("%-29s%6s%6s%6s"), stats->key + (klen < bufsz
-		    - 19 ? 0 : klen - bufsz + 19), format(tot,
-		    sbuf), cbuf, format(scnt ? tot / scnt : 0, abuf));
-	    } else {
-		tsprintf(buf, T("%-35s%6s"), stats->key + (klen < bufsz -
-		    7 ? 0 : klen - bufsz + 7), cbuf);
-	    }
+		format_to(out, T("{:<35}{:>6}"), key, cnt);
 	} else {
 	    const bool quote = tstrpbrk(stats->key, T(", \t\"")) != nullptr;
 
 	    if (quote)
-		s += (tchar)'"';
+		s += '"';
 	    for (const tchar *p = stats->key; *p; ++p) {
-		if (*p == T('"') || *p == T('\\'))
-		    s += T('\\');
+		if (*p == '"')
+		    s += '"';
 		s += *p;
 	    }
 	    if (quote)
-		s += (tchar)'"';
-	    tsprintf(buf, T(",%llu,%llu,%llu"), (ullong)tot, (ullong)scnt,
-		(ullong)(scnt ? tot / scnt : 0));
+		s += '"';
+	    format_to(out, T(",{},{},{}"), tot, scnt, scnt ? tot / scnt : 0);
 	}
-	s += buf;
 	for (uint u = begin; u <= last && tot; ++u) {
 	    const uint64_t cnt = (columns && u == begin) ? sum : row.cnts[u];
 
-	    if (!columns) {
-		tsprintf(buf, T(",%llu"), (ullong)cnt);
-		s += buf;
-	    } else if (cnt == 0) {
+	    if (!columns)
+		format_to(out, T(",{}"), cnt);
+	    else if (cnt == 0)
 		s += T("    ");
-	    } else if (cnt < 100) {
-		tsprintf(buf, T(" %3llu"), (ullong)cnt);
-		s += buf;
-	    } else if (cnt >= scnt) {
+	    else if (cnt < 100)
+		format_to(out, T(" {:3}"), cnt);
+	    else if (cnt >= scnt)
 		s += T("   *");
-	    } else {
-		tsprintf(buf, T(" %2u%%"), (uint)(cnt * 100 / scnt));
-		s += buf;
-	    }
+	    else
+		format_to(out, T(" {:2}%"), cnt * 100 / scnt);
 	}
 	auto trim = s.find_last_not_of(' ');
 	if (trim != s.npos)
 	    s.erase(trim + 1);
-	s += (tchar)'\n';
+	s += '\n';
     }
     return s;
 }
@@ -280,38 +264,40 @@ void Timing::defer(Stats *stats) {
 	memory_order_relaxed));
 }
 
-const tchar *Timing::format(timing_t t, tchar *buf) {
+tstring Timing::format(timing_t t) {
     if (t < 10000LLU)
-	tsprintf(buf, T("%.3f"), (double)t / 1000.0);
+	return std::format(T("{:.3f}"), (double)t / 1000.0);
     else if (t < 100000LLU)
-	tsprintf(buf, T("%.2f"), (double)t / 1000.0);
+	return std::format(T("{:.2f}"), (double)t / 1000.0);
     else if (t < 1000000LLU)
-	tsprintf(buf, T("%llu"), (ullong)(t / 1000LLU));
+	return std::format(T("{}"), t / 1000LLU);
     else if (t < 100000000LLU)
-	tsprintf(buf, T("%.1fk"), (double)t / 1000000.0);
+	return std::format(T("{:.1f}k"), (double)t / 1000000.0);
     else if (t < 1000000000LLU)
-	tsprintf(buf, T("%lluk"), (ullong)(t / 1000000LLU));
+	return std::format(T("{}k"), t / 1000000LLU);
     else if (t < 100000000000LLU)
-	tsprintf(buf, T("%.1fm"), (double)t / 1000000000.0);
+	return std::format(T("{:.1f}m"), (double)t / 1000000000.0);
     else if (t < 1000000000000LLU)
-	tsprintf(buf, T("%llum"), (ullong)(t / 1000000000LLU));
-    else
-	tsprintf(buf, T("%llug"), (ullong)(t / 1000000000000LLU));
-    return buf;
+	return std::format(T("{}m"), t / 1000000000LLU);
+    return std::format(T("{}g"), t / 1000000000000LLU);
 }
 
 void Timing::record(void) {
     Tlsdata &tlsd(*tls);
 
-    if (!tlsd.entries.empty()) {
-	const auto &entry = tlsd.entries.back();
-	const timing_t diff = now() - entry.start;
-
-	if (entry.pathlen)
-	    add(tlsd.path, diff);
-	add(entry.caller, 0, entry.hash, diff);
+    if (tlsd.entries.empty()) {
+	stop();			// logs the mismatch
+	return;
     }
-    stop();
+
+    const auto &entry = tlsd.entries.back();
+    const timing_t diff = now() - entry.start;
+
+    if (entry.pathlen)
+	add(tlsd.path, diff);
+    add(entry.caller, 0, entry.hash, diff);
+    tlsd.path.resize(entry.pathlen);
+    tlsd.entries.pop_back();
 }
 
 void Timing::restart() {
@@ -321,8 +307,7 @@ void Timing::restart() {
 	tlsd.entries.back().start = now();
 }
 
-void Timing::start(const tchar *key, strhash_t hash) {
-    Tlsdata &tlsd(*tls);
+void Timing::start(Tlsdata &tlsd, const tchar *key, strhash_t hash) {
     size_t len = tlsd.path.size();
 
     if (len)

@@ -28,6 +28,8 @@
 
 class BLISTER HTTPServerSocket: public DispatchServerSocket {
 public:
+    // literal attribute names are hashed at compile time
+    using attrkey = basic_strkey<char, true>;
     using attrmap = unordered_map<const char *, const char *, strihash,
 	strieq>;
 #ifdef __cpp_lib_flat_map
@@ -59,9 +61,11 @@ protected:
     char *postdata = nullptr;
     ulong postsz = 0;
 
-    const char *arg(const char *name) const { return find(args, name); }
-    const char *attr(const char *name) const { return find(attrs, name); }
-    const char *postarg(const char *name) const { return find(postargs, name); }
+    const char *arg(const attrkey &name) const { return find(args, name); }
+    const char *attr(const attrkey &name) const { return find(attrs, name); }
+    const char *postarg(const attrkey &name) const {
+	return find(postargs, name);
+    }
     template<class C> ostream &operator <<(const C &c) { return ss << c; }
     void header(const char *attr, const char *val);
     using DispatchObj::error;
@@ -80,15 +84,11 @@ protected:
     virtual void post(void) { error(501); }
     // call at beginning of PUT or POST unless all body data read
     virtual void postpre(DispatchObjCB cb) { ready(cb); }
-    // allow subclasses to allocate their own postdata buffers
-    // subclasses must reset postdata to NULL in their destructor to prevent
-    // it from freeing buffer incorrectly
+    // subclass owned postdata must be nulled in its dtor to avoid this delete
     virtual void postdata_free(void) { delete [] postdata; }
     virtual void postdata_grow(DispatchObjCB cb, ulong keepsize, ulong newsize);
     virtual void put(void) { error(501); }
-    // called when reply() no longer needs its buffer data
-    // a lone request continues at once but pipelined bytes or an owned body
-    // buffer may still be in use by the caller of reply() so defer those
+    // reply() is done with its data; cb defers if pipelined or body still used
     virtual void replydone(DispatchObjCB cb) {
 	if (datasz || postdatasz)
 	    ready(cb);
@@ -118,7 +118,7 @@ private:
     static atomic_bool paused;
 
     template<class M>
-    const char *find(const M &amap, const char *name) const {
+    const char *find(const M &amap, const attrkey &name) const {
 	auto it = amap.find(name);
 
 	return it == amap.end() ? nullptr : it->second;

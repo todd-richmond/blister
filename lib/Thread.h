@@ -651,8 +651,7 @@ public:
     bool try_acquire_for(ulong msec, uint spin = 0) {
 	return wait(msec, spin, [] { return false; }) == Released;
     }
-    // release() drops wakeups when no waiter is registered, so cancel() is
-    // tested after registering to let callers recheck for missed work
+    // cancel() checked after registering as release() drops unwaited wakeups
     template<class P>
     WaitResult wait(ulong msec, uint spin, P cancel) {
 	Node *n = claim();
@@ -689,8 +688,7 @@ private:
 	atomic<uint> state = TAKEN;
     };
 
-    // ABA-safe lock-free Treiber stack head: 48-bit ptr + 16-bit tag on
-    // 64-bit or 32-bit ptr + 32-bit tag on 32-bit platforms
+    // ABA-safe Treiber stack head: ptr + tag in 64 bits (48/16 or 32/32 bit)
     template<class N>
     class TaggedStack: nocopy {
 	static_assert(atomic<uint64_t>::is_always_lock_free);
@@ -789,9 +787,8 @@ private:
 	waitstack.push(n);
     }
     __forceinline void recycle(Node *n) { freelist.push(n); }
-    // cancel a pending wait or consume a release already in flight. A node
-    // still on top is unlinked and reused directly, otherwise it is marked
-    // cancelled for a later release() to recycle
+    // cancel a wait or consume an in-flight release; a top node is unlinked
+    // for reuse, others are marked cancelled for release() to recycle
     bool unwait(Node *n) {
 	uint s = PENDING;
 
@@ -968,8 +965,7 @@ public:
     __forceinline void reference(void) {
 	cnt.fetch_add(1, memory_order_relaxed);
     }
-    // only the final release needs acquire; an acquire load is used instead
-    // of a fence since tsan does not model fences
+    // only the final release needs acquire; load not fence as tsan skips fences
     __forceinline bool release(void) {
 	if (LIKELY(cnt.fetch_sub(1, memory_order_release) != 1))
 	    return false;

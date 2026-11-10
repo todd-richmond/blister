@@ -34,7 +34,7 @@ const char SMTPClient::crlf[] = "\r\n";
 static constexpr bool nonascii(tchar c) { return (tuchar)c > 0x7f; }
 
 // AVX2 and NEON optimized base64 / uuencode / uudecode / high bit scanning
-#ifdef __ARM_NEON
+#ifdef __aarch64__
 static inline uint8x16_t load16(const void *p) {
     return vld1q_u8((const uint8_t *)p);
 }
@@ -50,7 +50,7 @@ static bool highbit8(const char *p, size_t n) {
     constexpr uint64_t mask = 0x8080808080808080ULL;
 
 #ifdef __AVX2__
-    if (n >= 64) {
+    if (n >= 32) {
 	for (; n >= 128; p += 128, n -= 128) {
 	    __m256i v = _mm256_or_si256(
 		_mm256_or_si256(_mm256_loadu_si256((const __m256i *)p),
@@ -69,7 +69,7 @@ static bool highbit8(const char *p, size_t n) {
 	return n && _mm256_movemask_epi8(_mm256_loadu_si256(
 	    (const __m256i *)(p + n - 32)));
     }
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
     if (n >= 16) {
 	for (; n >= 64; p += 64, n -= 64) {
 	    uint8x16_t v = vorrq_u8(vorrq_u8(load16(p), load16(p + 16)),
@@ -178,7 +178,7 @@ template<bool UU> static inline void encode24(const uchar *in,
     _mm256_storeu_si256((__m256i *)out, v);
 }
 
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
 // 12 bytes to 16 characters, reads 16 bytes
 template<bool UU> static inline void encode12(const uchar *in, char *out) {
     static constexpr uchar order[16] = { 1, 0, 2, 1, 4, 3, 5, 4, 7, 6, 8, 7,
@@ -228,7 +228,7 @@ template<bool UU> static size_t encode(const uchar *in, size_t len, char *out,
     const char *start = out;
     const char pad = UU ? '`' : '=';
 
-#if defined(__AVX2__) || defined(__ARM_NEON)
+#if defined(__AVX2__) || defined(__aarch64__)
     // whole lines (or blocks without line breaks) of input
     if (!wrap) {
 	for (; len >= 28; in += 24, out += 32, len -= 24)
@@ -320,7 +320,7 @@ static inline bool decodeline(const uchar *in, uchar *out) {
     return decodeblock(in, out) && decodeblock(in + 32, out + 24) &&
 	decodeblock(in + 44, out + 33);
 }
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
 static constexpr ptrdiff_t b64block = 16;
 
 // 16 characters to 12 bytes, false if any is not a base64 character
@@ -372,7 +372,7 @@ bool base64decode(const char *in, size_t sz, void *&out, size_t &outsz) {
     out = o;
     for (;;) {
 	if (!bits) {
-#if defined(__AVX2__) || defined(__ARM_NEON)
+#if defined(__AVX2__) || defined(__aarch64__)
 	    // MIME lines are 76 characters plus CRLF
 	    while (end - p >= 78 && p[76] == '\r' && p[77] == '\n' &&
 		decodeline(p, o)) {
@@ -481,7 +481,7 @@ bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz) {
 		break;
 	    }
 	}
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
 	for (; n + 16 <= avail; n += 16) {
 	    uint8x16_t v = load16(p + n);
 	    uint64_t m = nibmask(vorrq_u8(vceqq_u8(v, vdupq_n_u8('=')),
@@ -603,7 +603,7 @@ void qpencode(const void *in, size_t len, char *&out, size_t &outsz) {
 		break;
 	    }
 	}
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
 	for (; n + 16 <= avail; n += 16) {
 	    uint8x16_t v = load16(p + n);
 	    uint8x16_t ok = vorrq_u8(vbicq_u8(vandq_u8(vcgeq_u8(v,
@@ -722,7 +722,7 @@ bool uudecode(const char *in, size_t sz, uint &perm, tstring &file,
 	    o += 45;
 	    continue;
 	}
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
 	if (n == 45 && end - p >= 60) {
 	    // 60 characters to 45 bytes in four 16 character blocks, the last
 	    // of which overlaps the previous one
@@ -823,7 +823,7 @@ size_t SMTPClient::barelfs(const char *p, const char *end) {
 #ifdef __AVX2__
     for (; end - p >= 32; p += 32)
 	n += (size_t)popcount((uint)_mm256_movemask_epi8(stuffhits<false>(p)));
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
     for (; end - p >= 16; p += 16)
 	n += (size_t)popcount(nibmask(stuffhits<false>(p))) / 4;
 #endif
@@ -1038,7 +1038,7 @@ template<bool dots> inline __m256i SMTPClient::stuffhits(const char *p) {
     }
     return h;
 }
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
 // bare LFs and, with dots, leading dots in the 16 bytes at p, p[-1] must be
 // readable
 template<bool dots> inline uint8x16_t SMTPClient::stuffhits(const char *p) {
@@ -1059,7 +1059,7 @@ template<bool dots> inline uint8x16_t SMTPClient::stuffhits(const char *p) {
 // '.' starting a line. start is the start of a line
 template<bool dots> const char *SMTPClient::stuffscan(const char *p,
     const char *end, const char *start) {
-#if defined(__AVX2__) || defined(__ARM_NEON)
+#if defined(__AVX2__) || defined(__aarch64__)
     if (p == start && p < end) {
 	if ((dots && *p == '.') || *p == '\n')
 	    return p;
@@ -1082,7 +1082,7 @@ template<bool dots> const char *SMTPClient::stuffscan(const char *p,
 	if (m)
 	    return p + std::countr_zero(m);
     }
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
     // mail is mostly clean, test 4 blocks at a time and find the hit below
     for (; end - p >= 64; p += 64) {
 	uint8x16_t h = vorrq_u8(vorrq_u8(stuffhits<dots>(p),
@@ -1199,12 +1199,13 @@ bool SMTPClient::auth(const tchar *id, const tchar *pass) {
 	    235);
     } else if (exts_find(T(" LOGIN"))) {
 	return cmd(T("AUTH LOGIN"), sasl64(aid).c_str(), 334) &&
-	    cmd(sasl64(apass).c_str(), nullptr, 235);
+	    sendcmd(sasl64(apass), nullptr, 235, false);
     }
     return false;
 }
 
-bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
+bool SMTPClient::sendcmd(tstring_view s1, const tchar *s2, int retcode, bool
+    check) {
     multi.erase();
     if (fstrm) {
 	multi = sts = numstr((size_t)retcode);
@@ -1215,20 +1216,24 @@ bool SMTPClient::cmd(const tchar *s1, const tchar *s2, int retcode) {
 	buffer(false);
 	bstrm.str({});
     }
-    if (s1) {
-	const string as1(tchartoachar(s1));
+    if (s1.data()) {
+#ifdef UNICODE
+	const string as1(tstringtoastring(tstring(s1)));
 	const string as2(s2 ? tchartoachar(s2) : "");
+#else
+	const string_view as1(s1), as2(s2 ? s2 : "");
+#endif
 
-	// prevent SMTP command injection via CR/LF in addresses
-	if (as1.find_first_of("\r\n") != as1.npos ||
+	// prevent SMTP command injection via CR/LF in caller data
+	if ((check && as1.find_first_of("\r\n") != as1.npos) ||
 	    as2.find_first_of("\r\n") != as2.npos) {
 	    sts = T("501 5.5.2 Invalid character in command");
 	    return false;
 	}
 	strm->write(as1.data(), (streamsize)as1.size());
 	if (s2) {
-	    bool colon = as1.back() == ':';
-	    bool addbracket = colon && as2[0] != '<';
+	    bool colon = as1.ends_with(':');
+	    bool addbracket = colon && !as2.starts_with('<');
 
 	    if (addbracket)
 		strm->put('<');
@@ -1356,7 +1361,7 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
     timeout(3 * 60 * 1000, 5 * 60 * 1000);
     sstrm.clear();
     sstrm.rdbuf()->str(nullptr, 4096);
-    return cmd(nullptr, nullptr, 220);
+    return sendcmd({}, nullptr, 220, false);
 }
 
 // RFC 5321 3.2: fall back to HELO for a server without ESMTP
@@ -1365,8 +1370,9 @@ bool SMTPClient::ehlo(const tchar *domain) {
 	helo(domain));
 }
 
-bool SMTPClient::hello(const tchar *c, const tchar *domain) {
-    if (!cmd(c, domain ? domain : Sockaddr::hostname().c_str()))
+bool SMTPClient::hello(tstring_view c, const tchar *domain) {
+    if (!sendcmd(c, domain ? domain : Sockaddr::hostname().c_str(), 250,
+	false))
 	return false;
     // the greeting line is followed by one extension per line
     size_t nl = multi.find('\n');
@@ -1804,11 +1810,11 @@ bool SMTPClient::bdat(const void *start, size_t sz, bool last) {
 	if (!replies())
 	    return false;
     }
-    if (!fits(sz) || !cmd(c.c_str(), nullptr, CMD_NOREPLY))
+    if (!fits(sz) || !sendcmd(c, nullptr, CMD_NOREPLY, false))
 	return false;
     if (start && sz)
 	strm->write((const char *)start, (streamsize)sz);
-    return last ? finish(nullptr) : cmd(nullptr, nullptr, 250);
+    return last ? finish({}) : sendcmd({}, nullptr, 250, false);
 }
 
 bool SMTPClient::sendchunk(bool last) {
@@ -1836,14 +1842,14 @@ bool SMTPClient::bigchunk(const void *p, size_t sz, bool dotstuff) {
     bool ret;
 
     buffer(false);
-    ret = fits(n) && cmd(c.c_str(), nullptr, CMD_NOREPLY);
+    ret = fits(n) && sendcmd(c, nullptr, CMD_NOREPLY, false);
     if (ret) {
 	sstrm.write(buf.data(), (streamsize)buf.size());
 	// stuff() leaves dots alone and has nothing buffered to send
 	chunked = true;
 	ret = stuff(p, sz, dotstuff);
 	chunked = false;
-	ret = ret && cmd(nullptr, nullptr, 250);
+	ret = ret && sendcmd({}, nullptr, 250, false);
     }
     buf.clear();
     bstrm.str(std::move(buf));
@@ -1870,12 +1876,12 @@ bool SMTPClient::fits(size_t sz) {
 }
 
 // succeeds if any recipient accepted the message
-bool SMTPClient::finish(const tchar *c) {
+bool SMTPClient::finish(tstring_view c) {
     if (fstrm || (!pipelined && !lmtp))
-	return cmd(c);
+	return sendcmd(c, nullptr, 250, false);
     pipelined = true;
 
-    bool ret = cmd(c);
+    bool ret = sendcmd(c, nullptr, 250, false);
 
     pipelined = false;
     if (!ret)

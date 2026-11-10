@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <mmsystem.h>
 #include <fcntl.h>
+#include <psapi.h>
 #include <share.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -1012,10 +1013,33 @@ int sigsend(idtype_t type, id_t id, int sig) {
     return ret ? 0 : -1;
 }
 
-int pidstat(pid_t pid, struct pidstat *psbuf) {	// NOSONAR
-    (void)pid;
-    (void)psbuf;
-    return 0;
+int pidstat(pid_t pid, struct pidstat *psbuf) {
+    FILETIME ct, et, kt, ut;
+    HANDLE hdl;
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    int ret = 0;
+
+    memset(psbuf, 0, sizeof (*psbuf));
+    if (!pid || pid == (pid_t)GetCurrentProcessId())
+	hdl = GetCurrentProcess();
+    else if ((hdl = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+	(DWORD)pid)) == NULL)
+	return -1;
+    ZERO(pmc);
+    if (GetProcessMemoryInfo(hdl, (PROCESS_MEMORY_COUNTERS *)&pmc,
+	sizeof (pmc))) {
+	psbuf->pss = psbuf->rss = pmc.WorkingSetSize / 1024;
+	psbuf->sz = pmc.PrivateUsage / 1024;	// commit, not virtual size
+    } else {
+	ret = -1;
+    }
+    if (GetProcessTimes(hdl, &ct, &et, &kt, &ut)) {
+	psbuf->stime = bit_cast<uint64_t>(kt) / 10000;	// 100ns -> msec
+	psbuf->utime = bit_cast<uint64_t>(ut) / 10000;
+    }
+    if (hdl != GetCurrentProcess())
+	CloseHandle(hdl);
+    return ret;
 }
 
 #define _BASE_YEAR	    70

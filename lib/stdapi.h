@@ -22,9 +22,11 @@
 #define CPP_STR(s)		#s
 
 #if defined(__GNUC__) || defined(__clang__)
+#define CONSTANT_P(x)		__builtin_constant_p(x)
 #define LIKELY(c)		__builtin_expect(!!(c), 1)
 #define UNLIKELY(c)		__builtin_expect(!!(c), 0)
 #else
+#define CONSTANT_P(x)		false
 #define LIKELY(c)		(c)
 #define UNLIKELY(c)		(c)
 #endif
@@ -784,11 +786,9 @@ static inline __attribute__((always_inline)) usec_t uticks(void) {
     return (usec_t)ts.tv_sec * 1000000 + (usec_t)ts.tv_nsec / 1000;
 }
 #endif
-#ifndef _WIN32
 WARN_PUSH_DISABLE(-Wshadow)
 extern BLISTER int pidstat(pid_t pid, struct pidstat *psbuf);
 WARN_POP()
-#endif
 EXTERNC_
 
 // common includes, defines and code for C++ software
@@ -1034,6 +1034,16 @@ inline time_t seconds(void) {
 template<typename T>
 concept cstr_arg = is_pointer_v<decay_t<T>> &&
     is_integral_v<remove_pointer_t<decay_t<T>>>;
+
+// const arrays such as string literals whose length is N - 1
+template<typename A>
+concept const_array = is_array_v<remove_reference_t<A>> &&
+    is_const_v<remove_extent_t<remove_reference_t<A>>>;
+
+// pointers or mutable buffers whose length is only known at runtime
+template<typename P>
+concept cstr_ptr = !const_array<P> && is_convertible_v<decay_t<P>, const
+    tchar *>;
 
 template<typename T>
 concept strview_arg = requires (const T &t) {
@@ -1373,10 +1383,10 @@ constexpr strhash_t rapidshort(const B *p, size_t len,
 	(RAPID_SECRET0 ^ (strhash_t)len), RAPID_SECRET1);
 }
 
-// rapidhash V3 Micro, bit exact with the reference, for keys over 16 bytes;
-// rapidshort is faster below that. sd chains a hash, fold = ASCII nocase
-template<bool fold = false, typename B> requires (sizeof (B) == 1)
-constexpr strhash_t rapid_hash(const B *p, size_t len, strhash_t sd = 0) {
+// rapidhash V3 Micro (bit exact) for > 16 bytes; sd chains, fold = nocase
+template<bool fold, typename B>
+__forceinline constexpr strhash_t rapidinline(const B *p, size_t len,
+    strhash_t sd) {
     static constexpr strhash_t secret[] = {
 	0x2d358dccaa6c78a5ULL, 0x8bb84b93962eacc9ULL, 0x4b33a62ed433d4a3ULL,
 	0x4d5a2da51de1aa47ULL, 0xa0761d6478bd642fULL, 0xe7037ed1a0b428dbULL,
@@ -1433,6 +1443,23 @@ constexpr strhash_t rapid_hash(const B *p, size_t len, strhash_t sd = 0) {
     return rapidmix(a ^ secret[7], b ^ secret[1] ^ i);
 }
 
+template<bool fold, typename B>
+constexpr strhash_t rapidcall(const B *p, size_t len, strhash_t sd) {
+    return rapidinline<fold>(p, len, sd);
+}
+
+// inline constant data such as literals so the optimizer folds their hash
+template<bool fold = false, typename B> requires (sizeof (B) == 1)
+__forceinline constexpr strhash_t rapid_hash(const B *p, size_t len,
+    strhash_t sd = 0) {
+#ifndef __OPTIMIZE_SIZE__	// -Os will not fold the inlined code
+    // cppcheck-suppress duplicateExpression
+    if (CONSTANT_P(len) && CONSTANT_P(*p))
+	return rapidinline<fold>(p, len, sd);
+#endif
+    return rapidcall<fold>(p, len, sd);
+}
+
 inline strhash_t rapid_hash(const void *data, size_t len, strhash_t seed = 0) {
     return rapid_hash((const uint8_t *)data, len, seed);
 }
@@ -1440,19 +1467,12 @@ inline strhash_t rapid_hash(const void *data, size_t len, strhash_t seed = 0) {
 // 1 byte characters use rapid_hash and wide characters bernstein_hash
 template<bool icase = false, typename T, class F = decltype([](T c) {
     return c; })>
-constexpr strhash_t charhash(const T *s, size_t len, [[maybe_unused]] F xfrm =
-    {}) {
+__forceinline constexpr strhash_t charhash(const T *s, size_t len,
+    [[maybe_unused]] F xfrm = {}) {
     if constexpr (sizeof (T) == 1)
 	return rapid_hash<icase>(s, len);
     else
 	return bernstein_hash(s, len, xfrm);
-}
-
-template<typename T>
-constexpr strhash_t stringhash(const T &s) {
-    const auto v = strview(s);
-
-    return charhash(v.data(), v.size());
 }
 
 // case folding of the wide character bernstein_hash
@@ -1465,8 +1485,62 @@ constexpr auto ifold = [] {
     }
 }();
 
+// literal key with compile time length and hash; runtime keys hash on lookup
+template<typename C, bool icase>
+struct basic_strkey: basic_string_view<C> {
+    template<size_t N>
+    consteval basic_strkey(const C (&s)[N]): basic_string_view<C>(strview(s)),
+	hash(keyhash(strview(s))) {}
+    template<typename K> requires (!const_array<K> &&
+	is_convertible_v<K, basic_string_view<C>>)
+    constexpr basic_strkey(K &&s): basic_string_view<C>(std::forward<K>(s)) {}
+
+    strhash_t hash = 0;
+
+private:
+    static consteval strhash_t keyhash(basic_string_view<C> s) {
+	if constexpr (!icase) {
+	    return charhash(s.data(), s.size());
+	} else {
+	    // towupper() is runtime only so wide non ASCII keys hash later
+	    if constexpr (sizeof (C) > 1) {
+		for (C c : s) {
+		    if ((make_unsigned_t<C>)c >= 0x80)
+			return 0;
+		}
+	    }
+	    return charhash<true>(s.data(), s.size(), ifold<C>);
+	}
+    }
+};
+
+template<typename T, bool icase>
+concept strkey_of = derived_from<T, basic_strkey<typename T::value_type,
+    icase>>;
+
+using strikey = basic_strkey<tchar, true>;
+using strkey = basic_strkey<tchar, false>;
+
+// literal only strkey for callers that keep the pointer
+struct strlit: strkey {
+    template<size_t N>
+    consteval strlit(const tchar (&s)[N]): strkey(s) {}
+};
+
 template<typename T>
-constexpr strhash_t stringiasciihash(const T &s) {
+__forceinline constexpr strhash_t stringhash(const T &s) {
+    if constexpr (strkey_of<T, false>) {
+	if (s.hash)
+	    return s.hash;
+    }
+
+    const auto v = strview(s);
+
+    return charhash(v.data(), v.size());
+}
+
+template<typename T>
+__forceinline constexpr strhash_t stringiasciihash(const T &s) {
     const auto v = strview(s);
 
     return charhash<true>(v.data(), v.size(), ascii_fold<typename
@@ -1474,7 +1548,12 @@ constexpr strhash_t stringiasciihash(const T &s) {
 }
 
 template<typename T>
-constexpr strhash_t stringihash(const T &s) {
+__forceinline constexpr strhash_t stringihash(const T &s) {
+    if constexpr (strkey_of<T, true>) {
+	if (s.hash)
+	    return s.hash;
+    }
+
     const auto v = strview(s);
 
     return charhash<true>(v.data(), v.size(), ifold<typename

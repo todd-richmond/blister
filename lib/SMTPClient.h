@@ -85,8 +85,7 @@ private:
 	tstring_view domain, local, phrase, route;
     };
 
-    // the parsed copy of the input and the entries live in an inline arena
-    // so typical addresses need no heap allocation
+    // inline arena so typical addresses need no heap allocation
     alignas(Entry) std::byte space[280];
     std::pmr::monotonic_buffer_resource arena{space, sizeof (space)};
     std::pmr::vector<Entry> entries{&arena};
@@ -135,7 +134,16 @@ public:
 	return connect(Sockaddr(hostport), timeout);
     }
     bool close(void) { return sock.close(); }
-    bool cmd(const tchar *s1, const tchar *s2 = nullptr, int retcode = 250);
+    // literal commands are code controlled so skip the CR/LF check
+    bool cmd(const strlit &s1, const tchar *s2 = nullptr, int retcode = 250) {
+	return sendcmd(tstring_view(s1.data(), s1.size()), s2, retcode, false);
+    }
+    template<cstr_ptr P>
+    bool cmd(P &&s1, const tchar *s2 = nullptr, int retcode = 250) {
+	const tchar *p = std::forward<P>(s1);
+
+	return sendcmd(p ? tstring_view(p) : tstring_view(), s2, retcode, true);
+    }
     bool ehlo(const tchar *domain = nullptr);
     bool helo(const tchar *domain = nullptr);
     bool lhlo(const tchar *domain = nullptr);
@@ -186,8 +194,7 @@ public:
 	const tchar *desc = nullptr, const tchar *encoding = nullptr,
 	const tchar *disp = nullptr, const tchar *name = nullptr);
     bool bdat(const void *p, size_t sz, bool last = true);
-    // send with BDAT instead of DATA when supported. It is faster at any
-    // size: small messages pipeline with the envelope, large ones avoid copies
+    // use BDAT when supported: pipelines small messages, avoids large copies
     void chunking(bool enable) { usebdat = enable; }
     bool enddata(void);
     bool quit(void);
@@ -221,11 +228,12 @@ private:
 	chunked = on;
 	strm = on ? static_cast<iostream *>(&bstrm) : &sstrm;
     }
-    bool finish(const tchar *c);
-    bool hello(const tchar *c, const tchar *domain);
+    bool finish(tstring_view c);
+    bool hello(tstring_view c, const tchar *domain);
     bool reply(void);
     bool replies(void);
     bool sendchunk(bool last);
+    bool sendcmd(tstring_view s1, const tchar *s2, int retcode, bool check);
     void recip(const tchar *hdr, const vector<tstring> &v);
     bool downgrade(const tchar *cmd, tstring &id);
     bool can8bit(void) const { return ext_8bitmime || canutf8(); }
@@ -250,7 +258,7 @@ private:
     static tstring sasl64(const string &in);
 #ifdef __AVX2__
     template<bool dots> static __m256i stuffhits(const char *p);
-#elif defined(__ARM_NEON)
+#elif defined(__aarch64__)
     template<bool dots> static uint8x16_t stuffhits(const char *p);
 #endif
     template<bool dots> static const char *stuffscan(const char *p,

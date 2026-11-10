@@ -38,8 +38,8 @@ class Config;
  * progressively deeper stack will all start with the same string
  *
  * Each line in the log starts with a configurable string which defaults to
- * a date/time string with millisecond resolution. The following data can be
- * set to one of 4 styles
+ * a date/time string with microsecond resolution. The following data can be
+ * set to one of 5 styles
  *   Simple(default): standard log string prefixed with the log time and level
  *   Syslog: syslog file format with level and prefix strings followed by ':'
  *   KeyVal: all log components are written as attr=val pairs
@@ -68,6 +68,8 @@ class Config;
  */
 
 class BLISTER Log: nocopy {
+    struct Tlsdata;
+
 public:
     enum Level {
 	None, Emerg, Alert, Crit, Err, Warn, Note, Info, Debug, Trace
@@ -102,8 +104,8 @@ public:
     ~Log();
 
     template<typename T>
-    __forceinline Log &operator <<(const T &val) {
-	(void)log(val); return *this;
+    __forceinline Log &operator <<(T &&val) {
+	(void)log(std::forward<T>(val)); return *this;
     }
     __forceinline Log &operator <<(void(Log &)) { endlog(); return *this; }
     friend Log &operator <<(Log &l, Log &(* const f)(Log &)) { return f(l); }
@@ -161,21 +163,17 @@ public:
     }
     void flush(void);
     template<typename T>
-    __forceinline Log &log(const T &val) { return logtls(val); }
-    __forceinline Log &log(const tchar *val) { return logtls(val); }
-    // required to log tchar * - ignore linters
-#pragma warning(disable: 26461)
-    // NOLINTNEXTLINE(readability-non-const-parameter)
-    __forceinline Log &log(tchar *val) {	// NOSONAR
-	return logtls((const tchar *)val);
+    __forceinline Log &log(T &&val) {
+	return logtls(std::forward<T>(val));
     }
     __forceinline Log &log(const Escalator &e) { return logtls(e); }
     __forceinline Log &log(Log::Level l) { return logtls(l); }
     template<typename T>
     __forceinline Log &log(const KV<T> &val) { return logtls(val); }
     template<typename T, typename... U>
-    __forceinline Log &log(const T &first, const U&... rest) {
-	return logtls(first, rest...);
+	requires (!same_as<remove_cvref_t<T>, Tlsdata>)
+    __forceinline Log &log(T &&first, U &&...rest) {
+	return logtls(std::forward<T>(first), std::forward<U>(rest)...);
     }
     void logv(int l, ...);
     bool reopen(void);
@@ -187,52 +185,72 @@ public:
     void stop(void);
 
     template<typename... T>
-    void log(Log::Level l, const T&... args) {
+    void log(Log::Level l, T &&...args) {
 	if (UNLIKELY(l <= lvl)) {
 	    Tlsdata &tlsd(*tls);
 
 	    if (LIKELY(!tlsd.suppress)) {
 		tlsd.clvl = l;
-		log(tlsd, args...);
+		logall(tlsd, std::forward<T>(args)...);
 		endlog(tlsd);
 	    }
 	}
     }
     template<typename... T>
-    __forceinline void emerg(const T&... args) { log(Emerg, args...); }
+    __forceinline void emerg(T &&...args) {
+	log(Emerg, std::forward<T>(args)...);
+    }
     __forceinline Log &emerg(void) { return log(Emerg); }
     template<typename... T>
-    __forceinline void alert(const T&... args) { log(Alert, args...); }
+    __forceinline void alert(T &&...args) {
+	log(Alert, std::forward<T>(args)...);
+    }
     __forceinline Log &alert(void) { return log(Alert); }
     template<typename... T>
-    __forceinline void crit(const T&... args) { log(Crit, args...); }
+    __forceinline void crit(T &&...args) {
+	log(Crit, std::forward<T>(args)...);
+    }
     __forceinline Log &crit(void) { return log(Crit); }
     template<typename... T>
-    __forceinline void err(const T&... args) { log(Err, args...); }
+    __forceinline void err(T &&...args) {
+	log(Err, std::forward<T>(args)...);
+    }
     __forceinline Log &err(void) { return log(Err); }
     template<typename... T>
-    __forceinline void warn(const T&... args) { log(Warn, args...); }
+    __forceinline void warn(T &&...args) {
+	log(Warn, std::forward<T>(args)...);
+    }
     __forceinline Log &warn(void) { return log(Warn); }
     template<typename... T>
-    __forceinline void note(const T&... args) { log(Note, args...); }
+    __forceinline void note(T &&...args) {
+	log(Note, std::forward<T>(args)...);
+    }
     __forceinline Log &note(void) { return log(Note); }
     template<typename... T>
-    __forceinline void info(const T&... args) { log(Info, args...); }
+    __forceinline void info(T &&...args) {
+	log(Info, std::forward<T>(args)...);
+    }
     __forceinline Log &info(void) { return log(Info); }
     template<typename... T>
-    __forceinline void debug(const T&... args) { log(Debug, args...); }
+    __forceinline void debug(T &&...args) {
+	log(Debug, std::forward<T>(args)...);
+    }
     __forceinline Log &debug(void) { return log(Debug); }
     template<typename... T>
-    __forceinline void trace(const T&... args) { log(Trace, args...); }
+    __forceinline void trace(T &&...args) {
+	log(Trace, std::forward<T>(args)...);
+    }
     __forceinline Log &trace(void) { return log(Trace); }
 
     template<typename K, typename T>
-    static constexpr KV<T> kv(const K &key, const T &val) {
-	return KV<T>(key, val);
+    __forceinline static constexpr KV<T> kv(const K &key, T &&val) {
+	return KV<T>(key, std::forward<T>(val));
     }
 #define LOG_KV_FN(name, key) \
     template<typename U> \
-    static constexpr const KV<U> name(const U &val) { return kv(T(key), val); }
+    static constexpr const KV<U> name(U &&val) { \
+	return kv(T(key), std::forward<U>(val)); \
+    }
     LOG_KV_FN(cmd,      "cmd")
     LOG_KV_FN(duration, "msec")
     LOG_KV_FN(error,    "err")
@@ -370,11 +388,14 @@ private:
     void endlog(Tlsdata &tlsd);
     void drainbuffers(bool unlockedio);
     void rotatebuf(void);
+    void updatelvl(void) {
+	lvl = max({ afd.lvl, ffd.lvl, maillvl, sysloglvl });
+    }
     void _mail(Level l, const tchar *to, const tchar *from, const tchar *host);
     void _syslog(Level l, const tchar *host, uint fac);
     template<typename... T>
-    __forceinline Log &logtls(const T&... args) {
-	log(tls.get(), args...);
+    __forceinline Log &logtls(T &&...args) {
+	logall(tls.get(), std::forward<T>(args)...);
 	return *this;
     }
     template<typename T>
@@ -404,7 +425,8 @@ private:
 	}
 	return *this;
     }
-    Log &log(Tlsdata &tlsd, const tchar *val) {
+    template<cstr_ptr P>
+    Log &log(Tlsdata &tlsd, const P &val) {
 	if (LIKELY(val))
 	    return logstr(tlsd, val);
 	if (tlsd.clvl != None && tlsd.sep == '=')
@@ -413,9 +435,13 @@ private:
     }
     template<size_t N>
     Log &log(Tlsdata &tlsd, const tchar (&val)[N]) {
-	return logstr(tlsd, val);
+	// literals fill their array so need no length scan
+	const size_t len = N > 1 && val[N - 2] ? N - 1 : tstrlen(val);
+
+	return logstr<true>(tlsd, tstring_view(val, len));
     }
-    __forceinline Log &log(Tlsdata &tlsd, tchar *val) {	// NOSONAR
+    template<size_t N>
+    __forceinline Log &log(Tlsdata &tlsd, tchar (&val)[N]) {	// NOSONAR
 	return log(tlsd, (const tchar *)val);
     }
     Log &log(Tlsdata &tlsd, const Escalator &e);
@@ -437,26 +463,32 @@ private:
 	return *this;
     }
     template<typename... T>
-    __forceinline void log(Tlsdata &tlsd, const T&... args) {
-	(log(tlsd, args), ...);
+    __forceinline void logall(Tlsdata &tlsd, T &&...args) {
+	(log(tlsd, std::forward<T>(args)), ...);
     }
+    // raw skips escaping for code controlled const arrays
+    template<bool raw = false>
     Log &logstr(Tlsdata &tlsd, tstring_view val) {
 	if (LIKELY(tlsd.clvl != None)) {
 	    if (tlsd.sep == '=') {
 		quote(tlsd.strm, val);
 		tlsd.sep = ' ';
 	    } else {
-		write_str(tlsd, val.data(), (streamsize)val.size());
+		write_str<raw>(tlsd, val.data(), (streamsize)val.size());
 	    }
 	}
 	return *this;
     }
+    template<bool raw = false>
     __forceinline static void write_str(Tlsdata &tlsd, const tchar *data,
 	streamsize sz) {
 	if (LIKELY(sz > 0)) {
 	    if (tlsd.sep && tlsd.strm.size())
 		tlsd.strm.put(tlsd.sep);
-	    strm_write_esc(tlsd.strm, data, sz);
+	    if constexpr (raw)
+		tlsd.strm.write(data, sz);
+	    else
+		strm_write_esc(tlsd.strm, data, sz);
 	    if (data[sz - 1] == '=')
 		tlsd.sep = '=';
 	} else {

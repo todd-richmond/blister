@@ -367,7 +367,6 @@ private:
     friend class Dispatcher;
 };
 
-// handle socket events
 // NOLINTNEXTLINE(misc-multiple-inheritance)
 class BLISTER DispatchSocket: public DispatchTimer, public Socket {
 public:

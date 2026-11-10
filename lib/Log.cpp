@@ -17,6 +17,7 @@
 
 #include "stdapi.h"
 #include <algorithm>
+#include <format>
 #include <vector>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -25,6 +26,9 @@
 #include <sys/file.h>
 #endif
 #include <sys/stat.h>
+#if defined(__SSE2__) && !defined(_WIN32)
+#include <emmintrin.h>
+#endif
 #include "Config.h"
 #include "Log.h"
 #include "SMTPClient.h"
@@ -131,7 +135,7 @@ int Log::FlushThread::onStart(void) {
 
 bool Log::LogFile::close(void) {
     len = 0;
-    if (fd < 0)
+    if (fd < 0 || file[0] == '>')
 	return false;
     ::close(fd);
     fd = -1;
@@ -145,7 +149,7 @@ void Log::LogFile::lock() {
 	reopen();
     // fcntl locks arbitrate with other processes sharing the file: mp mode
     // locks around every write, single process mode only once at open
-    if (mp && fd >= 0 && !reopened)
+    if (mp && fd >= 0 && !reopened && file[0] != '>')
 	(void)lockend();
 }
 
@@ -195,6 +199,8 @@ bool Log::LogFile::reopen(void) {
     bool newfile;
     struct stat sbuf;
 
+    if (file[0] == '>')
+	return fd >= 0;
     close();
     if ((fd = ::open(tstringtoachar(path), O_WRONLY | O_CREAT | O_BINARY |
 	O_SEQUENTIAL | O_CLOEXEC, 0640)) == -1) {
@@ -252,7 +258,7 @@ void Log::LogFile::roll(void) {
     struct stat sbuf;
     tchar sep;
 
-    if (fd < 0)
+    if (fd < 0 || file[0] == '>')
 	return;
     if (!fstat(fd, &sbuf))
 	inode = sbuf.st_ino;
@@ -262,7 +268,7 @@ void Log::LogFile::roll(void) {
     lock();
     if (fd < 0 || (!fstat(fd, &sbuf) && mp && sbuf.st_ino != inode))
 	return;
-    now = cnt && !sec ? (time_t)sbuf.st_ctime : ::time(NULL);
+    now = ::time(NULL);
     s1 = path;
     if ((pos = s1.rfind('/')) == s1.npos && (pos = s1.rfind('\\')) == s1.npos) {
 	sep = '/';
@@ -294,16 +300,14 @@ void Log::LogFile::roll(void) {
 
 		if (*suffix == '\0') {
 		    entries.emplace_back(ULONG_MAX, s3);
-		    continue;
 		} else if (*suffix == '.' && istdigit(suffix[1])) {
 		    tchar *end;
 		    ulong n = tstrtoul(suffix + 1, &end, 10);
 
-		    if (!*end) {
+		    if (!*end)
 			entries.emplace_back(ULONG_MAX - n, s3);
-			continue;
-		    }
 		}
+		continue;
 	    }
 	    if (tstat(s3.c_str(), &sbuf) == 0)
 		entries.emplace_back((ulong)sbuf.st_mtime, s3);
@@ -325,12 +329,9 @@ void Log::LogFile::roll(void) {
 	    }
 	}
     }
-    if (cnt && path == file) {
+    if (path == file) {
 	auto numbered = [this](uint n) {
-	    tchar buf[16];
-	    auto [ep, ec] = to_chars(buf, buf + std::size(buf), n);
-
-	    return file + T('.') + tstring(buf, (size_t)(ep - buf));
+	    return std::format(T("{}.{}"), file, n);
 	};
 
 	s1 = numbered(files);
@@ -345,7 +346,7 @@ void Log::LogFile::roll(void) {
 	    (void)tunlink(file.c_str());
 	else
 	    (void)trename(file.c_str(), s1.c_str());
-    } else if (path != file) {
+    } else {
 	(void)tunlink(path.c_str());
     }
     close();
@@ -416,7 +417,8 @@ void Log::LogFile::unlock(void) const {
 }
 
 WARN_PUSH_DISABLE(-Wstrict-overflow)
-Log::Log(Level level): lvl(level) {
+Log::Log(Level l): lvl(l) {
+    ffd.lvl = l;
     format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
 }
 WARN_POP()
@@ -437,16 +439,24 @@ void Log::alertfile(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
     Locker lkr(lck);
 
     afd.set(l, f, cnt, sz, tm);
+    updatelvl();
 }
 
 void Log::buffer(bool enable) {
-    if (enable && mp)
-	setmp(false);
-    bufenable = enable;
-    if (bufenable)
+    if (enable) {
+	if (mp)
+	    setmp(false);
+	bufenable = true;
 	start();
-    else
+    } else {
+	// stop before disabling so unbuffered writes cannot race the flusher
 	stop();
+
+	Locker lkr(lck);
+
+	bufenable = false;
+	drainbuffers(false);
+    }
 }
 
 bool Log::close(void) {
@@ -458,57 +468,107 @@ bool Log::close(void) {
     return ffd.close();
 }
 
+// 16 byte SIMD scans; strings under 16 bytes use the scalar loops
+#if !defined(_WIN32) && (defined(__SSE2__) || defined(__ARM_NEON))
+#define SIMD16
+#ifdef __SSE2__
+using simd16 = __m128i;
+
+static __forceinline simd16 load16(const char *p) {
+    return _mm_loadu_si128((const __m128i *)p);
+}
+
+// offset of the first flagged byte or 16 if none
+static __forceinline uint first16(simd16 m) {
+    return (uint)countr_zero((uint)_mm_movemask_epi8(m) | 0x10000U);
+}
+
+// control chars other than tab
+static __forceinline simd16 esc16(simd16 c) {
+    return _mm_andnot_si128(_mm_cmpeq_epi8(c, _mm_set1_epi8('\t')),
+	_mm_cmpeq_epi8(_mm_min_epu8(c, _mm_set1_epi8(0x1f)), c));
+}
+
+// signed < '!' also flags bytes >= 0x80
+static __forceinline simd16 quote16(simd16 c) {
+    return _mm_or_si128(_mm_or_si128(_mm_cmplt_epi8(c, _mm_set1_epi8('!')),
+	_mm_cmpeq_epi8(c, _mm_set1_epi8('"'))), _mm_or_si128(
+	_mm_cmpeq_epi8(c, _mm_set1_epi8('\\')),
+	_mm_cmpeq_epi8(c, _mm_set1_epi8(0x7f))));
+}
+
+static __forceinline simd16 dq16(simd16 c) {
+    return _mm_or_si128(_mm_cmpeq_epi8(c, _mm_set1_epi8('"')),
+	_mm_cmpeq_epi8(c, _mm_set1_epi8('\\')));
+}
+
+// control chars, '"', '\\' and DEL
+static __forceinline simd16 qesc16(simd16 c) {
+    return _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(_mm_min_epu8(c,
+	_mm_set1_epi8(0x1f)), c), _mm_cmpeq_epi8(c, _mm_set1_epi8(0x7f))),
+	dq16(c));
+}
+#else
+using simd16 = uint8x16_t;
+
+static __forceinline simd16 load16(const char *p) {
+    return vld1q_u8((const uint8_t *)p);
+}
+
+static __forceinline uint first16(simd16 m) {
+    // narrow to 4 bits per byte
+    const uint64_t bits = vget_lane_u64(vreinterpret_u64_u8(
+	vshrn_n_u16(vreinterpretq_u16_u8(m), 4)), 0);
+
+    return (uint)countr_zero(bits) >> 2;
+}
+
+static __forceinline simd16 esc16(simd16 c) {
+    return vbicq_u8(vcltq_u8(c, vdupq_n_u8(' ')), vceqq_u8(c,
+	vdupq_n_u8('\t')));
+}
+
+static __forceinline simd16 quote16(simd16 c) {
+    return vorrq_u8(vorrq_u8(vcltq_s8(vreinterpretq_s8_u8(c),
+	vdupq_n_s8('!')), vceqq_u8(c, vdupq_n_u8('"'))), vorrq_u8(
+	vceqq_u8(c, vdupq_n_u8('\\')), vceqq_u8(c, vdupq_n_u8(0x7f))));
+}
+
+static __forceinline simd16 dq16(simd16 c) {
+    return vorrq_u8(vceqq_u8(c, vdupq_n_u8('"')), vceqq_u8(c,
+	vdupq_n_u8('\\')));
+}
+
+static __forceinline simd16 qesc16(simd16 c) {
+    return vorrq_u8(vorrq_u8(vcltq_u8(c, vdupq_n_u8(' ')), vceqq_u8(c,
+	vdupq_n_u8(0x7f))), dq16(c));
+}
+#endif
+
+// first byte in [p, end) flagged by match, or p if under 16 bytes
+template<class F>
+static __forceinline const char *scan16(const char *p, const char *end,
+    F match) {
+    if (end - p < 16)
+	return p;
+    for (; end - p > 16; p += 16) {
+	if (uint u = first16(match(load16(p))); u < 16)
+	    return p + u;
+    }
+    p = end - 16;		// may overlap the previous block
+    return p + first16(match(load16(p)));
+}
+#endif
+
 void Log::strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz) {
     const tchar *q = data;
     const tchar *end = data + sz;
 
-#ifndef _WIN32
-#ifdef __AVX2__
-    {
-	// bias trick: (uchar)c < 0x20 via signed cmpgt after XOR with 0x80
-	const __m256i bias = _mm256_set1_epi8((char)0x80);
-	const __m256i tab_vec = _mm256_set1_epi8('\t');
-	const __m256i thresh = _mm256_set1_epi8((char)(0x20 ^ 0x80));
-
-	for (; q + 32 <= end; q += 32) {
-	    __m256i chunk = _mm256_loadu_si256((const __m256i *)q);
-	    __m256i lt_space = _mm256_cmpgt_epi8(thresh,
-		_mm256_xor_si256(chunk, bias));
-	    int mask = _mm256_movemask_epi8(_mm256_andnot_si256(
-		_mm256_cmpeq_epi8(chunk, tab_vec), lt_space));
-
-	    if (UNLIKELY(mask)) {
-		q += __builtin_ctz((uint)mask);
-		goto scan_done;
-	    }
-	}
-    }
-#elif defined(__ARM_NEON)
-    {
-	const uint8x16_t space_vec = vdupq_n_u8(0x20);
-	const uint8x16_t tab_vec = vdupq_n_u8('\t');
-
-	for (; q + 16 <= end; q += 16) {
-	    uint8x16_t chunk = vld1q_u8((const uint8_t *)q);
-	    uint8x16_t needs_esc = vbicq_u8(vcltq_u8(chunk, space_vec),
-		vceqq_u8(chunk, tab_vec));
-	    uint64_t lo = vgetq_lane_u64(vreinterpretq_u64_u8(needs_esc), 0);
-	    uint64_t hi = vgetq_lane_u64(vreinterpretq_u64_u8(needs_esc), 1);
-
-	    if (UNLIKELY(lo | hi)) {
-		q += lo ? __builtin_ctzll(lo) >> 3 :
-		    8 + (__builtin_ctzll(hi) >> 3);
-		goto scan_done;
-	    }
-	}
-    }
-#endif
+#ifdef SIMD16
+    q = scan16(q, end, esc16);
 #endif
     while (q < end && LIKELY(!((tuchar)*q < ' ' && *q != '\t')))
 	++q;
-#if !defined(_WIN32) && (defined(__AVX2__) || defined(__ARM_NEON))
-scan_done:
-#endif
     if (LIKELY(q == end)) {
 	strm.write(data, sz);
 	return;
@@ -564,7 +624,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (clvl >= None && clvl <= Trace)
 	    tailbuf += LevelStr2[clvl];
 	tailbuf += ' ';
-    } else if (_type != NoLevel && _type != NoTime) {
+    } else if (_type != NoLevel) {
 	if (clvl >= None && clvl <= Trace)
 	    tailbuf += LevelStr[clvl];
 	if (_type == Syslog)
@@ -579,8 +639,25 @@ void Log::endlog(Tlsdata &tlsd) {
 	tailbuf += ' ';
     }
     if (_type == KeyVal) {
+	const tchar *p = tlsd.strm.str();
+	const tchar *end = p + sz;
+
 	tailbuf.append(T("txt=\""), 5);
-	tailbuf.append(tlsd.strm.str(), sz);
+	for (;;) {
+	    const tchar *q = p;
+
+#ifdef SIMD16
+	    q = scan16(q, end, dq16);
+#endif
+	    while (q < end && *q != '"' && *q != '\\')
+		++q;
+	    tailbuf.append(p, (size_t)(q - p));
+	    if (q == end)
+		break;
+	    tailbuf += '\\';
+	    tailbuf += *q;
+	    p = q + 1;
+	}
 	tailbuf += '"';
     } else {
 	tailbuf.append(tlsd.strm.str(), sz);
@@ -591,12 +668,12 @@ void Log::endlog(Tlsdata &tlsd) {
     if (fenabled && !bufenable) {
 	// unbuffered logs must check size and roll inline
 	ffd.lock();
-	if (ffd.len >= ffd.sz)
+	if (ffd.sz && ffd.len >= ffd.sz)
 	    ffd.roll();
     }
     if (aenabled) {
 	afd.lock();
-	if (afd.len >= afd.sz)
+	if (afd.sz && afd.len >= afd.sz)
 	    afd.roll();
     }
     struct timeval now_tv;
@@ -704,23 +781,18 @@ void Log::endlog(Tlsdata &tlsd) {
     tlsd.strm.reset();
     tlsd.suppress = true;
     if (syslogenable && clvl <= sysloglvl) {
-	string ss;
-	char buf[64], cbuf[32];
+	char cbuf[32];
 	uint u = (syslogfac << 3) | (uint)(clvl - (clvl <= Debug ? 1 : 2));
+	string ss = std::format("<{}>{:.15}.{:06} {}", u,
+	    ctime_r(&now_sec, cbuf) + 4, (uint)now_usec,
+	    tstringtoastring(hostname));
 
-	snprintf(buf, sizeof (buf), "<%u>%.15s.%06u ", u,
-	    ctime_r(&now_sec, cbuf) + 4, (uint)now_usec);
-	ss = buf;
-	ss += tstringtoastring(hostname);
 	if (!mailfrom.empty() && mailfrom != T("<>")) {
-	    ss += ' ';
-	    if (_type == KeyVal)
-		ss += "nm=";
+	    ss += _type == KeyVal ? " nm=" : " ";
 	    ss += tstringtoastring(mailfrom.substr(0, mailfrom.find('@')));
 	}
-	snprintf(buf, sizeof (buf), "[%d]: ", getpid());
-	ss += buf;
-	ss += tstringtoastring(tailbuf);
+	format_to(back_inserter(ss), "[{}]: {}", getpid(),
+	    tstringtoastring(tailbuf));
 	syslogsock.write(ss.data(), (uint)ss.size(), syslogaddr);
     }
     // syslog state is only stable under the lock; SMTP is slow so unlock first
@@ -766,6 +838,7 @@ void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong sec) {
 
     drainbuffers(false);
     ffd.set(l, f, cnt, sz, sec);
+    updatelvl();
 }
 
 // drain all pending buffers and allow other threads to continue writing
@@ -780,7 +853,7 @@ void Log::drainbuffers(bool unlockedio) {
 	    lck.unlock();
 	ffd.lock();
 	ffd.print(buf->str(), (uint)buf->size());
-	if (ffd.len >= ffd.sz)
+	if (ffd.sz && ffd.len >= ffd.sz)
 	    ffd.roll();
 	ffd.unlock();
 	buf->reset();
@@ -827,6 +900,7 @@ void Log::mail(Level l, const tchar *to, const tchar *from, const tchar
     Locker lkr(lck);
 
     _mail(l, to, from, host);
+    updatelvl();
 }
 
 void Log::_mail(Level l, const tchar *to, const tchar *from, const tchar
@@ -851,61 +925,55 @@ tbufferstream &Log::quote(tbufferstream &os, tstring_view s) {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // ` - o
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,  // p - DEL
     };
-    const tuchar *start = (const tuchar *)s.data();
-    const tuchar *end = start + s.size();
-    const tuchar *p = start;
+    const tchar *p = s.data();
+    const tchar *end = p + s.size();
 
-    while (p < end) {
-	tuchar c = *p;
-
-	if (UNLIKELY(c >= 0x80 || needquote[c])) {
-	    streamsize bsz = 0;
-	    tchar buf[128];
-	    static constexpr streamsize bufcnt =
-		(streamsize)std::size(buf);	// cppcheck-suppress uninitvar
-
-	    os.write(T('"'));
-	    os.write((const tchar *)start, p - start);
-	    auto putc = [&](tchar cc) {
-		if (UNLIKELY(bsz == bufcnt)) {
-		    os.write(buf, bsz);
-		    bsz = 0;
-		}
-		buf[bsz++] = cc;
-	    };
-	    auto esc2 = [&](tchar e) {
-		putc('\\');
-		putc(e);
-	    };
-	    while (p < end) {
-		c = *p++;
-		switch (c) {
-		case '"': esc2('"'); break;
-		case '\\': esc2('\\'); break;
-		case '\f': esc2('f'); break;
-		case '\n': esc2('n'); break;
-		case '\r': esc2('r'); break;
-		case '\t': esc2('t'); break;
-		case '\v': esc2('v'); break;
-		default:
-		    if (LIKELY(c >= ' ' && c != '\x7f')) {
-			putc((tchar)c);
-		    } else {
-			putc('\\');
-			putc((tchar)('0' + ((c >> 6) & 7)));
-			putc((tchar)('0' + ((c >> 3) & 7)));
-			putc((tchar)('0' + (c & 7)));
-		    }
-		}
-	    }
-	    if (bsz)
-		os.write(buf, bsz);
-	    os.write(T('"'));
-	    return os;
-	}
+#ifdef SIMD16
+    p = scan16(p, end, quote16);
+#endif
+    while (p < end && !((tuchar)*p >= 0x80 || needquote[(tuchar)*p]))
 	++p;
+    if (LIKELY(p == end)) {
+	os.write(s.data(), (streamsize)s.size());
+	return os;
     }
-    os.write((const tchar *)start, p - start);
+
+    const tchar *start = s.data();
+
+    os.write(T('"'));
+    for (;; ++p) {
+#ifdef SIMD16
+	p = scan16(p, end, qesc16);
+#endif
+	while (p < end && (tuchar)*p >= ' ' && *p != '"' && *p != '\\' &&
+	    *p != 0x7f)
+	    ++p;
+	if (p == end)
+	    break;
+
+	const tuchar c = (tuchar)*p;
+	tchar esc[4] = { '\\' };
+	streamsize n = 2;
+
+	switch (c) {
+	case '"': case '\\': esc[1] = (tchar)c; break;
+	case '\f': esc[1] = 'f'; break;
+	case '\n': esc[1] = 'n'; break;
+	case '\r': esc[1] = 'r'; break;
+	case '\t': esc[1] = 't'; break;
+	case '\v': esc[1] = 'v'; break;
+	default:
+	    esc[1] = (tchar)('0' + ((c >> 6) & 7));
+	    esc[2] = (tchar)('0' + ((c >> 3) & 7));
+	    esc[3] = (tchar)('0' + (c & 7));
+	    n = 4;
+	}
+	os.write(start, p - start);
+	os.write(esc, n);
+	start = p + 1;
+    }
+    os.write(start, end - start);
+    os.write(T('"'));
     return os;
 }
 
@@ -942,7 +1010,7 @@ void Log::set(const Config &cfg, const tchar *sect) {
 	s == T("syslog") ? Syslog : s == T("keyval") ? KeyVal : Simple;
     afd.set(cfg, sect, T("alert"), false, T("warn"), T("stderr"));
     ffd.set(cfg, sect, T("file"), true, T("info"), T("stdout"));
-    lvl = max(afd.lvl, ffd.lvl);
+    updatelvl();
     lck.unlock();
     buffer(bufenable);
 }
@@ -968,10 +1036,14 @@ bool Log::setids(uid_t uid, gid_t gid) {
 }
 
 void Log::setmp(bool b) {
-    flush();
-    ffd.close();
     if (b)
 	buffer(false);
+
+    PauseFlush pf(*this);
+    Locker lkr(lck);
+
+    drainbuffers(false);
+    ffd.close();
     mp = ffd.mp = b;
 }
 
@@ -1034,6 +1106,7 @@ void Log::syslog(Level l, const tchar *host, uint fac) {
     Locker lkr(lck);
 
     _syslog(l, host, fac);
+    updatelvl();
 }
 
 void Log::_syslog(Level l, const tchar *host, uint fac) {
