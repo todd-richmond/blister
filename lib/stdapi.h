@@ -794,6 +794,7 @@ EXTERNC_
 // common includes, defines and code for C++ software
 #ifdef __cplusplus
 
+#include <array>
 #include <bit>
 #include <charconv>
 #include <chrono>
@@ -1229,8 +1230,9 @@ struct striless {
 // Bernstein string hash with transform
 using strhash_t = uint64_t;
 
-template<typename T, class F = decltype([](T c) { return c; })>
-constexpr strhash_t bernstein_hash(const T *s, size_t len, F xfrm = {}) {
+template<typename T, class F>
+__forceinline constexpr strhash_t bernsteininline(const T *s, size_t len,
+    F xfrm) {
     size_t i;
     strhash_t r0 = 5381, r1 = 5381, ret;
 
@@ -1246,8 +1248,8 @@ constexpr strhash_t bernstein_hash(const T *s, size_t len, F xfrm = {}) {
     return ret;
 }
 
-template<typename T, class F = decltype([](T c) { return c; })>
-__forceinline strhash_t bernstein_hash(const T *s, F xfrm = {}) {
+template<typename T, class F>
+__forceinline constexpr strhash_t bernsteininline(const T *s, F xfrm) {
     T c0, c1, c2, c3;
     strhash_t r0 = 5381, r1 = 5381, ret;
 
@@ -1264,8 +1266,45 @@ __forceinline strhash_t bernstein_hash(const T *s, F xfrm = {}) {
     return ret;
 }
 
+template<typename T, class F>
+constexpr strhash_t bernsteincall(const T *s, size_t len, F xfrm) {
+    return bernsteininline(s, len, xfrm);
+}
+
+template<typename T, class F>
+constexpr strhash_t bernsteincall(const T *s, F xfrm) {
+    return bernsteininline(s, xfrm);
+}
+
+// inline constant data such as literals so the optimizer folds their hash
+template<typename T, class F = decltype([](T c) { return c; })>
+__forceinline constexpr strhash_t bernstein_hash(const T *s, size_t len,
+    F xfrm = {}) {
+#ifndef __OPTIMIZE_SIZE__
+    // cppcheck-suppress duplicateExpression
+    if (CONSTANT_P(len) && CONSTANT_P(*s))
+	return bernsteininline(s, len, xfrm);
+#endif
+    return bernsteincall(s, len, xfrm);
+}
+
+// pointers and mutable buffers; const arrays use the overload below
+template<typename P, typename T = remove_cvref_t<remove_pointer_t<decay_t<P>>>,
+    class F = decltype([](T c) { return c; })> requires (!const_array<P> &&
+    is_pointer_v<decay_t<P>> && invocable<F, T>)
+__forceinline constexpr strhash_t bernstein_hash(P &&p, F xfrm = {}) {
+    const T *s = p;
+
+#ifndef __OPTIMIZE_SIZE__
+    if (CONSTANT_P(*s))
+	return bernsteininline(s, xfrm);
+#endif
+    return bernsteincall(s, xfrm);
+}
+
 // compile-time version for string literals and partially filled arrays
 template<typename T, size_t N, class F = decltype([](T c) { return c; })>
+    requires invocable<F, T>
 constexpr strhash_t bernstein_hash(T const (&s)[N], F xfrm = {}) {
     static_assert(N > 0, "string literal required");
     return bernstein_hash(s, char_traits<T>::length(s), xfrm);
@@ -1284,12 +1323,12 @@ constexpr auto unicode_fold = [](wchar c) {
     if consteval {
 	return c;
     } else {
-	return (wchar)towupper((ushort)c);
+	return (wchar)towupper((wint_t)c);
     }
 };
 
 // rapidhash for arbitrary binary data - 64*64 -> 128 bit multiply
-constexpr void rapidmum(strhash_t &a, strhash_t &b) {
+__forceinline constexpr void rapidmum(strhash_t &a, strhash_t &b) {
 #if defined(__SIZEOF_INT128__)
     __uint128_t r = (__uint128_t)a * b;
 
@@ -1315,7 +1354,7 @@ constexpr void rapidmum(strhash_t &a, strhash_t &b) {
 #endif
 }
 
-constexpr strhash_t rapidmix(strhash_t a, strhash_t b) {
+__forceinline constexpr strhash_t rapidmix(strhash_t a, strhash_t b) {
     rapidmum(a, b);
     return a ^ b;
 }
@@ -1331,20 +1370,18 @@ constexpr U rapidfold(U x) {
     return x | (upper >> 2);
 }
 
-// native endian unaligned loads usable in constant expressions
-template<typename U, bool fold = false, typename B>
+// little endian unaligned loads usable in constant expressions
+template<bool fold = false, typename U = strhash_t, typename B>
 constexpr U rapidload(const B *p) {
     U u = 0;
 
     if consteval {
-	for (size_t i = 0; i < sizeof (U); ++i) {
-	    size_t sh = endian::native == endian::little ? i : sizeof (U) - 1
-		- i;
-
-	    u |= (U)(uint8_t)p[i] << (sh * 8);
-	}
+	for (size_t i = 0; i < sizeof (U); ++i)
+	    u |= (U)(uint8_t)p[i] << (i * 8);
     } else {
 	memcpy(&u, p, sizeof (u));
+	if constexpr (endian::native == endian::big)
+	    u = byteswap(u);
     }
     if constexpr (fold)
 	u = rapidfold(u);
@@ -1352,7 +1389,11 @@ constexpr U rapidload(const B *p) {
 }
 
 inline constexpr strhash_t RAPID_SECRET0 = 0x9e3779b97f4a7c15ULL;
-inline constexpr strhash_t RAPID_SECRET1 = 0x6c62272e07bb0142ULL;
+inline constexpr strhash_t RAPID_SECRET[] = {
+    0x2d358dccaa6c78a5ULL, 0x8bb84b93962eacc9ULL, 0x4b33a62ed433d4a3ULL,
+    0x4d5a2da51de1aa47ULL, 0xa0761d6478bd642fULL, 0xe7037ed1a0b428dbULL,
+    0x90ed1765281c388cULL, 0xaaaaaaaaaaaaaaaaULL
+};
 
 // fold = ASCII case insensitive
 template<bool fold, typename B>
@@ -1363,80 +1404,66 @@ constexpr strhash_t rapidbyte(const B *p) {
 	return (uint8_t)*p;
 }
 
-// keys up to 16 bytes need only 2 multiplies to mix well
-template<bool fold, typename B>
-constexpr strhash_t rapidshort(const B *p, size_t len,
-    strhash_t seed) {
-    strhash_t r0 = 0, r1 = 0;
-
-    if (LIKELY(len >= 8)) {
-	r0 = rapidload<strhash_t, fold>(p);
-	r1 = rapidload<strhash_t, fold>(p + len - 8);
-    } else if (len >= 4) {
-	r0 = ((strhash_t)rapidload<uint32_t, fold>(p) << 32) |
-	    rapidload<uint32_t, fold>(p + len - 4);
-    } else if (len > 0) {
-	r0 = (rapidbyte<fold>(p) << 16) | (rapidbyte<fold>(p + (len >> 1)) <<
-	    8) | rapidbyte<fold>(p + len - 1);
-    }
-    return rapidmix(rapidmix(r0 ^ RAPID_SECRET0 ^ seed, r1 ^ RAPID_SECRET1) ^
-	(RAPID_SECRET0 ^ (strhash_t)len), RAPID_SECRET1);
-}
-
-// rapidhash V3 Micro (bit exact) for > 16 bytes; sd chains, fold = nocase
+// rapidhash V3 Micro (bit exact) after rapid_hash premixes the seed
 template<bool fold, typename B>
 __forceinline constexpr strhash_t rapidinline(const B *p, size_t len,
-    strhash_t sd) {
-    static constexpr strhash_t secret[] = {
-	0x2d358dccaa6c78a5ULL, 0x8bb84b93962eacc9ULL, 0x4b33a62ed433d4a3ULL,
-	0x4d5a2da51de1aa47ULL, 0xa0761d6478bd642fULL, 0xe7037ed1a0b428dbULL,
-	0x90ed1765281c388cULL, 0xaaaaaaaaaaaaaaaaULL
-    };
+    strhash_t seed) {
+    const strhash_t *secret = RAPID_SECRET;
     size_t i = len;
-    strhash_t seed = sd, a, b;
+    strhash_t a = 0, b = 0;
 
-    if (LIKELY(len <= 16))
-	return rapidshort<fold>(p, len, sd);
-    seed ^= rapidmix(seed ^ secret[2], secret[1]);
-    if (i > 80) {
-	strhash_t see1 = seed, see2 = seed, see3 = seed, see4 = seed;
+    if (LIKELY(len <= 16)) {
+	if (len >= 4) {
+	    seed ^= len;
+	    if (len >= 8) {
+		a = rapidload<fold>(p);
+		b = rapidload<fold>(p + len - 8);
+	    } else {
+		a = rapidload<fold, uint32_t>(p);
+		b = rapidload<fold, uint32_t>(p + len - 4);
+	    }
+	} else if (len > 0) {
+	    a = (rapidbyte<fold>(p) << 45) | rapidbyte<fold>(p + len - 1);
+	    b = rapidbyte<fold>(p + (len >> 1));
+	}
+    } else {
+	if (i > 80) {
+	    strhash_t see1 = seed, see2 = seed, see3 = seed, see4 = seed;
 
-	do {
-	    seed = rapidmix(rapidload<strhash_t, fold>(p) ^ secret[0],
-		rapidload<strhash_t, fold>(p + 8) ^ seed);
-	    see1 = rapidmix(rapidload<strhash_t, fold>(p + 16) ^ secret[1],
-		rapidload<strhash_t, fold>(p + 24) ^ see1);
-	    see2 = rapidmix(rapidload<strhash_t, fold>(p + 32) ^ secret[2],
-		rapidload<strhash_t, fold>(p + 40) ^ see2);
-	    see3 = rapidmix(rapidload<strhash_t, fold>(p + 48) ^ secret[3],
-		rapidload<strhash_t, fold>(p + 56) ^ see3);
-	    see4 = rapidmix(rapidload<strhash_t, fold>(p + 64) ^ secret[4],
-		rapidload<strhash_t, fold>(p + 72) ^ see4);
-	    p += 80;
-	    i -= 80;
-	} while (i > 80);
-	seed ^= see1;
-	see2 ^= see3;
-	seed ^= see4;
-	seed ^= see2;
-    }
-    if (i > 16) {
-	seed = rapidmix(rapidload<strhash_t, fold>(p) ^ secret[2],
-	    rapidload<strhash_t, fold>(p + 8) ^ seed);
-	if (i > 32) {
-	    seed = rapidmix(rapidload<strhash_t, fold>(p + 16) ^ secret[2],
-		rapidload<strhash_t, fold>(p + 24) ^ seed);
-	    if (i > 48) {
-		seed = rapidmix(rapidload<strhash_t, fold>(p + 32) ^ secret[1],
-		    rapidload<strhash_t, fold>(p + 40) ^ seed);
-		if (i > 64)
-		    seed = rapidmix(rapidload<strhash_t, fold>(p + 48) ^
-			secret[1], rapidload<strhash_t, fold>(p + 56) ^ seed);
+	    do {
+		seed = rapidmix(rapidload<fold>(p) ^ secret[0],
+		    rapidload<fold>(p + 8) ^ seed);
+		see1 = rapidmix(rapidload<fold>(p + 16) ^ secret[1],
+		    rapidload<fold>(p + 24) ^ see1);
+		see2 = rapidmix(rapidload<fold>(p + 32) ^ secret[2],
+		    rapidload<fold>(p + 40) ^ see2);
+		see3 = rapidmix(rapidload<fold>(p + 48) ^ secret[3],
+		    rapidload<fold>(p + 56) ^ see3);
+		see4 = rapidmix(rapidload<fold>(p + 64) ^ secret[4],
+		    rapidload<fold>(p + 72) ^ see4);
+		p += 80;
+		i -= 80;
+	    } while (i > 80);
+	    seed ^= see1 ^ see2 ^ see3 ^ see4;
+	}
+	if (i > 16) {
+	    seed = rapidmix(rapidload<fold>(p) ^ secret[2],
+		rapidload<fold>(p + 8) ^ seed);
+	    if (i > 32) {
+		seed = rapidmix(rapidload<fold>(p + 16) ^ secret[2],
+		    rapidload<fold>(p + 24) ^ seed);
+		if (i > 48) {
+		    seed = rapidmix(rapidload<fold>(p + 32) ^ secret[1],
+			rapidload<fold>(p + 40) ^ seed);
+		    if (i > 64)
+			seed = rapidmix(rapidload<fold>(p + 48) ^ secret[1],
+			    rapidload<fold>(p + 56) ^ seed);
+		}
 	    }
 	}
+	a = rapidload<fold>(p + i - 16) ^ i;
+	b = rapidload<fold>(p + i - 8);
     }
-    a = rapidload<strhash_t, fold>(p + i - 16) ^ i;
-    b = rapidload<strhash_t, fold>(p + i - 8);
     a ^= secret[1];
     b ^= seed;
     rapidmum(a, b);
@@ -1452,6 +1479,8 @@ constexpr strhash_t rapidcall(const B *p, size_t len, strhash_t sd) {
 template<bool fold = false, typename B> requires (sizeof (B) == 1)
 __forceinline constexpr strhash_t rapid_hash(const B *p, size_t len,
     strhash_t sd = 0) {
+    // premixed here so the usual constant seed folds
+    sd ^= rapidmix(sd ^ RAPID_SECRET[2], RAPID_SECRET[1]);
 #ifndef __OPTIMIZE_SIZE__	// -Os will not fold the inlined code
     // cppcheck-suppress duplicateExpression
     if (CONSTANT_P(len) && CONSTANT_P(*p))
@@ -1464,15 +1493,26 @@ inline strhash_t rapid_hash(const void *data, size_t len, strhash_t seed = 0) {
     return rapid_hash((const uint8_t *)data, len, seed);
 }
 
-// 1 byte characters use rapid_hash and wide characters bernstein_hash
+// wide case folding needs towupper per char so uses bernstein_hash
 template<bool icase = false, typename T, class F = decltype([](T c) {
     return c; })>
 __forceinline constexpr strhash_t charhash(const T *s, size_t len,
     [[maybe_unused]] F xfrm = {}) {
-    if constexpr (sizeof (T) == 1)
+    if constexpr (sizeof (T) == 1) {
 	return rapid_hash<icase>(s, len);
-    else
+    } else if constexpr (icase) {
 	return bernstein_hash(s, len, xfrm);
+    } else {
+	if consteval {
+	    string b;	// native byte order to match the runtime hash
+
+	    for (size_t i = 0; i < len; ++i)
+		b.append_range(bit_cast<array<char, sizeof (T)>>(s[i]));
+	    return rapid_hash(b.data(), b.size());
+	} else {
+	    return rapid_hash((const char *)s, len * sizeof (T));
+	}
+    }
 }
 
 // case folding of the wide character bernstein_hash

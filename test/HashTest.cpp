@@ -361,6 +361,11 @@ WARN_POP()
 	    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 	static constexpr strhash_t ct17 = rapid_hash(data, 17);
 	static constexpr strhash_t ct100 = rapid_hash(data, 100);
+	// rapidhash V3 Micro reference values pin every length branch
+	static_assert(rapid_hash("", 0) == 0x0338dc4be2cecdaeULL &&
+	    rapid_hash("abc", 3) == 0xcb475beafa9c0da2ULL &&
+	    ct17 == 0x62b040278b0412a6ULL && ct100 == 0x0ffec321561ba50fULL,
+	    "rapid_hash must match rapidhash V3 Micro");
 	static const size_t lens[] = {
 	    0, 1, 3, 4, 7, 8, 15, 16, 17, 47, 48, 49, 100
 	};
