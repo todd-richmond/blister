@@ -1489,10 +1489,12 @@ constexpr auto ifold = [] {
 template<typename C, bool icase>
 struct basic_strkey: basic_string_view<C> {
     template<size_t N>
+    // cppcheck-suppress noExplicitConstructor
     consteval basic_strkey(const C (&s)[N]): basic_string_view<C>(strview(s)),
 	hash(keyhash(strview(s))) {}
     template<typename K> requires (!const_array<K> &&
 	is_convertible_v<K, basic_string_view<C>>)
+    // cppcheck-suppress noExplicitConstructor
     constexpr basic_strkey(K &&s): basic_string_view<C>(std::forward<K>(s)) {}
 
     strhash_t hash = 0;
@@ -1524,6 +1526,7 @@ using strkey = basic_strkey<tchar, false>;
 // literal only strkey for callers that keep the pointer
 struct strlit: strkey {
     template<size_t N>
+    // cppcheck-suppress noExplicitConstructor
     consteval strlit(const tchar (&s)[N]): strkey(s) {}
 };
 

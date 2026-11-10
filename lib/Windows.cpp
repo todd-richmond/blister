@@ -373,7 +373,7 @@ int write(int fd, const void *buf, uint len) {
  */
 long writev(int fd, const iovec *io, int num) {
     char sbuf[4096];
-    char *buf = sbuf, *p;
+    char *buf, *p;
     ullong total = 0;
     long out = 0;
 
@@ -394,8 +394,8 @@ long writev(int fd, const iovec *io, int num) {
 	}
 	return out;
     }
-    if (total > sizeof (sbuf) && (buf = (char *)malloc((size_t)total)) ==
-	NULL) {
+    buf = total > sizeof (sbuf) ? (char *)malloc((size_t)total) : sbuf;
+    if (!buf) {
 	errno = ENOMEM;
 	return -1;
     }
@@ -426,7 +426,7 @@ DIR *opendir(const char *name) {
     DWORD attr;
     const char *p;
     const char *wild = NULL;
-    size_t len;
+    size_t len, wlen;
 
     len = strlen(name);
     p = name + len - 1;
@@ -447,10 +447,14 @@ DIR *opendir(const char *name) {
 	}
     }
     len = p - name;
-    if ((dirp = (DIR *)malloc(sizeof (struct DIR) + (len + 1 +
-	(wild ? strlen(wild) : sizeof ("/*.*"))) * sizeof (char))) == NULL)
+    if (!wild)
+	wild = "*.*";
+    wlen = strlen(wild);
+    // path[1] in DIR holds the NUL
+    if ((dirp = (DIR *)malloc(sizeof (struct DIR) + (len + 1 + wlen) *
+	sizeof (char))) == NULL)
 	return dirp;
-    memcpy(&dirp->path, name, len);
+    memcpy(dirp->path, name, len);
     dirp->path[len] = '\0';
     if ((attr = GetFileAttributesA(dirp->path)) == (DWORD)-1 ||
 	!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
@@ -458,8 +462,8 @@ DIR *opendir(const char *name) {
 	free(dirp);
 	return NULL;
     }
-    strcpy(dirp->path + len, "/");
-    strcpy(dirp->path + len + 1, wild ? wild : "*.*");
+    dirp->path[len] = '/';
+    memcpy(dirp->path + len + 1, wild, (wlen + 1) * sizeof (char));
     dirp->hdl = 0;
     dirp->dir.d_off = 0;
     dirp->dir.d_name = dirp->wfd.cFileName;
@@ -471,7 +475,7 @@ WDIR *wopendir(const wchar *name) {
     DWORD attr;
     const wchar *p;
     const wchar *wild = NULL;
-    size_t len;
+    size_t len, wlen;
 
     len = wcslen(name);
     p = name + len - 1;
@@ -492,10 +496,13 @@ WDIR *wopendir(const wchar *name) {
 	}
     }
     len = p - name;
-    if ((dirp = (WDIR *)malloc(sizeof (struct WDIR) + (len + 1 +
-	(wild ? wcslen(wild) : sizeof (L"/*.*"))) * sizeof (wchar))) == NULL)
+    if (!wild)
+	wild = L"*.*";
+    wlen = wcslen(wild);
+    if ((dirp = (WDIR *)malloc(sizeof (struct WDIR) + (len + 1 + wlen) *
+	sizeof (wchar))) == NULL)
 	return dirp;
-    memcpy(&dirp->path, name, len);
+    memcpy(dirp->path, name, len * sizeof (wchar));
     dirp->path[len] = '\0';
     if ((attr = GetFileAttributesW(dirp->path)) == (DWORD)-1 ||
 	!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
@@ -503,8 +510,8 @@ WDIR *wopendir(const wchar *name) {
 	free(dirp);
 	return NULL;
     }
-    wcscpy(dirp->path + len, L"/");
-    wcscpy(dirp->path + len + 1, wild ? wild : L"*.*");
+    dirp->path[len] = '/';
+    memcpy(dirp->path + len + 1, wild, (wlen + 1) * sizeof (wchar));
     dirp->hdl = 0;
     dirp->dir.d_off = 0;
     dirp->dir.d_name = dirp->wfd.cFileName;

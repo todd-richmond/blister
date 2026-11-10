@@ -389,7 +389,7 @@ private:
     void drainbuffers(bool unlockedio);
     void rotatebuf(void);
     void updatelvl(void) {
-	lvl = max({ afd.lvl, ffd.lvl, maillvl, sysloglvl });
+	lvl = (max)({afd.lvl, ffd.lvl, maillvl, sysloglvl});
     }
     void _mail(Level l, const tchar *to, const tchar *from, const tchar *host);
     void _syslog(Level l, const tchar *host, uint fac);
