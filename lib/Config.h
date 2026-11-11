@@ -38,7 +38,8 @@
  *   1) value enclosed in "" or '' will keep leading and trailing spaces and
  *      '' will not be expanded.
  *   2) lines ending in \ will have their values continued on the next line
- *   3) ${key} or $(key) substrings will be recursively expanded during get()
+ *   3) ${key} or $(key) substrings will be recursively expanded during get(),
+ *      falling back to environment variables
  *   4) lines beginning with # are comments
  *   5) lines beginning with #include will recursively include the filename arg
  *   6) key += val appends the value

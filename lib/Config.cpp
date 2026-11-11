@@ -95,7 +95,17 @@ void Config::expandkv(const KV *kv, tstring &val) const {
 	    sv.remove_prefix(pre.size() + 1);
 	auto it = amap.find(sv);
 	if (it == amap.end()) {
-	    search = epos + 1;
+	    tstring name(sv);	// sv aliases val and isn't NUL terminated
+	    const tchar *env = tgetenv(name.c_str());
+
+	    if (env) {
+		tstring::size_type len = tstrlen(env);
+
+		val.replace(spos, epos - spos + 1, env, len);
+		search = spos + len;
+	    } else {
+		search = epos + 1;
+	    }
 	    continue;
 	}
 	// stop runaway expansion of self referencing values
