@@ -906,77 +906,22 @@ __forceinline T atou(const tchar *str) {
     return (T)val;
 }
 
-#ifndef UNICODE
-inline uint32_t swar4(const char *s) {
-    uint32_t chunk;
-
-    memcpy(&chunk, s, sizeof (chunk));
-    if constexpr (endian::native == endian::big)
-	chunk = byteswap(chunk);
-    chunk -= 0x30303030U;
-    chunk = chunk * 10 + (chunk >> 8);
-    chunk &= 0x00FF00FFU;
-    return (chunk * (100 * 65536 + 1)) >> 16;
-}
-
-inline uint32_t swar8(const char *s) {
-    uint64_t chunk;
-
-    memcpy(&chunk, s, sizeof (chunk));
-    if constexpr (endian::native == endian::big)
-	chunk = byteswap(chunk);
-    chunk -= 0x3030303030303030ULL;
-    chunk = chunk * 10 + (chunk >> 8);
-    chunk = (((chunk & 0x000000FF000000FFULL) * 0x000F424000000064ULL) +
-	((chunk >> 16 & 0x000000FF000000FFULL) * 0x0000271000000001ULL)) >> 32;
-    return (uint32_t)chunk;
-}
-#endif
-
 template<typename T>
 __forceinline T atoun(const tchar *str, size_t len) {
-    size_t val = 0;
-#ifdef UNICODE
-    for (size_t i = 0; i < len; ++i) {
-	size_t d = (size_t)(tuchar)str[i] - '0';
+    size_t d, val = 0;
 
-	if (d > 9)
-	    break;
+    while (len >= 2 && (d = (size_t)(tuchar)*str - '0') <= 9) {
+	size_t d2 = (size_t)(tuchar)str[1] - '0';
+
+	if (d2 > 9)
+	    return (T)(val * 10 + d);
+	val = val * 100 + d * 10 + d2;
+	str += 2;
+	len -= 2;
+    }
+    if (len == 1 && (d = (size_t)(tuchar)*str - '0') <= 9)
 	val = val * 10 + d;
-    }
     return (T)val;
-#else
-    for (size_t i = 0; i < len; ++i) {
-	if ((size_t)(tuchar)str[i] - '0' > 9) {
-	    len = i;
-	    break;
-	}
-    }
-    if (UNLIKELY(len >= 8)) {
-	val = swar8(str);
-	str += 8;
-	len -= 8;
-	if (UNLIKELY(len >= 8)) {
-	    val = val * 100000000ULL + swar8(str);
-	    str += 8;
-	    len -= 8;
-	}
-    }
-    if (len >= 4) {
-	val = val * 10000 + swar4(str);
-	str += 4;
-	len -= 4;
-    }
-    switch (len) {
-    case 3: val = val * 1000 + (size_t)(str[0] - '0') * 100 +
-	(size_t)(str[1] - '0') * 10 + (size_t)(str[2] - '0'); break;
-    case 2: val = val * 100 + (size_t)(str[0] - '0') * 10 +
-	(size_t)(str[1] - '0'); break;
-    case 1: val = val * 10 + (size_t)(str[0] - '0'); break;
-    default: break;
-    }
-    return (T)val;
-#endif
 }
 
 template<typename T>
@@ -995,15 +940,84 @@ __forceinline T atoin(const tchar *str, size_t len) {
 	atoun<T>(str, len);
 }
 
-// wchar_t to_chars overload
-template<typename T>
+inline constexpr char digit_pairs[] =
+	"00010203040506070809"
+	"10111213141516171819"
+	"20212223242526272829"
+	"30313233343536373839"
+	"40414243444546474849"
+	"50515253545556575859"
+	"60616263646566676869"
+	"70717273747576777879"
+	"80818283848586878889"
+	"90919293949596979899";
+
+// wchar_t integer to_chars: digit pairs written in place
+template<typename T> requires (is_integral_v<T> && !is_same_v<T, bool>)
 auto to_chars(wchar_t *first, wchar_t *last, T value) {
     struct result {
 	wchar_t *ptr;
 	errc ec;
     };
+    using U = make_unsigned_t<T>;
+    U u = (U)value;
+    size_t n = 1, neg = 0;
+    wchar_t *end, *p;
+
+    if constexpr (is_signed_v<T>) {
+	if (value < 0) {
+	    u = (U)(0 - u);
+	    neg = 1;
+	}
+    }
+    for (U t = u; t >= 10; n += 4) {
+	if (t < 100) {
+	    n += 1;
+	    break;
+	}
+	if (t < 1000) {
+	    n += 2;
+	    break;
+	}
+	if (t < 10000) {
+	    n += 3;
+	    break;
+	}
+	t = (U)(t / 10000);
+    }
+    if (n + neg > (size_t)(last - first))
+	return result{last, errc::value_too_large};
+    end = p = first + neg + n;
+    while (u >= 100) {
+	auto const idx = (size_t)(u % 100) * 2;
+
+	u = (U)(u / 100);
+	*--p = (wchar_t)digit_pairs[idx + 1];
+	*--p = (wchar_t)digit_pairs[idx];
+    }
+    if (u >= 10) {
+	auto const idx = (size_t)u * 2;
+
+	*--p = (wchar_t)digit_pairs[idx + 1];
+	*--p = (wchar_t)digit_pairs[idx];
+    } else {
+	*--p = (wchar_t)('0' + u);
+    }
+    if (neg)
+	*first = L'-';
+    return result{end, errc()};
+}
+
+// wchar_t to_chars overload for non-integers and integers with a base
+template<typename T, typename... A>
+auto to_chars(wchar_t *first, wchar_t *last, T value, A... args) {
+    struct result {
+	wchar_t *ptr;
+	errc ec;
+    };
     char buf[128];
-    auto [char_end, char_ec] = to_chars(buf, buf + sizeof (buf), value);
+    auto [char_end, char_ec] = to_chars(buf, buf + sizeof (buf), value,
+	args...);
     result r = {first, char_ec};
 
     char *p = buf;

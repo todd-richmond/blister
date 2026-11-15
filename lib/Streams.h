@@ -238,7 +238,18 @@ private:
     char ubuf = 0;
 };
 
-// fast portable string stream; avoids MSVC sstream::seekp() memory leaks
+template<typename T>
+inline constexpr bool is_char_type_v = is_same_v<T, char> ||
+    is_same_v<T, signed char> || is_same_v<T, unsigned char> ||
+    is_same_v<T, wchar_t> || is_same_v<T, char8_t> ||
+    is_same_v<T, char16_t> || is_same_v<T, char32_t>;
+
+/*
+ * fast portable string stream; avoids MSVC sstream::seekp() memory leaks.
+ * operator << takes the write() fast path for chars, integers, floats and
+ * strings unless the stream has non-default format flags, width, precision,
+ * tie or error state. Assumes the classic locale (no digit grouping)
+ */
 template<class C>
 class BLISTER bufferstream: public basic_ostream<C> {
 public:
@@ -247,15 +258,59 @@ public:
     streamsize pcount(void) const { return sb.pcount(); }
     streamsize size(void) const { return pcount(); }
     const C *str(void) const { return sb.buffer(); }
+    void str(basic_string_view<C> sv) {
+	reset();
+	write(sv.data(), (streamsize)sv.size());
+    }
+    basic_string_view<C> view(void) const { return sb.view(); }
     C back(void) const { return sb.back(); }
 
     void reset(void) { sb.reset(); }
-    void write(C c) { sb.write(c); }
-    void write(bool b) { sb.write(b ? C('t') : C('f')); }
-    void put(C c) { sb.write(c); }
-    void write(const C *s, streamsize n) { sb.write(s, n); }
+    bufferstream &write(C c) { sb.write(c); return *this; }
+    bufferstream &write(bool b) {
+	sb.write(b ? C('t') : C('f'));
+	return *this;
+    }
+    bufferstream &put(C c) { sb.write(c); return *this; }
+    bufferstream &write(const C *s, streamsize n) {
+	sb.write(s, n);
+	return *this;
+    }
     template<typename T>
-    __forceinline void write(const T &val) {
+    __forceinline bufferstream &operator <<(T &&val) {
+	using U = remove_cvref_t<T>;
+
+	if constexpr (is_same_v<U, C> || (is_integral_v<U> &&
+	    !is_same_v<U, bool> && !is_char_type_v<U>) ||
+	    is_floating_point_v<U> ||
+	    is_convertible_v<const U &, basic_string_view<C>>) {
+	    if constexpr (is_pointer_v<U>) {
+		if (UNLIKELY(!val)) {
+		    this->setstate(ios_base::badbit);
+		    return *this;
+		}
+	    }
+	    if (LIKELY(plain() && (!is_floating_point_v<U> ||
+		this->precision() == 6)))
+		return write(val);
+	}
+	static_cast<basic_ostream<C> &>(*this) << std::forward<T>(val);
+	return *this;
+    }
+    bufferstream &operator <<(basic_ostream<C> &(*pf)(basic_ostream<C> &)) {
+	pf(*this);
+	return *this;
+    }
+    bufferstream &operator <<(basic_ios<C> &(*pf)(basic_ios<C> &)) {
+	pf(*this);
+	return *this;
+    }
+    bufferstream &operator <<(ios_base &(*pf)(ios_base &)) {
+	pf(*this);
+	return *this;
+    }
+    template<typename T>
+    __forceinline bufferstream &write(const T &val) {
 	if constexpr (is_same_v<T, char> || is_same_v<T, wchar_t> ||
 	    is_same_v<T, char8_t> || is_same_v<T, char16_t> ||
 	    is_same_v<T, char32_t>) {
@@ -288,21 +343,10 @@ public:
 		    *--p = (C)'-';
 	    write(p, buf + std::size(buf) - p);
 	} else if constexpr (is_floating_point_v<T>) {
-	    char buf[40];
-	    auto [end, ec] = to_chars(buf, buf + std::size(buf), val);
-
-	    if (UNLIKELY(ec != errc{})) {
-		*this << val;
-	    } else if constexpr (is_same_v<C, char>) {
-		write(buf, end - buf);
-	    } else {
-		C wbuf[std::size(buf)];
-		C *d = wbuf;
-
-		for (const char *s = buf; s < end;)
-		    *d++ = (C)*s++;
-		write(wbuf, end - buf);	// cppcheck-suppress uninitvar
-	    }
+	    C buf[40];
+	    // %.6g like ostream; always fits
+	    write(buf, to_chars(buf, buf + std::size(buf), val,
+		chars_format::general, 6).ptr - buf);
 	} else if constexpr (is_enum_v<T>) {
 	    write((underlying_type_t<T>)val);
 	} else if constexpr (is_convertible_v<const T &,
@@ -313,20 +357,14 @@ public:
 	} else {
 	    *this << val;
 	}
+	return *this;
     }
 
 private:
-    static constexpr char digit_pairs[] =
-	"00010203040506070809"
-	"10111213141516171819"
-	"20212223242526272829"
-	"30313233343536373839"
-	"40414243444546474849"
-	"50515253545556575859"
-	"60616263646566676869"
-	"70717273747576777879"
-	"80818283848586878889"
-	"90919293949596979899";
+    bool plain(void) const {
+	return this->flags() == (ios_base::skipws | ios_base::dec) &&
+	    !this->width() && this->good() && !this->tie();
+    }
 
     class BLISTER bufferbuf: public basic_stringbuf<C> {
     public:
@@ -348,6 +386,9 @@ private:
 	}
 	C back(void) const {
 	    return pcount() ? *(basic_stringbuf<C>::pptr() - 1) : C();
+	}
+	basic_string_view<C> view(void) const {
+	    return { basic_stringbuf<C>::pbase(), (size_t)pcount() };
 	}
 	void reset(void) {
 	    basic_stringbuf<C>::setp(basic_stringbuf<C>::pbase(),
@@ -394,17 +435,22 @@ private:
 	}
 
     private:
-	streampos seekoff(off_type off, ios_base::seekdir dir,
-	    ios_base::openmode) override {
+	pos_type seekoff(off_type off, ios_base::seekdir dir,
+	    ios_base::openmode mode) override {
+	    if (!(mode & ios_base::in))
+		return -1;
+
 	    off_type base = dir == ios_base::beg ? 0 : dir == ios_base::cur ?
 		gptr() - begin : last - begin;
+	    off_type pos = base + off;
 
-	    setg(begin, begin + clamp<off_type>(base + off, 0, last - begin),
-		last);
-	    return gptr() - eback();
+	    if (pos < 0 || pos > last - begin)
+		return -1;
+	    setg(begin, begin + pos, last);
+	    return pos;
 	}
-	streampos seekpos(streampos pos, ios_base::openmode mode) override {
-	    return seekoff(pos, ios_base::beg, mode);
+	pos_type seekpos(pos_type pos, ios_base::openmode mode) override {
+	    return seekoff(off_type(pos), ios_base::beg, mode);
 	}
 
 	char *begin, *last;
