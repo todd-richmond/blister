@@ -1307,7 +1307,7 @@ template<typename P, typename T = remove_cvref_t<remove_pointer_t<decay_t<P>>>,
     class F = decltype([](T c) { return c; })> requires (!const_array<P> &&
     is_pointer_v<decay_t<P>> && invocable<F, T>)
 __forceinline constexpr strhash_t bernstein_hash(P &&p, F xfrm = {}) {
-    const T *s = p;
+    const T *s = std::forward<P>(p);
 
 #ifndef __OPTIMIZE_SIZE__
     if (CONSTANT_P(*s))
@@ -1549,6 +1549,7 @@ struct basic_strkey: basic_string_view<C> {
     template<typename K> requires (!const_array<K> &&
 	is_convertible_v<K, basic_string_view<C>>)
     // cppcheck-suppress noExplicitConstructor
+    // NOLINTNEXTLINE(runtime/explicit)
     constexpr basic_strkey(K &&s): basic_string_view<C>(std::forward<K>(s)) {}
 
     strhash_t hash = 0;

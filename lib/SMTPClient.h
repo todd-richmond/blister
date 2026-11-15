@@ -48,15 +48,18 @@ public:
     void setLocal(const tchar *local);
 
 private:
-    tstring addr, domain_buf, local_part;
-    tstring err;
+    tstring addr, domain_buf, err, local_part;
     bool utf8 = false;
 
+    bool fail(const tchar *msg) {
+	err = msg;
+	return false;
+    }
+    void make_address(void);
     void parseaddr(const tchar *&addr, bool smtputf8);
+    bool parsedomain(size_t &pos);
     bool scan(const tchar *&addr, bool smtputf8);
     bool split(void);
-    bool parsedomain(size_t &pos);
-    void make_address(void);
 };
 
 class BLISTER RFC822Addr: nocopy {
@@ -72,11 +75,14 @@ public:
     tstring address(uint u = 0, bool name = false, bool brkt = true) const;
     tstring domain(uint u = 0) const { return tstring(at(u).domain); }
     tstring local(uint u = 0) const { return tstring(at(u).local); }
+    // UTF-8 was replaced by '=' so the addresses are not what was parsed
+    bool masked(void) const { return mask; }
     tstring phrase(uint u = 0) const { return tstring(at(u).phrase); }
     tstring route(uint u = 0) const { return tstring(at(u).route); }
     size_t size(void) const { return entries.size(); }
     bool smtputf8(void) const { return utf8; }
 
+    // without smtputf8 any UTF-8 in a mailbox or domain is replaced by '='
     uint parse(const tchar *addrs, bool smtputf8 = false);
 
 private:
@@ -89,15 +95,13 @@ private:
     alignas(Entry) std::byte space[280];
     std::pmr::monotonic_buffer_resource arena{space, sizeof (space)};
     std::pmr::vector<Entry> entries{&arena};
-    bool utf8 = false;
+    bool mask = false, utf8 = false;
 
     const Entry &at(uint u) const {
 	static constexpr Entry none;
 
 	return u < entries.size() ? entries[u] : none;
     }
-    void parse_append(const tchar *name, const tchar *route, const tchar
-	*mailbox, const tchar *domain);
     int parse_domain(tchar *&in, tchar *&domain, tchar *&comment,
 	bool smtputf8);
     int parse_phrase(tchar *&in, tchar *&phrase, const tchar *specials,
@@ -155,41 +159,56 @@ public:
 	pipelined = true;
 	return true;
     }
+    // SMTPUTF8 is declared only for a UTF-8 sender or if it is in parms
     bool from(const tchar *id, const tchar *parms = nullptr);
+    bool from(const RFC821Addr &addr, const tchar *parms = nullptr);
+    // a message has a single sender so more than one address is refused
     bool from(const RFC822Addr &addrs, const tchar *parms = nullptr);
     // parms are RCPT parameters such as DSN NOTIFY= and ORCPT=
     bool rcpt(const tchar *id, const tchar *parms = nullptr);
-    bool rcpt(const RFC822Addr &addr, const tchar *parms = nullptr);
+    bool rcpt(const RFC821Addr &addr, const tchar *parms = nullptr) {
+	return add(nullptr, addr, parms);
+    }
+    // every address in the list is sent
+    bool rcpt(const RFC822Addr &addrs, const tchar *parms = nullptr) {
+	return add(nullptr, addrs, parms);
+    }
     bool bcc(const tchar *id, const tchar *parms = nullptr) {
-	return add(bccv, id, parms);
+	return add(&bccv, RFC822Addr(id, true), parms);
+    }
+    bool bcc(const RFC821Addr &addr, const tchar *parms = nullptr) {
+	return add(&bccv, addr, parms);
     }
     bool bcc(const RFC822Addr &addrs, const tchar *parms = nullptr) {
-	return add(bccv, addrs, parms);
+	return add(&bccv, addrs, parms);
     }
     bool cc(const tchar *id, const tchar *parms = nullptr) {
-	return add(ccv, id, parms);
+	return add(&ccv, RFC822Addr(id, true), parms);
+    }
+    bool cc(const RFC821Addr &addr, const tchar *parms = nullptr) {
+	return add(&ccv, addr, parms);
     }
     bool cc(const RFC822Addr &addrs, const tchar *parms = nullptr) {
-	return add(ccv, addrs, parms);
+	return add(&ccv, addrs, parms);
     }
     bool to(const tchar *id, const tchar *parms = nullptr) {
-	return add(tov, id, parms);
+	return add(&tov, RFC822Addr(id, true), parms);
+    }
+    bool to(const RFC821Addr &addr, const tchar *parms = nullptr) {
+	return add(&tov, addr, parms);
     }
     bool to(const RFC822Addr &addrs, const tchar *parms = nullptr) {
-	return add(tov, addrs, parms);
+	return add(&tov, addrs, parms);
     }
     void attribute(const tchar *attr, const tchar *val);
     void header(const tchar *hdr) { hdrv.emplace_back(hdr); }
     void subject(const tchar *s) { sub = s; }
     bool data(bool mime = false, const tchar *txt = nullptr);
     bool data(const void *p, size_t sz, bool dotstuff = true);
+    // complete RFC 5322 message: sent as is, only dot stuffed. The pointer is
     // an exact match so a string never converts to the bool mime parameter
-    bool data(const tchar *txt) { return data(false, txt); }
-    bool data(const tstring &s) {
-	const auto &as = tstringtoastring(s);
-
-	return data(as.data(), as.size());
-    }
+    bool data(const tchar *msg) { return rawdata(msg ? msg : T("")); }
+    bool data(const tstring &msg) { return rawdata(msg); }
     bool data(const void *p, uint sz, const tchar *type,
 	const tchar *desc = nullptr, const tchar *encoding = nullptr,
 	const tchar *disp = nullptr, const tchar *name = nullptr);
@@ -199,7 +218,10 @@ public:
     bool enddata(void);
     bool quit(void);
     bool rset(void) { pipelined = false; return cmd(T("RSET")); }
+    // applies to the current and later connections
     void timeout(uint rto, uint wto = SOCK_INFINITE) {
+	rtmo = rto;
+	wtmo = wto;
 	sock.rtimeout(rto);
 	sock.wtimeout(wto);
     }
@@ -221,30 +243,33 @@ protected:
     static const char crlf[];
 
 private:
-    bool add(vector<tstring> &v, const tchar *id, const tchar *parms);
-    bool add(vector<tstring> &v, const RFC822Addr &addrs, const tchar *parms);
+    bool add(vector<tstring> *v, const RFC821Addr &addr, const tchar *parms);
+    bool add(vector<tstring> *v, const RFC822Addr &addrs, const tchar *parms);
     bool bigchunk(const void *p, size_t sz, bool dotstuff);
     void buffer(bool on) {
 	chunked = on;
 	strm = on ? static_cast<iostream *>(&bstrm) : &sstrm;
     }
-    bool finish(tstring_view c);
-    bool hello(tstring_view c, const tchar *domain);
-    bool reply(void);
-    bool replies(void);
-    bool sendchunk(bool last);
-    bool sendcmd(tstring_view s1, const tchar *s2, int retcode, bool check);
-    void recip(const tchar *hdr, const vector<tstring> &v);
-    bool downgrade(const tchar *cmd, tstring &id);
     bool can8bit(void) const { return ext_8bitmime || canutf8(); }
-    bool canutf8(void) const { return ext_smtputf8 || fstrm; }
+    // SMTPUTF8 was declared for the transaction or there is no server
+    bool canutf8(void) const { return utf8decl || fstrm; }
+    bool downgrade(const tchar *cmd, tstring &id, bool utf8);
     bool envarg(const tchar *cmd, tstring &id, const tchar *parms, bool brkt,
 	bool always, tstring &arg);
-    string hdrtext(const tchar *s) const;
+    bool finish(tstring_view c);
+    bool fits(size_t sz);
     tstring hdraddr(const RFC822Addr &addr, uint u, const tstring &orig,
 	const tstring &sent) const;
-    bool fits(size_t sz);
+    string hdrtext(const tchar *s) const;
+    bool hello(tstring_view c, const tchar *domain);
+    bool masked(const RFC822Addr &addr);
+    bool rawdata(tstring_view msg);
     bool rcptcmd(tstring &id, const tchar *parms);
+    void recip(const tchar *hdr, const vector<tstring> &v);
+    bool replies(void);
+    bool reply(void);
+    bool sendchunk(bool last);
+    bool sendcmd(tstring_view s1, const tchar *s2, int retcode, bool check);
     bool startdata(void);
     bool stuff(const void *p, size_t sz, bool dotstuff = true);
     static size_t barelfs(const char *p, const char *end);
@@ -265,22 +290,34 @@ private:
 	const char *end, const char *start);
     static bool utf8decode(string_view s, vector<char32_t> &cp);
 
-    string boundary;
-    tstring frm, sub;
-    bool datasent = false, lmtp = false, mime = false;
-    bool pipelined = false;
-    bool chunked = false, usebdat = true;
-    size_t bdatsz = 0, maxsz = 0;
-    stringstream bstrm;
     struct Expect {
 	tstring rcpt;
 	int code;
 	bool delivery;
     };
-    vector<Expect> expectv;
     vector<tstring> acceptedv;
+    size_t bdatsz = 0;
+    vector<tstring> bccv;
+    string boundary;
+    stringstream bstrm;
+    vector<tstring> ccv;
+    bool chunked = false;
+    bool datasent = false;
+    vector<Expect> expectv;
+    tstring frm;
+    vector<tstring> hdrv;
+    bool lmtp = false;
+    size_t maxsz = 0;
+    bool mime = false;
+    bool pipelined = false;
     vector<pair<tstring, tstring>> rejectedv;
-    vector<tstring> tov, ccv, bccv, hdrv, resultsv;
+    vector<tstring> resultsv;
+    uint rtmo = 3 * 60 * 1000;
+    tstring sub;
+    vector<tstring> tov;
+    bool usebdat = true;
+    bool utf8decl = false;
+    uint wtmo = 5 * 60 * 1000;
 };
 
 void base64encode(const void *in, size_t len, char *&out, size_t &outsz);
@@ -290,6 +327,10 @@ bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz);
 void uuencode(const tchar *file, const void *in, size_t len, char *&out,
     size_t &outsz);
 bool uudecode(const char *in, size_t sz, uint &perm, tstring &file, void *&out,
+    size_t &outsz);
+void xxencode(const tchar *file, const void *in, size_t len, char *&out,
+    size_t &outsz);
+bool xxdecode(const char *in, size_t sz, uint &perm, tstring &file, void *&out,
     size_t &outsz);
 
 #endif // SMTPClient_h

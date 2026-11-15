@@ -938,6 +938,7 @@ public:
 	return semop(op);
     }
     bool wait(ulong msec = INFINITE);			// NOSONAR
+
 protected:
     int hdl = -1;
 
@@ -988,7 +989,7 @@ enum ThreadState: uint8_t { Init, Running, Suspended, Terminated };
 // manage OS native threads
 class BLISTER Thread: nocopy {
 public:
-    explicit Thread(thread_hdl_t handle, ThreadGroup *tg = nullptr);
+    explicit Thread(thread_hdl_t handle, ThreadGroup *tg = nullptr) noexcept;
     Thread() = default;
     virtual ~Thread();
 

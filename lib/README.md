@@ -13,7 +13,7 @@ The Blister library. Link against `libblister`.
 - `Service` — one API for Windows services and Unix daemons.
 - `HTTPClient` — blocking HTTP client, non-blocking pipelining `AsyncHTTPClient`, URL parser and HTTP date parsing.
 - `HTTPServer` — HTTP/1.x server on the reactor with keep-alive, chunking and file replies.
-- `SMTPClient` — blocking SMTP/LMTP client with SMTPUTF8, pipelining and BDAT, RFC 821/822 address parsers, and base64, quoted-printable and uuencode codecs with AVX2 paths.
+- `SMTPClient` — blocking SMTP/LMTP client with SMTPUTF8, pipelining and BDAT, RFC 821/822 address parsers, and base64, quoted-printable, uuencode and xxencode codecs with AVX2 paths.
 - `LRUCache.h` — size, count and time-bounded LRU cache.
 - `ResourcePool.h` — header-only `ResourcePool<C>` (blocking) and `AsyncResourcePool<C>` (`Dispatcher`-integrated) pools of lazily created, shareable resources.
 - `Unix.c`, `Windows.cpp`, `Version.rc` — platform implementations behind `stdapi.h`.

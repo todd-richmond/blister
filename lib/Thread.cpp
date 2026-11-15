@@ -29,9 +29,9 @@ static thread_local Thread *curthread;
 static class ThreadLocalKey: nocopy {
 public:
 #ifdef _WIN32
-    ThreadLocalKey(): key(FlsAlloc(destroy)) {}
+    ThreadLocalKey() noexcept: key(FlsAlloc(destroy)) {}
 #else
-    ThreadLocalKey() { pthread_key_create(&key, destroy); }
+    ThreadLocalKey() noexcept { pthread_key_create(&key, destroy); }
 #endif
     ~ThreadLocalKey() {
 #ifdef _WIN32
@@ -439,7 +439,7 @@ void Thread::thread_cleanup(void *data, ThreadLocalFree func) {
     WARN_POP()
 }
 
-Thread::Thread(thread_hdl_t handle, ThreadGroup *tg): hdl(handle),
+Thread::Thread(thread_hdl_t handle, ThreadGroup *tg) noexcept: hdl(handle),
     state(Running) {
     group = ThreadGroup::add(*this, tg);
 }

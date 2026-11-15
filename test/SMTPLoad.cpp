@@ -122,8 +122,7 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	uint u = pick();
 	const char *d = load(u, io, rbuf);
 
-	return d && (cmd.op == Op::Body ? sc.data(false, achartotchar(d)) :
-	    sc.data(d, bodies[u].size)) && sc.enddata();
+	return d && sc.data(d, bodies[u].size) && sc.enddata();
     }
     case Op::Cc:
 	return sc.cc(arg);
