@@ -172,7 +172,8 @@ void SMTPSinkSocket::command(const char *p, uint len) {
 
 	while (n < p + len && *n == ' ')
 	    ++n;
-	left = atoun<size_t>(n, (size_t)(p + len - n));
+	left = 0;
+	from_chars(n, p + len, left);
 	last = line.size() >= 5 && !cstrnicmp(p + len - 5, " LAST", 5);
 	if (left)
 	    state = State::Bdat;
@@ -301,7 +302,7 @@ void SMTPSinkSocket::delivered(void) {
     for (uint u = 0; u < (lmtp ? rcpts : 1); ++u)
 	out.append(reply, (size_t)(end - reply));
     msgs.fetch_add(1, memory_order_relaxed);
-    bytes.fetch_add(size, memory_order_relaxed);
+    bytes.fetch_add((ulong)size, memory_order_relaxed);
     reset();
 }
 

@@ -774,10 +774,10 @@ int wrename(const wchar *from, const wchar *to) {
 	FILE_RENAME_FLAG_IGNORE_READONLY_ATTRIBUTE;
     fri->RootDirectory = NULL;
     fri->FileNameLength = len * sizeof (wchar);
-    sz = (DWORD)(offsetof(FILE_RENAME_INFO, FileName) + (len + 1) *
+    sz = (DWORD)(offsetof(FILE_RENAME_INFO, FileName) + (size_t)(len + 1) *
 	sizeof (wchar));
     memcpy(buf + offsetof(FILE_RENAME_INFO, FileName), path,
-	(len + 1) * sizeof (wchar));
+	(size_t)(len + 1) * sizeof (wchar));
     if (SetFileInformationByHandle(hdl, FileRenameInfoEx, fri, sz))
 	ret = 0;
     CloseHandle(hdl);
