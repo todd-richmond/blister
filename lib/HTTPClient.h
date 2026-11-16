@@ -290,8 +290,10 @@ public:
      */
     bool sendbegin(const tchar *op, const tchar *path);
     bool sendchunk(const void *data, ulong len) {
-	const iovec iov = { (char *)data, (iovlen_t)len };
+	iovec iov;
 
+	iov.iov_base = (char *)data;		// NOSONAR
+	iov.iov_len = (iovlen_t)len;
 	return sendchunk(&iov, 1);
     }
     bool sendchunk(const iovec *iov, int cnt);
