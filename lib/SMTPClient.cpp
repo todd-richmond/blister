@@ -229,7 +229,7 @@ template<Codec C> static inline void encode12(const uchar *in, char *out) {
 	idx = vsubq_u8(idx, vcgtq_u8(b, vdupq_n_u8(37)));
 	b = vaddq_u8(b, vqtbl1q_u8(load16(shift), idx));
     } else {
-	static constexpr char shift[16] = { 'a' - 26, '0' - 52, '0' - 52,
+	static constexpr signed char shift[16] = { 'a' - 26, '0' - 52, '0' - 52,
 	    '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52, '0' - 52,
 	    '0' - 52, '0' - 52, '+' - 62, '/' - 63, 'A', 0, 0 };
 	uint8x16_t idx = vqsubq_u8(b, vdupq_n_u8(51));

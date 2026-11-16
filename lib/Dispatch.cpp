@@ -1583,7 +1583,8 @@ void DispatchListenSocket::connection() {
     while (accept(s, true, true)) { // NOSONAR
 	s.movehigh();
 	onAccept(s);
-#if defined(DSP_EPOLL) && defined(EPOLLEXCLUSIVE)
+// edge triggered: a skipped re-arm only fires again for new connections
+#if (defined(DSP_EPOLL) && defined(EPOLLEXCLUSIVE)) || defined(DSP_KQUEUE)
 	s = Socket();
 #else
 	break;

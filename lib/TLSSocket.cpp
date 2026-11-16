@@ -51,6 +51,7 @@ bool TLSContext::init(const Config &cfg, const tchar *sect, tstring &err) {
 
 TLSContext::Info TLSContext::info(const Socket &) { return {}; }
 
+// cppcheck-suppress constParameterReference
 bool TLSContext::layer(Socket &s, const tchar *) const {
     s.err(EPROTONOSUPPORT);
     return false;
@@ -849,6 +850,7 @@ template<class T, void (*F)(T *)> struct sslfree {
 };
 using ctx_ptr = unique_ptr<SSL_CTX, sslfree<SSL_CTX, SSL_CTX_free>>;
 using key_ptr = unique_ptr<EVP_PKEY, sslfree<EVP_PKEY, EVP_PKEY_free>>;
+using name_ptr = unique_ptr<X509_NAME, sslfree<X509_NAME, X509_NAME_free>>;
 using x509_ptr = unique_ptr<X509, sslfree<X509, X509_free>>;
 
 // drain the thread's OpenSSL error queue
@@ -903,7 +905,7 @@ static EVP_PKEY *defaultkey(tstring &src) {
     }
     ERR_clear_error();
     src = T("ephemeral");
-    return EVP_EC_gen("P-256");
+    return EVP_PKEY_Q_keygen(nullptr, nullptr, "EC", "P-256");
 }
 
 static X509 *selfsign(EVP_PKEY *key) {
@@ -911,24 +913,25 @@ static X509 *selfsign(EVP_PKEY *key) {
     x509_ptr x(X509_new());
     BIGNUM *bn = BN_new();
     X509_EXTENSION *ext;
-    X509_NAME *name;
+    name_ptr name(X509_NAME_new());
     X509V3_CTX v3;
 
     if (gethostname(host, sizeof (host) - 1) || !*host)
 	strcpy(host, "localhost");
-    if (!x || !bn || !BN_rand(bn, 63, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) ||
+    if (!x || !name || !bn ||
+	!BN_rand(bn, 63, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) ||
 	!BN_to_ASN1_INTEGER(bn, X509_get_serialNumber(x.get()))) {
 	BN_free(bn);
 	return nullptr;
     }
     BN_free(bn);
-    name = X509_get_subject_name(x.get());
     if (!X509_set_version(x.get(), X509_VERSION_3) ||
 	!X509_gmtime_adj(X509_getm_notBefore(x.get()), -3600) ||
 	!X509_gmtime_adj(X509_getm_notAfter(x.get()), 365L * 86400) ||
-	!X509_set_pubkey(x.get(), key) || !X509_NAME_add_entry_by_txt(name,
-	"CN", MBSTRING_ASC, (const uchar *)host, -1, -1, 0) ||
-	!X509_set_issuer_name(x.get(), name))
+	!X509_set_pubkey(x.get(), key) || !X509_NAME_add_entry_by_txt(
+	name.get(), "CN", MBSTRING_ASC, (const uchar *)host, -1, -1, 0) ||
+	!X509_set_subject_name(x.get(), name.get()) ||
+	!X509_set_issuer_name(x.get(), name.get()))
 	return nullptr;
     X509V3_set_ctx(&v3, x.get(), x.get(), nullptr, nullptr, 0);
     ext = X509V3_EXT_conf_nid(nullptr, &v3, NID_subject_alt_name, format(
@@ -1279,7 +1282,7 @@ TLSContext::Info TLSContext::info(const Socket &s) {
 	    T("NOT");
     }
     if (cert) {
-	X509_NAME *subj = X509_get_subject_name(cert);
+	const X509_NAME *subj = X509_get_subject_name(cert);
 
 	i.subject = achartotstring(X509_NAME_oneline(subj, buf, sizeof (buf)));
 	i.issuer = achartotstring(X509_NAME_oneline(X509_get_issuer_name(

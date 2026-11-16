@@ -204,7 +204,10 @@ else
 	COMMON_LDFLAGS="$COMMON_LDFLAGS -fno-plt"
     fi
     if test "$gcc_major" -ge 7; then
-	COMMON_CFLAGS="$COMMON_CFLAGS -fcf-protection=full -fstack-clash-protection"
+	COMMON_CFLAGS="$COMMON_CFLAGS -fstack-clash-protection"
+	case "$(uname -m)" in
+	x86_64|amd64|i[[3-6]]86) COMMON_CFLAGS="$COMMON_CFLAGS -fcf-protection=full";;
+	esac
     fi
     if test "$gcc_major" -ge 8; then
 	COMMON_CXXFLAGS="$COMMON_CXXFLAGS -Wextra-semi"
