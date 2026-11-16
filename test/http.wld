@@ -1,6 +1,6 @@
 # httpload [-a [numfiles]] [-b bodyfile|bodydir] [-c cachemb] [-d]
 #    [-h host[:port]] [-k] [-l loops] [-m maxuser] [-q|-v]* [-r] [-s stattime]
-#    [-t threads] [-w timeout] cmdfile
+#    [-t threads] [-u[chunksize]] [-w timeout] cmdfile
 #
 # options:
 #    -a [numfiles]: post all files (or limit to numfiles) in bodydir
@@ -15,8 +15,16 @@
 #    -r: randomize ids when used with variable expansion
 #    -s secs: print rolling statistics every n seconds
 #    -t threads: number of client threads
+#    -u[chunksize]: send bodies chunked in chunksize bytes - default 65536
 #    -v: verbose
 #    -w: HTTP timeout in ms
+#
+# commands:
+#    hdr name=value: header sent with every request
+#    delete|get|head|options name url [status [text]]
+#    patch|post|put name url [data|-] [status [text]]: data is a form string,
+#        - or none sends a body file. status 0 accepts 200 or 302 and text
+#        must be in the response
 
 var host=localhost:8080
 var resource=index.html

@@ -27,8 +27,8 @@ public:
 
 private:
     enum class Op: uchar {
-	Auth, Bcc, Body, Cc, Cmd, Connect, Data, Ehlo, From, Header, Helo,
-	Lhlo, Quit, Rcpt, Rset, Subject, Vrfy, Xclient
+	Attach, Auth, Bcc, Body, Cc, Cmd, Connect, Data, Ehlo, End, From,
+	Header, Helo, Lhlo, Mime, Quit, Rcpt, Rset, Subject, Vrfy, Xclient
     };
 
     class SMTPCmd: public LoadCmd {
@@ -45,15 +45,20 @@ private:
 	}
 
 	Sockaddr addr;			// connect only
+	int code = 250;			// cmd only
 	Op op;
+	bool qp = false;		// attach only
+	tstring type;			// attach only
 	static constexpr pair<tstring_view, Op> ops[] = {
-	    { T("auth"), Op::Auth }, { T("bcc"), Op::Bcc },
-	    { T("body"), Op::Body }, { T("cc"), Op::Cc },
+	    { T("attach"), Op::Attach }, { T("auth"), Op::Auth },
+	    { T("bcc"), Op::Bcc }, { T("body"), Op::Body }, { T("cc"), Op::Cc },
 	    { T("connect"), Op::Connect }, { T("data"), Op::Data },
-	    { T("ehlo"), Op::Ehlo }, { T("from"), Op::From },
+	    { T("ehlo"), Op::Ehlo }, { T("end"), Op::End },
+	    { T("enddata"), Op::End }, { T("from"), Op::From },
 	    { T("hdr"), Op::Header }, { T("header"), Op::Header },
 	    { T("helo"), Op::Helo }, { T("lhlo"), Op::Lhlo },
-	    { T("quit"), Op::Quit }, { T("rcpt"), Op::Rcpt },
+	    { T("mime"), Op::Mime }, { T("quit"), Op::Quit },
+	    { T("rcpt"), Op::Rcpt },
 	    { T("rset"), Op::Rset }, { T("subj"), Op::Subject },
 	    { T("subject"), Op::Subject }, { T("to"), Op::Rcpt },
 	    { T("vrfy"), Op::Vrfy }, { T("xclient"), Op::Xclient }
@@ -65,7 +70,10 @@ private:
     SMTPClient sc;
     const tchar *arg = nullptr;
 
-    void begin(void) override { sc.chunking(!dflag); }
+    void begin(void) override {
+	sc.chunking(!dflag);
+	sc.timeout(to, to);
+    }
     bool exec(LoadCmd &lc, usec_t &io) override;
     bool check(LoadCmd &lc, bool ret, ulong diff) override;
     void end(void) override { sc.close(); }
@@ -75,8 +83,8 @@ bool SMTPLoad::parse(tchar *cmd, uint line) {
     const tchar *a = tstrtok(nullptr, T(""));
     auto lcmd = make_unique<SMTPCmd>(cmd, a);
 
-    if (bodies.empty() && (lcmd->op == Op::Data || (lcmd->op == Op::Body &&
-	!a))) {
+    if (bodies.empty() && (lcmd->op == Op::Attach || lcmd->op == Op::Data ||
+	(lcmd->op == Op::Body && !a))) {
 	tcerr << T("missing body file for ") << cmd << endl;
 	return false;
     }
@@ -85,6 +93,26 @@ bool SMTPLoad::parse(tchar *cmd, uint line) {
 	tcerr << T("invalid host: line ") << line << T(": ") <<
 	    vars[T("host")] << endl;
 	return false;
+    }
+    if (lcmd->op == Op::Attach) {
+	// [type [base64|qp]]
+	tstring tok(lcmd->arg);
+	const tchar *type = tstrtok(tok.data(), T(" \t"));
+	const tchar *enc = tstrtok(nullptr, T(" \t"));
+
+	lcmd->type = type ? type : T("application/octet-stream");
+	lcmd->qp = enc && !tstricmp(enc, T("qp"));
+    } else if (lcmd->op == Op::Cmd) {
+	// a trailing =NNN is the expected reply code
+	tstring &s = lcmd->arg;
+	const size_t pos = s.find_last_of(T(" \t")) + 1;
+
+	if (s.size() - pos == 4 && s[pos] == '=' && istdigit(s[pos + 1]) &&
+	    istdigit(s[pos + 2]) && istdigit(s[pos + 3])) {
+	    lcmd->code = ttoi(s.c_str() + pos + 1);
+	    s.erase(pos);
+	    s.erase(s.find_last_not_of(T(" \t")) + 1);
+	}
     }
     need(lcmd->arg);
     cmds.push_back(std::move(lcmd));
@@ -100,8 +128,34 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	    return false;
 	arg = buf;
     }
+    // "address [parameters]": a bracketed address may contain spaces
+    const tchar *parms = tstrrchr(arg, '>');
+    tstring who;
+
+    parms = parms ? parms + 1 : arg + tstrcspn(arg, T(" \t"));
+    who.assign(arg, parms);
+    while (istspace(*parms))
+	parms++;
+    if (!*parms)
+	parms = nullptr;
     switch (cmd.op) {
     using enum Op;
+    case Attach: {
+	unique_ptr<char[]> rbuf, enc;
+	uint u = pick();
+	const char *d = load(u, io, rbuf);
+	const tstring &path = bodies[u].path;
+	char *out;
+	size_t outsz;
+
+	if (!d)
+	    return false;
+	(cmd.qp ? qpencode : base64encode)(d, bodies[u].size, out, outsz);
+	enc.reset(out);
+	return sc.data(out, (uint)outsz, cmd.type.c_str(), nullptr, cmd.qp ?
+	    T("quoted-printable") : T("base64"), T("attachment"), path.c_str() +
+	    path.find_last_of(T("/\\")) + 1);
+    }
     case Auth:
 	if (const tchar *p = tstrchr(arg, ' '); p) {
 	    tstring user(arg, p);
@@ -112,7 +166,7 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	}
 	return false;
     case Bcc:
-	return sc.bcc(arg);
+	return sc.bcc(who.c_str(), parms);
     case Body:
 	if (*arg || bodies.empty())
 	    return sc.data(false, arg) && sc.enddata();
@@ -124,37 +178,41 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 
 	return d && sc.data(d, bodies[u].size) && sc.enddata();
     }
-    case Op::Cc:
-	return sc.cc(arg);
-    case Op::Cmd:
-	return sc.cmd(cmd.cmd.c_str(), *arg ? arg : nullptr);
-    case Op::Connect:
+    case Cc:
+	return sc.cc(who.c_str(), parms);
+    case Cmd:
+	return sc.cmd(cmd.cmd.c_str(), *arg ? arg : nullptr, cmd.code);
+    case Connect:
 	return sc.connect(cmd.addr, to);
-    case Op::Ehlo:
+    case Ehlo:
 	return sc.ehlo(arg);
-    case Op::From:
+    case End:
+	return sc.enddata();
+    case From:
 	if (pflag)
 	    sc.pipeline();
-	return sc.from(arg);
-    case Op::Header:
+	return sc.from(RFC822Addr(who.c_str(), true), parms);
+    case Header:
 	sc.header(arg);
 	return true;
-    case Op::Helo:
+    case Helo:
 	return sc.helo(arg);
-    case Op::Lhlo:
+    case Lhlo:
 	return sc.lhlo(arg);
-    case Op::Quit:
+    case Mime:
+	return sc.data(true, *arg ? arg : nullptr);
+    case Quit:
 	return sc.quit();
-    case Op::Rcpt:
-	return sc.to(arg);
-    case Op::Rset:
+    case Rcpt:
+	return sc.to(who.c_str(), parms);
+    case Rset:
 	return sc.rset();
-    case Op::Subject:
+    case Subject:
 	sc.subject(arg);
 	return true;
-    case Op::Vrfy:
-	return sc.vrfy(arg);
-    case Op::Xclient:
+    case Vrfy:
+	return sc.vrfy(who.c_str(), parms);
+    case Xclient:
 	return sc.xclient(arg);
     }
     return false;
@@ -163,7 +221,8 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 bool SMTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
     const auto &cmd = static_cast<const SMTPCmd &>(lc);
 
-    if (ret && pflag && (cmd.op == Op::Body || cmd.op == Op::Data)) {
+    if (ret && (cmd.op == Op::Body || cmd.op == Op::Data || cmd.op ==
+	Op::End)) {
 	for (const auto &[rcpt, why] : sc.rejected())
 	    dlog << Log::Warn << Log::cmd(T("rcpt")) << Log::kv(T("arg"),
 		rcpt) << Log::kv(T("result"), why) << endlog;

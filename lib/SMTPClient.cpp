@@ -2023,12 +2023,19 @@ bool SMTPClient::fits(size_t sz) {
 
 // succeeds if any recipient accepted the message
 bool SMTPClient::finish(tstring_view c) {
-    if (fstrm || (!pipelined && !lmtp))
+    return sendend(c) && (nowait || endreply());
+}
+
+// send the end of a message; endreply() reads its replies
+bool SMTPClient::sendend(tstring_view c) {
+    bool ret;
+
+    if (fstrm)
 	return sendcmd(c, nullptr, 250, false);
+    if (!pipelined && !lmtp)
+	return sendcmd(c, nullptr, CMD_NOREPLY, false);
     pipelined = true;
-
-    bool ret = sendcmd(c, nullptr, 250, false);
-
+    ret = sendcmd(c, nullptr, 250, false);
     pipelined = false;
     if (!ret)
 	return false;
@@ -2037,9 +2044,13 @@ bool SMTPClient::finish(tstring_view c) {
 	for (const auto &r : acceptedv)
 	    expectv.emplace_back(r, 250, true);
     }
+    refused = rejectedv.size();
+    return true;
+}
 
-    size_t refused = rejectedv.size();
-
+bool SMTPClient::endreply(void) {
+    if (expectv.empty())
+	return fstrm || (reply() && code() == 250);
     if (!replies())
 	return false;
     if (acceptedv.empty() || (lmtp && rejectedv.size() - refused ==
@@ -2081,6 +2092,78 @@ bool SMTPClient::stuff(const void *data, size_t sz, bool dotstuff) {
 	strm->write(crlf, 2);
     return strm->good() && (!chunked || bstrm.view().size() < BDAT_CHUNK ||
 	sendchunk(false));
+}
+
+bool AsyncSMTPClient::enddata(DispatchObjCB cb, DispatchObj &co) {
+    bool ret;
+
+    nowait = true;
+    ret = SMTPClient::enddata();
+    nowait = false;
+    return ret && wait(cb, co, true);
+}
+
+bool AsyncSMTPClient::rcpt(const tchar *id, DispatchObjCB cb, DispatchObj &co,
+    const tchar *parms) {
+    const bool p = pipelined;
+    bool ret;
+
+    refused = rejectedv.size();
+    pipelined = true;			// record the reply to read it later
+    ret = SMTPClient::rcpt(id, parms);
+    pipelined = p;
+    return ret && wait(cb, co, false);
+}
+
+// read until every expected reply is buffered so completing does not block
+void AsyncSMTPClient::check(bool timedout) {
+    auto &sb = *static_cast<faststreambuf<Socket> *>(sstrm.rdbuf());
+    const size_t need = fstrm ? 0 : max<size_t>(expectv.size(), 1);
+
+    while (!timedout) {
+	const string_view in = sb.avail();
+	size_t lines = 0;
+	int n;
+
+	for (size_t pos = 0, nl; lines < need && (nl = in.find('\n', pos)) !=
+	    in.npos; pos = nl + 1) {
+	    if (nl - pos < 4 || in[pos + 3] != '-')
+		lines++;
+	}
+	if (lines == need || (n = sb.fill()) < 0)
+	    break;			// reply() reports errors
+	if (!n) {
+	    waiter.readable(Waiter::onread, rtmo == SOCK_INFINITE ?
+		DispatchTimer::DSP_NEVER : rtmo);
+	    return;
+	}
+    }
+    waiter.cancel();
+    if (!fstrm)
+	sock.blocking(true);
+    if (timedout) {
+	sock.close();
+	expectv.clear();
+	sts = T("000 socket disconnect");
+	okay = false;
+    } else {
+	okay = end ? endreply() : replies() && rejectedv.size() == refused;
+    }
+    caller->ready(done);
+}
+
+bool AsyncSMTPClient::wait(DispatchObjCB cb, DispatchObj &co, bool e) {
+    if (!fstrm && (!sstrm.flush() || !sock.blocking(false))) {
+	sock.close();
+	expectv.clear();
+	sts = T("000 socket disconnect");
+	return false;
+    }
+    caller = &co;
+    done = cb;
+    end = e;
+    check(false);
+    return true;
 }
 
 static constexpr const tchar *NonASCII = T("Non-ASCII character");
@@ -2573,7 +2656,6 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt,
     tchar c;
     tchar *dst;
     tchar *src = in;
-    bool part;
     // whitespace after a domain character ends the domain unless a dot follows
     bool gap = false;
 
@@ -2581,6 +2663,8 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt,
     skip_whitespace(src);
     dom = dst = src;
     for (;;) {
+	bool part;
+
 	c = eol(src) ? '\0' : *src++;
 	part = nonascii(c) || istalnum(c) || c == '-' || c == '_' || c == '[' ||
 	    c == ']' || c == ':';

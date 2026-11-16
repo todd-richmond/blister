@@ -26,7 +26,6 @@ static constexpr ulong MaxBody = 256UL * 1024 * 1024;
 static constexpr size_t MaxCopy = 4UL * 1024;	// request with small body
 static constexpr size_t MaxHdrs = 64UL * 1024;	// status + header bytes
 static constexpr size_t MaxPipeline = 16;
-static constexpr size_t MinRead = 512;
 static constexpr ulong MaxKeep = 64UL * 1024;	// reused response buffer
 
 static constexpr auto hex_lut = [] {
@@ -203,7 +202,154 @@ void URL::unescape(tstring &str, bool plus) {
     str.resize(unescape(str.data(), plus));
 }
 
-void HTTPClient::Headers::add(string_view hdr) {
+void HTTPHeaders::tappend(tstring &s, string_view sv) {
+#ifdef UNICODE
+    s += achartotstring(string(sv).c_str());
+#else
+    s += sv;
+#endif
+}
+
+bool HTTPResponse::parsenum(string_view s, ulong &n, bool hex) {
+    const ulong base = hex ? 16 : 10;
+
+    n = 0;
+    if (s.empty())
+	return false;
+    for (char c : s) {
+	const ulong d = hex ? hexval((tuchar)c) : (ulong)(c - '0');
+
+	if (d >= base || n > (MaxBody - d) / base)
+	    return false;
+	n = n * base + d;
+    }
+    return true;
+}
+
+bool HTTPResponse::parsestatus(string_view str, uint &code, bool &http11) {
+    size_t pos = str.find(' ');
+    auto digit = [&](size_t i) { return (uchar)(str[i] - '0') < 10; };
+
+    if (!str.starts_with("HTTP/") || pos == string_view::npos ||
+	(pos = str.find_first_not_of(" \t", pos)) == string_view::npos ||
+	str.size() < pos + 3 || !digit(pos) || !digit(pos + 1) ||
+	!digit(pos + 2))
+	return false;
+    http11 = str.compare(5, 3, "1.1") == 0;
+    code = (uint)(str[pos] - '0') * 100 + (uint)(str[pos + 1] - '0') * 10 +
+	(uint)(str[pos + 2] - '0');
+    return code >= 100 && (str.size() == pos + 3 || str[pos + 3] == ' ');
+}
+
+// a caller supplied Host replaces the default
+bool HTTPResponse::hashost(tstring_view hdrs) {
+    for (;;) {
+	if (hdrs.size() >= 5 && stringieq(hdrs.substr(0, 5), T("Host:")))
+	    return true;
+
+	const size_t pos = hdrs.find('\n');
+
+	if (pos == hdrs.npos)
+	    return false;
+	hdrs.remove_prefix(pos + 1);
+    }
+}
+
+string HTTPResponse::hosthdr(const Sockaddr &sa) {
+    tstring host = sa.str();		// never does a reverse DNS lookup
+
+    if (sa.proto() == Sockaddr::UNIX)
+	host = T("localhost");
+    else if (sa.port() == 80)
+	host.resize(host.size() - 3);	// strip ":80"
+    return tstringtoastring(host);
+}
+
+// RFC 9112 9.3.1: only these may be retried after being sent
+bool HTTPResponse::idempotent(const tchar *op) {
+    static constexpr const tchar *ops[] = {
+	T("GET"), T("HEAD"), T("PUT"), T("DELETE"), T("OPTIONS"), T("TRACE")
+    };
+
+    return ranges::any_of(ops, [op](const tchar *m) { return
+	!tstrcmp(op, m); });
+}
+
+// false if op or path could inject into the request line. A small body is
+// appended, zeroing datasz, since a copy is cheaper than a second iovec
+bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
+    string_view host, bool keep, tstring_view hdrs, const void *data,
+    ulong &datasz) {
+    auto bad = [](const tchar *s) {
+	for (const tchar *p = s; *p; p++) {
+	    if ((tuchar)*p <= ' ' || *p == 0x7f)
+		return true;
+	}
+	return !*s;
+    };
+
+    if (bad(op) || bad(path))
+	return false;
+    out.reserve(max(MaxCopy, 256 + hdrs.size()));
+    out = tchartoachar(op);
+    out += ' ';
+    out += tchartoachar(path);
+    out += " HTTP/1.1\r\n";
+    if (!hashost(hdrs)) {
+	out += "Host: ";
+	out += host;
+	out += "\r\n";
+    }
+    if (datasz == Unknown) {
+	out += "Transfer-Encoding: chunked\r\n";
+	datasz = 0;
+    } else if (datasz || !tstrcmp(op, T("POST")) ||
+	!tstrcmp(op, T("PUT")) || !tstrcmp(op, T("PATCH"))) {
+	char buf[24];
+
+	out += "Content-Length: ";
+	out.append(buf, to_chars(buf, buf + sizeof (buf), datasz).ptr);
+	out += "\r\n";
+    }
+    out += keep ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
+    if (!hdrs.empty())
+	out.append(tchartoachar(hdrs.data()), hdrs.size());
+    out += "\r\n";
+    if (data && datasz && out.size() + datasz <= MaxCopy) {
+	out.append((const char *)data, datasz);
+	datasz = 0;
+    }
+    return true;
+}
+
+// RFC 9112 6.3 body length. keep is whether the server allows reuse
+HTTPResponse::Body HTTPResponse::framing(const HTTPHeaders &hdrs, uint sts,
+    bool head, bool http11, bool &keep, ulong &len) {
+    const tchar *p = hdrs.find(T("Connection"));
+    const tchar *te = hdrs.find(T("Transfer-Encoding"));
+
+    keep = sts != 101 && !(p && hastoken(p, T("close"))) && (http11 || (p &&
+	hastoken(p, T("keep-alive"))));
+    len = 0;
+    if (head || sts == 204 || sts == 304 || sts / 100 == 1)
+	return Body::None;
+    if (te) {
+	const tstring_view v(te);
+	const size_t pos = v.rfind(',');
+
+	// only a final chunked coding delimits the body
+	if (hastoken(pos == v.npos ? v : v.substr(pos + 1), T("chunked")))
+	    return Body::Chunked;
+    } else if ((p = hdrs.find(T("Content-Length"))) != nullptr) {
+	if (!parsenum(tchartoachar(p), len, false))
+	    return Body::Bad;
+	return len ? Body::Length : Body::None;
+    }
+    keep = false;
+    return Body::Eof;
+}
+
+void HTTPHeaders::add(string_view hdr) {
     size_t colon = hdr.find(':');
 
     // folded headers are not supported
@@ -227,47 +373,245 @@ void HTTPClient::Headers::add(string_view hdr) {
     hdrs.push_back(h);
 }
 
-// false if op or path could inject into the request line. A small body is
-// appended, zeroing datasz, since a copy is cheaper than a second iovec
-bool HTTPClient::buildreq(string &out, const tchar *op, const tchar *path,
-    string_view host, bool keep, tstring_view hdrs, const void *data,
-    ulong &datasz) {
-    auto bad = [](const tchar *s) {
-	for (const tchar *p = s; *p; p++) {
-	    if ((tuchar)*p <= ' ' || *p == 0x7f)
-		return true;
+ulong HTTPResponse::capfor(ulong need, bool exact) const {
+    const ulong n = need + 1;
+
+    return exact ? n : (max)({ n, min(cap * 2, MaxBody + 1), 12UL * 1024 });
+}
+
+void HTTPResponse::reset(void) {
+    if (cap > MaxKeep) {
+	free(result);
+	result = nullptr;
+	cap = 0;
+    } else if (result) {
+	*result = '\0';
+    }
+    reshdrs.clear();
+    sz = 0;
+    sockerr = 0;
+    sts = 0;
+}
+
+bool HTTPResponse::resize(ulong newcap) {
+    char *p = (char *)realloc(result, (size_t)newcap);
+
+    if (!p) {
+	free(result);
+	sz = 0;
+    }
+    result = p;
+    cap = p ? newcap : 0;
+    return p;
+}
+
+template<class S>
+template<class G>
+typename HTTPParser<S>::Step HTTPParser<S>::advance(HTTPResponse &r, bool head,
+    G &&grow) {
+    Step s;
+    string_view v;
+    long n;
+
+    for (;;) {
+	switch (phase) {
+	case Status:
+	    if ((s = nextline(v)) != Step::Done)
+		return s;
+	    if (!HTTPResponse::parsestatus(v, r.sts, http11))
+		return fail(EPROTO);
+	    phase = Headers;
+	    break;
+	case Headers:
+	    if ((s = nextline(v)) != Step::Done)
+		return s;
+	    if (!v.empty()) {
+		r.reshdrs.add(v);
+	    } else if (r.sts / 100 == 1 && r.sts != 101) {
+		r.reshdrs.clear();		// skip interim responses
+		phase = Status;
+	    } else {
+		switch (HTTPResponse::framing(r.reshdrs, r.sts, head, http11,
+		    reuse, remain)) {
+		case HTTPResponse::Body::Bad:
+		    return fail(EPROTO);
+		case HTTPResponse::Body::None:
+		    phase = Complete;
+		    break;
+		case HTTPResponse::Body::Length:
+		    phase = Length;
+		    if ((s = reserve(r, remain, grow)) != Step::Done)
+			return s;
+		    break;
+		case HTTPResponse::Body::Chunked:
+		    start(ChunkSize, 1024);
+		    break;
+		case HTTPResponse::Body::Eof:
+		    phase = Eof;
+		    break;
+		}
+	    }
+	    break;
+	case Length:
+	case ChunkData:
+	    while (remain) {
+		if ((n = take(r, remain)) < 0)
+		    return sockfail();
+		if (!n)
+		    return Step::Wait;
+		remain -= (ulong)n;
+	    }
+	    if (phase == Length)
+		phase = Complete;
+	    else
+		start(ChunkEnd, 2);
+	    break;
+	case Eof:
+	    for (;;) {
+		if (r.sz + 1 >= r.cap) {
+		    if (r.sz >= MaxBody)
+			return fail(EFBIG);
+		    if ((s = reserve(r, r.sz + 1, grow)) != Step::Done)
+			return s;
+		}
+		if ((n = take(r, r.cap - 1 - r.sz)) > 0)
+		    continue;
+		if (!n)
+		    return Step::Wait;
+		if (sock.err() != EOF)
+		    return sockfail();
+		break;
+	    }
+	    phase = Complete;
+	    break;
+	case ChunkSize: {
+	    ulong len;
+
+	    if ((s = nextline(v)) != Step::Done)
+		return s;
+	    v = v.substr(0, v.find_first_of("; \t"));	// drop extensions
+	    if (!HTTPResponse::parsenum(v, len, true) || len > MaxBody - r.sz)
+		return fail(EPROTO);
+	    if (len) {
+		remain = len;
+		phase = ChunkData;
+		if ((s = reserve(r, r.sz + len, grow)) != Step::Done)
+		    return s;
+	    } else {
+		start(Trailers, MaxHdrs);
+	    }
+	    break;
 	}
-	return !*s;
-    };
+	case ChunkEnd:
+	    if ((s = nextline(v)) != Step::Done)
+		return s;
+	    if (!v.empty())
+		return fail(EPROTO);
+	    start(ChunkSize, 1024);
+	    break;
+	case Trailers:
+	    if ((s = nextline(v)) != Step::Done)
+		return s;
+	    if (v.empty())
+		phase = Complete;
+	    break;
+	case Complete:
+	    start(Status, MaxHdrs);
+	    return Step::Done;
+	}
+    }
+}
 
-    if (bad(op) || bad(path))
-	return false;
-    out.reserve(max(MaxCopy, 256 + hdrs.size()));
-    out = tchartoachar(op);
-    out += ' ';
-    out += tchartoachar(path);
-    out += " HTTP/1.1\r\n";
-    if (!hashost(hdrs)) {
-	out += "Host: ";
-	out += host;
-	out += "\r\n";
-    }
-    if (datasz || !tstrcmp(op, T("POST")) || !tstrcmp(op, T("PUT"))) {
-	char buf[24];
+template<class S>
+int HTTPParser<S>::fill(void) {
+    // a write cannot make data readable so skip a read that must fail
+    if (idle || emptied())
+	return 0;
 
-	out += "Content-Length: ";
-	out.append(buf, to_chars(buf, buf + sizeof (buf), datasz).ptr);
-	out += "\r\n";
+    const bool ok = sb.sgetc() != EOF;
+
+    idle = emptied();
+    return ok ? 1 : idle ? 0 : -1;
+}
+
+// a line without its terminator: in the buffer unless it spans reads
+template<class S>
+typename HTTPParser<S>::Step HTTPParser<S>::nextline(string_view &out) {
+    if (!partial)
+	line.clear();
+    for (;;) {
+	const string_view v = sb.avail();
+	const size_t pos = v.find('\n');
+	const size_t n = pos == v.npos ? v.size() : pos;
+
+	if (n >= left)
+	    return fail(EMSGSIZE);
+	if (pos != v.npos) {
+	    left -= n + 1;
+	    if (partial) {
+		line.append(v.data(), n);
+		out = line;
+		partial = false;
+	    } else {
+		out = v.substr(0, n);
+	    }
+	    sb.consume(n + 1);
+	    if (!out.empty() && out.back() == '\r')
+		out.remove_suffix(1);
+	    return Step::Done;
+	}
+	line.append(v.data(), n);
+	left -= n;
+	sb.consume(n);
+	partial = true;
+
+	const int rc = fill();
+
+	if (rc <= 0)
+	    return rc ? sockfail() : Step::Wait;
     }
-    out += keep ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-    if (!hdrs.empty())
-	out.append(tchartoachar(hdrs.data()), hdrs.size());
-    out += "\r\n";
-    if (data && datasz && out.size() + datasz <= MaxCopy) {
-	out.append((const char *)data, datasz);
-	datasz = 0;
+}
+
+template<class S>
+template<class G>
+typename HTTPParser<S>::Step HTTPParser<S>::reserve(HTTPResponse &r, ulong need,
+    G &grow) {
+    if (r.result && r.cap > need)
+	return Step::Done;
+
+    const Step s = grow(r, r.capfor(need, phase == Length));
+
+    if (s == Step::Proto)
+	ecode = ENOMEM;
+    return s;
+}
+
+template<class S>
+void HTTPParser<S>::reset(void) {
+    sb.reset();
+    idle = partial = false;
+    line.clear();
+    start(Status, MaxHdrs);
+}
+
+// body bytes are read straight into the result once the buffer is empty
+template<class S>
+long HTTPParser<S>::take(HTTPResponse &r, ulong want) {
+    const string_view v = sb.avail();
+    long n;
+
+    if (!v.empty()) {
+	n = (long)min((ulong)v.size(), want);
+	memcpy(r.result + r.sz, v.data(), (size_t)n);
+	sb.consume((size_t)n);
+    } else if (emptied() && phase != Eof) {
+	return 0;	// only a read can see the end of an Eof body
+    } else if ((n = sock.read(r.result + r.sz, (uint)min(want,
+	(ulong)INT_MAX))) <= 0) {
+	return n;
     }
-    return true;
+    r.sz += (ulong)n;
+    return n;
 }
 
 bool HTTPClient::connect(Socket &s, bool keepalive) {
@@ -294,6 +638,7 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     hostval = hosthdr(addr);
     sock.close();
     if (!sock.connect(addr, to)) {
+	sockerr = sock.err();
 	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
 	    addr.str()), Log::error(sock.errstr()));
 	sock.close();
@@ -305,224 +650,15 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     return true;
 }
 
-// RFC 9112 6.3 body length. keep is whether the server allows reuse
-HTTPClient::Body HTTPClient::framing(const Headers &hdrs, uint sts, bool head,
-    bool http11, bool &keep, ulong &len) {
-    using enum Body;
-    const tchar *p = hdrs.find(T("Connection"));
-    const tchar *te = hdrs.find(T("Transfer-Encoding"));
+HTTPClient::Step HTTPClient::receive(bool head, bool &keep) {
+    const Step s = parser.advance(*this, head, [this](HTTPResponse &, ulong
+	newcap) { return resize(newcap) ? Step::Done : Step::Proto; });
 
-    keep = sts != 101 && !(p && hastoken(p, T("close"))) && (http11 || (p &&
-	hastoken(p, T("keep-alive"))));
-    len = 0;
-    if (head || sts == 204 || sts == 304 || sts / 100 == 1)
-	return None;
-    if (te) {
-	const tstring_view v(te);
-	const size_t pos = v.rfind(',');
-
-	// only a final chunked coding delimits the body
-	if (hastoken(pos == v.npos ? v : v.substr(pos + 1), T("chunked")))
-	    return Chunked;
-    } else if ((p = hdrs.find(T("Content-Length"))) != nullptr) {
-	if (!parsenum(tchartoachar(p), len, false))
-	    return Bad;
-	return len ? Length : None;
-    }
-    keep = false;
-    return Eof;
-}
-
-void HTTPClient::grow(ulong need) {
-    if (need <= sz)
-	return;
-    need = max(need, min(sz * 2, MaxBody));
-
-    auto p = make_unique_for_overwrite<char[]>((size_t)need + 1);
-
-    if (ressz)
-	memcpy(p.get(), result.get(), ressz);
-    result = std::move(p);
-    sz = need;
-}
-
-// a caller supplied Host replaces the default
-bool HTTPClient::hashost(tstring_view hdrs) {
-    for (;;) {
-	if (hdrs.size() >= 5 && stringieq(hdrs.substr(0, 5), T("Host:")))
-	    return true;
-
-	const size_t pos = hdrs.find('\n');
-
-	if (pos == hdrs.npos)
-	    return false;
-	hdrs.remove_prefix(pos + 1);
-    }
-}
-
-string HTTPClient::hosthdr(const Sockaddr &sa) {
-    tstring host = sa.str();		// never does a reverse DNS lookup
-
-    if (sa.proto() == Sockaddr::UNIX)
-	host = T("localhost");
-    else if (sa.port() == 80)
-	host.resize(host.size() - 3);	// strip ":80"
-    return tstringtoastring(host);
-}
-
-// RFC 9112 9.3.1: only these may be retried after being sent
-bool HTTPClient::idempotent(const tchar *op) {
-    static constexpr const tchar *ops[] = {
-	T("GET"), T("HEAD"), T("PUT"), T("DELETE"), T("OPTIONS"), T("TRACE")
-    };
-
-    return ranges::any_of(ops, [op](const tchar *m) { return
-	!tstrcmp(op, m); });
-}
-
-bool HTTPClient::parsenum(string_view s, ulong &n, bool hex) {
-    const ulong base = hex ? 16 : 10;
-
-    n = 0;
-    if (s.empty())
-	return false;
-    for (char c : s) {
-	const ulong d = hex ? hexval((tuchar)c) : (ulong)(c - '0');
-
-	if (d >= base || n > (MaxBody - d) / base)
-	    return false;
-	n = n * base + d;
-    }
-    return true;
-}
-
-bool HTTPClient::parsestatus(string_view str, uint &code, bool &http11) {
-    size_t pos = str.find(' ');
-    auto digit = [&](size_t i) { return (uchar)(str[i] - '0') < 10; };
-
-    if (!str.starts_with("HTTP/") || pos == string_view::npos ||
-	(pos = str.find_first_not_of(" \t", pos)) == string_view::npos ||
-	str.size() < pos + 3 || !digit(pos) || !digit(pos + 1) ||
-	!digit(pos + 2))
-	return false;
-    http11 = str.compare(5, 3, "1.1") == 0;
-    code = (uint)(str[pos] - '0') * 100 + (uint)(str[pos + 1] - '0') * 10 +
-	(uint)(str[pos + 2] - '0');
-    return code >= 100 && (str.size() == pos + 3 || str[pos + 3] == ' ');
-}
-
-bool HTTPClient::readbody(bool head, bool http11, bool &keep) {
-    streamsize in;
-    ulong len;
-
-    using enum Body;
-
-    switch (framing(reshdrs, sts, head, http11, keep, len)) {
-    case Bad:
-	return false;
-    case None:
-	return true;
-    case Chunked:
-	return readchunked();
-    case Length:
-	grow(len);
-	in = sstrm.read(result.get(), (streamsize)len);
-	if (in > 0)
-	    ressz = (ulong)in;
-	return (ulong)in == len;
-    case Eof:
-	break;
-    }
-    for (;;) {
-	if (ressz == sz) {
-	    if (sz >= MaxBody)
-		return false;
-	    grow(max(sz + 1, 12UL * 1024));
-	}
-
-	const auto room = (streamsize)(sz - ressz);
-
-	in = sstrm.read(result.get() + ressz, room);
-	if (in > 0)
-	    ressz += (ulong)in;
-	if (in < room)
-	    return sock.err() == EOF;
-    }
-}
-
-bool HTTPClient::readchunked(void) {
-    size_t left;
-
-    for (;;) {
-	streamsize in;
-	ulong n;
-
-	left = 1024;
-	if (!readline(sstrm.rdbuf(), line, left) ||
-	    !parsenum(string_view(line).substr(0, line.find_first_of("; \t")),
-	    n, true) || n > MaxBody - ressz)
-	    return false;
-	if (!n)
-	    break;
-	grow(ressz + n);
-	in = sstrm.read(result.get() + ressz, (streamsize)n);
-	if (in > 0)
-	    ressz += (ulong)in;
-	left = 2;
-	if ((ulong)in != n || !readline(sstrm.rdbuf(), line, left) ||
-	    !line.empty())
-	    return false;
-    }
-    left = MaxHdrs;				// discard trailers
-    while (readline(sstrm.rdbuf(), line, left)) {
-	if (line.empty())
-	    return true;
-    }
-    return false;
-}
-
-bool HTTPClient::readhdrs(bool &http11) {
-    size_t left = MaxHdrs - line.size();
-
-    for (;;) {
-	if (!parsestatus(line, sts, http11))
-	    return false;
-	for (;;) {
-	    if (!readline(sstrm.rdbuf(), line, left))
-		return false;
-	    if (line.empty())
-		break;
-	    reshdrs.add(line);
-	}
-	// skip interim responses
-	if (sts / 100 != 1 || sts == 101)
-	    return true;
-	reshdrs.clear();
-	if (!readline(sstrm.rdbuf(), line, left))
-	    return false;
-    }
-}
-
-bool HTTPClient::readline(socketbuf *sb, string &s, size_t &left) {
-    s.clear();
-    while (sb->sgetc() != EOF) {
-	const string_view v = sb->avail();
-	const size_t pos = v.find('\n');
-	const size_t len = pos == string_view::npos ? v.size() : pos;
-
-	if (len > left)
-	    return false;
-	left -= len;
-	s.append(v.data(), len);
-	if (pos != string_view::npos) {
-	    sb->consume(len + 1);
-	    if (!s.empty() && s.back() == '\r')
-		s.pop_back();
-	    return true;
-	}
-	sb->consume(len);
-    }
-    return false;
+    if (s == Step::Done)
+	keep = parser.keep() && ka && !parser.buffered();
+    else
+	sockerr = parser.err();
+    return s;
 }
 
 bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
@@ -531,13 +667,11 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     bool keep = false;
     bool ret = false;
 
-    sts = 0;
-    ressz = 0;
-    reshdrs.clear();
+    reset();
     if (buildreq(req, op, path, hostval, ka, tstring_view(hstrm.str(),
 	(size_t)hstrm.size()), msgh ? nullptr : data, datasz)) {
 	const bool head = !tstrcmp(op, T("HEAD"));
-	const streamsize total = (streamsize)(req.size() + datasz);
+	const ulong total = req.size() + datasz;
 #ifndef _WIN32
 	iovec iov[2] = { { (void *)req.data(), req.size() },
 	    { (void *)data, datasz } };
@@ -550,32 +684,31 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 
 	for (bool first = true; sock.open() || (!msgh && connect(addr, ka,
 	    cto)); first = false) {
-	    size_t left = MaxHdrs;
 	    const msec_t start = mticks();
-	    streamsize off = 0;
+	    ulong off = 0;
 	    bool sent = true;
 
 	    if (msgh) {
 #ifdef _WIN32
 		sent = false;
 #else
-		off = (streamsize)sock.sendmsg(*msgh, MSG_NOSIGNAL);
-		sent = off > 0;
+		const long n = sock.sendmsg(*msgh, MSG_NOSIGNAL);
+
+		sent = n > 0;
+		off = sent ? (ulong)n : 0;
 #endif
 	    }
 	    // ancillary data goes with the first byte so only finish the rest
 	    if (sent && off < total)
-		sent = sendall(sock, req, data, datasz, (ulong)off);
-	    if (sent && readline(sstrm.rdbuf(), line, left)) {
-		bool http11 = false;
+		sent = transmit(data, datasz, off);
+	    if (sent) {
+		const Step s = receive(head, keep);
 
-		if (readhdrs(http11)) {
-		    dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
-			Log::kv(T("path"), path), Log::kv(T("sts"), sts));
-		    ret = readbody(head, http11, keep);
-		    keep = keep && ka && sstrm.rdbuf()->avail().empty();
-		}
-		break;
+		ret = s == Step::Done;
+		if (s != Step::Sock || sts)
+		    break;
+	    } else {
+		sockerr = sock.err();
 	    }
 	    sock.close();
 	    // retry once if a stale keep-alive connection failed quickly
@@ -589,86 +722,139 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 		Log::kv(T("addr"), addr.ipstr()));
 	    break;
 	}
+	if (sts)
+	    dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
+		Log::kv(T("path"), path), Log::kv(T("sts"), sts));
     }
+    if (ret)
+	sockerr = 0;
+    else if (!sockerr)
+	sockerr = sock.err();
     if ((!keep && !msgh) || !ret)
 	sock.close();
     if (result)
-	result[ressz] = '\0';
+	result[sz] = '\0';
     hstrm.reset();
     return ret;
 }
 
-// write hdr then data after skipping the off bytes already sent
-bool HTTPClient::sendall(const Socket &s, string_view hdr, const void *data,
-    ulong datasz, ulong off) {
-    iovec iov[2];
-    int i = 0;
+bool HTTPClient::sendbegin(const tchar *op, const tchar *path) {
+    ulong len = Unknown;
 
-    iov[0].iov_base = (char *)hdr.data();	// NOSONAR
-    iov[0].iov_len = (iovlen_t)hdr.size();
-    iov[1].iov_base = (char *)data;		// NOSONAR
-    iov[1].iov_len = (iovlen_t)datasz;
-    for (;;) {
-	long n;
+    if (streaming)
+	sock.close();
+    streaming = false;
+    reset();
+    const bool ok = buildreq(req, op, path, hostval, ka,
+	tstring_view(hstrm.str(), (size_t)hstrm.size()), nullptr, len);
 
-	while (i < 2 && off >= (ulong)iov[i].iov_len)
-	    off -= (ulong)iov[i++].iov_len;
-	if (i == 2)
-	    return true;
-	iov[i].iov_base = (char *)iov[i].iov_base + off;
-	iov[i].iov_len -= (iovlen_t)off;
-	if ((n = s.writev(iov + i, 2 - i)) <= 0)
-	    return false;
-	off = (ulong)n;
+    hstrm.reset();
+    if (!ok) {
+	sockerr = EINVAL;
+	return false;
     }
+    if (!sock.open() && !connect(addr, ka, cto))
+	return false;
+    streaming = parser.buf().write(req.data(), (streamsize)req.size()) ==
+	(streamsize)req.size();
+    if (!streaming)
+	sock.close();
+    return streaming;
+}
+
+bool HTTPClient::sendchunk(const iovec *iov, int cnt) {
+    auto &sb = parser.buf();
+    char hdr[24];
+    ulong total = 0;
+
+    if (!streaming)
+	return false;
+    for (int i = 0; i < cnt; i++)
+	total += (ulong)iov[i].iov_len;
+    if (!total)		// would end the body
+	return true;
+
+    char *p = to_chars(hdr, hdr + sizeof (hdr) - 2, total, 16).ptr;
+    bool ok;
+
+    *p++ = '\r';
+    *p++ = '\n';
+    ok = sb.write(hdr, p - hdr) == p - hdr;
+    for (int i = 0; ok && i < cnt; i++) {
+	const auto n = (streamsize)iov[i].iov_len;
+
+	ok = sb.write(iov[i].iov_base, n) == n;
+    }
+    if (ok && sb.write("\r\n", 2) == 2 && !sb.sync())
+	return true;
+    sendfail();
+    return false;
+}
+
+// keep an early server response, else the write error
+void HTTPClient::sendfail(void) {
+    const int e = sock.err();
+    bool keep;
+
+    streaming = false;
+    parser.buf().reset();	// a read needs the put area empty
+    if ((e == EPIPE || e == ECONNRESET) && receive(false, keep) == Step::Done) {
+	sockerr = 0;
+    } else {
+	sockerr = e;
+	sts = 0;
+    }
+    sock.close();
+    if (result)
+	result[sz] = '\0';
+}
+
+bool HTTPClient::sendend(void) {
+    auto &sb = parser.buf();
+    bool keep = false;
+
+    if (!streaming)
+	return sts && !sockerr;
+    if (sb.write("0\r\n\r\n", 5) != 5 || sb.sync()) {
+	sendfail();
+	return sts && !sockerr;
+    }
+    streaming = false;
+    if (receive(false, keep) == Step::Done) {
+	sockerr = 0;
+	if (!keep)
+	    sock.close();
+    } else {
+	sock.close();
+    }
+    if (result)
+	result[sz] = '\0';
+    return !sockerr;
 }
 
 void HTTPClient::setup(void) {
     sock.nodelay(true);
     sock.rtimeout(rto);
     sock.wtimeout(wto);
-    sstrm.rdbuf()->attach(sock);
-    sstrm.rdbuf()->reset();
-    sstrm.clear();
+    parser.reset();
 }
 
-void HTTPClient::tappend(tstring &s, string_view sv) {
-#ifdef UNICODE
-    s += achartotstring(string(sv).c_str());
-#else
-    s += sv;
-#endif
-}
+// the buffer coalesces the header and body into one writev. off bytes of
+// them have already been sent
+bool HTTPClient::transmit(const void *data, ulong datasz, ulong off) {
+    auto &sb = parser.buf();
+    const ulong skip = min(off, (ulong)req.size());
+    const auto hsz = (streamsize)(req.size() - skip);
+    const auto dsz = (streamsize)(datasz - (off - skip));
 
-void AsyncHTTPClient::Request::reset(void) {
-    if (cap > MaxKeep) {
-	free(result);
-	result = nullptr;
-	cap = 0;
-    } else if (result) {
-	*result = '\0';
-    }
-    reshdrs.clear();
-    sz = 0;
-    sockerr = 0;
-    sts = 0;
+    return sb.write(req.data() + skip, hsz) == hsz &&
+	sb.write((const char *)data + (off - skip), dsz) == dsz && !sb.sync();
 }
 
 void AsyncHTTPClient::Request::result_grow(DispatchObjCB cb, DispatchObj &co,
-    char *old, uint, uint newsize) {
-    char *p = (char *)realloc(old, newsize);
-
-    if (!p)
-	free(old);
-    result = p;
+    char *, uint, uint newsize) {
+    resize(newsize);
     cb(&co);
-}
-
-void AsyncHTTPClient::Request::rewind(void) {
-    reset();
-    phase = Status;
-    hdrleft = MaxHdrs;
-    remain = written = 0;
 }
 
 void AsyncHTTPClient::Request::send(DispatchObjCB cb, DispatchObj &co,
@@ -689,9 +875,10 @@ bool AsyncHTTPClient::Request::setup(DispatchObjCB cb, DispatchObj &co,
     datap = data;
     datasz = len;
     attempts = 0;
-    rewind();
-    if (!HTTPClient::buildreq(req, op, path, c.host, true,
-	tstring_view(hstrm.str(), (size_t)hstrm.size()), data, datasz)) {
+    written = 0;
+    reset();
+    if (!buildreq(req, op, path, c.host, true, tstring_view(hstrm.str(),
+	(size_t)hstrm.size()), data, datasz)) {
 	sockerr = EINVAL;
 	hstrm.reset();
 	caller = nullptr;
@@ -699,113 +886,20 @@ bool AsyncHTTPClient::Request::setup(DispatchObjCB cb, DispatchObj &co,
 	return false;
     }
     head = !tstrcmp(op, T("HEAD"));
-    idem = HTTPClient::idempotent(op);
+    idem = idempotent(op);
     hstrm.reset();
     return true;
 }
 
 AsyncHTTPClient::AsyncHTTPClient(IOSocket *s, const Sockaddr &sa, Timing *tm):
-    addr(sa), host(HTTPClient::hosthdr(sa)), intake(*new Intake(*s, *this)),
-    sock(*s), timing(tm) {
+    addr(sa), host(HTTPResponse::hosthdr(sa)), intake(*new Intake(*s, *this)),
+    parser(*s), sock(*s), timing(tm) {
     if (timing) {
 	const tstring ip(addr.ipstr());
 
 	ckey = T("conn:") + ip;
 	rkey = T("read:") + ip;
 	wkey = T("write:") + ip;
-    }
-}
-
-AsyncHTTPClient::Flow AsyncHTTPClient::advance(Request &r) {
-    Flow f;
-    size_t left;
-    string_view line;
-    long n;
-
-    for (;;) {
-	switch (r.phase) {
-	case Request::Status:
-	    if ((f = nextline(line, r.hdrleft)) != Flow::Ok)
-		return f;
-	    if (!HTTPClient::parsestatus(line, r.sts, r.http11))
-		return bad(EPROTO);
-	    r.phase = Request::Headers;
-	    break;
-	case Request::Headers:
-	    if ((f = nextline(line, r.hdrleft)) != Flow::Ok)
-		return f;
-	    if (!line.empty())
-		r.reshdrs.add(line);
-	    else if ((f = endhdrs(r)) != Flow::Ok)
-		return f;
-	    break;
-	case Request::Length:
-	case Request::ChunkData:
-	    while (r.remain) {
-		if ((n = take(r, r.remain)) < 0)
-		    return broke(sock.err());
-		if (!n)
-		    return Flow::Wait;
-		r.remain -= (ulong)n;
-	    }
-	    r.phase = r.phase == Request::Length ? Request::Done :
-		Request::ChunkEnd;
-	    break;
-	case Request::Eof:
-	    for (;;) {
-		if (r.sz + 1 >= r.cap) {
-		    if (r.sz >= MaxBody)
-			return bad(EFBIG);
-		    if ((f = reserve(r, r.sz + 1)) != Flow::Ok)
-			return f;
-		}
-		if ((n = take(r, r.cap - 1 - r.sz)) > 0)
-		    continue;
-		if (!n)
-		    return Flow::Wait;
-		if (sock.err() != EOF)
-		    return broke(sock.err());
-		break;
-	    }
-	    r.phase = Request::Done;
-	    break;
-	case Request::ChunkSize: {
-	    ulong len;
-
-	    left = 1024;
-	    if ((f = nextline(line, left)) != Flow::Ok)
-		return f;
-	    if (!HTTPClient::parsenum(line.substr(0,
-		line.find_first_of("; \t")), len, true) || len > MaxBody - r.sz)
-		return bad(EPROTO);
-	    if (len) {
-		r.remain = len;
-		r.phase = Request::ChunkData;
-		if ((f = reserve(r, r.sz + len)) != Flow::Ok)
-		    return f;
-	    } else {
-		r.hdrleft = MaxHdrs;
-		r.phase = Request::Trailers;
-	    }
-	    break;
-	}
-	case Request::ChunkEnd:
-	    left = 2;
-	    if ((f = nextline(line, left)) != Flow::Ok)
-		return f;
-	    if (!line.empty())
-		return bad(EPROTO);
-	    r.phase = Request::ChunkSize;
-	    break;
-	case Request::Trailers:
-	    if ((f = nextline(line, r.hdrleft)) != Flow::Ok)
-		return f;
-	    if (line.empty())
-		r.phase = Request::Done;
-	    break;
-	case Request::Done:
-	    return finish(r);
-	}
     }
 }
 
@@ -876,8 +970,7 @@ void AsyncHTTPClient::connected(void) {
     (void)sock.nodelay(true);
     (void)sock.setsockopt(SOL_SOCKET, SO_KEEPALIVE, true);
     state = Open;
-    idle = false;
-    rdpos = rdend = 0;
+    parser.reset();
     dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
 	addr.ipstr()));
     io();
@@ -893,8 +986,8 @@ void AsyncHTTPClient::down(int err, Down how) {
     sock.cancel();
     (void)sock.close();
     state = Closed;
-    growing = idle = false;
-    rdpos = rdend = 0;
+    growing = false;
+    parser.reset();
     for (size_t i = 0; i < all.size(); i++) {
 	Request *r = all[i];
 	// only the oldest request can have broken the connection so it gets
@@ -908,11 +1001,11 @@ void AsyncHTTPClient::down(int err, Down how) {
 	} else {
 	    if (sent)
 		++r->attempts;
-	    r->rewind();
+	    r->reset();
+	    r->written = 0;
 	    wq.push_back(r);
 	}
     }
-    count();
     if (!wq.empty())
 	connect();
     for (Request *r : dead)
@@ -932,81 +1025,21 @@ void AsyncHTTPClient::drain(void) {
 	delete this;
 }
 
-AsyncHTTPClient::Flow AsyncHTTPClient::endhdrs(Request &r) {
-    using enum HTTPClient::Body;
-
-    // skip interim responses
-    if (r.sts / 100 == 1 && r.sts != 101) {
-	r.reshdrs.clear();
-	r.phase = Request::Status;
-	return Flow::Ok;
-    }
-    switch (HTTPClient::framing(r.reshdrs, r.sts, r.head, r.http11, r.keep,
-	r.remain)) {
-    case Bad:
-	return bad(EPROTO);
-    case None:
-	r.phase = Request::Done;
-	break;
-    case Length:
-	r.phase = Request::Length;
-	return reserve(r, r.remain);
-    case Chunked:
-	r.phase = Request::ChunkSize;
-	break;
-    case Eof:
-	r.phase = Request::Eof;
-	break;
-    }
-    return Flow::Ok;
-}
-
 void AsyncHTTPClient::enqueue(Request &r) {
     requests++;
     if (timing)
 	r.start = Timing::now();
     wq.push_back(&r);
-    count();
     if (state == Closed)
 	connect();
 }
 
-int AsyncHTTPClient::fill(void) {
-    // a write cannot make data readable so skip a read that must fail
-    if (idle || sock.drained())
-	return 0;
-    if (rdpos == rdend) {
-	rdpos = rdend = 0;
-    } else if (rdpos && rdcap - rdend < MinRead) {
-	memmove(rdbuf.get(), rdbuf.get() + rdpos, rdend - rdpos);
-	rdend -= rdpos;
-	rdpos = 0;
-    }
-    if (rdcap - rdend < MinRead) {
-	const size_t cap = max(rdcap * 2, (size_t)4096);
-	auto p = make_unique_for_overwrite<char[]>(cap);
-
-	if (rdend)
-	    memcpy(p.get(), rdbuf.get(), rdend);
-	rdbuf = std::move(p);
-	rdcap = cap;
-    }
-
-    const int n = sock.read(rdbuf.get() + rdend, (uint)(rdcap - rdend));
-
-    if (n > 0)
-	rdend += (size_t)n;
-    idle = n >= 0 && sock.drained();
-    return n;
-}
-
 AsyncHTTPClient::Flow AsyncHTTPClient::finish(Request &r) {
-    const bool keep = r.keep;
+    const bool keep = parser.keep();
 
     if (r.result)
 	r.result[r.sz] = '\0';
     rq.pop_front();
-    count();
     if (timing) {
 	const timing_t now = timing->record(rkey, r.start);
 
@@ -1047,9 +1080,8 @@ void AsyncHTTPClient::io(bool event) {
 	down(ETIMEDOUT, Down::Fail);
 	return;
     }
-    // only a poll event can add data to a drained socket
     if (event && sock.reason() != DispatchNone)
-	idle = false;
+	parser.wake();
     for (;;) {
 	const size_t pipelined = rq.size();
 
@@ -1069,70 +1101,48 @@ void AsyncHTTPClient::io(bool event) {
 	sock.readable(IOSocket::onio, tmt);
 }
 
-AsyncHTTPClient::Flow AsyncHTTPClient::nextline(string_view &line,
-    size_t &left) {
-    for (;;) {
-	const char *b = rdbuf.get() + rdpos;
-	const size_t avail = rdend - rdpos;
-	const char *nl = avail ? (const char *)memchr(b, '\n', avail) : nullptr;
-
-	if (nl) {
-	    size_t len = (size_t)(nl - b);
-
-	    if (len >= left)
-		return bad(EMSGSIZE);
-	    left -= len + 1;
-	    rdpos += len + 1;
-	    if (len && b[len - 1] == '\r')
-		len--;
-	    line = string_view(b, len);
-	    return Flow::Ok;
-	}
-	if (avail >= left)
-	    return bad(EMSGSIZE);
-
-	const int n = fill();
-
-	if (n < 0)
-	    return broke(sock.err());
-	if (!n)
-	    return Flow::Wait;
-    }
-}
-
 AsyncHTTPClient::Flow AsyncHTTPClient::readall(void) {
     using enum Flow;
+    Flow f;
 
     while (!rq.empty()) {
-	if (const Flow f = advance(*rq.front()); f != Ok)
-	    return f;
+	Request &r = *rq.front();
+
+	switch (parser.advance(r, r.head, [&](HTTPResponse &, ulong newcap) {
+	    return reserve(r, newcap); })) {
+	case Step::Done:
+	    if ((f = finish(r)) != Ok)
+		return f;
+	    break;
+	case Step::Wait:
+	    return Wait;
+	case Step::Proto:
+	    return bad(parser.err());
+	case Step::Sock:
+	    down(parser.err(), Down::Retry);
+	    return Stop;
+	}
     }
     // idle: unsolicited data is an error and a read error means it closed
-    const int n = rdpos == rdend ? fill() : 1;
+    const int n = parser.buffered() ? 1 : parser.fill();
 
     if (n)
 	down(n > 0 ? EPROTO : sock.err(), Down::Retry);
     return n ? Stop : Wait;
 }
 
-AsyncHTTPClient::Flow AsyncHTTPClient::reserve(Request &r, ulong need) {
-    ulong cap = need + 1;
-
-    if (r.result && r.cap >= cap)
-	return Flow::Ok;
-    if (r.phase != Request::Length)
-	cap = (max)({ cap, min(r.cap * 2, MaxBody + 1), 12UL * 1024 });
-    r.cap = cap;
+AsyncHTTPClient::Step AsyncHTTPClient::reserve(Request &r, ulong newcap) {
+    r.cap = newcap;
     growing = inreserve = true;
-    r.result_grow(IOSocket::ongrown, sock, r.result, (uint)r.sz, (uint)cap);
+    r.result_grow(IOSocket::ongrown, sock, r.result, (uint)r.sz, (uint)newcap);
     inreserve = false;
     // cppcheck-suppress knownConditionTrueFalse
     if (growing)
-	return Flow::Wait;			// subclass is allocating
+	return Step::Wait;			// subclass is allocating
     if (r.result)
-	return Flow::Ok;
+	return Step::Done;
     r.sz = r.cap = 0;
-    return bad(ENOMEM);
+    return Step::Proto;
 }
 
 void AsyncHTTPClient::status(tostream &out, uint indent) const {
@@ -1142,8 +1152,7 @@ void AsyncHTTPClient::status(tostream &out, uint indent) const {
     };
 
     out << pad << T("<state>") << names[state.load()] << T("</state>\n") <<
-	pad << T("<writequeue>") << wcnt.load() << T("</writequeue>\n") <<
-	pad << T("<readqueue>") << rcnt.load() << T("</readqueue>\n") <<
+	pad << T("<pending>") << numPending() << T("</pending>\n") <<
 	pad << T("<requests>") << requests.load() << T("</requests>\n") <<
 	pad << T("<connects>") << connects.load() << T("</connects>\n");
 }
@@ -1161,23 +1170,6 @@ void AsyncHTTPClient::submit(Request &r) {
     inlock.unlock();
     if (wake)
 	intake.ready(Intake::drain);
-}
-
-long AsyncHTTPClient::take(Request &r, ulong want) {
-    long n;
-
-    if (rdpos < rdend) {
-	n = (long)min((ulong)(rdend - rdpos), want);
-	memcpy(r.result + r.sz, rdbuf.get() + rdpos, (size_t)n);
-	rdpos += (size_t)n;
-    } else if (sock.drained() && r.phase != Request::Eof) {
-	return 0;	// only a read can see the end of an Eof body
-    } else if ((n = sock.read(r.result + r.sz, (uint)min(want,
-	(ulong)INT_MAX))) <= 0) {
-	return n;
-    }
-    r.sz += (ulong)n;
-    return n;
 }
 
 AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
@@ -1217,8 +1209,10 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
 
 	long n = sock.writev(iov, cnt);
 
-	if (n < 0)
-	    return broke(sock.err());
+	if (n < 0) {
+	    down(sock.err(), Down::Retry);
+	    return Flow::Stop;
+	}
 	for (ulong left = (ulong)n; left; ) {
 	    Request &r = *wq.front();
 	    const ulong len = (ulong)(r.req.size() + r.datasz - r.written);
@@ -1234,7 +1228,6 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
 	    if (timing)
 		r.start = timing->record(wkey, r.start);
 	}
-	count();
 	if ((ulong)n < total)
 	    return Flow::Wait;
     }

@@ -388,18 +388,20 @@ public:
 	dspr.unmapSocket(*this, fd());
 	return Socket::close();
     }
-    int read(void *buf, uint len) {
-	return drained(Socket::read(buf, len), len);
+    // the last read emptied the socket: skip reads until the next poll
+    bool drained(void) const { return rdrain; }
+    int read(void *buf, uint len) const {
+	return track(Socket::read(buf, len), len);
     }
-    int read(void *buf, uint len, Sockaddr &sa) {
-	return drained(Socket::read(buf, len, sa), len);
+    int read(void *buf, uint len, Sockaddr &sa) const {
+	return track(Socket::read(buf, len, sa), len);
     }
-    template<class C> int read(C &c) { return read(&c, sizeof (c)); }
-    long readv(iovec *iov, int count) {
-	return drained(Socket::readv(iov, count), iovlen(iov, count));
+    template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
+    long readv(iovec *iov, int count) const {
+	return track(Socket::readv(iov, count), iovlen(iov, count));
     }
-    long readv(iovec *iov, int count, Sockaddr &sa) {
-	return drained(Socket::readv(iov, count, sa), iovlen(iov, count));
+    long readv(iovec *iov, int count, Sockaddr &sa) const {
+	return track(Socket::readv(iov, count, sa), iovlen(iov, count));
     }
 
 protected:
@@ -413,10 +415,10 @@ protected:
     uint32_t evmask = 0;
 #endif
     bool mapped = false;
-    bool rdrain = false;
+    mutable bool rdrain = false;
 
 private:
-    template<typename N> __forceinline N drained(N n, ulong len) {
+    template<typename N> __forceinline N track(N n, ulong len) const {
 	rdrain = n == 0 ? blocked() : n > 0 && (ulong)n < len && stream();
 	return n;
     }

@@ -16,7 +16,19 @@
 #    -s secs: print rolling statistics every n seconds
 #    -t threads: number of sending threads
 #    -v: verbose
-#    -w: SMTP timeout in ms
+#    -w: SMTP connect and reply timeout in ms
+#
+# commands:
+#    connect, ehlo|helo|lhlo [domain], auth user pass, xclient args, rset, quit
+#    from|rcpt|to|cc|bcc|vrfy address [parameters]: parameters such as
+#        SIZE=, BODY=, NOTIFY= and ORCPT= follow the address
+#    header|hdr text, subject text: headers for body and mime
+#    body [text]: message from the headers and text, else a body file
+#    data: send a body file as a complete message
+#    mime [text]: start a multipart message, then attach and end
+#    attach [type [base64|qp]]: encode a body file as an attachment
+#    end: finish a mime message
+#    other: sent as is; a trailing =NNN is the expected reply code (250)
 
 var domain=example.com
 var user=user

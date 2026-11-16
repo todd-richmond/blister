@@ -21,7 +21,7 @@
 #include <time.h>
 #include <fstream>
 #include <memory_resource>
-#include "Socket.h"
+#include "Dispatch.h"
 
 class BLISTER RFC821Addr: nocopy {
 public:
@@ -243,6 +243,8 @@ protected:
     static const char crlf[];
 
 private:
+    friend class AsyncSMTPClient;
+
     bool add(vector<tstring> *v, const RFC821Addr &addr, const tchar *parms);
     bool add(vector<tstring> *v, const RFC822Addr &addrs, const tchar *parms);
     bool bigchunk(const void *p, size_t sz, bool dotstuff);
@@ -254,6 +256,7 @@ private:
     // SMTPUTF8 was declared for the transaction or there is no server
     bool canutf8(void) const { return utf8decl || fstrm; }
     bool downgrade(const tchar *cmd, tstring &id, bool utf8);
+    bool endreply(void);
     bool envarg(const tchar *cmd, tstring &id, const tchar *parms, bool brkt,
 	bool always, tstring &arg);
     bool finish(tstring_view c);
@@ -270,6 +273,7 @@ private:
     bool reply(void);
     bool sendchunk(bool last);
     bool sendcmd(tstring_view s1, const tchar *s2, int retcode, bool check);
+    bool sendend(tstring_view c);
     bool startdata(void);
     bool stuff(const void *p, size_t sz, bool dotstuff = true);
     static size_t barelfs(const char *p, const char *end);
@@ -309,7 +313,9 @@ private:
     bool lmtp = false;
     size_t maxsz = 0;
     bool mime = false;
+    bool nowait = false;
     bool pipelined = false;
+    size_t refused = 0;
     vector<pair<tstring, tstring>> rejectedv;
     vector<tstring> resultsv;
     uint rtmo = 3 * 60 * 1000;
@@ -318,6 +324,51 @@ private:
     bool usebdat = true;
     bool utf8decl = false;
     uint wtmo = 5 * 60 * 1000;
+};
+
+/*
+ * Waits for the slow replies to RCPT and the end of a message in a Dispatcher
+ * instead of a thread; everything else is synchronous. The client must not be
+ * used or destroyed until the callback runs
+ */
+class BLISTER AsyncSMTPClient: public SMTPClient {
+public:
+    using DispatchObjCB = DispatchObj::DispatchObjCB;
+
+    explicit AsyncSMTPClient(Dispatcher &d): waiter(d, *this) {}
+
+    // result of the last async call; result() and rejected() have the replies
+    bool ok(void) const { return okay; }
+
+    using SMTPClient::enddata;
+    using SMTPClient::rcpt;
+    // false on immediate failure, else cb runs on co when the replies arrive
+    bool enddata(DispatchObjCB cb, DispatchObj &co);
+    // a list of addresses sends several RCPTs so needs PIPELINING
+    bool rcpt(const tchar *id, DispatchObjCB cb, DispatchObj &co,
+	const tchar *parms = nullptr);
+
+private:
+    class Waiter: public DispatchIOSocket {
+    public:
+	Waiter(Dispatcher &d, AsyncSMTPClient &c): DispatchIOSocket(d, c.sock),
+	    client(c) {}
+
+	DSP_DECLARE(Waiter, onread) {
+	    client.check(reason() == DispatchTimeout);
+	}
+
+    private:
+	AsyncSMTPClient &client;
+    };
+
+    void check(bool timedout);
+    bool wait(DispatchObjCB cb, DispatchObj &co, bool end);
+
+    DispatchObj *caller = nullptr;
+    DispatchObjCB done = nullptr;
+    bool end = false, okay = false;
+    Waiter waiter;
 };
 
 void base64encode(const void *in, size_t len, char *&out, size_t &outsz);

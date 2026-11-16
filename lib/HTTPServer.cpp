@@ -31,6 +31,7 @@
 static constexpr ulong MaxHdrs = 64UL * 1024;	// request + header bytes
 static constexpr size_t MaxHdrCount = 100;
 static constexpr ulong MaxBody = 256UL * 1024 * 1024;
+static constexpr ulong MaxRead = 64UL * 1024;	// larger files are mmapped
 static constexpr char CRLF[] = "\r\n";
 
 bool HTTPServerSocket::date;
@@ -83,6 +84,35 @@ static const char *statusmsg(uint sts) {
     }
 }
 
+// RFC 9110 5.6.7 IMF-fixdate: "Sun, 06 Nov 1994 08:49:37 GMT"
+static const char *httpdate(time_t t, char (&buf)[30]) {
+    static constexpr char days[] = "SunMonTueWedThuFriSat";
+    static constexpr char mons[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+    struct tm tm = {};
+    auto two = [&buf](int pos, int n) {
+	buf[pos] = (char)('0' + n / 10);
+	buf[pos + 1] = (char)('0' + n % 10);
+    };
+
+    gmtime_r(&t, &tm);
+    memcpy(buf, days + 3 * (size_t)tm.tm_wday, 3);
+    memcpy(buf + 3, ", ", 2);
+    two(5, tm.tm_mday);
+    buf[7] = ' ';
+    memcpy(buf + 8, mons + 3 * (size_t)tm.tm_mon, 3);
+    buf[11] = ' ';
+    two(12, (tm.tm_year + 1900) / 100);
+    two(14, (tm.tm_year + 1900) % 100);
+    buf[16] = ' ';
+    two(17, tm.tm_hour);
+    buf[19] = ':';
+    two(20, tm.tm_min);
+    buf[22] = ':';
+    two(23, tm.tm_sec);
+    memcpy(buf + 25, " GMT", 5);
+    return buf;
+}
+
 // read exactly len bytes: a single read() is short for large or slow files
 static bool readfull(int fd, char *buf, size_t len) {
     while (len) {
@@ -99,7 +129,7 @@ static bool readfull(int fd, char *buf, size_t len) {
 }
 
 HTTPServerSocket::~HTTPServerSocket(void) {
-    delete [] data;
+    free(data);
     unmap();
     if (postdatasz)
 	delete [] postdata;
@@ -144,13 +174,9 @@ void HTTPServerSocket::readhdrs() {
 	    return;
 	}
 
-	char *old = data;
-
 	sz = min(sz < 1000 ? 1000UL : sz * 2, MaxHdrs + 1);
 	room = (uint)(sz - datasz);
-	data = new char[sz];
-	memcpy(data, old, datasz);
-	delete [] old;
+	data = (char *)realloc(data, sz);
     }
     // - 1 to leave room for savechar logic
     in = (uint)read(data + datasz, room - 1);
@@ -324,7 +350,9 @@ void HTTPServerSocket::parse(void) {
     buf += strspn(buf, " \t\r\n");
     cmd = buf;
     p = buf + strcspn(buf, " \t\r");
-    if (p == buf || (*p != ' ' && *p != '\t')) {
+    // a bare LF would be a line end to a lenient peer
+    if (p == buf || (*p != ' ' && *p != '\t') ||
+	memchr(buf, '\n', strcspn(buf, "\r"))) {
 	cmd = "BADCMD";
 	error(400, true);
 	return;
@@ -336,7 +364,8 @@ void HTTPServerSocket::parse(void) {
     noprot = (*p == '\r');
     *p++ = '\0';
     // RFC 9112 3.2.2: absolute-form target so drop the scheme and authority
-    if (!strnicmp(pp, "http://", 7) || !strnicmp(pp, "https://", 8)) {
+    if (*pp != '/' && (!strnicmp(pp, "http://", 7) ||
+	!strnicmp(pp, "https://", 8))) {
 	char *s = strchr(pp, ':') + 3;
 
 	s += strcspn(s, "/?");
@@ -567,9 +596,9 @@ void HTTPServerSocket::keepalive(void) {
 	    ka = true;
     }
     if (ka)
-	hdrs.write("Connection: keep-alive\r\n", 24);
+	hdrs.write("Connection: keep-alive\r\n");
     else if (prot[7] == '1')
-	hdrs.write("Connection: close\r\n", 19);
+	hdrs.write("Connection: close\r\n");
 }
 
 void HTTPServerSocket::send(void) {
@@ -585,18 +614,17 @@ void HTTPServerSocket::send(void) {
     }
     out = (ulong)writev(iov, 3);
     if (out != (ulong)-1) {
-	ulong total = 0;
+	bool more = false;
 
-	for (const auto &v : iov)
-	    total += (ulong)v.iov_len;
-	if (out != total) {
-	    for (auto &v : iov) {
-		ulong n = min(out, (ulong)v.iov_len);
+	for (auto &v : iov) {
+	    ulong n = min(out, (ulong)v.iov_len);
 
-		v.iov_len -= (iovlen_t)n;
-		v.iov_base = (char *)v.iov_base + n;
-		out -= n;
-	    }
+	    v.iov_len -= (iovlen_t)n;
+	    v.iov_base = (char *)v.iov_base + n;
+	    out -= n;
+	    more |= v.iov_len != 0;
+	}
+	if (more) {
 	    writeable(send, wto);
 	    return;
 	}
@@ -618,9 +646,9 @@ void HTTPServerSocket::senddone() {
     if (postdatasz) {
 	// move pipelined bytes from the body buffer to the header buffer
 	if (datasz >= sz) {
-	    delete [] data;
+	    free(data);
 	    sz = datasz + 1000;
-	    data = new char[sz];
+	    data = (char *)malloc(sz);
 	}
 	memcpy(data, postdata + postsz, datasz);
 	postdata_free();
@@ -641,22 +669,20 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     // RFC 9110 6.4.1: these have no body and 204/304 no length either
     const bool nolen = _status == 204 || _status == 304;
     const bool nobody = nolen || stringieq(cmd, "HEAD");
+    const usec_t elapsed = uticks() - begin;
 
     if (len == (ulong)-1)
 	len = p ? (ulong)strlen(p) : 0;
     if (!nolen) {
-	hdrs.write("Content-Length: ", 16);
-	hdrs.write((ulong)ss.size() + len);
-	hdrs.write(CRLF, 2);
+	hdrs.writev("Content-Length: ", (ulong)ss.size() + len, CRLF);
     }
-    hdrs.write(CRLF, 2);
+    hdrs.write(CRLF);
     iov[0].iov_base = (char *)hdrs.str();	// NOSONAR
     iov[0].iov_len = (iovlen_t)hdrs.size();
     iov[1].iov_base = (char *)ss.str();		// NOSONAR
     iov[1].iov_len = nobody ? 0 : (iovlen_t)ss.size();
     iov[2].iov_base = (char *)p;		// NOSONAR
     iov[2].iov_len = nobody ? 0 : (iovlen_t)len;
-    elapsed = uticks() - begin;
     // Timing keeps every key forever: only 2xx replies use the client's path
     if (_status >= 200 && _status < 300) {
 	for (const char *s = cmd; *s && k < last; s++)
@@ -685,14 +711,19 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
 }
 
 void HTTPServerSocket::reply(int fd, ulong len) {
-    char buf[2048];
+    if (len <= MaxRead) {
+	char buf[4096];
 
-    if (len <= sizeof (buf)) {
-	if (!readfull(fd, buf, len)) {
-	    error(500);
-	    return;
+	for (ulong n = len; n; ) {
+	    ulong in = min(n, (ulong)sizeof (buf));
+
+	    if (!readfull(fd, buf, in)) {
+		error(500);
+		return;
+	    }
+	    ss.write(buf, (streamsize)in);
+	    n -= in;
 	}
-	ss.write(buf, (streamsize)len);
 	len = 0;
     } else {
 #ifdef _WIN32
@@ -727,28 +758,23 @@ void HTTPServerSocket::reply(int fd, ulong len) {
 
 void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     char *str, bool close) {
+    char dt[30];
+
     if (!str)
 	str = statusmsg(sts);
     hdrs.reset();
     ss.reset();
-    hdrs.write(prot, (streamsize)strlen(prot));
-    hdrs.write(' ');
-    hdrs.write(sts);
-    hdrs.write(' ');
-    hdrs.write(str, (streamsize)strlen(str));
-    hdrs.write(CRLF, 2);
+    hdrs.writev(prot, ' ', sts, ' ', str, CRLF);
     if (date)
-	header("Date", format("{:%a, %d %b %Y %H:%M:%S} GMT", chrono::floor<
-	    chrono::seconds>(chrono::system_clock::now())).c_str());
+	header("Date", httpdate(time(nullptr), dt));
     if (mime)
 	header("Content-Type", mime);
     if (mtime)
-	header("Last-Modified", format("{:%a, %d %b %Y %H:%M:%S} GMT",
-	    chrono::sys_seconds(chrono::seconds(mtime))).c_str());
+	header("Last-Modified", httpdate(mtime, dt));
     _status = sts;
     // an unread body would be parsed as the next request
     if (close || postin < postsz) {
-	hdrs.write("Connection: close\r\n", 19);
+	hdrs.write("Connection: close\r\n");
 	ka = false;
     } else {
 	keepalive();
@@ -756,10 +782,7 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
 }
 
 void HTTPServerSocket::header(const char *attr, const char *val) {
-    hdrs.write(attr, (streamsize)strlen(attr));
-    hdrs.write(": ", 2);
-    hdrs.write(val, (streamsize)strlen(val));
-    hdrs.write(CRLF, 2);
+    hdrs.writev(attr, ": ", val, CRLF);
 }
 
 void HTTPServerSocket::error(uint sts, bool close) {
@@ -768,10 +791,7 @@ void HTTPServerSocket::error(uint sts, bool close) {
 
 void HTTPServerSocket::error(uint sts, const char *errstr, bool close) {
     status(sts, "text/plain", 0, errstr, close);
-    ss.write(sts);
-    ss.write(' ');
-    ss.write(errstr, (streamsize)strlen(errstr));
-    ss.write(CRLF, 2);
+    ss.writev(sts, ' ', errstr, CRLF);
     reply();
 }
 
@@ -840,47 +860,109 @@ void HTTPServerSocket::get(bool head) {
 }
 
 const char *HTTPServerSocket::mimetype(const char *ext) const {
-    static const unordered_map<string_view, const char *, strihash, strieq>
-	mime = {
-	{ "avi", "video/x-msvideo" },
-	{ "bmp", "image/bmp" },
-	{ "css", "text/css" },
-	{ "gif", "image/gif" },
-	{ "htm", "text/html" },
-	{ "html", "text/html" },
-	{ "ico", "image/vnd.microsoft.icon" },
-	{ "jpeg", "image/jpeg" },
-	{ "jpg", "image/jpeg" },
-	{ "js", "text/javascript" },
-	{ "json", "application/json" },
-	{ "mov", "video/quicktime" },
-	{ "mp4", "video/mp4" },
-	{ "mpeg", "video/mpeg" },
-	{ "mpg", "video/mpeg" },
-	{ "pdf", "application/pdf" },
-	{ "png", "image/png" },
-	{ "rtf", "application/rtf" },
-	{ "svg", "image/svg+xml" },
-	{ "text", "text/plain" },
-	{ "tiff", "image/tiff" },
-	{ "tif", "image/tiff" },
-	{ "txt", "text/plain" },
-	{ "vcf", "text/x-vcard" },
-	{ "wasm", "application/wasm" },
-	{ "wav", "audio/x-wav" },
-	{ "webp", "image/webp" },
-	{ "woff", "font/woff" },
-	{ "woff2", "font/woff2" },
-	{ "xbm", "image/x-bitmap" },
-	{ "xml", "application/xml" },
-	{ "zip", "application/x-zip-compressed" }
+    struct mimeent {
+	attrkey ext;
+	const char *type;
     };
+    // literal keys hash at compile time; sorted by hash for lookup
+    static constexpr auto mime = [] {
+	auto a = to_array<mimeent>({
+	    { "7z", "application/x-7z-compressed" },
+	    { "aac", "audio/aac" },
+	    { "avi", "video/x-msvideo" },
+	    { "avif", "image/avif" },
+	    { "bmp", "image/bmp" },
+	    { "bz2", "application/x-bzip2" },
+	    { "css", "text/css" },
+	    { "csv", "text/csv" },
+	    { "deb", "application/vnd.debian.binary-package" },
+	    { "doc", "application/msword" },
+	    { "docx", "application/vnd.openxmlformats-officedocument."
+		"wordprocessingml.document" },
+	    { "eot", "application/vnd.ms-fontobject" },
+	    { "epub", "application/epub+zip" },
+	    { "flac", "audio/flac" },
+	    { "gif", "image/gif" },
+	    { "gz", "application/gzip" },
+	    { "heic", "image/heic" },
+	    { "htm", "text/html" },
+	    { "html", "text/html" },
+	    { "ico", "image/vnd.microsoft.icon" },
+	    { "ics", "text/calendar" },
+	    { "jar", "application/java-archive" },
+	    { "jpeg", "image/jpeg" },
+	    { "jpg", "image/jpeg" },
+	    { "js", "text/javascript" },
+	    { "json", "application/json" },
+	    { "m4a", "audio/mp4" },
+	    { "md", "text/markdown" },
+	    { "mjs", "text/javascript" },
+	    { "mkv", "video/x-matroska" },
+	    { "mov", "video/quicktime" },
+	    { "mp3", "audio/mpeg" },
+	    { "mp4", "video/mp4" },
+	    { "mpeg", "video/mpeg" },
+	    { "mpg", "video/mpeg" },
+	    { "odp", "application/vnd.oasis.opendocument.presentation" },
+	    { "ods", "application/vnd.oasis.opendocument.spreadsheet" },
+	    { "odt", "application/vnd.oasis.opendocument.text" },
+	    { "oga", "audio/ogg" },
+	    { "ogg", "audio/ogg" },
+	    { "ogv", "video/ogg" },
+	    { "otf", "font/otf" },
+	    { "pdf", "application/pdf" },
+	    { "png", "image/png" },
+	    { "ppt", "application/vnd.ms-powerpoint" },
+	    { "pptx", "application/vnd.openxmlformats-officedocument."
+		"presentationml.presentation" },
+	    { "rar", "application/vnd.rar" },
+	    { "rpm", "application/x-rpm" },
+	    { "rtf", "application/rtf" },
+	    { "sh", "application/x-sh" },
+	    { "svg", "image/svg+xml" },
+	    { "tar", "application/x-tar" },
+	    { "tgz", "application/gzip" },
+	    { "text", "text/plain" },
+	    { "tif", "image/tiff" },
+	    { "tiff", "image/tiff" },
+	    { "ttf", "font/ttf" },
+	    { "txt", "text/plain" },
+	    { "vcf", "text/x-vcard" },
+	    { "vsd", "application/vnd.visio" },
+	    { "wasm", "application/wasm" },
+	    { "wav", "audio/x-wav" },
+	    { "weba", "audio/webm" },
+	    { "webm", "video/webm" },
+	    { "webp", "image/webp" },
+	    { "woff", "font/woff" },
+	    { "woff2", "font/woff2" },
+	    { "xbm", "image/x-bitmap" },
+	    { "xhtml", "application/xhtml+xml" },
+	    { "xls", "application/vnd.ms-excel" },
+	    { "xlsx", "application/vnd.openxmlformats-officedocument."
+		"spreadsheetml.sheet" },
+	    { "xml", "application/xml" },
+	    { "xz", "application/x-xz" },
+	    { "yaml", "application/yaml" },
+	    { "yml", "application/yaml" },
+	    { "zip", "application/x-zip-compressed" },
+	    { "zst", "application/zstd" }
+	});
 
+	ranges::sort(a, {}, [](const mimeent &e) { return e.ext.hash; });
+	return a;
+    }();
+    static constexpr auto hash = [](const mimeent &e) { return e.ext.hash; };
+
+    static_assert(ranges::adjacent_find(mime, {}, hash) == mime.end(),
+	"duplicate mimetype hash");
     if (ext) {
-	auto it = mime.find(string_view(ext));
+	const strhash_t h = stringihash(string_view(ext));
+	auto it = ranges::lower_bound(mime, h, {}, hash);
 
-	if (it != mime.end())
-	    return it->second;
+	if (it != mime.end() && it->ext.hash == h)
+	    return it->type;
     }
     return "application/octet-stream";
 }
+

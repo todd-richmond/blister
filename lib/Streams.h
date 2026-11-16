@@ -49,6 +49,19 @@ public:
 	return { gptr(), (size_t)(egptr() - gptr()) };
     }
     void consume(size_t n) { gbump((int)n); }
+    // append ready input: >0 read, 0 none ready, <0 buffer full, error or EOF
+    int fill(void) {
+	const char *gp = gptr();
+	const streamsize left = egptr() - gp;
+	int in;
+
+	if (left == bufsz)
+	    return -1;
+	memmove(buf, gp, (size_t)left);
+	in = fd->read(buf + left, chunk(bufsz - left));
+	setg(buf, buf, buf + left + max(in, 0));
+	return in;
+    }
     const char *str(void) const { return buf; }
     // cppcheck-suppress nullPointer
     void str(char *p, streamsize sz) { setbuf(p, sz); }
@@ -359,6 +372,12 @@ public:
 	}
 	return *this;
     }
+    // write() each argument in order: chars, numbers, strings
+    template<typename... Args>
+    __forceinline bufferstream &writev(const Args &...args) {
+	(write(args), ...);
+	return *this;
+    }
 
 private:
     bool plain(void) const {
@@ -463,6 +482,31 @@ private:
 class BLISTER nullstream: public basic_ostream<tchar> {
 public:
     nullstream(): basic_ostream<tchar>(&nb) {}
+
+    nullstream &put(tchar) { return *this; }
+    nullstream &write(const tchar *, streamsize) { return *this; }
+    // arithmetic and string args need no formatting, length or sentry
+    template<typename T>
+    __forceinline nullstream &operator <<(T &&val) {
+	using U = remove_cvref_t<T>;
+
+	if constexpr (!is_arithmetic_v<U> &&
+	    !is_convertible_v<const U &, tstring_view>)
+	    static_cast<basic_ostream<tchar> &>(*this) << std::forward<T>(val);
+	return *this;
+    }
+    nullstream &operator <<(tostream &(*pf)(tostream &)) {
+	pf(*this);
+	return *this;
+    }
+    nullstream &operator <<(basic_ios<tchar> &(*pf)(basic_ios<tchar> &)) {
+	pf(*this);
+	return *this;
+    }
+    nullstream &operator <<(ios_base &(*pf)(ios_base &)) {
+	pf(*this);
+	return *this;
+    }
 
 private:
     struct null_buffer: public basic_streambuf<tchar> {

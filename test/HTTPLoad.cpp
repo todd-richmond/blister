@@ -20,26 +20,28 @@
 #include "Load.h"
 
 static bool dbg = false, ka = false;
+static ulong chunksz = 0;
 
 class HTTPLoad: public Load {
 public:
     static bool parse(tchar *cmd, uint line);
 
 private:
-    enum class Op: uchar { Get, Post };
-
     class HTTPCmd: public LoadCmd {
     public:
 	HTTPCmd(const tchar *c, const tchar *a, const URL &u, const tchar *d,
-	    const tchar *s, const tchar *v): LoadCmd(c, a), data(d ? d : T("")),
-	    full(u.fullpath()), path(u.relpath()), value(v ? v : T("")),
-	    op(!tstricmp(c, T("get")) ? Op::Get : Op::Post),
-	    status((ushort)ttoi(s)), vars(path.contains(T("$("))) {}
+	    const tchar *s, const tchar *v, bool b): LoadCmd(c, a),
+	    data(d ? d : T("")), full(u.fullpath()), method(c),
+	    path(u.relpath()), value(v ? v : T("")), status((ushort)ttoi(s)),
+	    body(b), vars(path.contains(T("$("))) {
+	    for (auto &ch : method)
+		ch = (tchar)totupper(ch);
+	}
 
 	Sockaddr addr;
-	tstring data, full, path, value;
-	Op op;
+	tstring data, full, method, path, value;
 	ushort status;
+	bool body;			// request has a body
 	bool vars;			// path has $() for per request values
     };
 
@@ -49,6 +51,9 @@ private:
     HTTPClient hc;
     const tchar *path = nullptr;
     static inline attrmap hdrs;
+    static inline bool ctype = false;	// hdrs has a content-type
+
+    bool send(const HTTPCmd &cmd, const void *d, ulong len);
 
     void begin(void) override;
     bool exec(LoadCmd &lc, usec_t &io) override;
@@ -61,12 +66,28 @@ private:
 };
 
 bool HTTPLoad::parse(tchar *cmd, uint line) {
+    static constexpr pair<tstring_view, bool> methods[] = {
+	{ T("delete"), false }, { T("get"), false }, { T("head"), false },
+	{ T("options"), false }, { T("patch"), true }, { T("post"), true },
+	{ T("put"), true }
+    };
     const tchar *arg, *data = nullptr, *status, *value;
     URL url;
 
-    if (!tstricmp(cmd, T("hdr")))
-	return setattr(hdrs, line);
-    if (tstricmp(cmd, T("get")) && tstricmp(cmd, T("post"))) {
+    if (!tstricmp(cmd, T("hdr"))) {
+	if (!setattr(hdrs, line))
+	    return false;
+	ctype = ranges::any_of(hdrs, [](const auto &h) {
+	    return !tstricmp(h.first.c_str(), T("content-type"));
+	});
+	return true;
+    }
+
+    const auto *m = ranges::find_if(methods, [&](const auto &p) {
+	return !tstricmp(p.first.data(), cmd);
+    });
+
+    if (m == ranges::end(methods)) {
 	tcerr << T("invalid cmd: line ") << line << endl;
 	return false;
     }
@@ -75,8 +96,10 @@ bool HTTPLoad::parse(tchar *cmd, uint line) {
 	tcerr << T("invalid url: line ") << line << endl;
 	return false;
     }
-    if (!tstricmp(cmd, T("post"))) {
+    if (m->second) {
 	data = tstrtok(nullptr, T(" \t"));
+	if (data && !tstrcmp(data, T("-")))	// body file
+	    data = nullptr;
 	if (!data && bodies.empty()) {
 	    tcerr << T("missing body file for ") << cmd << endl;
 	    return false;
@@ -87,7 +110,8 @@ bool HTTPLoad::parse(tchar *cmd, uint line) {
 	status = T("200");
     value = tstrtok(nullptr, T(""));
 
-    auto lcmd = make_unique<HTTPCmd>(cmd, arg, url, data, status, value);
+    auto lcmd = make_unique<HTTPCmd>(cmd, arg, url, data, status, value,
+	m->second);
 
     if (!lcmd->addr.set(url.host().c_str(), url.port())) {
 	tcerr << T("invalid host: line ") << line << endl;
@@ -136,20 +160,35 @@ bool HTTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	path = buf;
     if (!ret)
 	return false;
-    if (cmd.op == Op::Get)
-	return hc.get(path);
+    if (!cmd.body)
+	return hc.cmd(cmd.method.c_str(), path);
     if (cmd.data.empty()) {
 	unique_ptr<char[]> rbuf;
 	uint u = pick();
 	const char *d = load(u, io, rbuf);
 
-	hc.header(T("content-type"), T("application/octet-stream"));
-	return d && hc.post(path, d, bodies[u].size);
+	if (!ctype)
+	    hc.header(T("content-type"), T("application/octet-stream"));
+	return d && send(cmd, d, bodies[u].size);
     }
     if (!subst(cmd.data, data, size(data)))
 	return false;
-    hc.header(T("content-type"), T("application/x-www-form-urlencoded"));
-    return hc.post(path, data, (ulong)(tstrlen(data) * sizeof (tchar)));
+    if (!ctype)
+	hc.header(T("content-type"), T("application/x-www-form-urlencoded"));
+    return send(cmd, data, (ulong)(tstrlen(data) * sizeof (tchar)));
+}
+
+// -u sends the body chunked; an early reply ends the upload
+bool HTTPLoad::send(const HTTPCmd &cmd, const void *d, ulong len) {
+    if (!chunksz)
+	return hc.cmd(cmd.method.c_str(), path, d, len);
+    if (!hc.sendbegin(cmd.method.c_str(), path))
+	return false;
+    for (ulong off = 0; off < len; off += chunksz) {
+	if (!hc.sendchunk((const char *)d + off, min(chunksz, len - off)))
+	    break;
+    }
+    return hc.sendend();
 }
 
 bool HTTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
@@ -202,11 +241,13 @@ bool HTTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
 
 int tmain(int argc, tchar *argv[]) {
     return Load::run<HTTPLoad>(argc, argv, T("http.wld"), T("localhost:80"),
-	T("[-d] [-k]"), [](const tchar *arg) {
+	T("[-d] [-k] [-u[chunksize]]"), [](const tchar *arg) {
 	if (!tstricmp(arg, T("-d")))
 	    dbg = true;
 	else if (!tstricmp(arg, T("-k")))
 	    ka = true;
+	else if (!tstrncmp(arg, T("-u"), 2))
+	    return (chunksz = arg[2] ? atoi<ulong>(arg + 2) : 64 * 1024) != 0;
 	else
 	    return false;
 	return true;

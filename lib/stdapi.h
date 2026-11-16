@@ -1104,8 +1104,21 @@ __forceinline int cstrncmp(const C *a, const C *b, size_t n) {
 	return strncmp(a, b, n);
 }
 
+// names usually differ in the first character: skip the library call
+template<typename C>
+__forceinline int cfirsticmp(C a, C b) {
+    if constexpr (is_same_v<C, wchar>)
+	return (int)towlower((wint_t)a) - (int)towlower((wint_t)b);
+    else
+	return tolower((uchar)a) - tolower((uchar)b);
+}
+
 template<typename C>
 __forceinline int cstricmp(const C *a, const C *b) {
+    int ret = cfirsticmp(*a, *b);
+
+    if (ret)
+	return ret;
     if constexpr (is_same_v<C, wchar>)
 	return wcsicmp(a, b);
     else
@@ -1114,6 +1127,10 @@ __forceinline int cstricmp(const C *a, const C *b) {
 
 template<typename C>
 __forceinline int cstrnicmp(const C *a, const C *b, size_t n) {
+    int ret = n ? cfirsticmp(*a, *b) : 0;
+
+    if (ret)
+	return ret;
     if constexpr (is_same_v<C, wchar>)
 	return wcsnicmp(a, b, n);
     else

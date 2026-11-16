@@ -66,27 +66,188 @@ private:
     ushort portnum = 80;
 };
 
-class BLISTER HTTPClient: nocopy {
+// response headers in one reused buffer: too few to need hashing
+class DLL_LOCAL HTTPHeaders {
 public:
     using attrmap = unordered_multimap<tstring, tstring, strihash, strieq>;
 
+    void add(string_view hdr);
+    void clear(void) {
+	buf.clear();
+	hdrs.clear();
+    }
+    const tchar *find(tstring_view name) const {
+	for (const auto &h : hdrs) {
+	    if (stringieq(tstring_view(buf.data() + h.name, h.nlen), name))
+		return buf.data() + h.val;
+	}
+	return nullptr;
+    }
+    attrmap map(void) const {
+	attrmap m;
+
+	for (const auto &h : hdrs)
+	    m.emplace(tstring(buf.data() + h.name, h.nlen), buf.data() + h.val);
+	return m;
+    }
+
+private:
+    struct Hdr {
+	uint name, nlen, val;
+    };
+
+    static void tappend(tstring &s, string_view sv);
+
+    tstring buf;
+    vector<Hdr> hdrs;
+};
+
+template<class S>
+class HTTPParser;
+
+// request headers and response state shared by the blocking and async clients
+class BLISTER HTTPResponse: nocopy {
+public:
+    using attrmap = HTTPHeaders::attrmap;
+
+    const char *data(void) const { return result ? result : ""; }
+    int err(void) const { return sockerr; }
+    tstring errstr(void) const {
+	return sockerr == EOF ? T("socket EOF") : tstring(tstrerror(sockerr));
+    }
+    ulong size(void) const { return sz; }
+    uint status(void) const { return sts; }
+    const tchar *response(tstring_view name) const {
+	return reshdrs.find(name);
+    }
+    attrmap responses(void) const { return reshdrs.map(); }
+
+    template<typename C>
+    void header(tstring_view hdr, const C &val) {
+	hstrm.writev(hdr, T(": "), val, T("\r\n"));
+    }
+    void headers(tstring_view hdrs) { hstrm << hdrs; }
+
+protected:
+    HTTPResponse() = default;
+    ~HTTPResponse() { free(result); }
+
+    static constexpr ulong Unknown = ~0UL;
+
+    // false if op or path could inject into the request line. A small body
+    // is appended, zeroing datasz
+    static bool buildreq(string &out, const tchar *op, const tchar *path,
+	string_view host, bool keep, tstring_view hdrs, const void *data,
+	ulong &datasz);
+    static string hosthdr(const Sockaddr &sa);
+    static bool idempotent(const tchar *op);
+
+    // result capacity for need bytes + NUL: exact when the length is known
+    ulong capfor(ulong need, bool exact) const;
+    // keeps a small buffer for the next response
+    void reset(void);
+    bool resize(ulong newcap);
+
+    tbufferstream hstrm;
+    char *result = nullptr;
+    HTTPHeaders reshdrs;
+    int sockerr = 0;
+    ulong cap = 0, sz = 0;
+    uint sts = 0;
+
+private:
+    friend class AsyncHTTPClient;
+    template<class S>
+    friend class HTTPParser;
+
+    enum class Body: uchar { Bad, None, Length, Chunked, Eof };
+
+    static Body framing(const HTTPHeaders &hdrs, uint sts, bool head,
+	bool http11, bool &keep, ulong &len);
+    static bool hashost(tstring_view hdrs);
+    static bool parsenum(string_view s, ulong &n, bool hex);
+    static bool parsestatus(string_view str, uint &code, bool &http11);
+};
+
+/*
+ * Incremental HTTP/1.x response parser over a buffered socket. S is Socket or
+ * a DispatchSocket: the latter can return Wait. One response is in flight per
+ * connection so its state lives here and not in the request
+ */
+template<class S>
+class DLL_LOCAL HTTPParser: nocopy {
+public:
+    enum class Step: uchar { Done, Wait, Proto, Sock };
+
+    explicit HTTPParser(S &s): sb(s, 3L * 1460), sock(s) {}
+
+    faststreambuf<S> &buf(void) { return sb; }
+    bool buffered(void) const { return !sb.avail().empty(); }
+    int err(void) const { return ecode; }
+    bool keep(void) const { return reuse; }
+
+    // grow(r, newcap) allocates r.result and returns Done, Wait or Proto
+    template<class G>
+    Step advance(HTTPResponse &r, bool head, G &&grow);
+    // 1 data buffered, 0 would block, -1 error
+    int fill(void);
+    void reset(void);
+    // a poll event may have added data to a drained socket
+    void wake(void) { idle = false; }
+
+private:
+    enum Phase: uchar {
+	Status, Headers, Length, Eof, ChunkSize, ChunkData, ChunkEnd, Trailers,
+	Complete
+    };
+
+    bool emptied(void) const {
+	if constexpr (requires { sock.drained(); })
+	    return sock.drained();
+	return false;
+    }
+    Step fail(int e) {
+	ecode = e;
+	return Step::Proto;
+    }
+    Step nextline(string_view &line);
+    template<class G>
+    Step reserve(HTTPResponse &r, ulong need, G &grow);
+    Step sockfail(void) {
+	ecode = sock.err();
+	return Step::Sock;
+    }
+    long take(HTTPResponse &r, ulong want);
+    void start(Phase p, size_t limit) {
+	phase = p;
+	left = limit;
+    }
+
+    int ecode = 0;
+    bool http11 = false, idle = false, partial = false, reuse = false;
+    size_t left = 0;
+    string line;
+    Phase phase = Status;
+    ulong remain = 0;
+    faststreambuf<S> sb;
+    S &sock;
+};
+
+class BLISTER HTTPClient: public HTTPResponse {
+public:
     friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
 	os << hc.sts << '\n';
 	for (const auto &[key, value] : hc.responses())
 	    os << key << ": " << value << '\n';
-	os.write(achartotchar(hc.data()), (streamsize)hc.ressz);
+	os.write(achartotchar(hc.data()), (streamsize)hc.sz);
 	os << '\n';
 	return os;
     }
 
     const Sockaddr &address(void) const { return addr; }
     const Socket &socket(void) const { return sock; }
-    const char *data(void) const { return result ? result.get() : ""; }
-    int err(void) const { return sock.err(); }
     bool keepalive(void) const { return ka; }
     uint rtimeout(void) const { return rto; }
-    ulong size(void) const { return ressz; }
-    uint status(void) const { return sts; }
     uint wtimeout(void) const { return wto; }
 
     bool close(void) { return sock.close(); }
@@ -98,112 +259,66 @@ public:
 	uint timeout = SOCK_INFINITE) {
 	return connect(Sockaddr(host, port), keepalive, timeout);
     }
-    template<typename C>
-    void header(tstring_view hdr, const C &val) {
-	hstrm << hdr << T(": ") << val << T("\r\n");
+    bool cmd(const tchar *cmd, const tchar *path, const void *data = nullptr,
+	ulong len = 0, msghdr *msgh = nullptr) {
+	return send(cmd, path, data, len, msgh);
     }
-    void headers(tstring_view headers) { hstrm << headers; }
-    bool cmd(const tchar *cmd, const tchar *path) { return send(cmd, path); }
     bool del(const tchar *path) { return send(T("DELETE"), path); }
     bool get(const tchar *path) { return send(T("GET"), path); }
     bool head(const tchar *path) { return send(T("HEAD"), path); }
-    bool post(const tchar *path, const void *data, ulong len,
-	msghdr *msgh = nullptr) {
+    bool options(const tchar *path) { return send(T("OPTIONS"), path); }
+    bool patch(const tchar *path, const void *data, ulong len, msghdr *msgh =
+	nullptr) {
+	return send(T("PATCH"), path, data, len, msgh);
+    }
+    bool post(const tchar *path, const void *data, ulong len, msghdr *msgh =
+	nullptr) {
 	return send(T("POST"), path, data, len, msgh);
     }
-    bool put(const tchar *path, const void *data, ulong len,
-	msghdr *msgh = nullptr) {
+    bool put(const tchar *path, const void *data, ulong len, msghdr *msgh =
+	nullptr) {
 	return send(T("PUT"), path, data, len, msgh);
     }
-    const tchar *response(tstring_view name) const {
-	return reshdrs.find(name);
-    }
-    attrmap responses(void) const { return reshdrs.map(); }
     void timeout(uint r, uint w = SOCK_INFINITE) {
 	sock.rtimeout(rto = r);
 	sock.wtimeout(wto = w);
     }
+    /*
+     * chunked request body of unknown length: sendbegin(), sendchunk()s,
+     * sendend() (true if a response arrived). If the server replies early
+     * sendchunk() fails with err() 0 and that response
+     */
+    bool sendbegin(const tchar *op, const tchar *path);
+    bool sendchunk(const void *data, ulong len) {
+	const iovec iov = { (char *)data, (iovlen_t)len };
+
+	return sendchunk(&iov, 1);
+    }
+    bool sendchunk(const iovec *iov, int cnt);
+    bool sendend(void);
 
 protected:
     Sockaddr addr;
     uint cto = SOCK_INFINITE;
     string hostval;
-    bufferstream<tchar> hstrm;
     bool ka = true;
-    string line;
+    HTTPParser<Socket> parser { sock };
     string req;
-    ulong ressz = 0;
-    unique_ptr<char[]> result;
     uint rto = 90 * 1000;
     Socket sock;
-    sockstream sstrm { (streamsize)(3L * 1460) };
-    uint sts = 0;
-    ulong sz = 0;
+    bool streaming = false;
     uint wto = 60 * 1000;
 
     bool send(const tchar *op, const tchar *path, const void *data = nullptr,
 	ulong datasz = 0, msghdr *msgh = nullptr);
 
 private:
-    friend class AsyncHTTPClient;
+    using Step = HTTPParser<Socket>::Step;
 
-    // response headers in one reused buffer: too few to need hashing
-    class DLL_LOCAL Headers {
-    public:
-	void add(string_view hdr);
-	void clear(void) {
-	    buf.clear();
-	    hdrs.clear();
-	}
-	const tchar *find(tstring_view name) const {
-	    for (const auto &h : hdrs) {
-		if (stringieq(tstring_view(buf.data() + h.name, h.nlen), name))
-		    return buf.data() + h.val;
-	    }
-	    return nullptr;
-	}
-	attrmap map(void) const {
-	    attrmap m;
-
-	    for (const auto &h : hdrs)
-		m.emplace(tstring(buf.data() + h.name, h.nlen), buf.data() +
-		    h.val);
-	    return m;
-	}
-
-    private:
-	struct Hdr {
-	    uint name, nlen, val;
-	};
-
-	tstring buf;
-	vector<Hdr> hdrs;
-    };
-
-    enum class Body: uchar { Bad, None, Length, Chunked, Eof };
-
-    Headers reshdrs;
-
-    static bool buildreq(string &out, const tchar *op, const tchar *path,
-	string_view host, bool keep, tstring_view hdrs, const void *data,
-	ulong &datasz);
-    static Body framing(const Headers &hdrs, uint sts, bool head, bool http11,
-	bool &keep, ulong &len);
-    static bool hashost(tstring_view hdrs);
-    static string hosthdr(const Sockaddr &sa);
-    static bool idempotent(const tchar *op);
-    static bool parsenum(string_view s, ulong &n, bool hex);
-    static bool parsestatus(string_view str, uint &code, bool &http11);
-    static bool readline(socketbuf *sb, string &s, size_t &left);
-    static bool sendall(const Socket &s, string_view hdr, const void *data,
-	ulong datasz, ulong off);
-    static void tappend(tstring &s, string_view sv);
-
-    void grow(ulong need);
-    bool readbody(bool head, bool http11, bool &keep);
-    bool readchunked(void);
-    bool readhdrs(bool &http11);
+    Step receive(bool head, bool &keep);
+    void sendfail(void);
     void setup(void);
+    bool transmit(const void *data, ulong datasz, ulong off);
 };
 
 /*
@@ -212,34 +327,16 @@ private:
  */
 class BLISTER AsyncHTTPClient: nocopy {
 public:
-    using attrmap = HTTPClient::attrmap;
+    using attrmap = HTTPResponse::attrmap;
     using DispatchObjCB = DispatchObj::DispatchObjCB;
 
-    class BLISTER Request: public DispatchObj {
+    // NOLINTNEXTLINE(misc-multiple-inheritance)
+    class BLISTER Request: public DispatchObj, public HTTPResponse {
     public:
 	explicit Request(Dispatcher &d): DispatchObj(d) {}
 	explicit Request(DispatchObj &parent): DispatchObj(child, parent) {}
-	~Request() override { free(result); }
 
-	const char *data(void) const { return result ? result : ""; }
-	int err(void) const { return sockerr; }
-	tstring errstr(void) const {
-	    return sockerr == EOF ? T("socket EOF") :
-		tstring(tstrerror(sockerr));
-	}
-	ulong size(void) const { return sz; }
-	uint status(void) const { return sts; }
-	const tchar *response(tstring_view name) const {
-	    return reshdrs.find(name);
-	}
-	attrmap responses(void) const { return reshdrs.map(); }
-
-	template<typename C>
-	void header(tstring_view hdr, const C &val) {
-	    hstrm << hdr << T(": ") << val << T("\r\n");
-	}
-	void headers(tstring_view hdrs) { hstrm << hdrs; }
-	virtual void reset(void);
+	virtual void reset(void) { HTTPResponse::reset(); }
 	// data must remain valid until the callback is called
 	void send(DispatchObjCB cb, DispatchObj &co, AsyncHTTPClient &client,
 	    const tchar *op, const tchar *path, const void *data = nullptr,
@@ -257,34 +354,20 @@ public:
 	// true if resubmitted to a client instead of completing
 	virtual bool resend(void) { return false; }
 
-	tbufferstream hstrm;
 	tstring logprefix;
-	char *result = nullptr;
-	int sockerr = 0;
-	ulong sz = 0;
-	uint sts = 0;
 
     private:
 	friend class AsyncHTTPClient;
-	enum Phase: uchar {
-	    Status, Headers, Length, Eof, ChunkSize, ChunkData, ChunkEnd,
-	    Trailers, Done
-	};
-
-	void rewind(void);
 
 	AsyncHTTPClient *client = nullptr;
 	DispatchObj *caller = nullptr;
 	DispatchObjCB done = nullptr;
 	const void *datap = nullptr;
 	string req;
-	HTTPClient::Headers reshdrs;
-	ulong cap = 0, datasz = 0, remain = 0, written = 0;
+	ulong datasz = 0, written = 0;
 	timing_t start = 0;
-	size_t hdrleft = 0;
-	Phase phase = Status;
 	uchar attempts = 0;
-	bool head = false, http11 = false, idem = true, keep = false;
+	bool head = false, idem = true;
     };
 
     // on a parent shares its group; parent callbacks must not delete the client
@@ -317,9 +400,6 @@ private:
 	IOSocket(DispatchObj &parent, AsyncHTTPClient &c):
 	    DispatchClientSocket(parent), client(c) {}
 
-	// the last read emptied the socket
-	bool drained(void) const { return rdrain; }
-
 	DSP_DECLARE(IOSocket, ongrown) { client.grown(); }
 	DSP_DECLARE(IOSocket, onio) { client.io(); }
 
@@ -348,28 +428,16 @@ private:
     enum class Down { Fail, Retry, Resend };
     enum class Flow { Ok, Wait, Stop };
     enum State: uchar { Closed, Connecting, Open };
+    using Step = HTTPParser<IOSocket>::Step;
 
-    Flow advance(Request &r);
     Flow bad(int err);
-    Flow broke(int err) {
-	down(err, Down::Retry);
-	return Flow::Stop;
-    }
-    Flow endhdrs(Request &r);
     Flow finish(Request &r);
-    Flow nextline(string_view &line, size_t &left);
     Flow readall(void);
-    Flow reserve(Request &r, ulong need);
     Flow writeall(void);
-    int fill(void);
-    long take(Request &r, ulong want);
+    Step reserve(Request &r, ulong newcap);
     void complete(Request &r, int err);
     void connect(void);
     void connected(void);
-    void count(void) {
-	rcnt = (uint)rq.size();
-	wcnt = (uint)wq.size();
-    }
     void down(int err, Down how);
     void drain(void);
     void enqueue(Request &r);
@@ -383,14 +451,13 @@ private:
     atomic<ulong> connects = 0;
     timing_t cstart = 0;
     atomic<uint> cto = 30 * 1000;
-    bool growing = false, idle = false, inreserve = false;
+    bool growing = false, inreserve = false;
     vector<Request *> batch, inbox;
     atomic<DispatchObj *> incall = nullptr;
     SpinLock inlock;
     Intake &intake;
-    atomic<uint> pending = 1, rcnt = 0;
-    unique_ptr<char[]> rdbuf;
-    size_t rdcap = 0, rdend = 0, rdpos = 0;
+    HTTPParser<IOSocket> parser;
+    atomic<uint> pending = 1;
     atomic<ulong> requests = 0;
     tstring rkey;
     deque<Request *> rq;
@@ -398,7 +465,6 @@ private:
     IOSocket &sock;
     atomic<State> state = Closed;
     Timing *timing;
-    atomic<uint> wcnt = 0;
     tstring wkey;
     deque<Request *> wq;
 };
