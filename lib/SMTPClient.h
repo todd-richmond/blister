@@ -234,7 +234,11 @@ public:
     static const tchar *section(void) { return T("smtp"); }
 
 protected:
+    // after each connect before the greeting, such as to start TLS
+    virtual bool onconnect(void) { return true; }
+
     tstring exts, multi, sts;
+    Sockaddr peer;
     Socket sock;
     sockstream sstrm { sock };
     fstream *fstrm = nullptr;

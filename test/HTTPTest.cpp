@@ -24,10 +24,9 @@
 #endif
 #include "Config.h"
 #include "Dispatch.h"
-#include "HTTPClient.h"
-#include "HTTPServer.h"
 #include "Log.h"
 #include "Timing.h"
+#include "TLSSocket.h"
 
 const int RETRY = 100;
 const int TIMEOUT = 10 * 1000;
@@ -35,6 +34,7 @@ static const tchar *const URI = T("/echo");
 
 static char *dbuf;
 static uint dsz;
+static bool tls;
 static atomic<uint> active;
 
 class HTTPTest: public Dispatcher {
@@ -47,6 +47,7 @@ public:
 	AsyncClient(HTTPTest &ht, const Sockaddr &sa, ulong t, ulong n):
 	    DispatchTimer(ht), client(*this, sa), req(*this), nap(n) {
 	    client.timeout((uint)t, (uint)t);
+	    client.configure(ht.config(), HTTPServerSocket::section());
 	    active++;
 	}
 	~AsyncClient() override { active--; }
@@ -54,7 +55,7 @@ public:
 	void start(ulong msec) { timeout(go, msec); }
 
     private:
-	AsyncHTTPClient client;
+	AsyncHTTPTLSClient client;
 	AsyncHTTPClient::Request req;
 	timing_t begin = 0;
 	ulong nap;
@@ -63,9 +64,9 @@ public:
 	DSP_DECLARE(AsyncClient, go);
     };
 
-    class EchoSocket: public HTTPServerSocket {
+    class EchoSocket: public HTTPTLSServer {
     public:
-	using HTTPServerSocket::HTTPServerSocket;
+	using HTTPTLSServer::HTTPTLSServer;
 
     protected:
 	void get(bool) override { error(405); }
@@ -85,13 +86,14 @@ public:
 // blocking HTTPClient on its own thread
 class SyncClient: public Thread {
 public:
-    SyncClient(const Sockaddr &a, ulong t, ulong n, ulong s): sa(a), tmt(t),
-	nap(n), stagger(s) {}
+    SyncClient(const Config &c, const Sockaddr &a, ulong t, ulong n, ulong s):
+	cfg(c), sa(a), tmt(t), nap(n), stagger(s) {}
 
 protected:
     int onStart(void) override;
 
 private:
+    const Config &cfg;
     const Sockaddr &sa;
     ulong tmt, nap, stagger;
 };
@@ -155,8 +157,9 @@ void HTTPTest::AsyncClient::go() {
 }
 
 int SyncClient::onStart(void) {
-    HTTPClient hc;
+    HTTPTLSClient hc;
 
+    hc.configure(cfg, HTTPServerSocket::section());
     msleep(stagger);
     hc.timeout((uint)tmt, (uint)tmt);
     while (!loop_exit()) {
@@ -206,7 +209,7 @@ static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true, sync = false;
-    ulong delay = 0, tmt = TIMEOUT, nap = 0;
+    ulong delay = 0, failed = 0, tmt = TIMEOUT, nap = 0;
     Config config;
     HTTPTest ht(config);
     int fd;
@@ -239,6 +242,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    threads = (uint)tstrtoul(argv[++i], nullptr, 10);
 	} else if (!tstricmp(argv[i], T("-s"))) {
 	    client = false;
+	} else if (!tstricmp(argv[i], T("-ssl"))) {
+	    tls = true;
 	} else if (!tstricmp(argv[i], T("-t")) && i + 1 < argc) {
 	    tmt = tstrtoul(argv[++i], nullptr, 10);
 	} else if (!tstricmp(argv[i], T("-v"))) {
@@ -259,6 +264,7 @@ int tmain(int argc, const tchar * const argv[]) {
 		T("\t[-l loops]\n")
 		T("\t[-p threads]\n")
 		T("\t[-s]\n")
+		T("\t[-ssl]\n")
 		T("\t[-t timeout]\n")
 		T("\t[-v*]\n")
 		T("\t[-w wait]\n")
@@ -315,6 +321,20 @@ int tmain(int argc, const tchar * const argv[]) {
 	tcerr << T("httptest: unable to start ") << host << endl;
 	return 1;
     }
+    if (tls) {
+	tstring err;
+
+	// test servers use self-signed certs
+	config.set(T("tls.enable"), true, HTTPServerSocket::section());
+	config.set(T("tls.verify"), false, HTTPServerSocket::section());
+	if (!TLSContext::client().init(config, HTTPServerSocket::section(),
+	    err) || (server && !HTTPTLSServer::tlsctx.init(config,
+	    HTTPServerSocket::section(), err))) {
+	    tcerr << T("httptest: ") << err << endl;
+	    ht.stop();
+	    return 1;
+	}
+    }
     if (server && !ht.listen(sa)) {
 	ht.stop();
 	return 1;
@@ -328,7 +348,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    sa.host(T("localhost"));
 	if (sync) {
 	    for (uint u = 0; u < sockets; u++) {
-		syncs.push_back(make_unique<SyncClient>(sa, tmt, nap,
+		syncs.push_back(make_unique<SyncClient>(config, sa, tmt, nap,
 		    stagger(u, sockets, delay, nap)));
 		if (!syncs.back()->start()) {
 		    tcerr << T("httptest: unable to start thread") << endl;
@@ -349,6 +369,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    now = Timing::now();
 	    // swap counters so increments between read and reset are kept
 	    err = errs.exchange(0, memory_order_relaxed);
+	    failed += err;
 	    ok = ops.exchange(0, memory_order_relaxed);
 	    cnt = ok + err;
 	    tcout << (timing_t)cnt * 1000000 / (now - last) << T("\t\t") <<
@@ -366,7 +387,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    continue;
     }
     ht.stop();
+    failed += errs.load(memory_order_relaxed);
     delete [] dbuf;
     tcout << dtiming.data() << endl;
-    return qflag ? -1 : 0;
+    return qflag ? -1 : failed ? 1 : 0;
 }

@@ -4,9 +4,9 @@ EXTRA_DIST = Version.rc Windows.cpp
 
 include_HEADERS = Config.h Dispatch.h HTTPClient.h HTTPServer.h Log.h \
 	LRUCache.h stdapi.h Service.h SMTPClient.h ResourcePool.h \
-	Socket.h Streams.h Thread.h Timing.h
+	Socket.h Streams.h Thread.h Timing.h TLSSocket.h
 
-lib_LTLIBRARIES = libblister.la
+lib_LTLIBRARIES = libblister.la libblistertls.la
 
 libblister_la_SOURCES = Config.cpp Dispatch.cpp \
 	HTTPClient.cpp HTTPServer.cpp Log.cpp Service.cpp SMTPClient.cpp \
@@ -15,3 +15,7 @@ libblister_la_SOURCES = Config.cpp Dispatch.cpp \
 libblister_la_CPPFLAGS = $(AM_CPPFLAGS) -DBUILD_BLISTER
 libblister_la_LDFLAGS = $(AM_LDFLAGS) $(SHARED_LDFLAGS) -avoid-version
 
+libblistertls_la_SOURCES = TLSSocket.cpp
+libblistertls_la_CPPFLAGS = $(AM_CPPFLAGS) -DBUILD_BLISTERTLS $(TLS_CPPFLAGS)
+libblistertls_la_LDFLAGS = $(AM_LDFLAGS) $(SHARED_LDFLAGS) -avoid-version
+libblistertls_la_LIBADD = libblister.la $(TLS_LIBS)

@@ -98,11 +98,18 @@
 #else
 #define BLISTER			DLL_IMPORT
 #endif
+#ifdef BUILD_BLISTERTLS
+#define BLISTERTLS		DLL_EXPORT
+#else
+#define BLISTERTLS		DLL_IMPORT
+#endif
 
 #ifdef _WIN32
 #ifndef BLISTER_DLL
 #undef BLISTER
 #define BLISTER
+#undef BLISTERTLS
+#define BLISTERTLS
 #endif
 
 #pragma inline_depth(69)

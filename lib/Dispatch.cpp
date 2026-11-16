@@ -1505,6 +1505,37 @@ void Dispatcher::wake(uint cnt) {
     }
 }
 
+int DispatchIOSocket::handshake(DispatchObjCB cb, ulong msec) {
+    const long ret = Socket::handshake();
+
+    if (ret)
+	return ret > 0 ? 1 : -1;
+    // the layer flips this to a read poll when it waits for the peer
+    poll(cb, msec, DispatchWrite);
+    return 0;
+}
+
+// report buffered input or poll for the event the layer is blocked on
+bool DispatchSocket::layerpoll(DispatchObjCB cb, DispatchMsg &reason) {
+    const uint st = layer()->state();
+    const bool rd = reason == DispatchRead || reason == DispatchReadWrite;
+    const bool wr = reason == DispatchWrite || reason == DispatchReadWrite;
+
+    if (rd && (st & SocketLayer::Pending)) {
+	ready(cb, false, DispatchRead);
+	return true;
+    }
+    if (rd || wr) {
+	const bool r = (rd && !(st & SocketLayer::ReadWrites)) ||
+	    (wr && (st & SocketLayer::WriteReads));
+	const bool w = (wr && !(st & SocketLayer::WriteReads)) ||
+	    (rd && (st & SocketLayer::ReadWrites));
+
+	reason = r && w ? DispatchReadWrite : r ? DispatchRead : DispatchWrite;
+    }
+    return false;
+}
+
 void DispatchClientSocket::connect(const Sockaddr &sa, ulong msec, DispatchObjCB
     cb) {
     if (!cb)

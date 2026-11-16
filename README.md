@@ -45,7 +45,7 @@ Other build systems:
 | `PGO=generate\|use` | profile-guided optimization; profiles live in `.pgo/` |
 | `COMPILE_PCH` | precompiled headers (default on) |
 
-`configure` has equivalents for the sanitizer and PGO builds: `--enable-tsan` and `--with-pgo=generate|use`.
+`configure` has equivalents for the sanitizer and PGO builds: `--enable-tsan` and `--with-pgo=generate|use`. Like CMake it uses OpenSSL 3 from the compiler prefix, else pkg-config; `--with-openssl=DIR|no` overrides.
 
 ## Try it
 

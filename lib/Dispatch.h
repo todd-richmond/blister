@@ -408,6 +408,8 @@ protected:
     void poll(DispatchObjCB cb, ulong msec, DispatchMsg reason) {
 	if (msec != DSP_PREVIOUS)
 	    to = msec;
+	if (UNLIKELY(layer()) && layerpoll(cb, reason))
+	    return;
 	dspr.pollSocket(*this, cb, to, reason);
     }
 
@@ -418,8 +420,11 @@ protected:
     mutable bool rdrain = false;
 
 private:
+    bool layerpoll(DispatchObjCB cb, DispatchMsg &reason);
+    // a short layer read may leave fd data, so only a block means drained
     template<typename N> __forceinline N track(N n, ulong len) const {
-	rdrain = n == 0 ? blocked() : n > 0 && (ulong)n < len && stream();
+	rdrain = n == 0 ? blocked() : n > 0 && (ulong)n < len && stream() &&
+	    !layer();
 	return n;
     }
     static ulong iovlen(const iovec *iov, int count) {
@@ -443,6 +448,8 @@ public:
     void closeable(DispatchObjCB cb = nullptr, ulong msec = 15000) {
 	poll(cb, msec, DispatchClose);
     }
+    // layer handshake: 1 done, -1 error, 0 polling to call cb to continue
+    int handshake(DispatchObjCB cb, ulong msec = DSP_PREVIOUS);
     void readable(DispatchObjCB cb = nullptr, ulong msec = DSP_PREVIOUS) {
 	poll(cb, msec, DispatchRead);
     }

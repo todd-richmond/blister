@@ -1442,6 +1442,7 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
 
     if (fstrm)
 	return true;
+    peer = addr;
     sock.close();
     if (!addr.port()) {
 	Sockaddr tmp(addr);
@@ -1465,6 +1466,11 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
     timeout(rtmo, wtmo);
     sstrm.clear();
     sstrm.rdbuf()->str(nullptr, 4096);
+    if (!onconnect()) {
+	sts = T("000 socket handshake failed: ") + sock.errstr();
+	sock.close();
+	return false;
+    }
     return sendcmd({}, nullptr, 220, false);
 }
 

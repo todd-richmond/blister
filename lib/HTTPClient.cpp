@@ -645,6 +645,13 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
 	return false;
     }
     setup();
+    if (!onconnect()) {
+	sockerr = sock.err() ? sock.err() : EPROTO;
+	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
+	    addr.str()), Log::error(sock.errstr()));
+	sock.close();
+	return false;
+    }
     dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
 	addr.ipstr()));
     return true;
@@ -969,11 +976,47 @@ void AsyncHTTPClient::connected(void) {
     }
     (void)sock.nodelay(true);
     (void)sock.setsockopt(SOL_SOCKET, SO_KEEPALIVE, true);
+    if (!onconnect(sock)) {
+	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
+	    addr.str()), Log::error(sock.errstr()));
+	down(EPROTO, Down::Fail);
+    } else if (sock.layer()) {
+	shake();
+    } else {
+	opened();
+    }
+}
+
+void AsyncHTTPClient::opened(void) {
     state = Open;
     parser.reset();
     dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
 	addr.ipstr()));
     io();
+}
+
+void AsyncHTTPClient::shake(void) {
+    int e;
+
+    if (state != Connecting)
+	return;
+    if (sock.reason() == DispatchTimeout) {
+	e = ETIMEDOUT;
+    } else if (sock.error()) {
+	e = sock.err() ? sock.err() : ECONNRESET;
+    } else {
+	const int ret = sock.handshake(IOSocket::onshake, cto);
+
+	if (ret > 0)
+	    opened();
+	if (ret >= 0)
+	    return;
+	e = sock.err() ? sock.err() : EPROTO;
+    }
+    dlogi(Log::mod(T("http")), Log::cmd(T("handshake")), Log::kv(T("addr"),
+	addr.str()), Log::error(e == ETIMEDOUT ? tstring(T("timeout")) :
+	sock.errstr()));
+    down(e, Down::Fail);
 }
 
 void AsyncHTTPClient::down(int err, Down how) {

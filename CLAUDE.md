@@ -3,7 +3,7 @@
 Blister: C++ async I/O library — epoll/kqueue/poll reactor, config, logging, sockets, threads, HTTP/SMTP client/server. Linux, Solaris, macOS, BSD, Windows (POSIX emulation).
 
 ## Build
-In-source CMake at repo root, usually already configured: `make -j4`. `ctest` runs only `HashFunctors`; no unit test framework (`test/` is samples/load tests, see `test/README.md`). Autotools/MSVC files unmaintained.
+In-source CMake at repo root, usually already configured: `make -j4`. `ctest` (~15s) runs `HashFunctors` plus echotest/httptest plain and, with TLS, `-ssl`; no unit test framework (`test/` is samples/load tests, see `test/README.md`).
 - `build/build [check|tsan] [BuildType]`: distclean + reconfigure; only when `CMakeLists.txt`/options change. `check`=`CHECK_ALL`, `tsan`=`CHECK_TSAN`.
 - Static analysis (`CHECK_CLANG_TIDY`/`CPPCHECK`/`CPPLINT`/`IWYU`/`ALL`) is slow; only when asked.
 - PGO: `build/build Release -DPGO=generate`, run a workload (`test/echotest -h 127.0.0.1:8765 -l 200000 -e 50 -p 10 x`), `build/build Release -DPGO=use`. Flag changes don't recompile objects: clean-build when switching.

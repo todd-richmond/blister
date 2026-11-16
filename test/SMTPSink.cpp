@@ -24,6 +24,9 @@
 #include "Config.h"
 #include "Dispatch.h"
 #include "Log.h"
+#include "TLSSocket.h"
+
+static TLSContext tlsctx;
 
 static constexpr uint BUFSZ = 256 * 1024;
 static constexpr ulong TIMEOUT = 60000;
@@ -109,7 +112,7 @@ private:
     string body, out;
     unique_ptr<char[]> buf;
     uint have = 0, pos = 0, scan = 0;
-    bool last = false, lmtp = false, quit = false;
+    bool last = false, lmtp = false, quit = false, starting = false;
     size_t left = 0, size = 0;
     State state = State::Cmd;
 
@@ -126,6 +129,7 @@ private:
 
     DSP_DECLARE(SMTPSinkSocket, input);
     DSP_DECLARE(SMTPSinkSocket, output);
+    DSP_DECLARE(SMTPSinkSocket, shake);
 };
 
 void SMTPSinkSocket::command(const char *p, uint len) {
@@ -196,6 +200,8 @@ void SMTPSinkSocket::command(const char *p, uint len) {
 	out += "250-sink\r\n250-PIPELINING\r\n250-SIZE\r\n250-8BITMIME\r\n"
 	    "250-ENHANCEDSTATUSCODES\r\n250-DSN\r\n250-AUTH PLAIN LOGIN\r\n"
 	    "250-XCLIENT NAME ADDR PROTO HELO\r\n250-ETRN\r\n";
+	if (tlsctx.enabled() && !layer())
+	    out += "250-STARTTLS\r\n";
 	if (chunking)
 	    out += "250-CHUNKING\r\n250-BINARYMIME\r\n";
 	out += "250 SMTPUTF8\r\n";
@@ -242,6 +248,12 @@ void SMTPSinkSocket::command(const char *p, uint len) {
 	quit = true;
 	break;
     case verb("star"):
+	if (tlsctx.enabled() && !layer()) {
+	    out += "220 2.0.0 Ready to start TLS\r\n";
+	    reset();
+	    starting = true;
+	    break;
+	}
 	out += "454 4.7.0 TLS not available\r\n";
 	break;
     case verb("vrfy"):
@@ -310,7 +322,7 @@ void SMTPSinkSocket::delivered(void) {
 void SMTPSinkSocket::parse(void) {
     char *b = buf.get();
 
-    while (pos < have && !quit) {
+    while (pos < have && !quit && !starting) {
 	if (state == State::Bdat) {
 	    size_t n = min(left, (size_t)(have - pos));
 
@@ -398,10 +410,19 @@ void SMTPSinkSocket::flush(void) {
 	}
 	out.erase(0, (size_t)n);
     }
-    if (quit)
+    if (quit) {
 	erase();
-    else
+    } else if (starting) {
+	// drop pipelined plaintext so it can't be injected into the session
+	starting = false;
+	have = pos = 0;
+	if (tlsctx.layer(*this))
+	    shake();
+	else
+	    erase();
+    } else {
 	readable(input, TIMEOUT);
+    }
 }
 
 void SMTPSinkSocket::input(void) {
@@ -418,6 +439,18 @@ void SMTPSinkSocket::input(void) {
     flush();
 }
 
+void SMTPSinkSocket::shake(void) {
+    int ret;
+
+    if (error() || (ret = handshake(shake, TIMEOUT)) < 0) {
+	dlogd(Log::mod(section()), Log::cmd(T("starttls")), Log::error(msg ==
+	    DispatchTimeout ? tstring(T("timeout")) : errstr()));
+	erase();
+    } else if (ret > 0) {
+	readable(input, TIMEOUT);
+    }
+}
+
 void SMTPSinkSocket::output(void) {
     if (error()) {
 	erase();
@@ -432,6 +465,7 @@ static void signal_handler(int) { qflag = true; }
 int tmain(int argc, const tchar * const argv[]) {
     Config cfg;
     Dispatcher dspr(cfg);
+    tstring err;
     uint port = 2525, threads = 32;
     ulong stattime = 0;
     auto *lsock = new SimpleDispatchListenSocket<Dispatcher, SMTPSinkSocket>(
@@ -455,6 +489,9 @@ int tmain(int argc, const tchar * const argv[]) {
 	    return 1;
 	}
     }
+    cfg.set(T("tls.enable"), true, SMTPSinkSocket::section());
+    if (!tlsctx.init(cfg, SMTPSinkSocket::section(), err))
+	tcerr << T("smtpsink: STARTTLS disabled: ") << err << endl;
     signal(SIGINT, signal_handler);
 #ifndef _WIN32
     struct sigaction sig {};

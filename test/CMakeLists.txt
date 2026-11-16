@@ -14,22 +14,22 @@ add_executable(dtiming DTiming.cpp)
 target_link_libraries(dtiming blister)
 
 add_executable(echotest EchoTest.cpp)
-target_link_libraries(echotest blister)
+target_link_libraries(echotest blistertls)
 
 add_executable(httptest HTTPTest.cpp)
-target_link_libraries(httptest blister)
+target_link_libraries(httptest blistertls)
 
 add_executable(httpload HTTPLoad.cpp)
-target_link_libraries(httpload blister_static)
+target_link_libraries(httpload blistertls_static)
 
 add_executable(smtpload SMTPLoad.cpp)
-target_link_libraries(smtpload blister_static)
+target_link_libraries(smtpload blistertls_static)
 
 add_executable(smtpsink SMTPSink.cpp)
-target_link_libraries(smtpsink blister_static)
+target_link_libraries(smtpsink blistertls_static)
 
 add_executable(uhttpd HTTPd.cpp)
-target_link_libraries(uhttpd blister)
+target_link_libraries(uhttpd blistertls)
 
 add_executable(hashtest HashTest.cpp)
 set_target_properties(hashtest PROPERTIES EXCLUDE_FROM_ALL TRUE)
@@ -46,6 +46,14 @@ endif()
 
 add_test(NAME HashFunctors
     COMMAND bash -c "${CMAKE_COMMAND} --build . --target hashtest && ${CMAKE_CURRENT_BINARY_DIR}/hashtest")
+add_test(NAME EchoTest COMMAND echotest -h unix:./echotest.sock -l 1000000)
+add_test(NAME HTTPTest COMMAND httptest -h unix:./httptest.sock -l 1000000)
+if(TLS_LIBS)
+    add_test(NAME EchoTestTLS
+	COMMAND echotest -h unix:./echotest-tls.sock -l 500000 -ssl)
+    add_test(NAME HTTPTestTLS
+	COMMAND httptest -h unix:./httptest-tls.sock -l 500000 -ssl)
+endif()
 
 if(COMPILE_PCH)
     target_precompile_headers(cfg PRIVATE [["stdapi.h"]])

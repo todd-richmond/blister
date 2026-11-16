@@ -16,8 +16,8 @@
  */
 
 #include "stdapi.h"
-#include "HTTPClient.h"
 #include "Load.h"
+#include "TLSSocket.h"
 
 static bool dbg = false, ka = false;
 static ulong chunksz = 0;
@@ -33,7 +33,8 @@ private:
 	    const tchar *s, const tchar *v, bool b): LoadCmd(c, a),
 	    data(d ? d : T("")), full(u.fullpath()), method(c),
 	    path(u.relpath()), value(v ? v : T("")), status((ushort)ttoi(s)),
-	    body(b), vars(path.contains(T("$("))) {
+	    body(b), tls(u.prot().starts_with(T("https"))),
+	    vars(path.contains(T("$("))) {
 	    for (auto &ch : method)
 		ch = (tchar)totupper(ch);
 	}
@@ -42,13 +43,14 @@ private:
 	tstring data, full, method, path, value;
 	ushort status;
 	bool body;			// request has a body
+	bool tls;
 	bool vars;			// path has $() for per request values
     };
 
     tchar buf[1024]{}, data[4096]{};
     vector<tstring> cookies;
     tofstream fs;
-    HTTPClient hc;
+    HTTPTLSClient hc;
     const tchar *path = nullptr;
     static inline attrmap hdrs;
     static inline bool ctype = false;	// hdrs has a content-type
@@ -138,6 +140,7 @@ bool HTTPLoad::exec(LoadCmd &lc, usec_t &io) {
     if (fs.is_open())
 	fs << T("\n\n******* ") << cmd.cmd << T(" ") << cmd.arg << T(" ") <<
 	    cmd.full << T(" *******") << endl;
+    hc.tls(cmd.tls);
     if ((ret = hc.connect(cmd.addr, ka, to)) == true) {
 	if (!cookies.empty()) {
 	    tstring s;
@@ -240,6 +243,12 @@ bool HTTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
 }
 
 int tmain(int argc, tchar *argv[]) {
+    Config cfg;
+    tstring err;
+
+    // test servers use self-signed certs
+    cfg.set(T("tls.verify"), false);
+    (void)TLSContext::client().init(cfg, nullptr, err);
     return Load::run<HTTPLoad>(argc, argv, T("http.wld"), T("localhost:80"),
 	T("[-d] [-k] [-u[chunksize]]"), [](const tchar *arg) {
 	if (!tstricmp(arg, T("-d")))

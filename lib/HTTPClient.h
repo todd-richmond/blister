@@ -235,6 +235,8 @@ private:
 
 class BLISTER HTTPClient: public HTTPResponse {
 public:
+    virtual ~HTTPClient() = default;
+
     friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
 	os << hc.sts << '\n';
 	for (const auto &[key, value] : hc.responses())
@@ -311,15 +313,18 @@ protected:
     bool streaming = false;
     uint wto = 60 * 1000;
 
+    // after each connect, such as to start TLS
+    virtual bool onconnect(void) { return true; }
     bool send(const tchar *op, const tchar *path, const void *data = nullptr,
 	ulong datasz = 0, msghdr *msgh = nullptr);
+    // socket options and an empty parser for a new connection
+    void setup(void);
 
 private:
     using Step = HTTPParser<Socket>::Step;
 
     Step receive(bool head, bool &keep);
     void sendfail(void);
-    void setup(void);
     bool transmit(const void *data, ulong datasz, ulong off);
 };
 
@@ -377,7 +382,7 @@ public:
 	AsyncHTTPClient(new IOSocket(d, *this), sa, tm) {}
     AsyncHTTPClient(DispatchObj &parent, const Sockaddr &sa, Timing *tm =
 	nullptr): AsyncHTTPClient(new IOSocket(parent, *this), sa, tm) {}
-    ~AsyncHTTPClient() {
+    virtual ~AsyncHTTPClient() {
 	intake.erase();
 	sock.erase();
     }
@@ -394,6 +399,12 @@ public:
 	    intake.ready(Intake::drain);
     }
 
+protected:
+    // install a layer such as TLS on each new connection before its handshake
+    virtual bool onconnect(Socket &s) { (void)s; return true; }
+
+    const Sockaddr addr;
+
 private:
     class IOSocket: public DispatchClientSocket {
     public:
@@ -404,6 +415,7 @@ private:
 
 	DSP_DECLARE(IOSocket, ongrown) { client.grown(); }
 	DSP_DECLARE(IOSocket, onio) { client.io(); }
+	DSP_DECLARE(IOSocket, onshake) { client.shake(); }
 
     protected:
 	void onConnect(void) override { client.connected(); }
@@ -445,9 +457,10 @@ private:
     void enqueue(Request &r);
     void grown(void);
     void io(bool event = true);
+    void opened(void);
+    void shake(void);
     void submit(Request &r);
 
-    const Sockaddr addr;
     const string host;
     tstring ckey;
     atomic<ulong> connects = 0;

@@ -16,12 +16,12 @@
  */
 
 #include "stdapi.h"
-#include "HTTPServer.h"
 #include "Log.h"
+#include "TLSSocket.h"
 
-class HTTPDaemonSocket: public HTTPServerSocket {
+class HTTPDaemonSocket: public HTTPTLSServer {
 public:
-    using HTTPServerSocket::HTTPServerSocket;
+    using HTTPTLSServer::HTTPTLSServer;
 
     static void pause(bool p) { paused = p; }
 
@@ -33,7 +33,7 @@ protected:
 	    error(503);
 	    return;
 	}
-	HTTPServerSocket::exec();
+	HTTPTLSServer::exec();
     }
 };
 
@@ -59,6 +59,7 @@ protected:
 
 int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     tchar buf[32];
+    tstring err;
     ushort port = 8080;
     int ret = Daemon::onStart(argc, argv);
 
@@ -67,6 +68,13 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
     for (int i = 1; i < argc; ++i) {
 	if (!tstrcmp(argv[i], T("-p")) && i < argc - 1)
 	    port = (ushort)ttoi(argv[++i]);
+	else if (!tstrcmp(argv[i], T("-s")))
+	    cfg.set(T("tls.enable"), true, HTTPServerSocket::section());
+    }
+    if (!HTTPTLSServer::tlsctx.init(cfg, HTTPServerSocket::section(),
+	err)) {
+	dloge(name, Log::error(err));
+	return -1;
     }
     tsprintf(buf, T("*:%u"), (uint)port);
     if (!dspr.start()) {

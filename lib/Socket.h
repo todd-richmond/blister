@@ -282,6 +282,32 @@ private:
     static bool parse_ip(const tchar *&p, uint32_t &ip);
 };
 
+class Socket;
+
+/*
+ * Stream transform such as TLS between Socket I/O and the fd. Owned by the
+ * SocketBuf so every Socket copy uses it. Methods return > 0 for success or
+ * bytes, 0 for EOF and -1 with the Socket err set, EAGAIN to retry
+ */
+class BLISTER SocketLayer: nocopy {
+public:
+    enum State: uint {
+	Pending = 1,		// buffered input that no poll reports
+	ReadWrites = 2,		// a blocked read or handshake needs writability
+	WriteReads = 4		// a blocked write or handshake needs readability
+    };
+
+    virtual ~SocketLayer() = default;
+
+    virtual tstring errstr(void) const = 0;
+    virtual long handshake(const Socket &s) = 0;
+    virtual long read(const Socket &s, void *buf, ulong len) = 0;
+    // before the fd closes
+    virtual void shutdown(void) = 0;
+    virtual uint state(void) const = 0;
+    virtual long write(const Socket &s, const iovec *iov, int count) = 0;
+};
+
 /*
  * Berkeley/WinSock stream or datagram socket with portable non-blocking I/O
  * and EINTR retries. Copies share a reference counted SocketBuf
@@ -328,6 +354,11 @@ public:
     bool bind(const Sockaddr &sa, bool reuse = true);
     bool close(void) { return sbuf->close(); }
     bool connect(const Sockaddr &sa, uint msec = SOCK_INFINITE);
+    // run the layer handshake: 1 done, 0 would block, -1 error
+    long handshake(void) const;
+    SocketLayer *layer(void) const { return sbuf->layer; }
+    // take ownership of l, replacing any current layer
+    void layer(SocketLayer *l) { sbuf->unlayer(false); sbuf->layer = l; }
     bool listen(int queue = SOCK_BACKLOG);
     bool listen(const Sockaddr &sa, bool reuse = true, int queue =
 	SOCK_BACKLOG) {
@@ -422,7 +453,12 @@ protected:
     class BLISTER SocketBuf: public RefCount {
     public:
 	SocketBuf(int t, socket_t s, bool o): own(o), sock(s), type(t) {}
-	~SocketBuf() { if (own) close(); }
+	~SocketBuf() {
+	    if (own)
+		close();
+	    else
+		unlayer(false);
+	}
 
 	bool __forceinline blocked(void) const { return ::blocked(err); }
 	bool __forceinline interrupted(void) const {
@@ -436,6 +472,7 @@ protected:
 	}
 	bool __no_sanitize_thread close(void) {
 	    krto = kwto = SOCK_INFINITE;
+	    unlayer(sock != SOCK_INVALID);
 	    if (sock == SOCK_INVALID) {
 		err = EINVAL;
 	    } else {
@@ -456,6 +493,8 @@ protected:
 	void reset(int t, socket_t s) {
 	    if (own)
 		close();
+	    else
+		unlayer(false);
 	    blck = true;
 	    err = 0;
 	    own = false;
@@ -466,10 +505,19 @@ protected:
 	    reference();
 	}
 	void unlink(const char *p) { path = p; }
+	void unlayer(bool notify) {
+	    if (UNLIKELY(layer)) {
+		if (notify)
+		    layer->shutdown();
+		delete layer;
+		layer = nullptr;
+	    }
+	}
 
     private:
 	bool blck = true, own;
 	mutable int err = 0;
+	SocketLayer *layer = nullptr;
 	string path;
 	uint rto = SOCK_INFINITE, wto = SOCK_INFINITE;
 	uint krto = SOCK_INFINITE, kwto = SOCK_INFINITE;
@@ -480,6 +528,8 @@ protected:
     };
 
     bool __forceinline check(int ret) const { return sbuf->check(ret); }
+    long layerread(iovec *iov, int count) const;
+    long layerwrite(const iovec *iov, int count) const;
     long rdret(long in) const;
     bool iowait(bool out) const;
     bool __forceinline iotimeo(bool out) const {

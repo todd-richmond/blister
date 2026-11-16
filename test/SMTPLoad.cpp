@@ -17,7 +17,7 @@
 
 #include "stdapi.h"
 #include "Load.h"
-#include "SMTPClient.h"
+#include "TLSSocket.h"
 
 static bool dflag = false, pflag = false;
 
@@ -28,7 +28,8 @@ public:
 private:
     enum class Op: uchar {
 	Attach, Auth, Bcc, Body, Cc, Cmd, Connect, Data, Ehlo, End, From,
-	Header, Helo, Lhlo, Mime, Quit, Rcpt, Rset, Subject, Vrfy, Xclient
+	Header, Helo, Lhlo, Mime, Quit, Rcpt, Rset, Starttls, Subject, Vrfy,
+	Xclient
     };
 
     class SMTPCmd: public LoadCmd {
@@ -59,7 +60,8 @@ private:
 	    { T("helo"), Op::Helo }, { T("lhlo"), Op::Lhlo },
 	    { T("mime"), Op::Mime }, { T("quit"), Op::Quit },
 	    { T("rcpt"), Op::Rcpt },
-	    { T("rset"), Op::Rset }, { T("subj"), Op::Subject },
+	    { T("rset"), Op::Rset }, { T("starttls"), Op::Starttls },
+	    { T("subj"), Op::Subject },
 	    { T("subject"), Op::Subject }, { T("to"), Op::Rcpt },
 	    { T("vrfy"), Op::Vrfy }, { T("xclient"), Op::Xclient }
 	};
@@ -67,7 +69,7 @@ private:
     };
 
     tchar buf[1024]{};
-    SMTPClient sc;
+    SMTPTLSClient sc;
     const tchar *arg = nullptr;
 
     void begin(void) override {
@@ -183,6 +185,7 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
     case Cmd:
 	return sc.cmd(cmd.cmd.c_str(), *arg ? arg : nullptr, cmd.code);
     case Connect:
+	sc.tls(!tstricmp(arg, T("tls")));
 	return sc.connect(cmd.addr, to);
     case Ehlo:
 	return sc.ehlo(arg);
@@ -207,6 +210,8 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	return sc.to(who.c_str(), parms);
     case Rset:
 	return sc.rset();
+    case Starttls:
+	return sc.starttls();
     case Subject:
 	sc.subject(arg);
 	return true;
@@ -241,6 +246,12 @@ bool SMTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
 }
 
 int tmain(int argc, tchar *argv[]) {
+    Config cfg;
+    tstring err;
+
+    // test servers use self-signed certs
+    cfg.set(T("tls.verify"), false);
+    (void)TLSContext::client().init(cfg, nullptr, err);
     return Load::run<SMTPLoad>(argc, argv, T("smtp.wld"), T("localhost:25"),
 	T("[-d] [-p]"), [](const tchar *a) {
 	if (!tstricmp(a, T("-d")))

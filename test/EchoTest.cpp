@@ -27,12 +27,16 @@
 #include "Dispatch.h"
 #include "Log.h"
 #include "Timing.h"
+#include "TLSSocket.h"
+
+static TLSContext tlsserver;
 
 const int TIMEOUT = 10 * 1000;
 const int MAXREAD = 8 * 1024;
 
 static char *dbuf;
 static uint dsz;
+static bool tls;
 
 class EchoTest: public Dispatcher {
 public:
@@ -60,6 +64,7 @@ public:
 	DSP_DECLARE(EchoClientSocket, input);
 	DSP_DECLARE(EchoClientSocket, output);
 	DSP_DECLARE(EchoClientSocket, repeat);
+	DSP_DECLARE(EchoClientSocket, shake);
 	DSP_DECLARE(EchoClientSocket, start);
     };
 
@@ -76,6 +81,13 @@ public:
 	void start(void) override {
 	    loopback(true);
 	    nodelay(true);
+	    if (tls) {
+		if (tlsserver.layer(*this))
+		    shake();
+		else
+		    erase();
+		return;
+	    }
 	    readable(input, tmt);
 	}
 
@@ -86,6 +98,7 @@ public:
 
 	DSP_DECLARE(EchoServerSocket, input);
 	DSP_DECLARE(EchoServerSocket, output);
+	DSP_DECLARE(EchoServerSocket, shake);
     };
 
     class EchoListenSocket: public SimpleDispatchListenSocket<EchoTest,
@@ -136,6 +149,24 @@ void EchoTest::EchoClientSocket::onConnect(void) {
     } else {
 	loopback(true);
 	nodelay(true);
+	if (tls) {
+	    if (TLSContext::client().layer(*this))
+		shake();
+	    else
+		fail(T("tls"));
+	    return;
+	}
+	begin = Timing::now();
+	ready(output);
+    }
+}
+
+void EchoTest::EchoClientSocket::shake() {
+    int ret;
+
+    if (error() || (ret = handshake(shake, tmt)) < 0) {
+	fail(T("handshake"));
+    } else if (ret > 0) {
 	begin = Timing::now();
 	ready(output);
     }
@@ -241,6 +272,19 @@ void EchoTest::EchoServerSocket::input() {
     }
 }
 
+void EchoTest::EchoServerSocket::shake() {
+    int ret;
+
+    if (error() || (ret = handshake(shake, tmt)) < 0) {
+	if (loops.load() > 0 && !qflag)
+	    dloge(T("server handshake="), msg == DispatchTimeout ?
+		T("timeout") : errstr());
+	erase();
+    } else if (ret > 0) {
+	readable(input, tmt);
+    }
+}
+
 void EchoTest::EchoServerSocket::output() {
     uint len;
 
@@ -285,7 +329,7 @@ static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true;
-    ulong delay = 0, tmt = TIMEOUT, wait = 0;
+    ulong delay = 0, failed = 0, tmt = TIMEOUT, wait = 0;
     Config config;
     EchoTest et(config);
     int fd;
@@ -312,6 +356,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    threads = (uint)tstrtoul(argv[++i], nullptr, 10);
 	} else if (!tstricmp(argv[i], T("-s"))) {
 	    client = false;
+	} else if (!tstricmp(argv[i], T("-ssl"))) {
+	    tls = true;
 	} else if (!tstricmp(argv[i], T("-t")) && i + 1 < argc) {
 	    tmt = tstrtoul(argv[++i], nullptr, 10);
 	} else if (!tstricmp(argv[i], T("-v"))) {
@@ -329,6 +375,7 @@ int tmain(int argc, const tchar * const argv[]) {
 		T("\t[-l loops]\n")
 		T("\t[-p threads]\n")
 		T("\t[-s]\n")
+		T("\t[-ssl]\n")
 		T("\t[-t timeout]\n")
 		T("\t[-v*]\n")
 		T("\t[-w wait]\n")
@@ -385,6 +432,19 @@ int tmain(int argc, const tchar * const argv[]) {
 	tcerr << T("echo: unable to start ") << host << endl;
 	return 1;
     }
+    if (tls) {
+	tstring err;
+
+	// test servers use self-signed certs
+	config.set(T("tls.enable"), true, T("echo"));
+	config.set(T("tls.verify"), false, T("echo"));
+	if (!TLSContext::client().init(config, T("echo"), err) || (server &&
+	    !tlsserver.init(config, T("echo"), err))) {
+	    tcerr << T("echotest: ") << err << endl;
+	    et.stop();
+	    return 1;
+	}
+    }
     if (server && !et.listen(sa, tmt)) {
 	et.stop();
 	return 1;
@@ -407,6 +467,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    now = Timing::now();
 	    // swap counters so increments between read and reset are kept
 	    err = errs.exchange(0, memory_order_relaxed);
+	    failed += err;
 	    ok = ops.exchange(0, memory_order_relaxed);
 	    cnt = ok + err;
 	    tcout << (timing_t)cnt * 1000000 / (now - last) << T("\t\t") <<
@@ -419,7 +480,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    continue;
     }
     et.stop();
+    failed += errs.load(memory_order_relaxed);
     delete [] dbuf;
     tcout << dtiming.data() << endl;
-    return qflag ? -1 : 0;
+    return qflag ? -1 : failed ? 1 : 0;
 }

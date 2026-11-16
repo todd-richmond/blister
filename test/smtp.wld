@@ -19,7 +19,9 @@
 #    -w: SMTP connect and reply timeout in ms
 #
 # commands:
-#    connect, ehlo|helo|lhlo [domain], auth user pass, xclient args, rset, quit
+#    connect [tls], ehlo|helo|lhlo [domain], starttls, auth user pass,
+#        xclient args, rset, quit: connect tls is implicit TLS (SMTPS) and
+#        starttls needs another ehlo
 #    from|rcpt|to|cc|bcc|vrfy address [parameters]: parameters such as
 #        SIZE=, BODY=, NOTIFY= and ORCPT= follow the address
 #    header|hdr text, subject text: headers for body and mime

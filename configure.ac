@@ -90,6 +90,56 @@ AM_CONDITIONAL([HAVE_LIBUV], [test "$have_libuv" = yes])
 AC_SUBST([LIBUV_CFLAGS])
 AC_SUBST([LIBUV_LIBS])
 
+# libblistertls uses OpenSSL 3 if found, else fails TLS requests; as
+# CMakeLists.txt, prefer a toolchain bundled OpenSSL over an older system one
+AC_ARG_WITH([openssl],
+    [AS_HELP_STRING([--with-openssl=DIR],[OpenSSL 3 prefix @<:@default=compiler prefix, then pkg-config@:>@])],
+    [],
+    [with_openssl=check]
+)
+TLS_CPPFLAGS=
+TLS_LIBS=
+ssl_cflags=
+ssl_libs=
+ssl_dir=$with_openssl
+if test "$with_openssl" = check; then
+    ssl_dir=`command -v $CXX`
+    ssl_dir=`dirname "$ssl_dir"`/..
+    test -r "$ssl_dir/include/openssl/ssl.h" || ssl_dir=
+fi
+if test "$with_openssl" = no; then
+    :
+elif test -n "$ssl_dir"; then
+    ssl_cflags="-I$ssl_dir/include"
+    ssl_libs="-L$ssl_dir/lib64 -L$ssl_dir/lib -lssl -lcrypto"
+elif test -n "$PKGCONFIG" && "$PKGCONFIG" --exists openssl 2>/dev/null; then
+    ssl_cflags=`"$PKGCONFIG" --cflags openssl`
+    ssl_libs=`"$PKGCONFIG" --libs openssl`
+else
+    ssl_libs="-lssl -lcrypto"
+fi
+if test -n "$ssl_libs"; then
+    save_CPPFLAGS=$CPPFLAGS
+    save_LIBS=$LIBS
+    CPPFLAGS="$CPPFLAGS $ssl_cflags"
+    LIBS="$ssl_libs $LIBS"
+    AC_MSG_CHECKING([for OpenSSL 3])
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <openssl/ssl.h>
+#if OPENSSL_VERSION_MAJOR < 3
+#error OpenSSL too old
+#endif]], [[SSL_CTX_free(SSL_CTX_new(TLS_method()));]])],
+	[AC_MSG_RESULT([yes])
+	 TLS_CPPFLAGS="-DBLISTER_TLS $ssl_cflags"
+	 TLS_LIBS=$ssl_libs],
+	[AC_MSG_RESULT([no])
+	 test "$with_openssl" = check ||
+	    AC_MSG_ERROR([OpenSSL 3 not found in $with_openssl])])
+    CPPFLAGS=$save_CPPFLAGS
+    LIBS=$save_LIBS
+fi
+AC_SUBST([TLS_CPPFLAGS])
+AC_SUBST([TLS_LIBS])
+
 # The remaining flag logic mirrors CMakeLists.txt's per-compiler,
 # per-version selection so both build systems compile with the same
 # options. ($compiler_clang was already determined above, ahead of LT_INIT.)

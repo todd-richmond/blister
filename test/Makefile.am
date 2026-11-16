@@ -2,6 +2,7 @@ include $(top_srcdir)/build/Makefile.inc
 
 AM_CPPFLAGS = -I$(top_srcdir)/lib
 LDADD = $(top_builddir)/lib/libblister.la
+TLS_LDADD = $(top_builddir)/lib/libblistertls.la $(LDADD)
 
 # tools linked against the static library, as CMake's blister_static
 STATIC_LINK = $(AM_LDFLAGS) -static
@@ -22,15 +23,21 @@ dlog_SOURCES = DLog.cpp
 dlog_LDFLAGS = $(STATIC_LINK)
 dtiming_SOURCES = DTiming.cpp
 echotest_SOURCES = EchoTest.cpp
+echotest_LDADD = $(TLS_LDADD)
 hashtest_SOURCES = HashTest.cpp
 httpload_SOURCES = HTTPLoad.cpp
+httpload_LDADD = $(TLS_LDADD)
 httpload_LDFLAGS = $(STATIC_LINK)
 httptest_SOURCES = HTTPTest.cpp
+httptest_LDADD = $(TLS_LDADD)
 smtpload_SOURCES = SMTPLoad.cpp
+smtpload_LDADD = $(TLS_LDADD)
 smtpload_LDFLAGS = $(STATIC_LINK)
 smtpsink_SOURCES = SMTPSink.cpp
+smtpsink_LDADD = $(TLS_LDADD)
 smtpsink_LDFLAGS = $(STATIC_LINK)
 uhttpd_SOURCES = HTTPd.cpp
+uhttpd_LDADD = $(TLS_LDADD)
 
 if HAVE_LIBUV
 noinst_PROGRAMS += uvechotest

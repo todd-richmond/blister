@@ -590,6 +590,12 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
 tstring Socket::errstr(void) const {
     if (sbuf->err == EOF)
 	return T("socket EOF");
+    if (sbuf->layer && sbuf->err == EPROTO) {
+	tstring s(sbuf->layer->errstr());
+
+	if (!s.empty())
+	    return s;
+    }
 
 #ifdef _WIN32
     tchar buf[32];
@@ -817,9 +823,65 @@ long Socket::rdret(long in) const {
     return -1;
 }
 
+long Socket::handshake(void) const {
+    long ret;
+
+    if (!iotimeo(false) || !iotimeo(true))
+	return -1;
+    do {
+	if ((ret = sbuf->layer->handshake(*this)) > 0)
+	    return 1;
+    } while (ret < 0 && interrupted());
+    if (!ret) {
+	sbuf->err = EOF;
+	return -1;
+    }
+    return wrret(ret);
+}
+
+long Socket::layerread(iovec *iov, int count) const {
+    long in = 0;
+
+    if (!iotimeo(false))
+	return -1;
+    for (int i = 0; i < count; ++i) {
+	long n;
+
+	if (!iov[i].iov_len)
+	    continue;
+	do {
+	    n = sbuf->layer->read(*this, iov[i].iov_base, (ulong)iov[i].iov_len);
+	} while (n < 0 && interrupted());
+	if (n <= 0)
+	    return in ? in : rdret(n);
+	in += n;
+	if ((ulong)n < (ulong)iov[i].iov_len)
+	    break;
+    }
+    return in;
+}
+
+long Socket::layerwrite(const iovec *iov, int count) const {
+    long out;
+
+    if (!iotimeo(true))
+	return -1;
+    do {
+	out = sbuf->layer->write(*this, iov, count);
+    } while (out < 0 && interrupted());
+    return wrret(out);
+}
+
 int Socket::read(void *buf, uint sz) const {
     int in;
 
+    if (UNLIKELY(sbuf->layer)) {
+	iovec iov;
+
+	iov.iov_base = (char *)buf;
+	iov.iov_len = (iovlen_t)sz;
+	return (int)layerread(&iov, 1);
+    }
     do {
 	if (!iotimeo(false))
 	    return -1;
@@ -846,6 +908,8 @@ int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
 long Socket::readv(iovec *iov, int count) const {
     long in;
 
+    if (UNLIKELY(sbuf->layer))
+	return layerread(iov, count);
     do {
 	if (!iotimeo(false))
 	    return -1;
@@ -900,6 +964,8 @@ long Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
 long Socket::sendmsg(const msghdr &msgh, int flags) const {
     long out;
 
+    if (UNLIKELY(sbuf->layer))
+	return layerwrite(msgh.msg_iov, (int)msgh.msg_iovlen);
     do {
 	if (!iotimeo(true))
 	    return -1;
@@ -919,6 +985,13 @@ bool Socket::sockname(Sockaddr &sa) {
 int Socket::write(const void *buf, uint sz) const {
     int out;
 
+    if (UNLIKELY(sbuf->layer)) {
+	iovec iov;
+
+	iov.iov_base = (char *)buf;		// NOSONAR
+	iov.iov_len = (iovlen_t)sz;
+	return (int)layerwrite(&iov, 1);
+    }
     do {
 	if (!iotimeo(true))
 	    return -1;
@@ -945,6 +1018,8 @@ int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
 long Socket::writev(const iovec *iov, int count) const {
     long out;
 
+    if (UNLIKELY(sbuf->layer))
+	return layerwrite(iov, count);
 #ifdef _WIN32
     out = -1;
     check(WSASend(sbuf->sock, (iovec *)iov, count, (ulong *)&out, 0, // NOSONAR

@@ -616,6 +616,7 @@ int tmain(int argc, const tchar * const argv[]) {
 
     vector<Worker> workers(threads);
     uint base = 0;
+    ullong failed = 0;
 
     for (uint u = 0; u < threads; u++) {
 	Worker &w = workers[u];
@@ -657,6 +658,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    timing_t now = Timing::now();
 	    ullong cnt = cur_ops + cur_errs;
 
+	    failed += cur_errs;
 	    tcout << (cnt * 1000000 / (now - last)) << T("\t\t") <<
 		(cur_usecs / (cur_ops ? cur_ops : 1)) << '\t' << cur_errs <<
 		endl;
@@ -672,6 +674,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	uv_async_send(&w.stopper);
     for (Worker &w : workers)
 	w.thread.wait();
+    failed += gerrs.load(memory_order_relaxed);
 
     if (unixfd != -1) {
 	close(unixfd);
@@ -680,5 +683,5 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     delete [] dbuf;
     tcout << dtiming.data() << endl;
-    return qflag.load(memory_order_relaxed) ? -1 : 0;
+    return qflag.load(memory_order_relaxed) ? -1 : failed ? 1 : 0;
 }
