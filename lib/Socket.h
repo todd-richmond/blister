@@ -294,7 +294,8 @@ public:
     enum State: uint {
 	Pending = 1,		// buffered input that no poll reports
 	ReadWrites = 2,		// a blocked read or handshake needs writability
-	WriteReads = 4		// a blocked write or handshake needs readability
+	WriteReads = 4,		// a blocked write or handshake needs readability
+	Drained = 8		// the last read emptied the fd
     };
 
     virtual ~SocketLayer() = default;

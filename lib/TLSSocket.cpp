@@ -529,15 +529,19 @@ long TLSLayer::read(const Socket &s, void *buf, ulong len) {
     }
 }
 
+// a short or blocked recv means the socket is empty
 long TLSLayer::recvmore(const Socket &s) {
+    const int want = (int)(INBUF - ilen);
     int n;
 
     if (ilen == INBUF)
 	return fail(s, T("TLS record too large"));
-    if ((n = ::recv(fd, ibuf.get() + ilen, (int)(INBUF - ilen), 0)) > 0)
+    if ((n = ::recv(fd, ibuf.get() + ilen, want, 0)) > 0)
 	ilen += (ulong)n;
     else if (n < 0)
 	s.err(sockerrno());
+    flags = (n > 0 ? n < want : n < 0 && blocked(s.err())) ? flags |
+	Drained : flags & ~Drained;
     return n;
 }
 
@@ -953,7 +957,12 @@ static X509 *selfsign(EVP_PKEY *key) {
  */
 class DLL_LOCAL TLSLayer: public SocketLayer {
 public:
-    explicit TLSLayer(SSL *s): ssl(s) {}
+    explicit TLSLayer(SSL *s): ssl(s) {
+	BIO *b = SSL_get_rbio(ssl);
+
+	BIO_set_callback_ex(b, onread);
+	BIO_set_callback_arg(b, (char *)this);
+    }
     ~TLSLayer() override { SSL_free(ssl); }
 
     tstring errstr(void) const override { return tlserr; }
@@ -961,7 +970,8 @@ public:
     long read(const Socket &s, void *buf, ulong len) override;
     void shutdown(void) override;
     uint state(void) const override {
-	return flags | (SSL_has_pending(ssl) ? (uint)Pending : 0U);
+	return (flags & ~Partial) | (!(flags & Partial) && SSL_has_pending(ssl)
+	    ? (uint)Pending : 0U);
     }
     long write(const Socket &s, const iovec *iov, int count) override;
 
@@ -971,7 +981,12 @@ public:
 private:
     enum class Op: uchar { Handshake, Read, Write };
 
+    // a read blocked mid-record so buffered bytes can't complete one yet
+    static constexpr uint Partial = 0x100;
+
     long fail(const Socket &s, int ret, Op op);
+    static long onread(BIO *b, int op, const char *, size_t len, int, long,
+	int ret, size_t *done);
     long send(const Socket &s, const void *buf, ulong len);
 
     uint flags = 0;
@@ -981,8 +996,8 @@ private:
 long TLSLayer::fail(const Socket &s, int ret, Op op) {
     switch (SSL_get_error(ssl, ret)) {
     case SSL_ERROR_WANT_READ:
-	flags = op == Op::Read ? flags & ~ReadWrites : op == Op::Write ?
-	    flags | WriteReads : WriteReads;
+	flags = op == Op::Read ? (flags & ~ReadWrites) | Partial : op ==
+	    Op::Write ? flags | WriteReads : WriteReads;
 	s.err(EAGAIN);
 	return -1;
     case SSL_ERROR_WANT_WRITE:
@@ -1016,12 +1031,24 @@ long TLSLayer::handshake(const Socket &s) {
     return fail(s, ret, Op::Handshake);
 }
 
+// a short or blocked fd read means read-ahead emptied the socket
+long TLSLayer::onread(BIO *b, int op, const char *, size_t len, int, long,
+    int ret, size_t *done) { // NOLINT(readability-non-const-parameter)
+    if (op == (BIO_CB_READ | BIO_CB_RETURN)) {
+	uint &f = ((TLSLayer *)BIO_get_callback_arg(b))->flags;
+
+	f = (ret > 0 ? *done < len : BIO_should_retry(b)) ? f | Drained :
+	    f & ~Drained;
+    }
+    return ret;
+}
+
 long TLSLayer::read(const Socket &s, void *buf, ulong len) {
     size_t in;
 
     ERR_clear_error();
     if (LIKELY(SSL_read_ex(ssl, buf, len, &in))) {
-	flags &= ~ReadWrites;
+	flags &= ~(ReadWrites | Partial);
 	return (long)in;
     }
     return fail(s, 0, Op::Read);

@@ -213,16 +213,25 @@ void EchoTest::EchoClientSocket::output() {
 	out == 0)) {
 	write("", 1);
 	erase();
-    } else if (UNLIKELY(error() || ((len = (uint)write(dbuf + out, dsz -
+	return;
+    }
+    // read echoes while writing so neither side fills its socket buffer
+    if (UNLIKELY(msg == DispatchRead || msg == DispatchWrite)) {
+	if ((len = (uint)read(rbuf + in, dsz + MAXREAD - in)) == (uint)-1) {
+	    fail(T("read"));
+	    return;
+	}
+	in += len;
+    }
+    if (UNLIKELY(error() || ((len = (uint)write(dbuf + out, dsz -
 	out)) == (uint)-1))) {
 	fail(T("write"));
     } else if (LIKELY((out += len) == dsz)) {
-	in = 0;
 	dlogt(T("client write="), len);
 	readable(input, tmt);
     } else {
 	dlogd(T("client partial write="), len);
-	writeable(output, tmt);
+	rwable(output, tmt);
     }
 }
 

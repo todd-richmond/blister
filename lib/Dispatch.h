@@ -421,10 +421,13 @@ protected:
 
 private:
     bool layerpoll(DispatchObjCB cb, DispatchMsg &reason);
-    // a short layer read may leave fd data, so only a block means drained
+    // layers buffer input so they report fd drain themselves
     template<typename N> __forceinline N track(N n, ulong len) const {
-	rdrain = n == 0 ? blocked() : n > 0 && (ulong)n < len && stream() &&
-	    !layer();
+	const SocketLayer *l;
+
+	rdrain = n == 0 ? blocked() : n > 0 && (UNLIKELY(l = layer()) ?
+	    (l->state() & (SocketLayer::Drained | SocketLayer::Pending)) ==
+	    SocketLayer::Drained : (ulong)n < len && stream());
 	return n;
     }
     static ulong iovlen(const iovec *iov, int count) {
