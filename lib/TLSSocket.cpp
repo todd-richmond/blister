@@ -990,6 +990,7 @@ private:
     long send(const Socket &s, const void *buf, ulong len);
 
     uint flags = 0;
+    bool ktlsrx = false;
     tstring tlserr;
 };
 
@@ -1026,19 +1027,22 @@ long TLSLayer::handshake(const Socket &s) {
     ERR_clear_error();
     if ((ret = SSL_do_handshake(ssl)) == 1) {
 	flags = 0;
+	ktlsrx = BIO_ctrl(SSL_get_rbio(ssl), BIO_CTRL_GET_KTLS_RECV, 0,
+	    nullptr) > 0;
 	return 1;
     }
     return fail(s, ret, Op::Handshake);
 }
 
-// a short or blocked fd read means read-ahead emptied the socket
+// a short or blocked fd read means read-ahead emptied the socket, but
+// kernel TLS (KTLS) reads stop at one record
 long TLSLayer::onread(BIO *b, int op, const char *, size_t len, int, long,
     int ret, size_t *done) { // NOLINT(readability-non-const-parameter)
     if (op == (BIO_CB_READ | BIO_CB_RETURN)) {
-	uint &f = ((TLSLayer *)BIO_get_callback_arg(b))->flags;
+	auto *l = (TLSLayer *)BIO_get_callback_arg(b);
 
-	f = (ret > 0 ? *done < len : BIO_should_retry(b)) ? f | Drained :
-	    f & ~Drained;
+	l->flags = (ret > 0 ? *done < len && !l->ktlsrx : BIO_should_retry(b)) ?
+	    l->flags | Drained : l->flags & ~Drained;
     }
     return ret;
 }
@@ -1147,9 +1151,10 @@ static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
     else if (!minver.empty())
 	return fail(T("unknown tls.proto_min"));
     SSL_CTX_set_min_proto_version(ctx.get(), ver);
+    // KTLS slows small writes, so it is opt-in
     SSL_CTX_set_options(ctx.get(), SSL_OP_ALL | SSL_OP_IGNORE_UNEXPECTED_EOF |
-	SSL_OP_NO_RENEGOTIATION | cfg.get(T("tls.options"), (uint64_t)0,
-	sect));
+	SSL_OP_NO_RENEGOTIATION | (cfg.get(T("tls.ktls"), false, sect) ?
+	SSL_OP_ENABLE_KTLS : 0) | cfg.get(T("tls.options"), (uint64_t)0, sect));
     SSL_CTX_set_mode(ctx.get(), SSL_MODE_ENABLE_PARTIAL_WRITE |
 	SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_RELEASE_BUFFERS);
     // fewer recvs: polls check SSL_has_pending for buffered records

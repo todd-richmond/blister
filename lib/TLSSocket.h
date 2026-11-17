@@ -83,7 +83,7 @@ private:
     unordered_map<string, ssl_session_st *> sessions;
 #endif
     const bool srv;
-    bool verify = false;
+    bool verify = true;
 };
 
 // HTTPS when tlsctx is enabled, else plain HTTP
