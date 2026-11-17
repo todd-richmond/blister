@@ -228,7 +228,6 @@
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
     </ClCompile>
     <Lib>
-      <AdditionalDependencies>crypt32.lib;ncrypt.lib;secur32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <TargetMachine>MachineX86</TargetMachine>
     </Lib>
   </ItemDefinitionGroup>
@@ -260,7 +259,6 @@
       <OmitFramePointers>true</OmitFramePointers>
     </ClCompile>
     <Lib>
-      <AdditionalDependencies>crypt32.lib;ncrypt.lib;secur32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <TargetMachine>MachineX86</TargetMachine>
     </Lib>
   </ItemDefinitionGroup>
@@ -292,7 +290,6 @@
       <OmitFramePointers>true</OmitFramePointers>
     </ClCompile>
     <Lib>
-      <AdditionalDependencies>crypt32.lib;ncrypt.lib;secur32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <TargetMachine>MachineX86</TargetMachine>
     </Lib>
   </ItemDefinitionGroup>
@@ -328,7 +325,6 @@
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
     </ClCompile>
     <Lib>
-      <AdditionalDependencies>crypt32.lib;ncrypt.lib;secur32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <TargetMachine>MachineX86</TargetMachine>
     </Lib>
   </ItemDefinitionGroup>
@@ -368,7 +364,6 @@
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
     </ClCompile>
     <Lib>
-      <AdditionalDependencies>crypt32.lib;ncrypt.lib;secur32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <TargetMachine>MachineX64</TargetMachine>
     </Lib>
   </ItemDefinitionGroup>
@@ -404,7 +399,6 @@
       <OmitFramePointers>true</OmitFramePointers>
     </ClCompile>
     <Lib>
-      <AdditionalDependencies>crypt32.lib;ncrypt.lib;secur32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <TargetMachine>MachineX64</TargetMachine>
     </Lib>
   </ItemDefinitionGroup>
@@ -440,7 +434,6 @@
       <OmitFramePointers>true</OmitFramePointers>
     </ClCompile>
     <Lib>
-      <AdditionalDependencies>crypt32.lib;ncrypt.lib;secur32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <TargetMachine>MachineX64</TargetMachine>
     </Lib>
   </ItemDefinitionGroup>
@@ -480,7 +473,6 @@
       <LanguageStandard_C>stdclatest</LanguageStandard_C>
     </ClCompile>
     <Lib>
-      <AdditionalDependencies>crypt32.lib;ncrypt.lib;secur32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <TargetMachine>MachineX64</TargetMachine>
     </Lib>
   </ItemDefinitionGroup>

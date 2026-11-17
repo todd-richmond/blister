@@ -82,8 +82,10 @@ int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
 	return -1;
     }
 
+    WARN_PUSH_DISABLE(26403)
     auto *hsock = new SimpleDispatchListenSocket<Dispatcher,
 	HTTPDaemonSocket>(dspr);
+    WARN_POP()
 
     if (!hsock->listen(buf)) {
 	delete hsock;

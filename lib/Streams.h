@@ -358,6 +358,7 @@ public:
 	} else if constexpr (is_floating_point_v<T>) {
 	    C buf[40];
 	    // %.6g like ostream; always fits
+	    // cppcheck-suppress uninitvar
 	    write(buf, to_chars(buf, buf + std::size(buf), val,
 		chars_format::general, 6).ptr - buf);
 	} else if constexpr (is_enum_v<T>) {

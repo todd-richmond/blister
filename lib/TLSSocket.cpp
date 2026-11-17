@@ -26,6 +26,9 @@
 #include <schannel.h>
 #include <security.h>
 #include <ncrypt.h>
+#pragma comment(lib, "crypt32.lib")
+#pragma comment(lib, "ncrypt.lib")
+#pragma comment(lib, "secur32.lib")
 #else
 #include <openssl/err.h>
 #include <openssl/pem.h>
@@ -902,7 +905,7 @@ static EVP_PKEY *defaultkey(tstring &src) {
 	    string path = format("{}/.ssh/{}", home, name);
 
 	    if (EVP_PKEY *key = readkey(path.c_str())) {
-		src = achartotstring(path.c_str());
+		src = achartotstring(path);
 		return key;
 	    }
 	}
@@ -1037,6 +1040,7 @@ long TLSLayer::handshake(const Socket &s) {
 // a short or blocked fd read means read-ahead emptied the socket, but
 // kernel TLS (KTLS) reads stop at one record
 long TLSLayer::onread(BIO *b, int op, const char *, size_t len, int, long,
+    // cppcheck-suppress constParameterCallback
     int ret, size_t *done) { // NOLINT(readability-non-const-parameter)
     if (op == (BIO_CB_READ | BIO_CB_RETURN)) {
 	auto *l = (TLSLayer *)BIO_get_callback_arg(b);
@@ -1159,7 +1163,7 @@ static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
 	SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_RELEASE_BUFFERS);
     // fewer recvs: polls check SSL_has_pending for buffered records
     SSL_CTX_set_read_ahead(ctx.get(), 1);
-    SSL_CTX_set_default_read_buffer_len(ctx.get(), 64 * 1024);
+    SSL_CTX_set_default_read_buffer_len(ctx.get(), size_t{64} * 1024);
     if (!ciphers.empty() && !SSL_CTX_set_cipher_list(ctx.get(),
 	ciphers.c_str()))
 	return fail(T("invalid tls.cipherlist"));
@@ -1222,7 +1226,7 @@ static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
 	if (SSL_CTX_use_PrivateKey_file(ctx.get(), (keyfile.empty() ?
 	    certfile : keyfile).c_str(), SSL_FILETYPE_PEM) != 1)
 	    return fail(T("cannot load tls.keyfile"));
-	keysrc = achartotstring(certfile.c_str());
+	keysrc = achartotstring(certfile);
     } else {
 	key_ptr key(keyfile.empty() ? defaultkey(keysrc) :
 	    readkey(keyfile.c_str()));
@@ -1231,7 +1235,7 @@ static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
 	if (!key)
 	    return fail(T("cannot load tls.keyfile"));
 	if (!keyfile.empty())
-	    keysrc = achartotstring(keyfile.c_str());
+	    keysrc = achartotstring(keyfile);
 	cert.reset(selfsign(key.get()));
 	if (!cert)
 	    return fail(T("cannot create self-signed certificate"));
@@ -1338,7 +1342,7 @@ bool TLSContext::layer(Socket &s, const tchar *host) const {
     if (!srv && s.peername(sa)) {
 	key = tchartoachar(host);
 	key += '/';
-	key += tstringtoachar(sa.str());
+	key += tstringtoastring(sa.str());
     }
     lock.lock_shared();
     if (SSL_CTX *c = ctx.load(memory_order_relaxed); c && (ssl = SSL_new(c)) &&
@@ -1402,6 +1406,7 @@ int TLSContext::onsession(SSL *ssl, SSL_SESSION *sess) {
 
 #endif
 
+WARN_PUSH_DISABLE(26403)
 TLSContext &TLSContext::client(void) {
     // never freed so it outlives static objects using it
     static TLSContext *tc = [] {
@@ -1415,6 +1420,7 @@ TLSContext &TLSContext::client(void) {
 
     return *tc;
 }
+WARN_POP()
 
 tstring TLSContext::sni(const Sockaddr &sa) {
     tstring s(sa.str());
@@ -1426,7 +1432,7 @@ tstring TLSContext::sni(const Sockaddr &sa) {
     return s;
 }
 
-static constexpr ulong HANDSHAKE_TIMEOUT = 30 * 1000;
+static constexpr ulong HANDSHAKE_TIMEOUT = 30UL * 1000;
 
 TLSContext HTTPTLSServer::tlsctx;
 

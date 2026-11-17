@@ -256,7 +256,7 @@ int tmain(int argc, tchar *argv[]) {
 	else if (!tstricmp(arg, T("-k")))
 	    ka = true;
 	else if (!tstrncmp(arg, T("-u"), 2))
-	    return (chunksz = arg[2] ? atoi<ulong>(arg + 2) : 64 * 1024) != 0;
+	    return (chunksz = arg[2] ? atoi<ulong>(arg + 2) : 64UL * 1024) != 0;
 	else
 	    return false;
 	return true;

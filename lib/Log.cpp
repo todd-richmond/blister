@@ -232,6 +232,11 @@ bool Log::LogFile::reopen(void) {
 	    const struct tm *tm = gmt ? gmtime_r(&now, &tmbuf) :
 		localtime_r(&now, &tmbuf);
 
+	    if (!tm) {
+		close();
+		fd = -3;
+		return false;
+	    }
 	    tstrftime(buf, std::size(buf), file.c_str(), tm);
 	    if (!tlink(path.c_str(), buf)) {
 		break;

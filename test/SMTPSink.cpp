@@ -468,8 +468,10 @@ int tmain(int argc, const tchar * const argv[]) {
     tstring err;
     uint port = 2525, threads = 32;
     ulong stattime = 0;
+    WARN_PUSH_DISABLE(26403)
     auto *lsock = new SimpleDispatchListenSocket<Dispatcher, SMTPSinkSocket>(
 	dspr);
+    WARN_POP()
 
     for (int i = 1; i < argc; ++i) {
 	if (!tstricmp(argv[i], T("-d"))) {

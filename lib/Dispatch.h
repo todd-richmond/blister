@@ -383,7 +383,7 @@ public:
 
     void cancel(void) override { dspr.cancelSocket(*this); }
     void erase(void) override { dspr.cancelSocket(*this, true); }
-    // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
+    // NOLINTBEGIN(bugprone-derived-method-shadowing-base-method)
     bool close(void) {
 	dspr.unmapSocket(*this, fd());
 	return Socket::close();
@@ -403,6 +403,7 @@ public:
     long readv(iovec *iov, int count, Sockaddr &sa) const {
 	return track(Socket::readv(iov, count, sa), iovlen(iov, count));
     }
+    // NOLINTEND(bugprone-derived-method-shadowing-base-method)
 
 protected:
     void poll(DispatchObjCB cb, ulong msec, DispatchMsg reason) {

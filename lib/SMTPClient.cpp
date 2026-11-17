@@ -724,7 +724,7 @@ template<Codec C> static bool filedecode(const char *in, size_t sz,
 	    ++p;
     };
     auto dec = [](uchar c) {
-	return C == UU ? (uint)((c - ' ') & 077) : xxvalues[c] & 077u;
+	return C == UU ? (uint)((c - ' ') & 077) : xxvalues[c] & 077U;
     };
 
     outsz = 0;
@@ -2123,7 +2123,7 @@ bool AsyncSMTPClient::rcpt(const tchar *id, DispatchObjCB cb, DispatchObj &co,
 
 // read until every expected reply is buffered so completing does not block
 void AsyncSMTPClient::check(bool timedout) {
-    auto &sb = *static_cast<faststreambuf<Socket> *>(sstrm.rdbuf());
+    auto &sb = *sstrm.rdbuf();
     const size_t need = fstrm ? 0 : max<size_t>(expectv.size(), 1);
 
     while (!timedout) {
@@ -2657,6 +2657,7 @@ int RFC822Addr::parse_phrase(tchar *&in, tchar *&phrase, const tchar
     return (int)(uint)c;
 }
 
+WARN_PUSH_DISABLE(28182)
 int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt,
     bool smtputf8) {
     tchar c;
@@ -2716,6 +2717,7 @@ int RFC822Addr::parse_domain(tchar *&in, tchar *&dom, tchar *&cmt,
     }
     return (int)(uint)c;
 }
+WARN_POP()
 
 int RFC822Addr::parse_route(tchar *&in, tchar *&rte, bool smtputf8) {
     tchar c;

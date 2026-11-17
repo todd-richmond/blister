@@ -166,6 +166,8 @@ void HTTPServerSocket::readhdrs() {
 	return;
     }
     if (room <= 1) {
+	char *p;
+
 	if (sz > MaxHdrs) {
 	    cmd = "BADCMD";
 	    path = "/";
@@ -176,7 +178,11 @@ void HTTPServerSocket::readhdrs() {
 
 	sz = min(sz < 1000 ? 1000UL : sz * 2, MaxHdrs + 1);
 	room = (uint)(sz - datasz);
-	data = (char *)realloc(data, sz);
+	if ((p = (char *)realloc(data, sz)) == nullptr) {
+	    disconnect();
+	    return;
+	}
+	data = p;
     }
     // - 1 to leave room for savechar logic
     in = (uint)read(data + datasz, room - 1);
@@ -648,7 +654,10 @@ void HTTPServerSocket::senddone() {
 	if (datasz >= sz) {
 	    free(data);
 	    sz = datasz + 1000;
-	    data = (char *)malloc(sz);
+	    if ((data = (char *)malloc(sz)) == nullptr) {
+		disconnect();
+		return;
+	    }
 	}
 	memcpy(data, postdata + postsz, datasz);
 	postdata_free();
@@ -697,7 +706,8 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     }
     *k = '\0';
 #ifdef UNICODE
-    dtiming.add(achartotchar(key), elapsed);
+    dtiming.add(achartowstring(string_view(key, (size_t)(k - key))).c_str(),
+	elapsed);
 #else
     dtiming.add(key, (uint)(k - key), elapsed);
 #endif
@@ -958,6 +968,8 @@ const char *HTTPServerSocket::mimetype(const char *ext) const {
 	"duplicate mimetype hash");
     if (ext) {
 	const strhash_t h = stringihash(string_view(ext));
+	// a class, not a pointer, on MSVC
+	// NOLINTNEXTLINE(llvm-qualified-auto,readability-qualified-auto)
 	auto it = ranges::lower_bound(mime, h, {}, hash);
 
 	if (it != mime.end() && it->ext.hash == h)

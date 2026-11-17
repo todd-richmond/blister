@@ -121,10 +121,11 @@ const tstring &Sockaddr::hostname() {
 
 	if (gethostname(buf, sizeof (buf))) {
 #ifdef _WIN32
-	    ulong sz = sizeof (buf);
+	    tchar tbuf[MAX_COMPUTERNAME_LENGTH + 1];
+	    ulong sz = (ulong)std::size(tbuf);
 
-	    GetComputerName((tchar *)buf, &sz);
-	    return tstring((tchar *)buf);
+	    return GetComputerName(tbuf, &sz) ? tstring(tbuf) :
+		tstring(T("localhost"));
 #else
 	    return tstring(T("localhost"));
 #endif

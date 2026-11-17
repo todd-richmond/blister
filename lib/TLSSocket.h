@@ -186,6 +186,7 @@ public:
     void tls(bool on) { implicit = on; }
 
 protected:
+    // NOLINTNEXTLINE(portability-template-virtual-member-function)
     bool onconnect(void) override { return !implicit || handshake(); }
 
 private:

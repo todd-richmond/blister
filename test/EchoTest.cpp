@@ -46,7 +46,7 @@ public:
     public:
 	EchoClientSocket(EchoTest &es, const Sockaddr &a, ulong t, ulong w):
 	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0),
-	    rbuf(new char[dsz + MAXREAD]), tmt(t), wait(w) {}
+	    rbuf(new char[(size_t)dsz + MAXREAD]), tmt(t), wait(w) {}
 	~EchoClientSocket() override { delete [] rbuf; }
 
 	void start(ulong msec) { timeout(start, msec); }

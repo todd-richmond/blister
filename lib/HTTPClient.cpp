@@ -23,8 +23,8 @@
 #include "Log.h"
 
 static constexpr ulong MaxBody = 256UL * 1024 * 1024;
-static constexpr size_t MaxCopy = 4UL * 1024;	// request with small body
-static constexpr size_t MaxHdrs = 64UL * 1024;	// status + header bytes
+static constexpr size_t MaxCopy = size_t{4} * 1024; // request with small body
+static constexpr size_t MaxHdrs = size_t{64} * 1024;	// status + header bytes
 static constexpr size_t MaxPipeline = 16;
 static constexpr ulong MaxKeep = 64UL * 1024;	// reused response buffer
 
@@ -407,8 +407,8 @@ bool HTTPResponse::resize(ulong newcap) {
 
 template<class S>
 template<class G>
-typename HTTPParser<S>::Step HTTPParser<S>::advance(HTTPResponse &r, bool head,
-    G &&grow) {
+HTTPParser<S>::Step HTTPParser<S>::advance(HTTPResponse &r, bool head,
+    G grow) {
     Step s;
     string_view v;
     long n;
@@ -536,7 +536,7 @@ int HTTPParser<S>::fill(void) {
 
 // a line without its terminator: in the buffer unless it spans reads
 template<class S>
-typename HTTPParser<S>::Step HTTPParser<S>::nextline(string_view &out) {
+HTTPParser<S>::Step HTTPParser<S>::nextline(string_view &out) {
     if (!partial)
 	line.clear();
     for (;;) {
@@ -574,7 +574,7 @@ typename HTTPParser<S>::Step HTTPParser<S>::nextline(string_view &out) {
 
 template<class S>
 template<class G>
-typename HTTPParser<S>::Step HTTPParser<S>::reserve(HTTPResponse &r, ulong need,
+HTTPParser<S>::Step HTTPParser<S>::reserve(HTTPResponse &r, ulong need,
     G &grow) {
     if (r.result && r.cap > need)
 	return Step::Done;
@@ -668,6 +668,7 @@ HTTPClient::Step HTTPClient::receive(bool head, bool &keep) {
     return s;
 }
 
+WARN_PUSH_DISABLE(26461)
 bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     // cppcheck-suppress constParameterPointer
     ulong datasz, msghdr *msgh) {
@@ -678,7 +679,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     if (buildreq(req, op, path, hostval, ka, tstring_view(hstrm.str(),
 	(size_t)hstrm.size()), msgh ? nullptr : data, datasz)) {
 	const bool head = !tstrcmp(op, T("HEAD"));
-	const ulong total = req.size() + datasz;
+	const ulong total = (ulong)req.size() + datasz;
 #ifndef _WIN32
 	iovec iov[2] = { { (void *)req.data(), req.size() },
 	    { (void *)data, datasz } };
@@ -744,6 +745,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     hstrm.reset();
     return ret;
 }
+WARN_POP()
 
 bool HTTPClient::sendbegin(const tchar *op, const tchar *path) {
     ulong len = Unknown;

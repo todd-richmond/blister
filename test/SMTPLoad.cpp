@@ -131,10 +131,10 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	arg = buf;
     }
     // "address [parameters]": a bracketed address may contain spaces
-    const tchar *parms = tstrrchr(arg, '>');
+    const tchar *gt = tstrrchr(arg, '>');
+    const tchar *parms = gt ? gt + 1 : arg + tstrcspn(arg, T(" \t"));
     tstring who;
 
-    parms = parms ? parms + 1 : arg + tstrcspn(arg, T(" \t"));
     who.assign(arg, parms);
     while (istspace(*parms))
 	parms++;
@@ -147,8 +147,8 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	uint u = pick();
 	const char *d = load(u, io, rbuf);
 	const tstring &path = bodies[u].path;
-	char *out;
-	size_t outsz;
+	char *out = nullptr;
+	size_t outsz = 0;
 
 	if (!d)
 	    return false;

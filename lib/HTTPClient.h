@@ -188,7 +188,7 @@ public:
 
     // grow(r, newcap) allocates r.result and returns Done, Wait or Proto
     template<class G>
-    Step advance(HTTPResponse &r, bool head, G &&grow);
+    Step advance(HTTPResponse &r, bool head, G grow);
     // 1 data buffered, 0 would block, -1 error
     int fill(void);
     void reset(void);
@@ -343,6 +343,7 @@ public:
 	explicit Request(Dispatcher &d): DispatchObj(d) {}
 	explicit Request(DispatchObj &parent): DispatchObj(child, parent) {}
 
+	// NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
 	virtual void reset(void) { HTTPResponse::reset(); }
 	// data must remain valid until the callback is called
 	void send(DispatchObjCB cb, DispatchObj &co, AsyncHTTPClient &client,
