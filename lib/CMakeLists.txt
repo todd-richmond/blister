@@ -1,6 +1,6 @@
 set(blister_obj_INC_SOURCE Config.h Dispatch.h HTTPClient.h HTTPServer.h Log.h
-    LRUCache.h ResourcePool.h Service.h SMTPClient.h Socket.h stdapi.h
-    Streams.h Thread.h Timing.h)
+    LRUCache.h ResourcePool.h Service.h SMTPClient.h Socket.h stdapi.h Streams.h
+    Thread.h Timing.h)
 
 set(blister_obj_LIB_SOURCE Config.cpp Dispatch.cpp HTTPClient.cpp HTTPServer.cpp
     Log.cpp Service.cpp Socket.cpp SMTPClient.cpp Thread.cpp Timing.cpp)
@@ -42,8 +42,9 @@ else()
     add_library(blister_static ALIAS blister)
 endif()
 
-set(blistertls_obj_INC_SOURCE TLSSocket.h)
-add_library(blistertls_obj OBJECT TLSSocket.cpp)
+set(blistertls_obj_INC_SOURCE MPHTTPServer.h TLSSocket.h)
+set(blistertls_obj_LIB_SOURCE MPHTTPServer.cpp TLSSocket.cpp)
+add_library(blistertls_obj OBJECT ${blistertls_obj_LIB_SOURCE})
 set_target_properties(blistertls_obj PROPERTIES POSITION_INDEPENDENT_CODE 1)
 target_compile_definitions(blistertls_obj PRIVATE BUILD_BLISTERTLS)
 target_include_directories(blistertls_obj PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

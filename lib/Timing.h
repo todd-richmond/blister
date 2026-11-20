@@ -79,6 +79,17 @@ class BLISTER Timing: nocopy {
 public:
     static constexpr uint CACHESIZE = 4096;
     static constexpr uint TIMINGSLOTS = 10;
+    // inclusive usec upper bounds; the last slot is the rest
+    static constexpr timing_t Limits[TIMINGSLOTS - 1] = {
+	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
+    };
+
+    struct Row {
+	const tchar *key;
+	uint klen;
+	uint64_t cnt = 0, tot = 0;
+	uint64_t cnts[TIMINGSLOTS] = {};
+    };
 
     Timing() = default;
     ~Timing();
@@ -104,7 +115,7 @@ public:
 	return n;
     }
     void restart(void);
-    // started keys are kept by pointer so tstring keys are copied
+    vector<Row> snapshot(bool sort_key = false) const;	// sort by key or time
     __forceinline void start(const strlit &key) {
 	start(*tls, key.data(), key.hash);
     }

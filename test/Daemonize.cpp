@@ -93,7 +93,7 @@ bool WatchDaemon::onRefresh(void) {
 	cfg.set(T("watch.interval"), interval);
     else
 	cfg.set(T("watch.enable"), false);
-    cfg.set(T("watch.maxmem"), maxmem);
+    cfg.set(T("watch.maxpss"), maxmem);
     return true;
 }
 

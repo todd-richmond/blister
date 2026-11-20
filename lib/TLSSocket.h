@@ -100,6 +100,8 @@ public:
     }
     // TLS over the connection, then serve requests
     void starttls(void);
+    // GET /check expecting "OK", with TLS when tlsctx is enabled
+    static bool check(const Sockaddr &addr, uint msec, tstring &err);
 
     static TLSContext tlsctx;
 

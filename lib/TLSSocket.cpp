@@ -1448,6 +1448,44 @@ void HTTPTLSServer::shake(void) {
     }
 }
 
+bool HTTPTLSServer::check(const Sockaddr &addr, uint msec, tstring &err) {
+    static TLSContext ctx(false);
+    HTTPTLSClient hc(ctx);
+    bool tls = tlsctx.enabled();
+
+    if (tls) {
+	// a server checking itself skips verifying its own certificate
+	static const bool ready = [] {
+	    Config cfg;
+	    tstring e;
+
+	    cfg.set(T("tls.verify"), false);
+	    return ctx.init(cfg, nullptr, e);
+	}();
+
+	if (!ready) {
+	    err = T("TLS client unavailable");
+	    return false;
+	}
+	hc.tls(true);
+    }
+    // the TLS handshake in connect() uses the I/O timeouts too
+    hc.timeout(msec, msec);
+    if (!hc.connect(addr, false, msec)) {
+	err = T("cannot connect to status port");
+	return false;
+    }
+    if (!hc.get(T("/check")) || !hc.size()) {
+	err = T("cannot GET status");
+	return false;
+    }
+    if (strcmp(hc.data(), "OK")) {
+	err = achartotstring(hc.data());
+	return false;
+    }
+    return true;
+}
+
 void HTTPTLSServer::starttls(void) {
     if (tlsctx.layer(*this))
 	shake();

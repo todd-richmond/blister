@@ -16,7 +16,9 @@
  */
 
 #include "stdapi.h"
+#include <algorithm>
 #include <ctime>
+#include <format>
 #include <time.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -35,9 +37,23 @@ static constexpr ulong MaxRead = 64UL * 1024;	// larger files are mmapped
 static constexpr char CRLF[] = "\r\n";
 
 bool HTTPServerSocket::date;
+string HTTPServerSocket::docroot;
 atomic_bool HTTPServerSocket::paused;
 
-static const char *statusmsg(uint sts) {
+// Prometheus default buckets
+static constexpr double DurationBounds[] = {
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10
+};
+
+static struct {
+    atomic<ulong> accepted, conns;
+    atomic<ulong> codes[5];
+    atomic<ulong> durations[std::size(DurationBounds) + 1];
+    atomic<usec_t> duration;
+    atomic<ullong> rxbytes, txbytes;
+} stats;
+
+const char *HTTPServerSocket::statusmsg(uint sts) {
     switch (sts) {
     case 200: return "OK";
     case 201: return "Created";
@@ -85,7 +101,7 @@ static const char *statusmsg(uint sts) {
 }
 
 // RFC 9110 5.6.7 IMF-fixdate: "Sun, 06 Nov 1994 08:49:37 GMT"
-static const char *httpdate(time_t t, char (&buf)[30]) {
+const char *HTTPServerSocket::httpdate(time_t t, char (&buf)[30]) {
     static constexpr char days[] = "SunMonTueWedThuFriSat";
     static constexpr char mons[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
     struct tm tm = {};
@@ -114,7 +130,7 @@ static const char *httpdate(time_t t, char (&buf)[30]) {
 }
 
 // read exactly len bytes: a single read() is short for large or slow files
-static bool readfull(int fd, char *buf, size_t len) {
+bool HTTPServerSocket::readfull(int fd, char *buf, size_t len) {
     while (len) {
 	long n = (long)::read(fd, buf, (uint)min(len, (size_t)1 << 30));
 
@@ -128,7 +144,17 @@ static bool readfull(int fd, char *buf, size_t len) {
     return true;
 }
 
+HTTPServerSocket::HTTPServerSocket(Dispatcher &d, const Socket &sock):
+    DispatchServerSocket(d, sock) {
+    static const bool configured = (configure(d.config()), true);
+
+    (void)configured;
+    stats.accepted.fetch_add(1, memory_order_relaxed);
+    stats.conns.fetch_add(1, memory_order_relaxed);
+}
+
 HTTPServerSocket::~HTTPServerSocket(void) {
+    stats.conns.fetch_sub(1, memory_order_relaxed);
     free(data);
     unmap();
     if (postdatasz)
@@ -556,18 +582,18 @@ void HTTPServerSocket::exec(void) {
     }
 }
 
-void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
-    auto unescape = [](char *s) {
+void HTTPServerSocket::unescape(char *s) {
 #ifdef UNICODE
-	tstring t(achartotchar(s));
+    tstring t(achartotchar(s));
 
-	URL::unescape(t);
-	strcpy(s, tstringtoachar(t));
+    URL::unescape(t);
+    strcpy(s, tstringtoachar(t));
 #else
-	URL::unescape(s);
+    URL::unescape(s);
 #endif
-    };
+}
 
+void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
     amap.clear();
     while (buf) {
 	char *rest = strchr(buf, '&');
@@ -587,6 +613,13 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
 	}
 	buf = rest;
     }
+}
+
+void HTTPServerSocket::configure(const Config &cfg) {
+    tstring dir(cfg.get(T("installdir")));
+
+    docroot = tstringtoastring(cfg.get(T("docroot"), dir.empty() ?
+	tstring(T("htdocs")) : dir + T("/htdocs"), section()));
 }
 
 void HTTPServerSocket::keepalive(void) {
@@ -671,6 +704,23 @@ void HTTPServerSocket::senddone() {
 	readable(readhdrs, rto);
 }
 
+// REST resource: the first segment or api/[vN/]resource
+string_view HTTPServerSocket::resource(string_view p) {
+    size_t end;
+
+    if (p.starts_with('/'))
+	p.remove_prefix(1);
+    end = p.find('/');
+    if (end != p.npos && p.substr(0, end) == "api") {
+	size_t next = p.find('/', end + 1);
+
+	if (next != p.npos && p[end + 1] == 'v' && isdigit((uchar)p[end + 2]))
+	    next = p.find('/', next + 1);
+	end = next;
+    }
+    return p.substr(0, end);
+}
+
 void HTTPServerSocket::reply(const char *p, ulong len) {
     char key[64];
     char *k = key;
@@ -692,19 +742,31 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     iov[1].iov_len = nobody ? 0 : (iovlen_t)ss.size();
     iov[2].iov_base = (char *)p;		// NOSONAR
     iov[2].iov_len = nobody ? 0 : (iovlen_t)len;
-    // Timing keeps every key forever: only 2xx replies use the client's path
+    if (_status >= 100 && _status < 600)
+	stats.codes[_status / 100 - 1].fetch_add(1, memory_order_relaxed);
+    stats.durations[ranges::lower_bound(DurationBounds, (double)elapsed /
+	1e6) - DurationBounds].fetch_add(1, memory_order_relaxed);
+    stats.duration.fetch_add(elapsed, memory_order_relaxed);
+    if (postsz != (ulong)-1)
+	stats.rxbytes.fetch_add(postsz, memory_order_relaxed);
+    stats.txbytes.fetch_add(iov[0].iov_len + iov[1].iov_len + iov[2].iov_len,
+	memory_order_relaxed);
+    // Timing keeps every key forever: only 2xx API replies use a path prefix
     if (_status >= 200 && _status < 300) {
+	const string_view res(staticfile ? "file" : resource(path));
+
 	for (const char *s = cmd; *s && k < last; s++)
 	    *k++ = (char)tolower((uchar)*s);
 	for (const char *s = "::"; *s && k < last; s++)
 	    *k++ = *s;
-	for (const char *s = path + (*path == '/' ? 1 : 0); *s && k < last; s++)
-	    *k++ = *s;
+	for (size_t u = 0; u < res.size() && k < last; ++u)
+	    *k++ = res[u];
     } else {
 	memcpy(key, "http::", 6);
 	k = to_chars(key + 6, last, _status).ptr;
     }
     *k = '\0';
+    staticfile = false;
 #ifdef UNICODE
     dtiming.add(achartowstring(string_view(key, (size_t)(k - key))).c_str(),
 	elapsed);
@@ -766,6 +828,38 @@ void HTTPServerSocket::reply(int fd, ulong len) {
     reply(fmap, len);
 }
 
+void HTTPServerSocket::sendmetrics(bool close) {
+    const char *val = arg("timing");
+    string q(argdata);
+    size_t top = 50;
+    PrometheusWriter w(attr("accept"));
+
+    w.labels(dspr.config());
+    if (val)
+	(void)from_chars(val, val + strlen(val), top);
+    // name[] may repeat so scan the raw query
+    for (char *p = q.data(), *rest; p && *p; p = rest) {
+	char *eq;
+
+	if ((rest = strchr(p, '&')) != nullptr)
+	    *rest++ = '\0';
+	if ((eq = strchr(p, '=')) == nullptr)
+	    continue;
+	*eq++ = '\0';
+	unescape(p);
+	if (!strcmp(p, "name[]")) {
+	    unescape(eq);
+	    w.filter(eq);
+	}
+    }
+    metrics(w);
+    if (top)
+	w.timing(dtiming, top);
+    status(200, w.contenttype(), 0, nullptr, close);
+    *this << w.finish();
+    reply();
+}
+
 void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     char *str, bool close) {
     char dt[30];
@@ -809,14 +903,49 @@ void HTTPServerSocket::done() {
     erase();
 }
 
+void HTTPServerSocket::metrics(PrometheusWriter &w) const {
+    static constexpr PrometheusLabel codes[] = {
+	{"code", "1xx"}, {"code", "2xx"}, {"code", "3xx"}, {"code", "4xx"},
+	{"code", "5xx"}
+    };
+    array<ulong, std::size(stats.durations)> durations;
+
+    for (size_t i = 0; i < std::size(durations); ++i)
+	durations[i] = stats.durations[i].load(memory_order_relaxed);
+    w.counter({"http_accepted_connections", "Accepted HTTP connections"},
+	stats.accepted.load(memory_order_relaxed));
+    w.gauge({"http_connections", "Open HTTP connections"},
+	(double)stats.conns.load(memory_order_relaxed));
+    for (size_t i = 0; i < std::size(codes); ++i)
+	w.counter({"http_requests", "HTTP requests by status class"},
+	    stats.codes[i].load(memory_order_relaxed), {codes[i]});
+    w.histogram({"http_request_duration", "HTTP request duration",
+	"seconds"}, DurationBounds, durations, (double)stats.duration.load(
+	memory_order_relaxed) / 1e6);
+    w.counter({"http_request_body", "HTTP request body size", "bytes"},
+	stats.rxbytes.load(memory_order_relaxed));
+    w.counter({"http_response", "HTTP response size", "bytes"},
+	stats.txbytes.load(memory_order_relaxed));
+    cntrstats.report(w);
+    gaugestats.report(w);
+    gdstats.report(w);
+    sumstats.report(w);
+    tdstats.report(w);
+}
+
 void HTTPServerSocket::get(bool head) {
     const char *ext, *val;
     int fd;
-    string s(1, '.');
+    string s(docroot);
     time_t since;
     struct stat statbuf;
     uint sts = 200;
 
+    if (!strcmp(path, "/metrics")) {
+	sendmetrics();
+	return;
+    }
+    staticfile = true;
 #ifdef _WIN32
     if (string_view(path).contains('\\')) {
 	error(403);
@@ -978,3 +1107,486 @@ const char *HTTPServerSocket::mimetype(const char *ext) const {
     return "application/octet-stream";
 }
 
+// UNIX loaders may try to construct static objects > 1 time
+template<PrometheusWriter::Type T>
+static PrometheusMetrics &registry(void) {
+    static constexpr double MsecBounds[] = {
+	5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000
+    };
+    static PrometheusMetrics metrics(T, T == PrometheusWriter::Histogram ||
+	T == PrometheusWriter::GaugeHistogram ? span(MsecBounds) :
+	span<const double>());
+
+    return metrics;
+}
+
+PrometheusMetrics &cntrstats(registry<PrometheusWriter::Counter>());
+PrometheusMetrics &gaugestats(registry<PrometheusWriter::Gauge>());
+PrometheusMetrics &gdstats(registry<PrometheusWriter::GaugeHistogram>());
+PrometheusMetrics &sumstats(registry<PrometheusWriter::Summary>());
+PrometheusMetrics &tdstats(registry<PrometheusWriter::Histogram>());
+string_view PrometheusWriter::pfx;
+
+// the first OpenMetrics entry wins, else the first text one
+PrometheusWriter::PrometheusWriter(const char *accept) {
+    string_view a(accept ? accept : ""), pick;
+
+    while (!a.empty()) {
+	size_t comma = a.find(',');
+	string_view e(a.substr(0, comma)), type(e.substr(0, e.find(';')));
+
+	a = comma == a.npos ? string_view() : a.substr(comma + 1);
+	type.remove_prefix(min(type.find_first_not_of(' '), type.size()));
+	if (type.starts_with("application/openmetrics-text")) {
+	    om = true;
+	    pick = e;
+	    break;
+	} else if (pick.empty() && type.starts_with("text/plain")) {
+	    pick = e;
+	}
+    }
+    if (size_t pos = pick.find("escaping="); pos != pick.npos)
+	esc = pick.substr(pos + 9).starts_with("allow-utf-8") ? Utf8 :
+	    Underscores;
+}
+
+const char *PrometheusWriter::contenttype(void) const {
+    static constexpr const char *types[2][3] = {
+	{
+	    "text/plain; version=0.0.4; charset=utf-8",
+	    "text/plain; version=0.0.4; charset=utf-8; escaping=underscores",
+	    "text/plain; version=0.0.4; charset=utf-8; escaping=allow-utf-8"
+	}, {
+	    "application/openmetrics-text; version=1.0.0; charset=utf-8",
+	    "application/openmetrics-text; version=1.0.0; charset=utf-8; "
+		"escaping=underscores",
+	    "application/openmetrics-text; version=1.0.0; charset=utf-8; "
+		"escaping=allow-utf-8"
+	}
+    };
+
+    return types[om][esc];
+}
+
+void PrometheusWriter::counter(const PrometheusFamily &f, ullong val,
+    PrometheusLabels labels) {
+    family(f, Counter);
+    sample("_total", labels, val);
+}
+
+void PrometheusWriter::distribution(Type type, span<const double> bounds,
+    span<const ulong> counts, double sum, PrometheusLabels labels) {
+    bool gauge = type == GaugeHistogram;
+    ulong cnt = 0;
+    string le;
+
+    for (size_t i = 0; i < counts.size(); ++i) {
+	cnt += counts[i];
+	le.clear();
+	if (i < bounds.size())
+	    number(le, bounds[i]);
+	else
+	    le = "+Inf";
+	sample("_bucket", labels, cnt, {{"le", le}});
+    }
+    sample(gauge ? "_gcount" : "_count", labels, cnt);
+    sample(gauge ? "_gsum" : "_sum", labels, sum);
+}
+
+void PrometheusWriter::escape(string &s, string_view val) {
+    for (char c : val) {
+	if (c == '"' || c == '\\' || c == '\n')
+	    s += '\\';
+	s += c == '\n' ? 'n' : c;
+    }
+}
+
+void PrometheusWriter::family(const PrometheusFamily &f, Type type) {
+    static constexpr const char *types[] = {
+	"counter", "gauge", "gaugehistogram", "histogram", "info", "stateset",
+	"summary"
+    };
+    static constexpr string_view suffixes[] = {
+	"_total", "", "", "", "_info", "", ""
+    };
+    auto out = back_inserter(s);
+    string n(pfx);
+    string qname;
+    string_view sfx(suffixes[type]);
+    const char *tname = types[type];
+
+    n += f.name;
+    if (esc != Utf8 && !PrometheusStr::legacy(n, true))
+	n = underscore(n, true);
+    if (n.ends_with(sfx))
+	n.resize(n.size() - sfx.size());
+    if (!f.unit.empty() && !n.ends_with(format("_{}", f.unit)))
+	format_to(back_inserter(n), "_{}", f.unit);
+    if (n == name && type == cur)
+	return;
+    cur = type;
+    name = std::move(n);
+    quote = esc == Utf8 && !PrometheusStr::legacy(name, true);
+    skip = !names.empty() && ranges::none_of(names, [&](const string &m) {
+	return m == name || (m.starts_with(name) && m.substr(name.size()) ==
+	    sfx);
+    });
+    if (skip)
+	return;
+    // text 0.0.4 names families by sample and lacks the OpenMetrics types
+    if (om) {
+	sfx = {};
+    } else if (type == GaugeHistogram) {
+	tname = "histogram";
+    } else if (type == Info || type == StateSet) {
+	tname = "gauge";
+    }
+    if (quote) {
+	qname = '"';
+	escape(qname, name);
+	qname += sfx;
+	qname += '"';
+    } else {
+	qname = name;
+	qname += sfx;
+    }
+    if (!f.help.empty())
+	format_to(out, "# HELP {} {}\n", qname, f.help);
+    format_to(out, "# TYPE {} {}\n", qname, tname);
+    if (om && !f.unit.empty())
+	format_to(out, "# UNIT {} {}\n", qname, f.unit);
+}
+
+const string &PrometheusWriter::finish(void) {
+    if (om)
+	s += "# EOF\n";
+    return s;
+}
+
+void PrometheusWriter::gauge(const PrometheusFamily &f, double val,
+    PrometheusLabels labels) {
+    family(f, Gauge);
+    sample("", labels, val);
+}
+
+void PrometheusWriter::info(const PrometheusFamily &f, PrometheusLabels
+    labels) {
+    family(f, Info);
+    sample("_info", labels, 1);
+}
+
+void PrometheusWriter::labelname(string &str, string_view n) const {
+    if (PrometheusStr::legacy(n, false)) {
+	str += n;
+    } else if (esc == Utf8) {
+	str += '"';
+	escape(str, n);
+	str += '"';
+    } else {
+	str += underscore(n, false);
+    }
+}
+
+void PrometheusWriter::labels(const Config &cfg) {
+    const tstring keys(cfg.get(T("prometheus.labels")));
+
+    for (tstring_view v(keys); !v.empty(); ) {
+	size_t comma = v.find(',');
+	tstring_view n(v.substr(0, comma));
+	tstring val;
+
+	v = comma == v.npos ? tstring_view() : v.substr(comma + 1);
+	n.remove_prefix(min(n.find_first_not_of(T(" \t")), n.size()));
+	n = n.substr(0, n.find_last_not_of(T(" \t")) + 1);
+	if (n.empty() || (val = cfg.get(tstring(T("prometheus.label.")) +=
+	    n)).empty())
+	    continue;
+	if (!tags.empty())
+	    tags += ',';
+	labelname(tags, tstringtoastring(tstring(n)));
+	tags += "=\"";
+	escape(tags, tstringtoastring(val));
+	tags += '"';
+    }
+}
+
+void PrometheusWriter::number(string &s, double val) {
+    size_t len = s.size();
+
+    format_to(back_inserter(s), "{:.6f}", val);
+    while (s.size() > len && s.back() == '0')
+	s.pop_back();
+    if (s.size() > len && s.back() == '.')
+	s.pop_back();
+}
+
+void PrometheusWriter::putlabel(const PrometheusLabel &l) {
+    if (l.name.flags & PrometheusStr::Name)
+	s += l.name;
+    else
+	labelname(s, l.name);
+    s += "=\"";
+    if (l.value.flags & PrometheusStr::Clean)
+	s += l.value;
+    else
+	escape(s, l.value);
+    s += '"';
+}
+
+template<class V>
+void PrometheusWriter::sample(string_view suffix, PrometheusLabels labels,
+    V val, PrometheusLabels extra) {
+    auto out = back_inserter(s);
+    bool comma = !tags.empty();
+    const bool lbls = comma || !labels.empty() || !extra.empty();
+
+    if (skip)
+	return;
+    // a quoted name moves inside the braces
+    if (quote) {
+	s += "{\"";
+	escape(s, name);
+	s += suffix;
+	s += lbls ? "\"," : "\"";
+    } else {
+	s += name;
+	s += suffix;
+	if (lbls)
+	    s += '{';
+    }
+    s += tags;
+    for (PrometheusLabels ls : {labels, extra}) {
+	for (const PrometheusLabel &l : ls) {
+	    if (comma)
+		s += ',';
+	    comma = true;
+	    putlabel(l);
+	}
+    }
+    if (quote || lbls)
+	s += '}';
+    if constexpr (is_floating_point_v<V>) {
+	// -ffast-math folds isnan/isinf to false
+	auto bits = bit_cast<uint64_t>((double)val);
+
+	if ((bits & 0x7ff0000000000000ULL) == 0x7ff0000000000000ULL) {
+	    s += bits << 12 ? " NaN" : (int64_t)bits < 0 ? " -Inf" : " +Inf";
+	} else {
+	    s += ' ';
+	    number(s, val);
+	}
+	s += '\n';
+    } else {
+	format_to(out, " {}\n", val);
+    }
+}
+
+void PrometheusWriter::stateset(const PrometheusFamily &f,
+    initializer_list<pair<string_view, bool>> states) {
+    family(f, StateSet);
+    for (const auto &[state, on] : states)
+	sample("", {{name, state}}, on ? 1 : 0);
+}
+
+void PrometheusWriter::summary(const PrometheusFamily &f, ullong count,
+    double sum, PrometheusLabels labels) {
+    family(f, Summary);
+    sample("_count", labels, count);
+    sample("_sum", labels, sum);
+}
+
+void PrometheusWriter::timing(const Timing &t, size_t top) {
+    static constexpr auto bounds = [] {
+	array<double, std::size(Timing::Limits)> a{};
+
+	for (size_t i = 0; i < a.size(); ++i)
+	    a[i] = (double)Timing::Limits[i] / 1e6;
+	return a;
+    }();
+    vector<Timing::Row> rows(t.snapshot());
+
+    if (rows.size() > top)
+	rows.resize(top);
+    for (bool timed : {true, false}) {
+	for (const Timing::Row &row : rows) {
+	    ulong cnts[Timing::TIMINGSLOTS];
+#ifdef UNICODE
+	    const string key(tstringtoastring(tstring(row.key, row.klen)));
+#else
+	    const string_view key(row.key, row.klen);
+#endif
+	    const PrometheusLabel lbl{"key", key};
+
+	    if (!row.tot != !timed)
+		continue;
+	    if (!timed) {
+		family({"timing_calls", "Untimed call counts"}, Counter);
+		sample("_total", {lbl}, row.cnt);
+		continue;
+	    }
+	    for (uint u = 0; u < Timing::TIMINGSLOTS; ++u)
+		cnts[u] = (ulong)row.cnts[u];
+	    family({"timing", "Call durations", "seconds"}, Histogram);
+	    distribution(Histogram, bounds, cnts, (double)row.tot / 1e6,
+		{lbl});
+	}
+    }
+}
+
+// one '_' per invalid UTF-8 character, as Prometheus escapes
+string PrometheusWriter::underscore(string_view n, bool metric) {
+    string r;
+
+    if (n.empty() || (n[0] >= '0' && n[0] <= '9'))
+	r += '_';
+    for (char c : n) {
+	if (((uchar)c & 0xc0) != 0x80)
+	    r += PrometheusStr::legacy(c, metric) ? c : '_';
+    }
+    return r;
+}
+
+void PrometheusMetrics::describe(const PrometheusFamily &f,
+    span<const double> b) {
+    FastSpinWLocker lkr(lck);
+    Family &fam = family(f.name);
+
+    if (!b.empty() && fam.series.empty())
+	fam.bounds.assign(b.begin(), b.end());
+    fam.help = f.help;
+    fam.unit = f.unit;
+}
+
+PrometheusMetrics::Family &PrometheusMetrics::family(const PrometheusStr
+    &name) {
+    auto [it, added] = fams.try_emplace(name.key());
+    Family &fam = it->second;
+
+    if (added) {
+	fam.bounds.assign(defbounds.begin(), defbounds.end());
+	fam.name = name;
+    }
+    return fam;
+}
+
+void PrometheusMetrics::report(PrometheusWriter &w) const {
+    FastSpinRLocker lkr(lck);
+    vector<const Family *> sorted;
+
+    sorted.reserve(fams.size());
+    for (const auto &[hash, fam] : fams) {
+	if (!fam.series.empty())
+	    sorted.push_back(&fam);
+    }
+    ranges::sort(sorted, {}, [](const Family *f) -> const string & {
+	return f->name;
+    });
+    for (const Family *fam : sorted) {
+	w.family({fam->name, fam->help, fam->unit}, type);
+	for (const Series *ser : fam->series) {
+	    const PrometheusLabels lbls(ser->labels.data(), ser->labels.size());
+	    llong sum = (llong)ser->sum.load(memory_order_relaxed);
+
+	    if (type == PrometheusWriter::Counter) {
+		w.sample("_total", lbls, sum);
+	    } else if (type == PrometheusWriter::Gauge) {
+		w.sample("", lbls, sum);
+	    } else if (type == PrometheusWriter::Summary) {
+		w.sample("_count", lbls, ser->cnts[0].load(
+		    memory_order_relaxed));
+		w.sample("_sum", lbls, sum);
+	    } else {
+		vector<ulong> cnts(fam->bounds.size() + 1);
+
+		for (size_t i = 0; i < cnts.size(); ++i)
+		    cnts[i] = ser->cnts[i].load(memory_order_relaxed);
+		w.distribution(type, fam->bounds, cnts, (double)sum, lbls);
+	    }
+	}
+    }
+}
+
+PrometheusMetrics::Series *PrometheusMetrics::series(const PrometheusStr
+    &name, PrometheusLabels labels, strhash_t hash) {
+    {
+	FastSpinRLocker lkr(lck);
+
+	if (auto it = smap.find(hash); it != smap.end())
+	    return &it->second;
+    }
+
+    FastSpinWLocker lkr(lck);
+    auto [it, added] = smap.try_emplace(hash);
+    Series &ser = it->second;
+    Family &fam = family(name);
+    size_t len = 0;
+
+    if (!added)
+	return &ser;
+    for (const PrometheusLabel &l : labels)
+	len += l.name.size() + l.value.size();
+    // reserved so the label views stay valid
+    ser.text.reserve(len);
+    for (const PrometheusLabel &l : labels) {
+	size_t pos = ser.text.size();
+	auto own = [&](size_t off, size_t n) {
+	    PrometheusStr str(string_view(ser.text).substr(off, n));
+
+	    str.hash = charhash(str.data(), str.size());
+	    str.flags = PrometheusStr::classify(str);
+	    return str;
+	};
+
+	ser.text += l.name;
+	ser.text += l.value;
+	ser.labels.push_back({own(pos, l.name.size()), own(pos +
+	    l.name.size(), l.value.size())});
+    }
+    ser.cnts = make_unique<atomic<ulong>[]>(fam.bounds.size() + 1);
+    ser.fam = &fam;
+    ser.hash = hash;
+    fam.series.push_back(&ser);
+    return &ser;
+}
+
+const PrometheusLabel &PrometheusMetrics::sizelabel(ullong size) {
+    static constexpr ullong limits[] = {
+	0, 32ULL << 10, 128ULL << 10, 512ULL << 10, 2ULL << 20, 8ULL << 20,
+	32ULL << 20, 128ULL << 20, 1ULL << 40
+    };
+    static constexpr PrometheusLabel labels[] = {
+	{"size", "0"}, {"size", "0-32Kb"}, {"size", "32Kb-128Kb"},
+	{"size", "128Kb-512Kb"}, {"size", "512Kb-2Mb"}, {"size", "2Mb-8Mb"},
+	{"size", "8Mb-32Mb"}, {"size", "32Mb-128Mb"}, {"size", "128Mb-1Tb"},
+	{"size", "infinite"}
+    };
+
+    return labels[ranges::lower_bound(limits, size) - limits];
+}
+
+void PrometheusMetrics::update(const PrometheusStr &name, llong val,
+    PrometheusLabels labels, Op op) {
+    strhash_t hash = name.key();
+    Series *ser;
+
+    for (const PrometheusLabel &l : labels)
+	hash = rapidmix(hash ^ l.name.key(), l.value.key() ^ RAPID_SECRET0);
+    ser = cache[hash & (CACHESIZE - 1)].load(memory_order_acquire);
+    if (UNLIKELY(!ser || ser->hash != hash)) {
+	ser = series(name, labels, hash);
+	cache[hash & (CACHESIZE - 1)].store(ser, memory_order_release);
+    }
+    if (op == Set) {
+	ser->sum.store((ullong)val, memory_order_relaxed);
+    } else {
+	ser->sum.fetch_add((ullong)(op == Add ? val : -val),
+	    memory_order_relaxed);
+	if (type == PrometheusWriter::Summary)
+	    ser->cnts[0].fetch_add(1, memory_order_relaxed);
+	else if (type == PrometheusWriter::Histogram ||
+	    type == PrometheusWriter::GaugeHistogram)
+	    ser->cnts[(size_t)(ranges::lower_bound(ser->fam->bounds,
+		(double)val) - ser->fam->bounds.begin())].fetch_add(op == Add ?
+		1 : (ulong)-1, memory_order_relaxed);
+    }
+}

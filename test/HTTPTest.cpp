@@ -18,10 +18,10 @@
 #include "stdapi.h"
 #include <fcntl.h>
 #include <signal.h>
-#include <sys/stat.h>
 #ifndef _WIN32
 #include <sys/resource.h>
 #endif
+#include <sys/stat.h>
 #include "Config.h"
 #include "Dispatch.h"
 #include "Log.h"

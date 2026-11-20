@@ -19,10 +19,10 @@
 #include <fcntl.h>
 #include <random>
 #include <signal.h>
-#include <sys/stat.h>
 #ifndef _WIN32
 #include <sys/resource.h>
 #endif
+#include <sys/stat.h>
 #include "Config.h"
 #include "Dispatch.h"
 #include "Log.h"

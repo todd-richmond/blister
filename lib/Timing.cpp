@@ -18,8 +18,8 @@
 #include "stdapi.h"
 #include <algorithm>
 #include <format>
-#include "Timing.h"
 #include "Log.h"
+#include "Timing.h"
 
 // UNIX loaders may try to construct static objects > 1 time
 static Timing &_dtiming(void) {
@@ -30,8 +30,7 @@ static Timing &_dtiming(void) {
 
 Timing &dtiming(_dtiming());
 
-Timing::Stats *Timing::Stats::newstats(const tchar *k, uint klen, strhash_t
-    h) {
+Timing::Stats *Timing::Stats::newstats(const tchar *k, uint klen, strhash_t h) {
     Stats *s;
 
     if (!klen)
@@ -62,12 +61,7 @@ void Timing::release(Stats *s) {
 void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
     uint idx = hash & (CACHESIZE - 1);
     Stats *stats;
-    static constexpr timing_t limits[TIMINGSLOTS - 1] = {
-	10, 100, 1000, 10000, 100000, 1000000, 5000000, 10000000, 30000000
-    };
-    const auto slot = ranges::find_if(limits, [=](timing_t l) {
-	return diff < l;
-    }) - limits;
+    const auto slot = ranges::lower_bound(Limits, diff) - Limits;
 
     stats = cache[idx].load(memory_order_acquire);
     // the adjacent slot absorbs a cache collision between 2 hot keys
@@ -120,45 +114,22 @@ void Timing::clear() {
 }
 
 tstring Timing::data(bool sort_key, uint columns) const {
-    // snapshot so sorting and each row see stable values
-    struct Row {
-	const Stats *stats = nullptr;
-	uint64_t tot = 0, cnt = 0;
-	uint64_t cnts[TIMINGSLOTS] = {};
-    };
     uint begin = 0, last = 0;
     tstring s;
-    vector<Row> rows;
+    vector<Row> rows(snapshot(sort_key));
     static constexpr const tchar *hdrs[TIMINGSLOTS] = {
 	T("10u"), T(".1m"), T("1m"), T("10m"), T(".1s"), T("1s"),
 	T("5s"), T("10s"), T("30s"), T("...")
     };
 
     columns = min(columns, TIMINGSLOTS);
-    lck.lock_shared();
-    rows.reserve(tmap.size());
-    for (const auto &[key, stats] : tmap) {
-	Row &row = rows.emplace_back();
-
-	row.stats = stats;
-	row.tot = stats->tot.load(memory_order_relaxed);
-	for (uint u = 0; u < TIMINGSLOTS; ++u) {
-	    row.cnts[u] = stats->cnts[u].load(memory_order_relaxed);
-	    row.cnt += row.cnts[u];
-	    if (row.cnts[u] && u > last)
+    for (const Row &row : rows) {
+	for (uint u = TIMINGSLOTS; u-- > last; ) {
+	    if (row.cnts[u]) {
 		last = u;
+		break;
+	    }
 	}
-    }
-    lck.unlock_shared();
-    if (sort_key) {
-	ranges::sort(rows, strless{}, [](const Row &r) {
-	    return r.stats->key;
-	});
-    } else {
-	ranges::sort(rows, [](const Row &a, const Row &b) {
-	    return a.tot == b.tot ? stringless(a.stats->key, b.stats->key) :
-		a.tot > b.tot;
-	});
     }
     begin = (!columns || last < columns) ? 0 : last - columns + 1;
     s.reserve(rows.size() * (columns ? 60 : 90) + 200);
@@ -175,14 +146,13 @@ tstring Timing::data(bool sort_key, uint columns) const {
     }
     s += '\n';
     for (const Row &row : rows) {
-	const Stats *stats = row.stats;
 	const uint64_t scnt = row.cnt, tot = row.tot;
 	uint64_t sum = 0;
 
 	if (columns) {
 	    // keep the leaf end of long stack paths
 	    static constexpr size_t MAXKEY = 109;
-	    tstring_view key(stats->key, stats->klen);
+	    tstring_view key(row.key, row.klen);
 	    const tstring cnt = scnt >= 10000000ULL ?
 		std::format(T("{:4}m"), scnt / 1000000) : scnt >= 10000ULL ?
 		std::format(T("{:4}k"), scnt / 1000) :
@@ -198,11 +168,11 @@ tstring Timing::data(bool sort_key, uint columns) const {
 	    else
 		format_to(out, T("{:<35}{:>6}"), key, cnt);
 	} else {
-	    const bool quote = tstrpbrk(stats->key, T(", \t\"")) != nullptr;
+	    const bool quote = tstrpbrk(row.key, T(", \t\"")) != nullptr;
 
 	    if (quote)
 		s += '"';
-	    for (const tchar *p = stats->key; *p; ++p) {
+	    for (const tchar *p = row.key; *p; ++p) {
 		if (*p == '"')
 		    s += '"';
 		s += *p;
@@ -325,4 +295,29 @@ void Timing::stop() {
 	tlsd.path.resize(tlsd.entries.back().pathlen);
 	tlsd.entries.pop_back();
     }
+}
+
+vector<Timing::Row> Timing::snapshot(bool sort_key) const {
+    vector<Row> rows;
+
+    lck.lock_shared();
+    rows.reserve(tmap.size());
+    for (const auto &[hash, stats] : tmap) {
+	Row &row = rows.emplace_back(stats->key, stats->klen);
+
+	row.tot = stats->tot.load(memory_order_relaxed);
+	for (uint u = 0; u < TIMINGSLOTS; ++u) {
+	    row.cnts[u] = stats->cnts[u].load(memory_order_relaxed);
+	    row.cnt += row.cnts[u];
+	}
+    }
+    lck.unlock_shared();
+    if (sort_key) {
+	ranges::sort(rows, strless{}, &Row::key);
+    } else {
+	ranges::sort(rows, [](const Row &a, const Row &b) {
+	    return a.tot == b.tot ? stringless(a.key, b.key) : a.tot > b.tot;
+	});
+    }
+    return rows;
 }

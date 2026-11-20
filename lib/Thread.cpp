@@ -116,25 +116,11 @@ tchar **Process::argv = __argv;
 tchar **Process::envv = _environ;
 #endif
 
-Process Process::start(tchar *const *args, const int *fds) {
+// quote args using CommandLineToArgvW() backslash and quote rules
+tstring Process::cmdline(const tchar * const *args) {
     tstring cmd;
-    PROCESS_INFORMATION proc;
-    STARTUPINFO si;
 
-    ZERO(proc);
-    ZERO(si);
-    si.cb = sizeof (si);
-    if (fds) {				// only support 3 fds
-	si.dwFlags = STARTF_USESTDHANDLES;
-	si.hStdInput = (HANDLE)(ullong)fds[0];
-	if (fds[1] != -1) {
-	    si.hStdOutput = (HANDLE)(ullong)fds[1];
-	    if (fds[2] != -1)
-		si.hStdError = (HANDLE)(ullong)fds[2];
-	}
-    }
-    // quote args using CommandLineToArgvW() backslash and quote rules
-    for (tchar * const *a = args; *a; ++a) {
+    for (const tchar * const *a = args; *a; ++a) {
 	const tchar *s = *a;
 
 	if (a != args)
@@ -159,6 +145,26 @@ Process Process::start(tchar *const *args, const int *fds) {
 	    cmd += *s;
 	}
 	cmd += T('"');
+    }
+    return cmd;
+}
+
+Process Process::start(tchar *const *args, const int *fds) {
+    tstring cmd(cmdline(args));
+    PROCESS_INFORMATION proc;
+    STARTUPINFO si;
+
+    ZERO(proc);
+    ZERO(si);
+    si.cb = sizeof (si);
+    if (fds) {				// only support 3 fds
+	si.dwFlags = STARTF_USESTDHANDLES;
+	si.hStdInput = (HANDLE)(ullong)fds[0];
+	if (fds[1] != -1) {
+	    si.hStdOutput = (HANDLE)(ullong)fds[1];
+	    if (fds[2] != -1)
+		si.hStdError = (HANDLE)(ullong)fds[2];
+	}
     }
     if (CreateProcess(NULL, cmd.data(), NULL, NULL, TRUE, // NOSONAR
 	0, NULL, NULL, &si, &proc)) {

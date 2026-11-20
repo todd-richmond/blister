@@ -2,23 +2,23 @@
 
 The Blister library. Link against `libblister`.
 
-- `stdapi.h` — portability foundation, included first by every source file. POSIX emulation on Windows, the `tchar` generic-text layer, the `BLISTER` export macro, fast hash/parse/compare helpers and intrusive lists.
-- `Dispatch` — epoll/kqueue/devpoll/poll reactor. A hierarchy of event, timer and socket objects; `SimpleDispatchListenSocket<D, C>` spawns a handler per accepted connection. New reactor types should extend it.
-- `Thread` — threads, thread groups, spin/ticket/unfair/standard locks, semaphores and thread-local storage.
-- `Socket` — cross-platform sockets, addresses, CIDR matching, poll sets and iostream adapters.
+- `stdapi.h` — portability base included first: Windows POSIX emulation, `tchar` layer, `BLISTER` export macro, hash/parse/compare helpers, intrusive lists.
+- `Dispatch` — epoll/kqueue/devpoll/poll reactor of event, timer and socket objects; `SimpleDispatchListenSocket<D, C>` spawns a `C` per connection.
+- `Thread` — threads, thread groups, locks, semaphores and thread-local storage.
+- `Socket` — sockets, addresses, CIDR matching, poll sets and iostream adapters; `SocketLayer` is an optional stream transform such as TLS.
 - `Streams.h` — fast stream buffers and in-memory streams.
-- `Config` — thread-safe property/ini parser with prefix scoping, `${key}` expansion and typed get/set.
+- `Config` — thread-safe property/ini parser with prefixes, `${key}` expansion and typed get/set.
 - `Log` — rolling, multi-process-safe logging with syslog and mail alerts.
 - `Timing` — low-overhead call-duration profiling.
-- `Service` — one API for Windows services and Unix daemons.
-- `HTTPClient` — blocking HTTP client, non-blocking pipelining `AsyncHTTPClient`, URL parser and HTTP date parsing.
-- `HTTPServer` — HTTP/1.x server on the reactor with keep-alive, chunking and file replies.
-- `SMTPClient` — blocking SMTP/LMTP client with SMTPUTF8, pipelining and BDAT, RFC 821/822 address parsers, and base64, quoted-printable, uuencode and xxencode codecs with AVX2 paths. `AsyncSMTPClient` waits for RCPT and end-of-message replies in a `Dispatcher` instead of a thread.
+- `Service` — Windows services and Unix daemons. A watcher runs `worker.count` workers and restarts them on exit, hang, memory limits or a failed `check()`; Unix forks them, Windows 11+ spawns processes that rerun `onInit()` and inherit `onSpawn()` handles.
+- `HTTPClient` — blocking and pipelining async HTTP clients, URL and date parsing.
+- `HTTPServer` — HTTP/1.x server with keep-alive, chunking and file replies from `http.docroot` (default `${installdir}/htdocs`). `GET /metrics` serves Prometheus/OpenMetrics: HTTP stats, top `timing=N` Timing keys, `name[]=` filter and `prometheus.label.*` default labels; extend via `metrics()` or the `cntrstats`, `gaugestats`, `gdstats`, `sumstats` and `tdstats` registries.
+- `MPHTTPServer` — prefork HTTP/HTTPS server (`libblistertls`): workers recycle after `worker.maxrequests`; `/check`, `/metrics`, `/timing` and `/version`; `ShMemHTTPSocket` takes POST data from a file, SysV shared memory or a Windows file mapping.
+- `SMTPClient` — blocking and async SMTP/LMTP clients (SMTPUTF8, pipelining, BDAT), address parsers and MIME codecs.
 - `LRUCache.h` — size, count and time-bounded LRU cache.
-- `ResourcePool.h` — header-only `ResourcePool<C>` (blocking) and `AsyncResourcePool<C>` (`Dispatcher`-integrated) pools of lazily created, shareable resources.
-- `Socket` `SocketLayer` — optional stream transform (TLS) owned by a socket: `Socket` I/O and `DispatchSocket` polls go through it, `handshake()` starts it.
-- `Unix.c`, `Windows.cpp`, `Version.rc` — platform implementations behind `stdapi.h`.
+- `ResourcePool.h` — blocking and `Dispatcher`-integrated pools of lazily created resources.
+- `Unix.c`, `Windows.cpp`, `Version.rc` — platform implementations.
 
-`libblistertls` (SChannel on Windows, else OpenSSL 3 when found) depends on `libblister`. It is always built: without SChannel or OpenSSL the same API exists but a server `init()` with `tls.enable` and every `layer()` fail, so clients and servers that enable TLS fail instead of running in plaintext:
-- `TLSSocket` — `TLSContext` loads `tls.*` keys and installs an OpenSSL `SocketLayer` on any socket. A server without a cert self-signs a PEM `~/.ssh/id_*` or ephemeral key. Clients verify the server chain and name or IP unless `tls.verify` is false (the test programs turn it off) and resume sessions per host and peer address. `tls.groups` sets key exchange groups. `tls.ktls` (default false; it slows small writes) moves record crypto into the kernel when libssl is built with `enable-ktls` and the `tls` module is loaded, else falls back. On Windows `tls.certfile` is a PKCS#12 file (`tls.password`) or a subject in the user's `MY` store, the default server key is a persisted `Blister TLS` CNG key, and OpenSSL-only keys (`tls.cacertpath`, `tls.cipherlist`, `tls.ciphersuites`, `tls.crlpath`, `tls.groups`, `tls.keyfile`, `tls.options`) fail `init()`.
-  Also `HTTPTLSServer` (HTTPS when its `tlsctx` has `http.tls.enable`), `HTTPTLSClient` and `AsyncHTTPTLSClient` (TLS at connect for `tls(true)` or `configure(cfg, sect)` with `sect.tls.enable`; `starttls()` upgrades an open connection), and `SMTPTLSClient` / `AsyncSMTPTLSClient` (`SMTPTLSClientT<B>`): SMTPS at connect for `sect.tls.enable`, and with `sect.starttls.enable` `ehlo()`/`lhlo()` run STARTTLS and greet again, failing if the server doesn't offer it. Clients stay plain until configured, so a process can mix TLS and plain clients by section.
+`libblistertls` (SChannel on Windows, else OpenSSL 3) depends on `libblister`. Without either, enabling TLS fails instead of running in plaintext.
+- `TLSSocket` — `TLSContext` loads `tls.*` keys and adds a TLS `SocketLayer` to any socket. Servers without a cert self-sign; clients verify unless `tls.verify` is false; `tls.ktls` enables kernel TLS. On Windows `tls.certfile` is PKCS#12 or a `MY` store subject and OpenSSL-only keys fail `init()`.
+- `HTTPTLSServer`, `HTTPTLSClient`, `AsyncHTTPTLSClient`, `SMTPTLSClient` and `AsyncSMTPTLSClient` enable TLS per config section: `<sect>.tls.enable`, or `<sect>.starttls.enable` for SMTP.

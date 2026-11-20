@@ -17,87 +17,90 @@
 
 #include "stdapi.h"
 #include "Log.h"
+#include "MPHTTPServer.h"
 #include "TLSSocket.h"
 
-class HTTPDaemonSocket: public HTTPTLSServer {
-public:
-    using HTTPTLSServer::HTTPTLSServer;
-
-    static void pause(bool p) { paused = p; }
-
-protected:
-    static inline atomic paused = false;
-
-    void exec(void) override {
-	if (paused) {
-	    error(503);
-	    return;
-	}
-	HTTPTLSServer::exec();
-    }
-};
-
-class HTTPDaemon: public Daemon {
-public:
-    HTTPDaemon(const tchar *svc_name, const tchar *display):
-	Daemon(svc_name, display), dspr(cfg) {}
-
-protected:
-    Dispatcher dspr;
-
-    void onPause(void) override {
-	HTTPDaemonSocket::pause(true);
-	Daemon::onPause();
-    }
-    void onResume(void) override {
-	HTTPDaemonSocket::pause(false);
-	Daemon::onResume();
-    }
-    int onStart(int argc, const tchar * const *argv) override;
-    void onStop(bool fast) override { dspr.stop(); Daemon::onStop(fast); }
-};
-
-int HTTPDaemon::onStart(int argc, const tchar * const *argv) {
-    tchar buf[32];
+// -p port, -s for TLS; fills addr and loads the TLS context
+static bool init(Config &cfg, int argc, const tchar * const *argv,
+    tchar (&addr)[32]) {
     tstring err;
     ushort port = 8080;
-    int ret = Daemon::onStart(argc, argv);
 
-    if (ret)
-	return ret;
     for (int i = 1; i < argc; ++i) {
 	if (!tstrcmp(argv[i], T("-p")) && i < argc - 1)
 	    port = (ushort)ttoi(argv[++i]);
 	else if (!tstrcmp(argv[i], T("-s")))
 	    cfg.set(T("tls.enable"), true, HTTPServerSocket::section());
     }
-    if (!HTTPTLSServer::tlsctx.init(cfg, HTTPServerSocket::section(),
-	err)) {
-	dloge(name, Log::error(err));
-	return -1;
+    tsprintf(addr, T("*:%u"), (uint)port);
+    if (!HTTPTLSServer::tlsctx.init(cfg, HTTPServerSocket::section(), err)) {
+	dloge(Log::mod(T("httpd")), Log::error(err));
+	return false;
     }
-    tsprintf(buf, T("*:%u"), (uint)port);
-    if (!dspr.start()) {
-	dloge(name, Log::error(T("unable to start")));
-	return -1;
-    }
-
-    WARN_PUSH_DISABLE(26403)
-    auto *hsock = new SimpleDispatchListenSocket<Dispatcher,
-	HTTPDaemonSocket>(dspr);
-    WARN_POP()
-
-    if (!hsock->listen(buf)) {
-	delete hsock;
-	dspr.stop();
-	return -1;
-    }
-    setids();
-    running();
-    dspr.waitForMain();
-    // cppcheck-suppress memleak
-    return 0;	//-V773
+    return true;
 }
+
+/*
+ * Files plus MPHTTPServer endpoints, GET /pid naming the worker and POST
+ * replies with the body size and checksum, over TLS with -s.
+ * httpd.worker.count > 1 starts prefork workers sharing the listen socket
+ */
+class HTTPDaemonSocket: public ShMemHTTPSocket {
+public:
+    using ShMemHTTPSocket::ShMemHTTPSocket;
+
+protected:
+    void get(bool head) override {
+	static constexpr const char *mppaths[] = {
+	    "/check", "/metrics", "/timing", "/version"
+	};
+
+	if (!strcmp(path, "/pid")) {
+	    status(200, "text/plain", 0, nullptr, mpdspr().complete());
+	    *this << getpid();
+	    reply();
+	} else if (ranges::any_of(mppaths, [this](const char *p) {
+	    return !strcmp(path, p);
+	})) {
+	    MPHTTPSocket::get(head);
+	} else {
+	    // skip MPHTTPSocket's 404 to serve files
+	    // NOLINTNEXTLINE(bugprone-parent-virtual-call)
+	    HTTPServerSocket::get(head);
+	}
+    }
+    bool onPost(const char *name, void *mem, ulong len) override {
+	const auto *p = (const uchar *)mem;
+	ulong sum = 0;
+
+	for (ulong u = 0; u < len; ++u)
+	    sum += p[u];
+	status(200, "text/plain", 0, nullptr, mpdspr().complete());
+	*this << name << ' ' << len << ' ' << sum;
+	reply();
+	return true;
+    }
+};
+
+class HTTPDaemon: public MPHTTPDaemon {
+public:
+    HTTPDaemon(const tchar *svc_name, const tchar *display):
+	MPHTTPDaemon(svc_name, display, mpd), mpd(cfg) {
+	nworkers = 1;
+    }
+
+protected:
+    MPHTTPDispatcher mpd;
+
+    // watcher binds once; workers share or inherit its socket
+    int onInit(int argc, const tchar * const *argv) override {
+	tchar buf[32];
+
+	return init(cfg, argc, argv, buf) && mpd.listen(new
+	    SimpleMPHTTPListenSocket<MPHTTPDispatcher, HTTPDaemonSocket>(mpd),
+	    buf) ? 0 : -1;
+    }
+};
 
 int tmain(int argc, const tchar * const argv[]) {
     HTTPDaemon hd(T("httpd"), T("Test HTTP Server"));

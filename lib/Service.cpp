@@ -18,6 +18,7 @@
 #include "stdapi.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <ranges>
 #include <signal.h>
 #include <time.h>
 #include <sys/stat.h>
@@ -36,6 +37,8 @@
 #endif
 
 static constexpr uint STATUS_LOOPS = 400;
+// the watcher's default stop wait plus time to kill hung workers
+static constexpr uint STOP_LOOPS = 750;
 
 ulong Service::Timer::dmsec = 120000;
 bool Service::aborted;
@@ -173,7 +176,13 @@ bool Service::close() {
 }
 
 int __stdcall Service::ctrl_handler(ulong sig) {
-    if (sig == CTRL_BREAK_EVENT) {
+    ulong ctl = sig == CTRL_C_EVENT ? SERVICE_CONTROL_STOP : sig ==
+	CTRL_BREAK_EVENT ? SERVICE_CONTROL_REFRESH : sig == CTRL_CLOSE_EVENT ||
+	sig == CTRL_SHUTDOWN_EVENT ? SERVICE_CONTROL_EXIT : 0;
+
+    if (ctl && service->onWatch(ctl)) {
+	return 1;
+    } else if (sig == CTRL_BREAK_EVENT) {
 	if (!service->onRefresh())
 	    service->onStop(false);
     } else if (sig == CTRL_C_EVENT) {
@@ -285,6 +294,9 @@ void __stdcall Service::service_handler(ulong sig) {
 }
 
 void Service::handle(ulong sig) {
+    if (sig != SERVICE_CONTROL_ABORT && sig != SERVICE_CONTROL_INTERROGATE &&
+	onWatch(sig))
+	return;
     switch (sig) {
     case SERVICE_CONTROL_SHUTDOWN:
     case SERVICE_CONTROL_STOP:
@@ -310,7 +322,7 @@ void Service::handle(ulong sig) {
 	update(Running);
 	break;
     case SERVICE_CONTROL_INTERROGATE:
-	update((Status)ssStatus.dwCurrentState);
+	update(stStatus);
 	break;
     case SERVICE_CONTROL_REFRESH:
 	update(Refreshing);
@@ -668,22 +680,40 @@ void ServiceData::add(uint size, uint type, uint level) {
 #else	// Unix
 
 #include <grp.h>
+#include <poll.h>
 #include <pwd.h>
 #include <sys/file.h>
 #ifdef __linux__
 #include <sys/prctl.h>
+#include <sys/sysinfo.h>
+#endif
+#ifdef __APPLE__
+#include <dispatch/dispatch.h>
+#include <sys/sysctl.h>
+#endif
+#ifdef BSD_BASE
+#include <sys/event.h>
+#endif
+#ifdef __FreeBSD__
+#include <sys/procctl.h>
+#include <sys/sysctl.h>
+#include <vm/vm_param.h>
+#elif defined(__OpenBSD__)
+#include <sys/swap.h>
 #endif
 #include <sys/resource.h>
 #include <sys/wait.h>
 
-Service::Timer::Timer(ulong msec): timer((timer_t)-1) {
-#ifdef BSD_BASE
-    (void)msec;
-#elif defined(__linux__)
-    itimerspec its;
-    sigevent se;
+// timer_create(), sigqueue() and sigwaitinfo()
+#if defined(__linux__) || defined(__FreeBSD__)
+#define POSIX_RT
+#endif
 
-    ZERO(se);
+Service::Timer::Timer(ulong msec): timer((timer_t)-1) {
+#ifdef POSIX_RT
+    itimerspec its{};
+    sigevent se{};
+
     se.sigev_notify = SIGEV_SIGNAL;
     se.sigev_signo = SIGALRM;
     se.sigev_value.sival_ptr = &timer;	// NOLINT
@@ -691,18 +721,19 @@ Service::Timer::Timer(ulong msec): timer((timer_t)-1) {
 	return;
     if (!msec)
 	msec = dmsec;
-    ZERO(its);
     its.it_value.tv_sec = (time_t)msec / 1000;
     its.it_value.tv_nsec = (long)((msec % 1000) * 1000000);
     if (timer_settime(timer, 0, &its, nullptr)) {
 	timer_delete(timer);
 	timer = (timer_t)-1;
     }
+#else
+    (void)msec;
 #endif
 }
 
 void Service::Timer::cancel() {
-#if defined(__linux__) && !defined(BSD_BASE)
+#ifdef POSIX_RT
     if (timer != (timer_t)-1)
 	timer_delete(timer);
 #endif
@@ -724,7 +755,15 @@ Service::~Service() {
 
 bool Service::open(const tchar *file) {
     int fd;
-    struct flock fl;
+    struct flock fl{};			// l_whence = SEEK_SET = 0
+    auto locked = [&](off_t start, off_t len) {
+	fl.l_type = F_WRLCK;
+	fl.l_start = start;
+	fl.l_len = len;
+	if (fcntl(fd, F_GETLK, &fl) == -1)
+	    fl.l_type = F_UNLCK;
+	return fl.l_type != F_UNLCK;
+    };
 
     errnum = ESRCH;
     pid = 0;
@@ -733,20 +772,26 @@ bool Service::open(const tchar *file) {
 	lckfile = file;
     if ((fd = ::open(lckfile.c_str(), O_RDONLY | O_CLOEXEC | O_NOATIME)) == -1)
 	return false;
-    ZERO(fl);
-    fl.l_type = F_WRLCK;
-    fl.l_whence = SEEK_SET;
-    if (fcntl(fd, F_GETLK, &fl) != -1 && fl.l_pid && fl.l_type != F_UNLCK) {
+    if (!locked(0, Watching)) {
+	// a live watcher with no child is restarting or reaping the old group
+	if (locked(Watching, 1))
+	    fl.l_start = Stopping;
+    } else {
+	// workers share [0, status): the furthest end is the least ready
+	while (fl.l_len && (fl.l_start += fl.l_len) < Watching &&
+	    locked(fl.l_start, Watching - fl.l_start))
+	    continue;
+	fl.l_type = F_RDLCK;
+    }
+    if (fl.l_type != F_UNLCK) {
 	char buf[24];
 	ssize_t len = read(fd, buf, sizeof (buf));
-	pid_t fpid = 0;
 
-	// 1st pid in file is the watcher, which must get signals, not the child
-	if (len > 0 && from_chars(buf, buf + len, fpid).ec == errc() && fpid > 0)
-	    pid = fpid;
-	else
+	// file holds the watcher pid, which must get signals, not a worker
+	if (from_chars(buf, buf + (len > 0 ? len : 0), pid).ec != errc() ||
+	    pid <= 0)
 	    pid = (pid_t)fl.l_pid;
-	stStatus = (Status)fl.l_len;
+	stStatus = (Status)fl.l_start;
     }
     ::close(fd);
     return pid != 0;
@@ -777,22 +822,34 @@ void Service::signal_handler(int sig, siginfo_t *si, void *) {
 
     if (aborted)
 	_exit(sig);
-#ifdef __linux__
-    itimerspec its;
-    sigevent se;
+#ifdef POSIX_RT
+    itimerspec its{};
+    sigevent se{};
     timer_t timer;
 
-    ZERO(se);
     se.sigev_notify = SIGEV_THREAD;
     se.sigev_notify_function = abort_handler;
     se.sigev_value.sival_ptr = &timer;	// NOLINT
     if (timer_create(CLOCK_MONOTONIC, &se, &timer)) {
 	timer = (timer_t)-1;
     } else {
-	ZERO(its);
 	its.it_value.tv_sec = (time_t)(Timer::dmsec / 1000U);
 	its.it_value.tv_nsec = (long)((Timer::dmsec % 1000U) * 1000000U);
 	timer_settime(timer, 0, &its, nullptr);
+    }
+#elif defined(__APPLE__)
+    dispatch_source_t timer = dispatch_source_create(
+	DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+	dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0));
+
+    if (timer) {
+	dispatch_source_set_event_handler_f(timer, [](void *) {
+	    abort_handler();
+	});
+	dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW,
+	    (int64_t)Timer::dmsec * (int64_t)NSEC_PER_MSEC),
+	    DISPATCH_TIME_FOREVER, 0);
+	dispatch_resume(timer);
     }
 #endif
     switch (sig) {			// NOLINT
@@ -851,9 +908,14 @@ void Service::signal_handler(int sig, siginfo_t *si, void *) {
 	service->onSigusr2();
 	break;
     }
-#ifdef __linux__
+#ifdef POSIX_RT
     if (timer != (timer_t)-1)
 	timer_delete(timer);
+#elif defined(__APPLE__)
+    if (timer) {
+	dispatch_source_cancel(timer);
+	dispatch_release(timer);
+    }
 #endif
     dlog.flush();
     if (aborted)
@@ -875,10 +937,9 @@ void Service::init_sigset(sigset_t &sigs) {
 
 // catch SIGALRM with fn in this thread
 void Service::sigalrm(void (*fn)(int)) {
-    struct sigaction sa;
+    struct sigaction sa{};
     sigset_t sigs;
 
-    ZERO(sa);
     sa.sa_handler = fn;
     sigaction(SIGALRM, &sa, nullptr);
     sigemptyset(&sigs);
@@ -887,10 +948,9 @@ void Service::sigalrm(void (*fn)(int)) {
 }
 
 void Service::setsignal(bool abrt) {
-    struct sigaction sa;
+    struct sigaction sa{};
     sigset_t sigs;
 
-    ZERO(sa);
     sa.sa_handler = null_handler;
     sigaction(SIGHUP, &sa, nullptr);
     sa.sa_handler = SIG_IGN;
@@ -898,7 +958,7 @@ void Service::setsignal(bool abrt) {
     sa.sa_handler = SIG_DFL;
     sigaction(SIGQUIT, &sa, nullptr);
     init_sigset(sigs);
-    sigprocmask(SIG_UNBLOCK, &sigs, nullptr);
+    // signals pending since fork stay queued for ctrl_handler
     pthread_sigmask(SIG_BLOCK, &sigs, nullptr);
     if (abrt) {
 	sa.sa_flags = SA_SIGINFO;
@@ -918,10 +978,9 @@ void Service::setsignal(bool abrt) {
 }
 
 void Service::unsetsignal() {
-    struct sigaction sa;
+    struct sigaction sa{};
     sigset_t sigs;
 
-    ZERO(sa);
     sa.sa_handler = SIG_DFL;
     sigaction(SIGHUP, &sa, nullptr);
     sigaction(SIGPIPE, &sa, nullptr);
@@ -939,20 +998,16 @@ int Service::ctrl_handler(void *) {
     init_sigset(sigs);
     sigaddset(&sigs, SIGPIPE);
     while (!quit) {
-	tchar buf[16];
-	siginfo_t si;
+	siginfo_t si{};
 	int sig;
 	const tchar *str;
-#ifdef __linux__
+#ifdef POSIX_RT
 	sig = sigwaitinfo(&sigs, &si);
 #else
-	ZERO(si);
 	if (sigwait(&sigs, &sig))
 	    sig = -1;
 #endif
 	switch (sig) {
-	case -1:
-	    continue;
 	case SIGABRT:
 	    quit = true;
 	    str = T("abort");
@@ -962,17 +1017,6 @@ int Service::ctrl_handler(void *) {
 	    if (exiting || aborting)
 		abort_handler();
 	    str = T("timer");
-	    break;
-	case SIGBUS:
-	case SIGFPE:
-	case SIGILL:
-	case SIGTRAP:
-	case SIGSEGV:
-#ifdef SIGSTKFLT
-	case SIGSTKFLT:
-#endif
-	    quit = true;
-	    str = T("cpu");
 	    break;
 	case SIGHUP:
 	    str = T("refresh");
@@ -1000,10 +1044,8 @@ int Service::ctrl_handler(void *) {
 	case SIGUSR2:
 	    str = T("user");
 	    break;
-	default:
-	    to_str(buf, buf + std::size(buf), sig);
-	    str = buf;
-	    break;
+	default:			// -1 for EINTR
+	    continue;
 	}
 
 	uid_t uid = si.si_uid;
@@ -1154,6 +1196,7 @@ bool Service::send(int sig) {
     uint cnt = 0;
     Status newstatus = Running;
     Status oldstatus;
+    uint loops = STATUS_LOOPS;
     bool ret;
     bool stop = false;
 
@@ -1183,23 +1226,35 @@ bool Service::send(int sig) {
     } else {
 	return false;
     }
-    if (stop)
+    if (stop) {
 	newstatus = Stopped;
+	loops = STOP_LOOPS;
+    }
     if (kill(pid, sig)) {
 	close();
 	return stop;
     }
+    if (sig == SIGHUP || sig == SIGUSR1 || sig == SIGUSR2) {
+	close();
+	return true;
+    }
     do {
 	close();
-	if (sig == SIGHUP || sig == SIGUSR1 || sig == SIGUSR2)
-	    return true;
 	msleep(100);
 	if (!open())
 	    return stop;
 	// no state change means it is ignored, such as pause when unpauseable
-    } while (stStatus != newstatus && ++cnt < STATUS_LOOPS && (stop ||
+    } while (stStatus != newstatus && ++cnt < loops && (stop ||
 	stStatus != oldstatus || cnt < 20));
-    ret = (stStatus == newstatus || (stop && kill(pid, SIGKILL) == 0));
+    // a hung watcher: its workers kill their own groups when it dies
+    if (stStatus != newstatus && stop && (!kill(-pid, SIGKILL) ||
+	!kill(pid, SIGKILL))) {
+	for (cnt = 0; open() && cnt < STATUS_LOOPS; cnt++) {
+	    close();
+	    msleep(100);
+	}
+    }
+    ret = stStatus == newstatus;
     if (!ret)
 	errnum = stStatus == oldstatus ? ENOTSUP : ETIMEDOUT;
     close();
@@ -1276,6 +1331,16 @@ int Service::execute(int argc, const tchar * const *argv) {
 	} else if (tstreq(cmd, T("outfile"))) {
 	    if (!reqarg(i, outfile, T("output filename required")))
 		return 1;
+#ifdef _WIN32
+	} else if (tstreq(cmd, T("worker"))) {
+	    // spawned by a watcher: its args follow
+	    if (!reqarg(i, wkrarg, T("worker handles required")))
+		return 1;
+	    console = true;
+	    while (++i < argc)
+		av.push_back(argv[i]);
+	    break;
+#endif
 	} else {
 	    while (++i < argc)
 		av.push_back(argv[i]);
@@ -1333,7 +1398,8 @@ int Service::execute(int argc, const tchar * const *argv) {
 	ret = !sigusr2();
     } else if (tstreq(cmd, T("start"))) {
 	ret = start(ac, av.data());
-	if (ret && (sts = status()) != Error) {
+	// exiting: this is the daemon itself returning its exit code
+	if (ret && !exiting && (sts = status()) != Error) {
 	    ret = sts == Stopped;
 	    if (ret)
 		errnum = 0;
@@ -1355,7 +1421,7 @@ int Service::execute(int argc, const tchar * const *argv) {
     } else {
 	ret = run(ac, av.data());
     }
-    if (ret && errnum)
+    if (ret && errnum && !exiting)
 	tcerr << name << T(": ") << errstr() << endl;
     dlog.destruct();
     return ret;
@@ -1411,27 +1477,49 @@ Daemon::Daemon(const tchar *svc_name, const tchar *display, bool pauseable):
 }
 
 Daemon::~Daemon() {
-    if (qflag != None)
+    if (qflag != None && !worker())
 	dlog.note(Log::mod(name), Log::kv(T("sts"), T("stopped")),
 	    Log::kv(T("duration"), (mticks() - msec) / 1000U));
     if (lckfd != -1) {
-	if (!watch || child)
+	if (!worker())
 	    (void)tunlink(lckfile.c_str());
 	(void)lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
 	::close(lckfd);
     }
 }
 
+// shared [0, status) lets workers report together; a worker's own slot holds
+// [0, status + 1) so Error still locks a byte
 bool Daemon::update(Status status) {
+    uint base = Slots + (uint)slot * SlotSize;
+
     if (lckfd == -1) {
 	stStatus = status;
+#ifdef _WIN32
+	if (!worker())
+	    return Service::update(status);
+	stmap[slot] = (uchar)(status + 1);
+#endif
 	return true;
     }
-    if (status < stStatus)
-	(void)lockfile(lckfd, F_UNLCK, SEEK_SET, status, 0, 0);
-    else
-	(void)lockfile(lckfd, F_WRLCK, SEEK_SET, 0, status, 0);
+    if (status < stStatus) {
+	(void)lockfile(lckfd, F_UNLCK, SEEK_SET, status, Watching -
+	    (uint)status, 0);
+	if (worker())
+	    (void)lockfile(lckfd, F_UNLCK, SEEK_SET, base + (uint)status + 1,
+		SlotSize - (uint)status - 1, 0);
+    } else {
+	(void)lockfile(lckfd, F_RDLCK, SEEK_SET, 0, status, 0);
+	if (worker())
+	    (void)lockfile(lckfd, F_WRLCK, SEEK_SET, base, (ulong)status + 1,
+		0);
+    }
     return Service::update(status);
+}
+
+void Daemon::unavailable(bool state) {
+    (void)lockfile(lckfd, state ? F_RDLCK : F_UNLCK, SEEK_SET, Unavailable, 1,
+	1);
 }
 
 // root would otherwise keep its supplementary groups after dropping privileges
@@ -1454,45 +1542,19 @@ bool Daemon::setids() {
 	}
 	gid = (gid_t)-1;
 	uid = (uid_t)-1;
+#ifdef __linux__
+	// credential changes clear the parent death signal
+	if (worker()) {
+	    prctl(PR_SET_PDEATHSIG, SIGRTMIN);
+	    if (getppid() != watchpid)
+		kill(0, SIGKILL);
+	}
+#endif
     }
     return true;
 }
 
-int Daemon::onStart(int argc, const tchar * const *argv) {
-    char buf[64];
-    bool buffer;
-    int ret = 0;
-    struct stat sbuf, sfile;
-    auto started = [this] {
-	dlog.note(Log::mod(name), Log::cmd(T("start")), Log::kv(T("host"),
-	    Sockaddr::hostname()), Log::kv(T("dir"), installdir.c_str()),
-	    Log::kv(T("instance"), instance), Log::kv(T("release"), ver));
-    };
-
-    srvcpath = path;
-    cfg.prefix(name.c_str());
-    stStatus = Starting;
-    do {
-	lckfd = ::open(tstringtoachar(lckfile), O_CREAT | O_CLOEXEC | O_WRONLY,
-	    S_IREAD | S_IWRITE);
-	if (lckfd == -1 || lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 1)) {
-	    dlog.err(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
-		T("running")));
-	    if (lckfd != -1)
-		::close(lckfd);
-	    lckfd = -1;
-	    return 1;
-	}
-	// coverity[fs_check_call : FALSE ]
-	if (fstat(lckfd, &sbuf) || stat(tstringtoachar(lckfile), &sfile) ||
-	    sbuf.st_ino != sfile.st_ino) {
-	    ::close(lckfd);
-	    lckfd = -1;
-	}
-    } while (lckfd == -1);
-    snprintf(buf, sizeof (buf), "%ld", (long)getpid());
-    if (ftruncate(lckfd, 0) || write(lckfd, buf, (uint)strlen(buf)) < 1)
-	return 2;
+void Daemon::configfile(int argc, const tchar * const *argv) {
     for (int i = 1; i < argc; i++) {
 	const tchar *p = argv[i];
 
@@ -1516,11 +1578,64 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    }
 	}
     }
+}
+
+int Daemon::onStart(int argc, const tchar * const *argv) {
+    char buf[24];
+    bool buffer, mp;
+    int ret = 0;
+    size_t len;
+    struct stat sbuf, sfile;
+    auto started = [this] {
+	dlog.note(Log::mod(name), Log::cmd(T("start")), Log::kv(T("host"),
+	    Sockaddr::hostname()), Log::kv(T("dir"), installdir.c_str()),
+	    Log::kv(T("instance"), instance), Log::kv(T("release"), ver));
+    };
+
+    srvcpath = path;
+    cfg.prefix(name.c_str());
+    stStatus = Starting;
+#ifdef _WIN32
+    if (!wkrarg.empty())
+	return spawned(argc, argv);
+#endif
+    do {
+	lckfd = ::open(tstringtoachar(lckfile), O_CREAT | O_CLOEXEC | O_RDWR,
+	    S_IREAD | S_IWRITE);
+	// an old watcher reaping its last child holds only the Watching byte
+	if (lckfd == -1 || lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 1) ||
+	    lockfile(lckfd, F_WRLCK, SEEK_SET, Watching, 1, 1)) {
+	    dlog.err(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
+		T("running")));
+	    if (lckfd != -1)
+		::close(lckfd);
+	    lckfd = -1;
+	    return 1;
+	}
+	// coverity[fs_check_call : FALSE ]
+	if (fstat(lckfd, &sbuf) || stat(tstringtoachar(lckfile), &sfile) ||
+	    sbuf.st_ino != sfile.st_ino) {
+	    ::close(lckfd);
+	    lckfd = -1;
+	}
+    } while (lckfd == -1);
+    len = (size_t)(to_chars(buf, buf + sizeof (buf), getpid()).ptr - buf);
+    if (ftruncate(lckfd, 0) || write(lckfd, buf, len) < 1)
+	return 2;
+    configfile(argc, argv);
     if (!onRefresh())
 	return 3;
-    buffer = cfg.get(T("log.file.buffer.enable"), false);
+#ifdef _WIN32
+    // the SCM already restarts a single process
+    watch = cfg.get(T("watch.enable"), cfg.get(T("worker.count"), nworkers) >
+	1);
+#else
     watch = cfg.get(T("watch.enable"), !console);
-    dlog.setmp(false);
+#endif
+    // workers share the log file
+    mp = watch && cfg.get(T("worker.count"), nworkers) > 1;
+    buffer = !mp && cfg.get(T("log.file.buffer.enable"), false);
+    dlog.setmp(mp);
     if (!cfg.get(T("enable"), true)) {
 	dlog.note(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
 	    T("disabled")));
@@ -1532,13 +1647,15 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 #ifndef _WIN32
     rlimit rl;
     const passwd *pwd;
+    uid_t id;
     string uidname = cfg.get(T("uid"));
 
     if (uidname.empty()) {
 	uid = (uid_t)-1;
     } else {
-	if (istdigit(uidname[0]))
-	    pwd = getpwuid((uid_t)atoi(uidname.c_str()));   // NOLINT
+	if (from_chars(uidname.data(), uidname.data() + uidname.size(),
+	    id).ec == errc())
+	    pwd = getpwuid(id);			// NOLINT
 	else
 	    pwd = getpwnam(uidname.c_str());	// NOLINT
 	if (pwd) {
@@ -1562,147 +1679,69 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	Log::kv(T("maxfd"), getrlimit(RLIMIT_NOFILE, &rl) ? OPEN_MAX :
 	rl.rlim_cur));
 #endif
-    if (watch) {
-#ifndef _WIN32
-	bool first = true;
-	struct sigaction sa;
-
-	ZERO(sa);
-	sa.sa_flags = SA_SIGINFO;
-	sa.sa_sigaction = watch_handler;
-	sigaction(SIGABRT, &sa, nullptr);
-	sigaction(SIGCONT, &sa, nullptr);
-	sigaction(SIGHUP, &sa, nullptr);
-	sigaction(SIGINT, &sa, nullptr);
-	sigaction(SIGTERM, &sa, nullptr);
-	sigaction(SIGTSTP, &sa, nullptr);
-	sigaction(SIGUSR1, &sa, nullptr);
-	sigaction(SIGUSR2, &sa, nullptr);
-	dlog.stop();
-	do {
-	    time_t start = seconds();
-
-	    watchpid = getpid();
-	    child = fork();
-	    if (child == -1) {
-		dlog.err(Log::mod(name), Log::cmd(T("fork")),
-		    Log::error(errstr()));
-		sleep(cfg.get(T("watch.interval"), 60U) / 4);
-	    } else if (child) {
-		struct flock fl;
-
-		sigalrm(null_handler);
-		first = false;
-		snprintf(buf, sizeof (buf), "%lu\n%lu", (ulong)getpid(), (ulong)child);
-		if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) ||
-		    write(lckfd, buf, strlen(buf)) < 1) {
-		    dlog.warn(Log::mod(name), Log::cmd(T("watch")),
-			Log::kv(T("pid"), child), Log::error(errno));
-		} else {
-		    dlog.debug(Log::mod(name), Log::cmd(T("watch")),
-			Log::kv(T("pid"), child));
-		}
-		(void)lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
-		ZERO(fl);
-		fl.l_type = F_WRLCK;
-		fl.l_whence = SEEK_SET;
-		while (fcntl(lckfd, F_GETLK, &fl) != -1 && !fl.l_pid)
-		    msleep(100);
-		while (true) {
-		    int flg = 0;
-		    string info;
-		    uint intvl = cfg.get(T("watch.interval"), 60U);
-		    ulong kb = 0;
-		    ulong maxmem = cfg.get(T("watch.maxmem"), 0U);
-		    struct pidstat psbuf;
-		    int sts;
-
-		    (void)dlog.close();
-		    alarm(intvl);
-		    // lockfile() retries EINTR so alarm could not interrupt it
-		    fl.l_type = F_WRLCK;
-		    fl.l_whence = SEEK_SET;
-		    fl.l_start = 0;
-		    fl.l_len = Running;
-		    if (fcntl(lckfd, F_SETLKW, &fl) == -1) {
-			alarm(0);
-			flg = WNOHANG;
-		    }
-		    if (waitpid(child, &sts, flg) > 0) {
-			alarm(0);
-			ret = WIFEXITED(sts) ? WEXITSTATUS(sts) :
-			    WIFSIGNALED(sts) ? WTERMSIG(sts) : 0;
-			if (!qflag)
-			    dlog.alert(Log::mod(name), Log::cmd(T("watch")),
-				Log::kv(T("pid"), child), Log::kv(T("sts"), ret),
-				Log::error(T("unexpected exit")),
-				Log::kv(T("duration"), seconds() - start));
-			break;
-		    }
-		    alarm(0);
-		    if (!pidstat(child, &psbuf))
-			kb = psbuf.sz;
-		    if (qflag || (maxmem && kb > maxmem) ||
-			(status() != Starting && !check(info))) {
-			uint waitlmt = cfg.get(T("watch.wait"), 30U);
-
-			if (!qflag)
-			    kill(child, cfg.get(T("watch.core"), false) ?
-				SIGQUIT : SIGINT);
-			alarm(waitlmt);
-			if (waitpid(child, &sts, 0) == -1) {
-			    dlog.note(Log::mod(name), Log::cmd(T("watch")),
-				T("killing hung child"));
-			    if (kill(child * -1, SIGKILL))
-				kill(child, SIGKILL);
-			    alarm(waitlmt);
-			    waitpid(child, &sts, 0);
-			}
-			alarm(0);
-			if (!qflag) {
-			    dlog.warn(Log::mod(name), Log::cmd(T("watch")),
-				Log::kv(T("pid"), child), Log::kv(T("mem"), kb),
-				Log::kv(T("max"), maxmem), T("restarted"));
-			} else if (!flg) {
-			    dlog.note(Log::mod(name), Log::cmd(qflag == Fast ?
-				T("exit") : T("stop")), Log::kv(T("duration"),
-				seconds() - start), Log::kv(T("mem"), kb),
-				Log::kv(T("rss"), psbuf.rss));
-			}
-			ret = 0;
-			break;
-		    }
-		}
-		(void)lockfile(lckfd, F_WRLCK, SEEK_SET, 0, qflag ? Stopping :
-		    Starting, 0);
-	    } else {
-#ifdef __linux__
-		prctl(PR_SET_PDEATHSIG, SIGTERM);
-#endif
-		(void)lockfile(lckfd, F_WRLCK, SEEK_SET, 0, Starting, 0);
-		if (!first)
-		    started();
-		setpgid(0, getpid());
-		ret = Service::onStart(argc, argv);
-		dlog.buffer(buffer);
-	    }
-	} while (!qflag && child && !ret);
-	if (child) {
-	    tunlink(lckfile.c_str());
-	    (void)lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
-	    ::close(lckfd);
-	    lckfd = -1;
-	    exit(ret);
-	}
-#endif
-    } else {
+    if ((ret = onInit(argc, argv)) != 0)
+	return ret;
+    if (!watch) {
+	(void)lockfile(lckfd, F_UNLCK, SEEK_SET, Watching, 1, 0);
 	ret = Service::onStart(argc, argv);
-	sprintf(buf, "%lu", (ulong)sigpid);
-	if (ftruncate(lckfd, 0) || lseek(lckfd, 0, SEEK_SET) < 0 || write(lckfd,
-	    buf, (uint)strlen(buf)) < 1)
-	    ret = 0;
 	dlog.buffer(buffer);
+	return ret;
     }
+#ifdef _WIN32
+    wargs.assign(argv + 1, argv + argc);
+#endif
+    ret = watchloop();
+    if (!worker()) {
+	tunlink(lckfile.c_str());
+	(void)lockfile(lckfd, F_UNLCK, SEEK_SET, 0, 0, 0);
+	::close(lckfd);
+	lckfd = -1;
+#ifdef _WIN32
+	dlog.stop();
+#endif
+	exit(ret);
+    }
+#ifndef _WIN32
+#ifdef BSD_BASE
+    sigset_t all, old;
+    pthread_t tid;
+#endif
+
+    // own group first so an orphaned worker's kill(0) can't hit the watcher;
+    // a watcher that died uncleanly takes the whole group with it
+    setpgid(0, getpid());
+#ifdef __linux__
+    signal(SIGRTMIN, [](int) { kill(0, SIGKILL); });
+    prctl(PR_SET_PDEATHSIG, SIGRTMIN);
+    if (getppid() != watchpid)		// watcher died before prctl()
+	kill(0, SIGKILL);
+#elif defined(BSD_BASE)
+    // no PDEATHSIG: a thread, blocking all signals so it never steals the
+    // process's, waits for the watcher to exit
+    sigfillset(&all);
+    pthread_sigmask(SIG_SETMASK, &all, &old);
+    if (!pthread_create(&tid, nullptr, [](void *) -> void * {
+	struct kevent ev;
+	int kq = kqueue();
+
+	EV_SET(&ev, (uintptr_t)watchpid.load(), EVFILT_PROC, EV_ADD |
+	    EV_ONESHOT, NOTE_EXIT, 0, nullptr);
+	if (kq != -1) {
+	    (void)kevent(kq, &ev, 1, &ev, 1, nullptr);
+	    ::close(kq);
+	}
+	// also catches ESRCH when the watcher exited before registering
+	if (getppid() != watchpid)
+	    kill(0, SIGKILL);
+	return nullptr;
+    }, nullptr))
+	pthread_detach(tid);
+    pthread_sigmask(SIG_SETMASK, &old, nullptr);
+#endif
+    update(Starting);
+    ret = Service::onStart(argc, argv);
+    dlog.buffer(buffer);
+#endif
     return ret;
 }
 
@@ -1752,7 +1791,7 @@ bool Daemon::onRefresh(void) {
 	dlog.set(cfg);
     Service::Timer::dmsec = cfg.get(T("watch.timeout"), Timer::dmsec / 1000) *
 	1000;
-    if (!child && refreshed)
+    if (!worker() && refreshed)
 	dlog.note(Log::mod(name), Log::cmd(T("reload")));
     else
 	refreshed = true;
@@ -1769,30 +1808,713 @@ void Daemon::onSigusr1(void) {
     dlog.roll();
 }
 
-#ifndef _WIN32
-void Daemon::watch_handler(int sig, siginfo_t *si, void *) {
-    Daemon *daemon = (Daemon *)service;
+#ifdef _WIN32
+// controls forwarded by the watcher; EOF means it exited
+ulong __stdcall Daemon::ctlread(void *) {
+    auto *daemon = (Daemon *)service;
+    uchar ctl;
+    DWORD in;
 
-    if (!daemon->child)
-	return;
-    if (sig == SIGHUP)
-	daemon->onRefresh();
-    else if (sig == SIGINT)
+    while (ReadFile(daemon->ctlpipe, &ctl, 1, &in, nullptr) && in)
+	daemon->handle(ctl);
+    _exit(1);
+}
+
+bool Daemon::onWatch(ulong ctl) {
+    HANDLE ev = wakeev;
+
+    if (!ev)
+	return false;
+    if (ctl == SERVICE_CONTROL_STOP || ctl == SERVICE_CONTROL_SHUTDOWN)
+	qflag = Slow;
+    else if (ctl == SERVICE_CONTROL_EXIT)
+	qflag = Fast;
+    ctllck.lock();
+    ctls.push_back(ctl);
+    ctllck.unlock();
+    SetEvent(ev);
+    return true;
+}
+
+// workers inherit only their pipe, the status map, stdio and onSpawn() handles
+bool Daemon::spawn(Worker &w) {
+    vector<const tchar *> args;
+    unique_ptr<char[]> attrs;
+    tstring cmd, hdlarg;
+    vector<HANDLE> hdls;
+    HANDLE jobs[] = { job };
+    PROCESS_INFORMATION pi{};
+    HANDLE rd = nullptr, wr = nullptr;
+    STARTUPINFOEX si{};
+    SIZE_T sz = 0;
+    bool ok;
+
+    if (!CreatePipe(&rd, &wr, nullptr, 0)) {
+	errnum = (long)GetLastError();
+	return false;
+    }
+    onSpawn(hdls);
+    hdlarg = format(T("{},{},{}"), w.slot, (uintptr_t)rd, (uintptr_t)stmaphdl);
+    for (HANDLE h : hdls)
+	hdlarg += format(T(",{}"), (uintptr_t)h);
+    hdls.push_back(rd);
+    hdls.push_back(stmaphdl);
+    for (HANDLE h : hdls)
+	(void)SetHandleInformation(h, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+    si.StartupInfo.cb = sizeof (si);
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    for (DWORD id : { STD_OUTPUT_HANDLE, STD_ERROR_HANDLE }) {
+	HANDLE h = GetStdHandle(id);
+
+	if (!h || h == INVALID_HANDLE_VALUE || !SetHandleInformation(h,
+	    HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT))
+	    continue;
+	if (!ranges::contains(hdls, h))
+	    hdls.push_back(h);
+	if (id == STD_OUTPUT_HANDLE)
+	    si.StartupInfo.hStdOutput = h;
+	else
+	    si.StartupInfo.hStdError = h;
+    }
+    args = { path.c_str(), T("--installdir"), installdir.c_str(),
+	T("--lockfile"), lckfile.c_str(), T("--logfile"), logfile.c_str(),
+	T("--outfile"), outfile.c_str(), T("--worker"), hdlarg.c_str() };
+    args.insert(args.end(), wargs.begin(), wargs.end());
+    args.push_back(nullptr);
+    cmd = Process::cmdline(args.data());
+    (void)InitializeProcThreadAttributeList(nullptr, 2, 0, &sz);
+    attrs.reset(new char[sz]);
+    si.lpAttributeList = (LPPROC_THREAD_ATTRIBUTE_LIST)attrs.get();
+    // the job list assigns the job before the worker runs
+    ok = InitializeProcThreadAttributeList(si.lpAttributeList, 2, 0, &sz) &&
+	UpdateProcThreadAttribute(si.lpAttributeList, 0,
+	PROC_THREAD_ATTRIBUTE_HANDLE_LIST, hdls.data(), hdls.size() *
+	sizeof (HANDLE), nullptr, nullptr) &&
+	UpdateProcThreadAttribute(si.lpAttributeList, 0,
+	PROC_THREAD_ATTRIBUTE_JOB_LIST, jobs, sizeof (jobs), nullptr,
+	nullptr) && CreateProcess(nullptr, cmd.data(), nullptr, nullptr, TRUE,
+	CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr,
+	&si.StartupInfo, &pi);
+    if (!ok)
+	errnum = (long)GetLastError();
+    if (si.lpAttributeList)
+	DeleteProcThreadAttributeList(si.lpAttributeList);
+    CloseHandle(rd);
+    if (!ok) {
+	CloseHandle(wr);
+	return false;
+    }
+    CloseHandle(pi.hThread);
+    w.ctl = wr;
+    w.pid = (pid_t)pi.dwProcessId;
+    w.proc = pi.hProcess;
+    w.wait = CreateThreadpoolWait([](PTP_CALLBACK_INSTANCE, void *ev, PTP_WAIT,
+	TP_WAIT_RESULT) { SetEvent(ev); }, wakeev.load(), nullptr);
+    if (w.wait)
+	SetThreadpoolWait(w.wait, w.proc, nullptr);
+    return true;
+}
+
+// a worker process: --worker slot,pipe,map[,onSpawn() handles]
+int Daemon::spawned(int argc, const tchar * const *argv) {
+    vector<HANDLE> hdls;
+    int ret;
+
+    for (size_t pos = 0; pos < wkrarg.size(); ) {
+	size_t end = wkrarg.find(T(','), pos);
+
+	if (end == tstring::npos)
+	    end = wkrarg.size();
+	hdls.push_back((HANDLE)(uintptr_t)atoun<ullong>(wkrarg.c_str() + pos,
+	    end - pos));
+	pos = end + 1;
+    }
+    if (hdls.size() < 3)
+	return 2;
+    slot = (int)(uintptr_t)hdls[0];
+    ctlpipe = hdls[1];
+    stmaphdl = hdls[2];
+    if ((stmap = (atomic<uchar> *)MapViewOfFile(stmaphdl, FILE_MAP_WRITE, 0, 0,
+	MaxSlots)) == nullptr)
+	return 2;
+    hdls.erase(hdls.begin(), hdls.begin() + 3);
+    configfile(argc, argv);
+    if (!onRefresh())
+	return 3;
+    dlog.setmp(true);
+    onSpawn(hdls);
+    if ((ret = onInit(argc, argv)) != 0)
+	return ret;
+    CloseHandle(CreateThread(nullptr, 0, ctlread, nullptr, 0, nullptr));
+    update(Starting);
+    return Service::onStart(argc, argv);
+}
+#endif
+
+// a worker's status, or -1 before it locks its slot
+int Daemon::slotstatus(uint s) const {
+#ifdef _WIN32
+    return (int)stmap[s] - 1;
+#else
+    struct flock fl{};			// l_whence = SEEK_SET = 0
+
+    fl.l_type = F_WRLCK;
+    fl.l_start = Slots + (off_t)s * SlotSize;
+    fl.l_len = SlotSize;
+    return fcntl(lckfd, F_GETLK, &fl) == -1 || fl.l_type == F_UNLCK ? -1 :
+	(int)fl.l_len - 1;
+#endif
+}
+
+uint Daemon::swap_pct(void) {
+#ifdef __linux__
+    struct sysinfo si;
+
+    return sysinfo(&si) || !si.totalswap ? 0 : (uint)((si.totalswap -
+	si.freeswap) * 100 / si.totalswap);
+#elif defined(__APPLE__)
+    xsw_usage xsu;
+    size_t len = sizeof (xsu);
+
+    if (sysctlbyname("vm.swapusage", &xsu, &len, nullptr, 0) ||
+	!xsu.xsu_total)
+	return 0;
+    return (uint)(xsu.xsu_used * 100 / xsu.xsu_total);
+#elif defined(__FreeBSD__)
+    int mib[16];
+    size_t miblen = std::size(mib);
+    uint64_t total = 0, used = 0;
+
+    if (sysctlnametomib("vm.swap_info", mib, &miblen) ||
+	miblen >= std::size(mib))
+	return 0;
+    for (mib[miblen] = 0; ; ++mib[miblen]) {
+	struct xswdev xsw;
+	size_t len = sizeof (xsw);
+
+	if (sysctl(mib, (uint)miblen + 1, &xsw, &len, nullptr, 0))
+	    break;
+	total += (uint64_t)xsw.xsw_nblks;
+	used += (uint64_t)xsw.xsw_used;
+    }
+    return total ? (uint)(used * 100 / total) : 0;
+#elif defined(__OpenBSD__)
+    int cnt = swapctl(SWAP_NSWAP, nullptr, 0);
+    uint64_t total = 0, used = 0;
+
+    if (cnt <= 0)
+	return 0;
+
+    vector<swapent> ents((size_t)cnt);
+
+    ents.resize((size_t)(max)(swapctl(SWAP_STATS, ents.data(), cnt), 0));
+    for (const swapent &e : ents) {
+	if (e.se_flags & SWF_ENABLE) {
+	    total += (uint64_t)e.se_nblks;
+	    used += (uint64_t)e.se_inuse;
+	}
+    }
+    return total ? (uint)(used * 100 / total) : 0;
+#else
+    return 0;
+#endif
+}
+
+#ifndef _WIN32
+// async-signal-safe: watchloop() acts on the flags after poll() wakes
+// cppcheck-suppress constParameterCallback
+void Daemon::watch_handler(int sig, siginfo_t *si, void *) {
+    auto *daemon = (Daemon *)service;
+    int err = errno;
+
+    if (sig == SIGINT)
 	daemon->qflag = Slow;
     else if (sig == SIGTERM)
 	daemon->qflag = Fast;
-#ifdef __linux__
-    // pass the original sender to the child for ctrl_handler() to log
-    // uid is lost on 32 bit platforms but the pid always fits
-    sigval val;
-
-    ZERO(val);
-    val.sival_ptr = (void *)(uintptr_t)((uint64_t)si->si_uid << 32 |
-	(uint32_t)si->si_pid);
-    sigqueue(daemon->child, sig, val);
-#else
-    (void)si;
-    kill(daemon->child, sig);
-#endif
+    if (sig != SIGCHLD) {
+	daemon->sigsrc[sig] = (uint64_t)si->si_uid << 32 |
+	    (uint32_t)si->si_pid;
+	daemon->sigpend |= 1ULL << sig;
+    }
+    // a full pipe already wakes the loop
+    if (write(daemon->wakefd[1], "", 1) == -1)
+	errno = err;
 }
 #endif
+
+// forks and watches workers until stopped; returns 0 in each new worker
+int Daemon::watchloop(void) {
+#ifndef _WIN32
+    static constexpr int fwdsigs[] = {
+	SIGABRT, SIGCONT, SIGHUP, SIGINT, SIGTERM, SIGTSTP, SIGUSR1, SIGUSR2
+    };
+    sigset_t blk, old;
+#endif
+    bool first = true, keep = true, paused = false;
+    Status held = Starting;
+    msec_t now = mticks();
+    msec_t due = now + cfg.get(T("watch.interval"), 60U) * 1000UL;
+    msec_t retry = 0, spawnat = 0, swapped = 0;
+    int ret = 0;
+    uint retries = 0;
+#ifdef _WIN32
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jl{};
+
+    jl.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if ((job = CreateJobObject(nullptr, nullptr)) == nullptr ||
+	!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jl,
+	sizeof (jl)) || (stmaphdl = CreateFileMapping(INVALID_HANDLE_VALUE,
+	nullptr, PAGE_READWRITE, 0, MaxSlots, nullptr)) == nullptr ||
+	(stmap = (atomic<uchar> *)MapViewOfFile(stmaphdl, FILE_MAP_WRITE, 0, 0,
+	MaxSlots)) == nullptr || (wakeev = CreateEvent(nullptr, FALSE, FALSE,
+	nullptr)) == nullptr) {
+	errnum = (long)GetLastError();
+	dlog.err(Log::mod(name), Log::cmd(T("watch")), Log::error(errstr()));
+	return 6;
+    }
+    setsignal();
+#else
+    struct sigaction sa{};
+
+    if (pipe(wakefd)) {
+	dlog.err(Log::mod(name), Log::cmd(T("watch")), Log::error(errstr()));
+	return 6;
+    }
+    for (int fd : wakefd) {
+	fcntl(fd, F_SETFD, FD_CLOEXEC);
+	fcntl(fd, F_SETFL, O_NONBLOCK);
+    }
+    sa.sa_flags = SA_NOCLDSTOP | SA_SIGINFO;
+    sa.sa_sigaction = watch_handler;
+    sigemptyset(&blk);
+    for (int sig : fwdsigs) {
+	sigaction(sig, &sa, nullptr);
+	sigaddset(&blk, sig);
+    }
+    sigaction(SIGCHLD, &sa, nullptr);
+    sigaddset(&blk, SIGCHLD);
+    // orphaned descendants reparent here so a dead worker's group is reaped
+#ifdef __linux__
+    prctl(PR_SET_CHILD_SUBREAPER, 1);
+#elif defined(__FreeBSD__)
+    procctl(P_PID, getpid(), PROC_REAP_ACQUIRE, nullptr);
+#endif
+    // workers share the status range
+    (void)lockfile(lckfd, F_RDLCK, SEEK_SET, 0, Starting, 0);
+#endif
+    watchpid = getpid();
+    dlog.stop();
+    for (;;) {
+#ifndef _WIN32
+	char buf[64];
+#endif
+	uint count, intvl, startms, stopms, szpct;
+	ulong maxpss, maxsz;
+#ifdef _WIN32
+	vector<ulong> pend;
+#else
+	uint64_t pend = sigpend.exchange(0);
+#endif
+	bool pending = false, quit;
+#ifndef _WIN32
+	pid_t p;
+	int sts;
+#endif
+	Status want;
+	msec_t wake;
+#ifndef _WIN32
+	pollfd pfd{.fd = wakefd[0], .events = POLLIN, .revents = 0};
+#endif
+	auto forward = [&](const Worker &w, int sig) {
+#ifdef _WIN32
+	    auto ctl = (uchar)sig;
+	    DWORD out;
+
+	    (void)WriteFile(w.ctl, &ctl, 1, &out, nullptr);
+#elif defined(POSIX_RT)
+	    // pass the original sender for ctrl_handler() to log; uid is lost
+	    // on 32 bit platforms but the pid always fits
+	    sigval val{.sival_ptr = (void *)(uintptr_t)sigsrc[sig].load()};
+
+	    (void)sigqueue(w.pid, sig, val);
+#else
+	    (void)kill(w.pid, sig);
+#endif
+	};
+	auto recycle = [&](Worker &w, const tchar *err,
+	    const struct pidstat &ps) {
+#ifdef _WIN32
+	    forward(w, SERVICE_CONTROL_STOP);
+#else
+	    kill(w.pid, cfg.get(T("watch.core"), false) ? SIGQUIT : SIGINT);
+#endif
+	    w.kill = now + stopms;
+	    dlog.warn(Log::mod(name), Log::cmd(T("watch")), Log::kv(T("pid"),
+		w.pid), Log::kv(T("pss"), ps.pss), Log::kv(T("maxpss"), maxpss),
+		Log::kv(T("sz"), ps.sz), Log::kv(T("maxsz"), maxsz),
+		Log::error(err), T("restarting"));
+	};
+	auto reaped = [&](const Worker &w, int code, bool sig) {
+	    msec_t life = now - w.start;
+
+	    if (qflag || w.kill || !keep)	// expected or giving up
+		return;
+	    // a clean exit after serving, as after maxrequests, is routine
+	    if (!code && !sig && w.ran) {
+		dlog.info(Log::mod(name), Log::cmd(T("watch")),
+		    Log::kv(T("pid"), w.pid), Log::kv(T("duration"), life / 1000),
+		    T("exited"));
+	    } else if (w.first && !w.ran) {
+		// a worker dying during startup won't fix itself
+		ret = code ? code : -1;
+		keep = false;
+		dlog.crit(Log::mod(name), Log::cmd(T("watch")),
+		    Log::kv(T("pid"), w.pid), Log::kv(T("sts"), ret),
+		    Log::error(T("immediate exit")));
+	    } else {
+		dlog.warn(Log::mod(name), Log::cmd(T("watch")),
+		    Log::kv(T("pid"), w.pid), Log::kv(sig ? T("signal") :
+		    T("exit"), code), Log::error(T("unexpected exit")),
+		    Log::kv(T("duration"), life / 1000));
+		if (now - retry > 60000) {
+		    retries = 1;
+		    retry = now;
+		} else if (++retries >= cfg.get(T("watch.maxstarts"), 10U)) {
+		    ret = code ? code : -1;
+		    keep = false;
+		    dlog.crit(Log::mod(name), Log::cmd(T("watch")),
+			Log::error(T("too many restarts")));
+		}
+	    }
+	};
+
+#ifdef _WIN32
+	ctllck.lock();
+	pend.swap(ctls);
+	ctllck.unlock();
+	// refresh before workers so they can rely on the watcher's new state
+	if (ranges::contains(pend, (ulong)SERVICE_CONTROL_REFRESH)) {
+	    forklock.lock();
+	    (void)onRefresh();
+	    forklock.unlock();
+	}
+	for (ulong ctl : pend) {
+	    bool pausing = ctl == SERVICE_CONTROL_CONTINUE || ctl ==
+		SERVICE_CONTROL_PAUSE;
+
+	    if (pausing)
+		paused = ctl == SERVICE_CONTROL_PAUSE;
+	    for (const Worker &w : wkrs) {
+		// workers pause once serving, else running() would undo it
+		if (!pausing || (w.ran && !w.kill))
+		    forward(w, (int)ctl);
+	    }
+	}
+#else
+	// refresh before workers so they can rely on the watcher's new state
+	if (pend & (1ULL << SIGHUP)) {
+	    forklock.lock();
+	    (void)onRefresh();
+	    forklock.unlock();
+	}
+	for (int sig : fwdsigs) {
+	    if (!(pend & (1ULL << sig)))
+		continue;
+	    if (sig == SIGCONT || sig == SIGTSTP)
+		paused = sig == SIGTSTP;
+	    for (const Worker &w : wkrs) {
+		// workers pause once serving, else running() would undo it
+		if ((sig != SIGCONT && sig != SIGTSTP) || (w.ran && !w.kill))
+		    forward(w, sig);
+	    }
+	}
+#endif
+	now = mticks();
+	count = (max)(cfg.get(T("worker.count"), nworkers), 1U);
+#ifdef _WIN32
+	count = (min)(count, MaxSlots);
+#endif
+	intvl = cfg.get(T("watch.interval"), 60U) * 1000;
+	maxpss = cfg.get(T("watch.maxpss"), 0U);
+	szpct = cfg.get(T("watch.maxsz"), 33U);
+	maxsz = szpct ? maxpss * (100 + szpct) / 100 : 0;
+	startms = cfg.get(T("watch.start"), 90U) * 1000;
+	stopms = cfg.get(T("watch.stop"), 60U) * 1000;
+#ifdef _WIN32
+	for (auto it = wkrs.begin(); it != wkrs.end(); ) {
+	    DWORD code = 0;
+	    Worker w = *it;
+
+	    if (WaitForSingleObject(w.proc, 0) != WAIT_OBJECT_0) {
+		++it;
+		continue;
+	    }
+	    it = wkrs.erase(it);
+	    (void)GetExitCodeProcess(w.proc, &code);
+	    SetThreadpoolWait(w.wait, nullptr, nullptr);
+	    WaitForThreadpoolWaitCallbacks(w.wait, TRUE);
+	    CloseThreadpoolWait(w.wait);
+	    CloseHandle(w.ctl);
+	    CloseHandle(w.proc);
+	    reaped(w, (int)code, false);
+	}
+#else
+	while ((p = waitpid(-1, &sts, WNOHANG)) > 0) {
+	    auto it = ranges::find(wkrs, p, &Worker::pid);
+	    Worker w;
+
+	    if (it == wkrs.end())		// adopted orphan
+		continue;
+	    w = *it;
+	    wkrs.erase(it);
+	    // a replacement must wait for the whole old group to free its
+	    // sockets and file locks; orphans adopted as subreaper end here
+	    (void)kill(-p, SIGKILL);
+	    for (;;) {
+		while (waitpid(-p, nullptr, WNOHANG) > 0)
+		    continue;
+		if (kill(-p, 0))
+		    break;
+		msleep(10);
+	    }
+	    reaped(w, WIFEXITED(sts) ? WEXITSTATUS(sts) : WIFSIGNALED(sts) ?
+		WTERMSIG(sts) : 0, WIFSIGNALED(sts));
+	}
+#endif
+	quit = qflag || !keep;
+	for (Worker &w : wkrs) {
+	    if (quit && !w.kill) {
+		if (!qflag)		// qflag signals were forwarded
+#ifdef _WIN32
+		    forward(w, SERVICE_CONTROL_STOP);
+#else
+		    kill(w.pid, SIGINT);
+#endif
+		w.kill = now + stopms;
+	    } else if (w.kill && now >= w.kill) {
+#ifndef _WIN32
+		int ksig = cfg.get(T("watch.corekill"), false) ? SIGQUIT :
+		    SIGKILL;
+
+#endif
+		dlog.note(Log::mod(name), Log::cmd(T("watch")),
+		    Log::kv(T("pid"), w.pid), T("killing hung child"));
+#ifdef _WIN32
+		(void)TerminateProcess(w.proc, 1);
+#else
+		if (kill(-w.pid, ksig))
+		    kill(w.pid, ksig);
+#endif
+		w.kill = now + stopms;
+	    }
+	}
+	if (!quit && now >= due) {
+	    Status agg = Error;
+	    Worker *big = nullptr;
+	    ulong bigpss = 0;
+	    tstring err;
+
+	    due = now + intvl;
+	    for (Worker &w : wkrs) {
+		Status cur;
+		const tchar *why = nullptr;
+		struct pidstat ps;
+		int ws;
+
+		if (w.kill)
+		    continue;
+		ws = slotstatus(w.slot);
+		cur = ws < 0 ? Starting : (Status)ws;
+		(void)pidstat(w.pid, &ps);
+		if (maxpss && ps.pss > maxpss) {
+		    why = T("proportional size exceeds maximum");
+		} else if (maxsz && ps.sz > maxsz) {
+		    why = T("total size exceeds maximum");
+		} else if (cur != w.status) {
+		    w.status = cur;
+		    w.since = now;
+		} else if (cur == Starting && now - w.since > startms) {
+		    why = T("start timeout");
+		} else if (cur == Refreshing && now - w.since >
+		    cfg.get(T("watch.refresh"), 60U) * 1000UL) {
+		    why = T("refresh timeout");
+		} else if (cur == Stopping && now - w.since > stopms) {
+		    why = T("stop timeout");
+		}
+		if (why) {
+		    recycle(w, why, ps);
+		    continue;
+		}
+		agg = (max)(agg, cur);
+		if (!big || ps.pss > bigpss) {
+		    big = &w;
+		    bigpss = ps.pss;
+		}
+	    }
+	    if (uint maxswap = cfg.get(T("watch.maxswap"), 0U); big &&
+		maxswap && now - swapped >= cfg.get(T("watch.swapwait"), 4U *
+		60 * 60) * 1000ULL && swap_pct() > maxswap) {
+		struct pidstat ps;
+
+		(void)pidstat(big->pid, &ps);
+		recycle(*big, T("system swap use exceeds maximum"), ps);
+		swapped = now;
+	    } else if (big && (agg == Running || agg == Stopped) &&
+		!check(agg, err)) {
+		for (Worker &w : wkrs) {
+		    struct pidstat ps;
+
+		    if (w.kill)
+			continue;
+		    (void)pidstat(w.pid, &ps);
+		    recycle(w, err.c_str(), ps);
+		}
+	    }
+	}
+	if (!quit) {
+	    auto live = (uint)ranges::count(wkrs, (msec_t)0, &Worker::kill);
+
+	    // a smaller worker.count retires the newest extras
+	    for (Worker &w : wkrs | views::reverse) {
+		if (live <= count)
+		    break;
+		if (!w.kill) {
+#ifdef _WIN32
+		    forward(w, SERVICE_CONTROL_STOP);
+#else
+		    kill(w.pid, SIGINT);
+#endif
+		    w.kill = now + stopms;
+		    --live;
+		}
+	    }
+	    // replacements wait for the old worker's whole group to exit
+	    while (wkrs.size() < count && now >= spawnat) {
+		uint s = 0;
+#ifdef _WIN32
+		Worker w;
+#endif
+
+		while (ranges::contains(wkrs, s, &Worker::slot))
+		    ++s;
+#ifdef _WIN32
+		w = {0, now, now, 0, s, Starting, first, false, nullptr,
+		    nullptr, nullptr};
+		stmap[s] = 0;
+		forklock.lock();
+		if (!spawn(w)) {
+		    forklock.unlock();
+		    dlog.err(Log::mod(name), Log::cmd(T("spawn")),
+			Log::error(errstr()));
+		    spawnat = now + intvl / 4;
+		    break;
+		}
+		forklock.unlock();
+		wkrs.push_back(w);
+		dlog.debug(Log::mod(name), Log::cmd(T("watch")),
+		    Log::kv(T("pid"), w.pid), Log::kv(T("slot"), s));
+#else
+		// a worker must not inherit a half refreshed watcher
+		forklock.lock();
+		onPreFork();
+		sigprocmask(SIG_BLOCK, &blk, &old);
+		if ((p = fork()) == 0) {
+		    sigset_t chld;
+
+		    slot = (int)s;
+		    wkrs.clear();
+		    ::close(wakefd[0]);
+		    ::close(wakefd[1]);
+		    wakefd[0] = wakefd[1] = -1;
+		    sa.sa_handler = SIG_DFL;
+		    sa.sa_flags = 0;
+		    sigaction(SIGCHLD, &sa, nullptr);
+		    sigemptyset(&chld);
+		    sigaddset(&chld, SIGCHLD);
+		    // forwarded signals stay blocked for ctrl_handler
+		    sigprocmask(SIG_UNBLOCK, &chld, nullptr);
+		    onPostFork(true);
+		    forklock.unlock();
+		    return 0;
+		}
+		sigprocmask(SIG_SETMASK, &old, nullptr);
+		onPostFork(false);
+		forklock.unlock();
+		if (p == -1) {
+		    dlog.err(Log::mod(name), Log::cmd(T("fork")),
+			Log::error(errstr()));
+		    spawnat = now + intvl / 4;
+		    break;
+		}
+		wkrs.push_back({0, now, now, p, s, Starting, first, false});
+		dlog.debug(Log::mod(name), Log::cmd(T("watch")),
+		    Log::kv(T("pid"), p), Log::kv(T("slot"), s));
+#endif
+	    }
+	    first = false;
+	}
+	if (quit && wkrs.empty())
+	    break;
+	for (Worker &w : wkrs) {
+	    int ws = w.ran || w.kill ? Running : slotstatus(w.slot);
+
+	    if (ws >= Pausing && ws <= Running) {
+		if (paused && !w.ran && !w.kill)
+#ifdef _WIN32
+		    forward(w, SERVICE_CONTROL_PAUSE);
+#else
+		    forward(w, SIGTSTP);
+#endif
+		w.ran = true;
+	    } else {
+		pending = true;
+	    }
+	}
+	// hold Starting until every worker serves so status never looks idle
+#ifdef _WIN32
+	want = quit ? Stopping : pending ? Starting : paused ? Paused : Running;
+	// repeats while starting so the SCM sees checkpoint progress
+	if (want != held || want == Starting) {
+	    held = want;
+	    (void)Service::update(want);
+	}
+#else
+	want = quit ? Stopping : pending ? Starting : Stopped;
+	if (want != held) {
+	    held = want;
+	    (void)lockfile(lckfd, want == Stopped ? F_UNLCK : F_RDLCK, SEEK_SET,
+		0, want == Stopped ? Watching : (uint)want, 0);
+	}
+#endif
+	wake = quit ? (msec_t)-1 : (min)(due, spawnat > now ? spawnat : due);
+	for (const Worker &w : wkrs) {
+	    if (w.kill)
+		wake = (min)(wake, w.kill);
+	}
+	if (pending)
+	    wake = (min)(wake, now + 100);
+	(void)dlog.close();
+#ifdef _WIN32
+	(void)WaitForSingleObject(wakeev, wake <= now ? 0 : (DWORD)(min)(wake -
+	    now, (msec_t)INFINITE - 1));
+#else
+	(void)poll(&pfd, 1, wake <= now ? 0 : (int)(min)(wake - now,
+	    (msec_t)INT_MAX));
+	while (read(wakefd[0], buf, sizeof (buf)) > 0)
+	    continue;
+#endif
+    }
+    if (qflag)
+	dlog.note(Log::mod(name), Log::cmd(qflag == Fast ? T("exit") :
+	    T("stop")), Log::kv(T("duration"), (mticks() - msec) / 1000));
+#ifdef _WIN32
+    UnmapViewOfFile(stmap);
+    stmap = nullptr;
+    CloseHandle(stmaphdl);
+    CloseHandle(job);
+#else
+    ::close(wakefd[0]);
+    ::close(wakefd[1]);
+#endif
+    return ret;
+}
