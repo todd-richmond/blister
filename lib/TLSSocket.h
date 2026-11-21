@@ -80,7 +80,7 @@ private:
 #endif
     mutable RWLock lock;
 #ifndef _WIN32
-    unordered_map<string, ssl_session_st *> sessions;
+    unordered_map<string, ssl_session_st *, strhash, streq> sessions;
 #endif
     const bool srv;
     bool verify = true;
@@ -89,8 +89,7 @@ private:
 // HTTPS when tlsctx is enabled, else plain HTTP
 class BLISTERTLS HTTPTLSServer: public HTTPServerSocket {
 public:
-    HTTPTLSServer(Dispatcher &d, const Socket &sock):
-	HTTPServerSocket(d, sock) {}
+    using HTTPServerSocket::HTTPServerSocket;
 
     void start(void) override {
 	if (tlsctx.enabled())

@@ -2353,6 +2353,7 @@ int Daemon::watchloop(void) {
 	    }
 	    if (uint maxswap = cfg.get(T("watch.maxswap"), 0U); big &&
 		maxswap && now - swapped >= cfg.get(T("watch.swapwait"), 4U *
+		// cppcheck-suppress unsignedLessThanZero
 		60 * 60) * 1000ULL && swap_pct() > maxswap) {
 		struct pidstat ps;
 
@@ -2392,6 +2393,7 @@ int Daemon::watchloop(void) {
 	    while (wkrs.size() < count && now >= spawnat) {
 		uint s = 0;
 #ifdef _WIN32
+		bool ok;
 		Worker w;
 #endif
 
@@ -2402,14 +2404,14 @@ int Daemon::watchloop(void) {
 		    nullptr, nullptr};
 		stmap[s] = 0;
 		forklock.lock();
-		if (!spawn(w)) {
-		    forklock.unlock();
+		ok = spawn(w);
+		forklock.unlock();
+		if (!ok) {
 		    dlog.err(Log::mod(name), Log::cmd(T("spawn")),
 			Log::error(errstr()));
 		    spawnat = now + intvl / 4;
 		    break;
 		}
-		forklock.unlock();
 		wkrs.push_back(w);
 		dlog.debug(Log::mod(name), Log::cmd(T("watch")),
 		    Log::kv(T("pid"), w.pid), Log::kv(T("slot"), s));

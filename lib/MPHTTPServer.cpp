@@ -40,7 +40,7 @@ static tchar pidprefix[32];
 
 // workers share a log file: tag each thread's lines once
 static void logprefix(void) {
-    if (*pidprefix && !*dlog.prefix())
+    if (pidprefix[0] && !dlog.prefix()[0])
 	dlog.prefix(pidprefix);
 }
 

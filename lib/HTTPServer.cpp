@@ -37,7 +37,7 @@ static constexpr ulong MaxRead = 64UL * 1024;	// larger files are mmapped
 static constexpr char CRLF[] = "\r\n";
 
 bool HTTPServerSocket::date;
-string HTTPServerSocket::docroot;
+string HTTPServerSocket::docroot; // NOLINT(runtime/string)
 atomic_bool HTTPServerSocket::paused;
 
 // Prometheus default buckets
@@ -711,7 +711,7 @@ string_view HTTPServerSocket::resource(string_view p) {
     if (p.starts_with('/'))
 	p.remove_prefix(1);
     end = p.find('/');
-    if (end != p.npos && p.substr(0, end) == "api") {
+    if (p.starts_with("api/")) {
 	size_t next = p.find('/', end + 1);
 
 	if (next != p.npos && p[end + 1] == 'v' && isdigit((uchar)p[end + 2]))
@@ -1228,8 +1228,8 @@ void PrometheusWriter::family(const PrometheusFamily &f, Type type) {
     name = std::move(n);
     quote = esc == Utf8 && !PrometheusStr::legacy(name, true);
     skip = !names.empty() && ranges::none_of(names, [&](const string &m) {
-	return m == name || (m.starts_with(name) && m.substr(name.size()) ==
-	    sfx);
+	return m == name || (m.size() == name.size() + sfx.size() &&
+	    m.starts_with(name) && m.ends_with(sfx));
     });
     if (skip)
 	return;
@@ -1409,7 +1409,7 @@ void PrometheusWriter::timing(const Timing &t, size_t top) {
 	rows.resize(top);
     for (bool timed : {true, false}) {
 	for (const Timing::Row &row : rows) {
-	    ulong cnts[Timing::TIMINGSLOTS];
+	    ulong cnts[Timing::TIMINGSLOTS] = {};
 #ifdef UNICODE
 	    const string key(tstringtoastring(tstring(row.key, row.klen)));
 #else
@@ -1539,8 +1539,8 @@ PrometheusMetrics::Series *PrometheusMetrics::series(const PrometheusStr
 
 	ser.text += l.name;
 	ser.text += l.value;
-	ser.labels.push_back({own(pos, l.name.size()), own(pos +
-	    l.name.size(), l.value.size())});
+	ser.labels.emplace_back(own(pos, l.name.size()), own(pos +
+	    l.name.size(), l.value.size()));
     }
     ser.cnts = make_unique<atomic<ulong>[]>(fam.bounds.size() + 1);
     ser.fam = &fam;

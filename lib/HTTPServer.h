@@ -156,6 +156,7 @@ struct PrometheusStr: string_view {
     consteval PrometheusStr(const char (&s)[N]): string_view(strview(s)),
 	hash(charhash(data(), size())), flags(classify(*this)) {}
     template<typename K> requires (!const_array<K> &&
+	!same_as<remove_cvref_t<K>, PrometheusStr> &&
 	is_convertible_v<K, string_view>)
     // cppcheck-suppress noExplicitConstructor
     // NOLINTNEXTLINE(runtime/explicit)
@@ -193,13 +194,13 @@ struct PrometheusLabels: span<const PrometheusLabel> {
     // NOLINTNEXTLINE(runtime/explicit)
     constexpr PrometheusLabels(initializer_list<PrometheusLabel> l):
 	span(l.begin(), l.size()) {}
-    constexpr PrometheusLabels(const PrometheusLabel *l, size_t n):
-	span(l, n) {}
+    using span::span;
 };
 
 // unit is appended to the name if missing
 struct PrometheusFamily {
     PrometheusStr name;
+    // NOLINTNEXTLINE(readability-redundant-member-init): missing-field-init
     string_view help = {}, unit = {};
 };
 

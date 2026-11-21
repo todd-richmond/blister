@@ -1365,9 +1365,9 @@ static bool readline(istream &is, tstring &s) {
     if (!is.fail())
 	s = astringtotstring(string(line));
 #else
-    s.resize_and_overwrite(MAX_REPLY_LINE, [&](char *p, size_t n) {
+    s.resize_and_overwrite(MAX_REPLY_LINE, [&is](char *p, size_t n) {
 	is.getline(p, (streamsize)n);
-	return is.fail() ? 0 : (size_t)is.gcount() - !is.eof();
+	return is.fail() ? 0 : (size_t)is.gcount() - (is.eof() ? 0 : 1);
     });
 #endif
     return !is.fail();

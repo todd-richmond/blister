@@ -292,7 +292,7 @@ void SMTPSinkSocket::delivered(void) {
 	    // remove the dot that starts each stuffed line
 	    char *b = body.data(), *o = b;
 	    const char *e = b + body.size();
-	    const char *p = b + (*b == '.');
+	    const char *p = *b == '.' ? b + 1 : b;
 	    const char *d = dotscan(b + 1, e);
 
 	    for (;;) {

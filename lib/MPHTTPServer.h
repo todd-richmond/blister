@@ -32,7 +32,7 @@ class MPHTTPListenSocket;
 
 class BLISTERTLS MPHTTPDispatcher: public Dispatcher {
 public:
-    explicit MPHTTPDispatcher(const Config &config): Dispatcher(config) {}
+    using Dispatcher::Dispatcher;
 
     bool acceptmany(void) const { return many; }
     // listen address, nullptr before listen()

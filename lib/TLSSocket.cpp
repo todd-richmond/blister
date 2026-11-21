@@ -69,7 +69,7 @@ static tstring syserr(long code) {
     wchar_t buf[256];
     DWORD n = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
 	FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, (DWORD)code, 0, buf,
-	sizeof (buf) / sizeof (*buf), nullptr);
+	(DWORD)std::size(buf), nullptr);
 
     while (n && (buf[n - 1] == L'\n' || buf[n - 1] == L'\r' ||
 	buf[n - 1] == L'.'))
@@ -161,15 +161,13 @@ static PCCERT_CONTEXT loadcert(const tstring &path, const tstring &pass) {
 
 static void systime(ULONGLONG off, bool add, SYSTEMTIME &st) {
     FILETIME ft;
-    ULARGE_INTEGER t;
+    ULONGLONG t;
 
     GetSystemTimeAsFileTime(&ft);
-    t.LowPart = ft.dwLowDateTime;
-    t.HighPart = ft.dwHighDateTime;
-    t.QuadPart = add ? t.QuadPart + off * 10000000 : t.QuadPart - off *
-	10000000;
-    ft.dwLowDateTime = t.LowPart;
-    ft.dwHighDateTime = t.HighPart;
+    t = (ULONGLONG)ft.dwHighDateTime << 32 | ft.dwLowDateTime;
+    t = add ? t + off * 10000000 : t - off * 10000000;
+    ft.dwLowDateTime = (DWORD)t;
+    ft.dwHighDateTime = (DWORD)(t >> 32);
     FileTimeToSystemTime(&ft, &st);
 }
 
@@ -193,7 +191,7 @@ static PCCERT_CONTEXT selfsign(void) {
     BYTE *san = nullptr;
     SECURITY_STATUS st;
 
-    if (gethostname(ahost, sizeof (ahost) - 1) || !*ahost)
+    if (gethostname(ahost, sizeof (ahost) - 1) || !ahost[0])
 	strcpy(ahost, "localhost");
     host = achartowstring(ahost);
     if ((st = NCryptOpenStorageProvider(&prov, MS_KEY_STORAGE_PROVIDER, 0)) !=
@@ -304,8 +302,9 @@ static DWORD verifychain(const SChannelCreds &c, PCCERT_CONTEXT cert,
 class DLL_LOCAL TLSLayer: public SocketLayer {
 public:
     TLSLayer(SChannelCreds *c, socket_t s, bool server, const tstring &name,
-	bool hostname): creds(c), fd(s), ibuf(new char[INBUF]),
-	sni(hostname), srv(server), target(tstringtowstring(name)) {
+	bool hostname): creds(c), fd(s),
+	ibuf(make_unique_for_overwrite<char[]>(INBUF)), sni(hostname),
+	srv(server), target(tstringtowstring(name)) {
 	SecInvalidateHandle(&ctxt);
     }
     ~TLSLayer() override {
@@ -324,7 +323,7 @@ public:
 	bool rec = ilen >= 5 && ilen >= 5 + ((ulong)(uchar)ibuf[3] << 8 |
 	    (uchar)ibuf[4]);
 
-	return flags | (dlen || rec ? (uint)Pending : 0U);
+	return flags | (dlen || rec ? to_underlying(Pending) : 0U);
     }
     long write(const Socket &s, const iovec *iov, int count) override;
 
@@ -685,7 +684,7 @@ long TLSLayer::write(const Socket &s, const iovec *iov, int count) {
 
 static SChannelCreds *newcreds(const Config &cfg, const tchar *sect,
     bool server, bool verify, tstring &err, tstring &keysrc) {
-    unique_ptr<SChannelCreds> c(new SChannelCreds);
+    auto c = make_unique<SChannelCreds>();
     tstring cafile = cfg.get(T("tls.cacertfile"), nullptr, sect);
     tstring certfile = cfg.get(T("tls.certfile"), nullptr, sect);
     tstring minver = cfg.get(T("tls.proto_min"), T("TLSv1_2"), sect);
@@ -818,13 +817,13 @@ TLSContext::Info TLSContext::info(const Socket &s) {
 	&cert) != SEC_E_OK || !cert)
 	return i;
     CertNameToStrW(X509_ASN_ENCODING, &cert->pCertInfo->Subject,
-	CERT_X500_NAME_STR, buf, sizeof (buf) / sizeof (*buf));
+	CERT_X500_NAME_STR, buf, (DWORD)std::size(buf));
     i.subject = wchartotstring(buf);
     CertNameToStrW(X509_ASN_ENCODING, &cert->pCertInfo->Issuer,
-	CERT_X500_NAME_STR, buf, sizeof (buf) / sizeof (*buf));
+	CERT_X500_NAME_STR, buf, (DWORD)std::size(buf));
     i.issuer = wchartotstring(buf);
     if (CertGetNameStringW(cert, CERT_NAME_ATTR_TYPE, 0,
-	(void *)szOID_COMMON_NAME, buf, sizeof (buf) / sizeof (*buf)) > 1)
+	(void *)szOID_COMMON_NAME, buf, (DWORD)std::size(buf)) > 1)
 	i.cn = wchartotstring(buf);
     CertFreeCertificateContext(cert);
     return i;

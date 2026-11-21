@@ -1153,8 +1153,8 @@ AsyncHTTPClient::Flow AsyncHTTPClient::readall(void) {
     while (!rq.empty()) {
 	Request &r = *rq.front();
 
-	switch (parser.advance(r, r.head, [&](HTTPResponse &, ulong newcap) {
-	    return reserve(r, newcap); })) {
+	switch (parser.advance(r, r.head, [this, &r](HTTPResponse &,
+	    ulong newcap) { return reserve(r, newcap); })) {
 	case Step::Done:
 	    if ((f = finish(r)) != Ok)
 		return f;

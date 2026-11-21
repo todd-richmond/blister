@@ -194,6 +194,7 @@ typedef __int64 _ino_t;	// -V677
 #define O_SHORT_LIVED	_O_SHORT_LIVED
 #define O_TMPFILE	O_TEMPORARY
 
+#define SIGALRM		14	// POSIX value; exit status only
 #define SIGHUP		SIGBREAK
 #define SIGCHLD		80	// out of range
 #define SIGPIPE		81
@@ -1571,6 +1572,7 @@ struct basic_strkey: basic_string_view<C> {
     consteval basic_strkey(const C (&s)[N]): basic_string_view<C>(strview(s)),
 	hash(keyhash(strview(s))) {}
     template<typename K> requires (!const_array<K> &&
+	!same_as<remove_cvref_t<K>, basic_strkey> &&
 	is_convertible_v<K, basic_string_view<C>>)
     // cppcheck-suppress noExplicitConstructor
     // NOLINTNEXTLINE(runtime/explicit)
