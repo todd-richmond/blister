@@ -35,7 +35,20 @@ else()
 	set(TLS_LIBS OpenSSL::SSL)
 	get_filename_component(ssl_dir ${OPENSSL_SSL_LIBRARY} DIRECTORY)
 	if(EXISTS ${ssl_dir}/libssl.a AND EXISTS ${ssl_dir}/libcrypto.a)
-	    set(TLS_STATIC_LIBS ${ssl_dir}/libssl.a ${ssl_dir}/libcrypto.a)
+	    # distro archives may need zstd/zlib/brotli: verify they link alone
+	    include(CheckCXXSourceCompiles)
+	    set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
+	    set(CMAKE_REQUIRED_LIBRARIES ${ssl_dir}/libssl.a
+		${ssl_dir}/libcrypto.a ${CMAKE_DL_LIBS} Threads::Threads)
+	    check_cxx_source_compiles([[
+#include <openssl/ssl.h>
+int main() { SSL_CTX_free(SSL_CTX_new(TLS_method())); }
+]] OPENSSL_STATIC_LINKS)
+	    unset(CMAKE_REQUIRED_INCLUDES)
+	    unset(CMAKE_REQUIRED_LIBRARIES)
+	    if(OPENSSL_STATIC_LINKS)
+		set(TLS_STATIC_LIBS ${ssl_dir}/libssl.a ${ssl_dir}/libcrypto.a)
+	    endif()
 	endif()
     endif()
 endif()

@@ -52,7 +52,7 @@
 #define GNUC_VERSION		(__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
     __GNUC_PATCHLEVEL__)
 #ifdef __OPTIMIZE__
-#define __forceinline		__attribute__((always_inline))
+#define __forceinline		inline __attribute__((always_inline))
 #else
 #define __forceinline		inline
 #endif
