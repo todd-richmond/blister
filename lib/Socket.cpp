@@ -837,7 +837,7 @@ long Socket::handshake(void) const {
 	sbuf->err = EOF;
 	return -1;
     }
-    return wrret(ret);
+    return (long)wrret(ret);
 }
 
 ssize_t Socket::layerread(iovec *iov, int count) const {

@@ -318,7 +318,7 @@ private:
     int slotstatus(uint s) const;
     int watchloop(void);
 #ifdef _WIN32
-    [[noreturn]] static ulong __stdcall ctlread(void *);
+    static ulong __stdcall ctlread(void *);
 #endif
     static uint swap_pct(void);
 #ifndef _WIN32

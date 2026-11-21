@@ -1620,7 +1620,7 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	}
     } while (lckfd == -1);
     len = (size_t)(to_chars(buf, buf + sizeof (buf), getpid()).ptr - buf);
-    if (ftruncate(lckfd, 0) || write(lckfd, buf, len) < 1)
+    if (ftruncate(lckfd, 0) || write(lckfd, buf, (uint)len) < 1)
 	return 2;
     configfile(argc, argv);
     if (!onRefresh())
@@ -2311,7 +2311,7 @@ int Daemon::watchloop(void) {
 	if (!quit && now >= due) {
 	    Status agg = Error;
 	    Worker *big = nullptr;
-	    ulong bigpss = 0;
+	    uint64_t bigpss = 0;
 	    tstring err;
 
 	    due = now + intvl;
