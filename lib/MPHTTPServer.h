@@ -43,14 +43,14 @@ public:
 	return retired || (m && totreq >= m);
     }
     uint connections(void) const { return curcon; }
+    uint remaining(void) const;
     // binds without accepting: the watcher calls this from onInit()
     bool listen(MPHTTPListenSocket *ls, const tchar *host = T("*:8080"));
-    virtual void metrics(PrometheusWriter &) const {}
     void refresh(bool recycle);
-    uint remaining(void) const;
     // exit once idle, as after maxrequests
     void retire(void);
     bool start(void);
+    virtual void metrics(PrometheusWriter &) const {}
 
 private:
     atomic<uint> curcon = 0, maxreq = 0, totreq = 0;
@@ -58,12 +58,10 @@ private:
 #ifdef _WIN32
     MPHTTPDaemon *daemon = nullptr;
     socket_t insock = SOCK_INVALID;	// worker: inherited listen socket
+    HANDLE timer = nullptr;
 #endif
     MPHTTPListenSocket *lsock = nullptr;
     bool many = true;
-#ifdef _WIN32
-    HANDLE timer = nullptr;
-#endif
 
     void closed(void);
     void drain(void);
@@ -76,6 +74,7 @@ private:
 #ifdef _WIN32
     static void __stdcall drained(void *d, BOOLEAN);
 #endif
+    static void logprefix(void);
 
     friend class MPHTTPDaemon;
     friend class MPHTTPSocket;
@@ -83,18 +82,19 @@ private:
 
 class BLISTERTLS MPHTTPSocket: public HTTPTLSServer {
 public:
-    MPHTTPSocket(MPHTTPDispatcher &d, const Socket &sock);
-    ~MPHTTPSocket() override;
+    MPHTTPSocket(MPHTTPDispatcher &d, const Socket &sock):
+	HTTPTLSServer(d, sock) { d.opened(); }
+    ~MPHTTPSocket() override { mpdspr().closed(); }
 
 protected:
     MPHTTPDispatcher &mpdspr(void) const { return (MPHTTPDispatcher &)dspr; }
-    void exec(void) override;
-    // /check, /metrics, /timing and /version
-    void get(bool head) override;
     void metrics(PrometheusWriter &w) const override {
 	HTTPServerSocket::metrics(w);
 	mpdspr().metrics(w);
     }
+    void exec(void) override;
+    // /check, /metrics, /timing and /version
+    void get(bool head) override;
 };
 
 /*
@@ -111,7 +111,7 @@ protected:
     unique_ptr<char[]> out;		// reply buffer freed after reply
     void *shm = nullptr;
 #ifdef _WIN32
-    string shmname;
+    string shmid;
 #else
     int shmid = -1;
 #endif

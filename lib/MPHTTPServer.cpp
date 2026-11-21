@@ -38,24 +38,9 @@ static constexpr ulong ShmKeep = 128UL * 1024;	// larger segments detach
 
 static tchar pidprefix[32];
 
-// workers share a log file: tag each thread's lines once
-static void logprefix(void) {
-    if (pidprefix[0] && !dlog.prefix()[0])
-	dlog.prefix(pidprefix);
-}
-
-MPHTTPSocket::MPHTTPSocket(MPHTTPDispatcher &d, const Socket &sock):
-    HTTPTLSServer(d, sock) {
-    d.opened();
-}
-
-MPHTTPSocket::~MPHTTPSocket() {
-    mpdspr().closed();
-}
-
 void MPHTTPSocket::exec(void) {
     mpdspr().request();
-    logprefix();
+    MPHTTPDispatcher::logprefix();
     HTTPTLSServer::exec();
 }
 
@@ -85,7 +70,7 @@ void ShMemHTTPSocket::cleanup(bool force) {
     if (shm && (force || (!shmout && shmsz > ShmKeep))) {
 #ifdef _WIN32
 	UnmapViewOfFile(shm);
-	shmname.clear();
+	shmid.clear();
 #else
 	shmdt(shm);
 	shmid = -1;
@@ -97,13 +82,13 @@ void ShMemHTTPSocket::cleanup(bool force) {
 }
 
 void ShMemHTTPSocket::post(void) {
-    const char *op = path + 1;
     const char *file = attr("X-File");
-    const char *name = attr("X-Name");
-    const char *val = attr("X-Shm-Id");
     bool filemap = false;
-    void *mem;
     ulong len;
+    void *mem;
+    const char *name = attr("X-Name");
+    const char *op = path + 1;
+    const char *val = attr("X-Shm-Id");
 
     if (!name)
 	name = file ? file : "";
@@ -111,9 +96,9 @@ void ShMemHTTPSocket::post(void) {
 #ifdef _WIN32
 	MEMORY_BASIC_INFORMATION mbi;
 
-	if (shmname != val) {
+	if (shmid != val) {
 	    cleanup(true);
-	    shmname = val;
+	    shmid = val;
 	}
 	if (!shm) {
 	    HANDLE hdl = OpenFileMappingA(FILE_MAP_READ | FILE_MAP_WRITE, FALSE,
@@ -129,7 +114,7 @@ void ShMemHTTPSocket::post(void) {
 		if (hdl)
 		    CloseHandle(hdl);
 		shm = nullptr;
-		shmname.clear();
+		shmid.clear();
 		error(400);
 		return;
 	    }
@@ -137,8 +122,8 @@ void ShMemHTTPSocket::post(void) {
 	    shmsz = (ulong)mbi.RegionSize;
 	}
 #else
-	int id;
 	struct shmid_ds ds;
+	int id;
 
 	if (from_chars(val, val + strlen(val), id).ec != errc()) {
 	    error(400);
@@ -318,6 +303,12 @@ bool MPHTTPDispatcher::listen(MPHTTPListenSocket *ls, const tchar *host) {
     return true;
 }
 
+// workers share a log file: tag each thread's lines once
+void MPHTTPDispatcher::logprefix(void) {
+    if (pidprefix[0] && !dlog.prefix()[0])
+	dlog.prefix(pidprefix);
+}
+
 // SIGTERM to self lets ctrl_handler stop the dispatcher off its own threads
 void MPHTTPDispatcher::quit(void) {
     if (quitting.exchange(true))
@@ -371,13 +362,13 @@ bool MPHTTPDaemon::check(Status, tstring &err) {
 }
 
 void MPHTTPDaemon::onPause(void) {
-    logprefix();
+    MPHTTPDispatcher::logprefix();
     HTTPServerSocket::pause(true);
     Daemon::onPause();
 }
 
 bool MPHTTPDaemon::onRefresh(void) {
-    logprefix();
+    MPHTTPDispatcher::logprefix();
     if (!Daemon::onRefresh())
 	return false;
     dspr.refresh(worker());
@@ -396,7 +387,7 @@ void MPHTTPDaemon::onSpawn(vector<HANDLE> &handles) {
 #endif
 
 void MPHTTPDaemon::onResume(void) {
-    logprefix();
+    MPHTTPDispatcher::logprefix();
     HTTPServerSocket::pause(false);
     Daemon::onResume();
 }
@@ -409,7 +400,7 @@ int MPHTTPDaemon::onStart(int argc, const tchar * const *argv) {
     if (worker()) {
 	*format_to_n(pidprefix, std::size(pidprefix) - 1, T("pid={}"),
 	    getpid()).out = '\0';
-	logprefix();
+	MPHTTPDispatcher::logprefix();
     }
     if (!setids())
 	return 7;
@@ -426,14 +417,14 @@ int MPHTTPDaemon::onStart(int argc, const tchar * const *argv) {
 }
 
 void MPHTTPDaemon::onStop(bool fast) {
-    logprefix();
+    MPHTTPDispatcher::logprefix();
     dspr.stop();
     Daemon::onStop(fast);
 }
 
 // alarm() from drain() has no timer id
 void MPHTTPDaemon::onTimer(ulong timer) {
-    logprefix();
+    MPHTTPDispatcher::logprefix();
     dlog.warn(Log::mod(name), Log::cmd(T("timer")), Log::error(timer ?
 	T("processing timeout") : T("drain timeout")));
     if (!worker()) {

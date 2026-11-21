@@ -1,7 +1,4 @@
 {
-  "env": {
-    "CCACHE_DISABLE": "1"
-  },
   "permissions": {
     "allow": [
       "Bash(clang-format *)",
@@ -10,19 +7,29 @@
     ]
   },
   "sandbox": {
-    "allowUnixSockets": true,
     "autoAllowBashIfSandboxed": true,
     "enabled": true,
     "filesystem": {
-      "denyRead": [
-        ".cache",
-        "Testing",
-        "autom4te.cache",
-        "bak"
+      "allowWrite": [
+        "~/.cache/ccache"
       ]
     },
     "network": {
+      "allowAllUnixSockets": true,
       "allowLocalBinding": true
     }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/deny-build-reads.sh"
+          }
+        ]
+      }
+    ]
   }
 }
