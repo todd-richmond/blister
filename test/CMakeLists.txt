@@ -72,3 +72,14 @@ endif()
 install(FILES http.wld smtp.wld DESTINATION etc)
 install(TARGETS cfg daemonize dlog httpload smtpload smtpsink DESTINATION bin)
 
+
+# executables, not DLLs, set the process code page
+if(WIN32)
+    get_property(targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(target ${targets})
+	get_target_property(type ${target} TYPE)
+	if(type STREQUAL "EXECUTABLE")
+	    target_sources(${target} PRIVATE ${PROJECT_SOURCE_DIR}/lib/utf8.manifest)
+	endif()
+    endforeach()
+endif()

@@ -77,11 +77,9 @@ private:
     static int onsession(ssl_st *ssl, ssl_session_st *sess);
 
     atomic<ssl_ctx_st *> ctx = nullptr;
-#endif
-    mutable RWLock lock;
-#ifndef _WIN32
     unordered_map<string, ssl_session_st *, strhash, streq> sessions;
 #endif
+    mutable RWLock lock;
     const bool srv;
     bool verify = true;
 };

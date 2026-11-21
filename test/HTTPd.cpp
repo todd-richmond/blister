@@ -24,15 +24,17 @@
 static bool init(Config &cfg, int argc, const tchar * const *argv,
     tchar (&addr)[32]) {
     tstring err;
-    ushort port = 8080;
 
+    tstrcpy(addr, T("*:8080"));
     for (int i = 1; i < argc; ++i) {
-	if (!tstrcmp(argv[i], T("-p")) && i < argc - 1)
-	    port = (ushort)ttoi(argv[++i]);
-	else if (!tstrcmp(argv[i], T("-s")))
+	if (!tstrcmp(argv[i], T("-p")) && i < argc - 1) {
+	    tsprintf(addr, T("*:%u"), (uint)(ushort)ttoi(argv[++i]));
+	    // after httpd.cfg loads, so -p wins over its host key
+	    cfg.set(T("host"), addr, HTTPServerSocket::section());
+	} else if (!tstrcmp(argv[i], T("-s"))) {
 	    cfg.set(T("tls.enable"), true, HTTPServerSocket::section());
+	}
     }
-    tsprintf(addr, T("*:%u"), (uint)port);
     if (!HTTPTLSServer::tlsctx.init(cfg, HTTPServerSocket::section(), err)) {
 	dloge(Log::mod(T("httpd")), Log::error(err));
 	return false;
@@ -92,6 +94,13 @@ public:
 protected:
     MPHTTPDispatcher mpd;
 
+    int command(const tchar *cmd, int argc, const tchar * const *argv)
+	override {
+	(void)argc; (void)argv;
+	if (tstreq(cmd, T("help")) || tstreq(cmd, T("?")))
+	    tcout << T("args:\t[start] [-p port] [-s]") << endl;
+	return -1;
+    }
     // watcher binds once; workers share or inherit its socket
     int onInit(int argc, const tchar * const *argv) override {
 	tchar buf[32];
@@ -103,7 +112,11 @@ protected:
 };
 
 int tmain(int argc, const tchar * const argv[]) {
+    vector<const tchar *> av(argv, argv + argc);
     HTTPDaemon hd(T("httpd"), T("Test HTTP Server"));
 
-    return hd.execute(argc, argv);
+    // no command or bare -p/-s: run in the console
+    if (argc == 1 || !tstrcmp(argv[1], T("-p")) || !tstrcmp(argv[1], T("-s")))
+	av.insert(av.begin() + 1, {T("console"), T("start")});
+    return hd.execute((int)av.size(), av.data());
 }

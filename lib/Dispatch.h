@@ -397,10 +397,10 @@ public:
 	return track(Socket::read(buf, len, sa), len);
     }
     template<class C> int read(C &c) const { return read(&c, sizeof (c)); }
-    long readv(iovec *iov, int count) const {
+    ssize_t readv(iovec *iov, int count) const {
 	return track(Socket::readv(iov, count), iovlen(iov, count));
     }
-    long readv(iovec *iov, int count, Sockaddr &sa) const {
+    ssize_t readv(iovec *iov, int count, Sockaddr &sa) const {
 	return track(Socket::readv(iov, count, sa), iovlen(iov, count));
     }
     // NOLINTEND(bugprone-derived-method-shadowing-base-method)
@@ -423,19 +423,19 @@ protected:
 private:
     bool layerpoll(DispatchObjCB cb, DispatchMsg &reason);
     // layers buffer input so they report fd drain themselves
-    template<typename N> __forceinline N track(N n, ulong len) const {
+    template<typename N> __forceinline N track(N n, size_t len) const {
 	const SocketLayer *l;
 
 	rdrain = n == 0 ? blocked() : n > 0 && (UNLIKELY(l = layer()) ?
 	    (l->state() & (SocketLayer::Drained | SocketLayer::Pending)) ==
-	    SocketLayer::Drained : (ulong)n < len && stream());
+	    SocketLayer::Drained : (size_t)n < len && stream());
 	return n;
     }
-    static ulong iovlen(const iovec *iov, int count) {
-	ulong len = 0;
+    static size_t iovlen(const iovec *iov, int count) {
+	size_t len = 0;
 
 	while (count-- > 0)
-	    len += (ulong)iov++->iov_len;
+	    len += iov++->iov_len;
 	return len;
     }
 

@@ -700,7 +700,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 #ifdef _WIN32
 		sent = false;
 #else
-		const long n = sock.sendmsg(*msgh, MSG_NOSIGNAL);
+		const ssize_t n = sock.sendmsg(*msgh, MSG_NOSIGNAL);
 
 		sent = n > 0;
 		off = sent ? (ulong)n : 0;
@@ -1224,11 +1224,11 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
     while (!wq.empty() && rq.size() < MaxPipeline) {
 	const size_t room = MaxPipeline - rq.size();
 	int cnt = 0;
-	ulong total = 0;
+	size_t total = 0;
 	auto add = [&](const void *p, size_t len) {
 	    iov[cnt].iov_base = (char *)p;	// NOSONAR
 	    iov[cnt++].iov_len = (iovlen_t)len;
-	    total += (ulong)len;
+	    total += len;
 	};
 
 	for (size_t i = 0; i < min(wq.size(), room); i++) {
@@ -1252,28 +1252,28 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
 	if (!cnt)
 	    break;
 
-	long n = sock.writev(iov, cnt);
+	ssize_t n = sock.writev(iov, cnt);
 
 	if (n < 0) {
 	    down(sock.err(), Down::Retry);
 	    return Flow::Stop;
 	}
-	for (ulong left = (ulong)n; left; ) {
+	for (size_t left = (size_t)n; left; ) {
 	    Request &r = *wq.front();
-	    const ulong len = (ulong)(r.req.size() + r.datasz - r.written);
+	    const size_t len = r.req.size() + r.datasz - r.written;
 
 	    if (left < len) {
-		r.written += left;
+		r.written += (ulong)left;
 		break;
 	    }
 	    left -= len;
-	    r.written += len;
+	    r.written += (ulong)len;
 	    wq.pop_front();
 	    rq.push_back(&r);
 	    if (timing)
 		r.start = timing->record(wkey, r.start);
 	}
-	if ((ulong)n < total)
+	if ((size_t)n < total)
 	    return Flow::Wait;
     }
     return Flow::Ok;

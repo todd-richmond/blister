@@ -189,7 +189,7 @@ extern BLISTER Timing &dtiming;
 // time a code block
 class BLISTER TimingEntry: nocopy {
 public:
-    template<cstr_ptr P> __forceinline explicit TimingEntry(P &&k,
+    template<cstr_ptr P> __forceinline explicit TimingEntry(P &&k, // NOSONAR
 	Timing &t = dtiming): key(std::forward<P>(k)), hash(stringhash(key)),
 	start(t.start()), timing(t) {}
     __forceinline explicit TimingEntry(const strlit &k, Timing &t = dtiming):
@@ -217,7 +217,8 @@ private:
 // time a stack call including destructors
 class BLISTER TimingFrame: nocopy {
 public:
-    template<typename K> requires (!const_array<K>)
+    template<typename K> requires (!const_array<K> &&
+	!same_as<remove_cvref_t<K>, TimingFrame>)
     __forceinline explicit TimingFrame(K &&key, Timing &t = dtiming):
 	timing(t) { timing.start(std::forward<K>(key)); }
     __forceinline explicit TimingFrame(const strlit &key, Timing &t = dtiming):

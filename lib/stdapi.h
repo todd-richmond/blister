@@ -49,7 +49,7 @@
 #define WARN_POP()		PRAGMA_STR(warning(pop))
 #define WARN_PUSH()		PRAGMA_STR(warning(push))
 #elif defined(__GNUC__)
-#define GNUC_VERSION (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
+#define GNUC_VERSION		(__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
     __GNUC_PATCHLEVEL__)
 #ifdef __OPTIMIZE__
 #define __forceinline		__attribute__((always_inline))
@@ -85,9 +85,9 @@
 				WARN_DISABLE(w)
 
 #ifdef __cplusplus
-#define EXTERNC		extern "C" {
-#define EXTERNC_	}
-#define LAMBDA(m)	[this]() { m(); }
+#define EXTERNC			extern "C" {
+#define EXTERNC_		}
+#define LAMBDA(m)		[this]() { m(); }
 #else
 #define EXTERNC
 #define EXTERNC_
@@ -105,6 +105,9 @@
 #endif
 
 #ifdef _WIN32
+#if defined(BLISTER_DLL) && !defined(_DLL)
+#error blister DLL needs the DLL CRT so errno and the heap are shared
+#endif
 #ifndef BLISTER_DLL
 #undef BLISTER
 #define BLISTER
@@ -125,19 +128,19 @@
 #ifndef WIN32
 #define WIN32
 #endif
-#define _WIN32_WINNT	_WIN32_WINNT_WIN10
-#define NTDDI_VERSION	NTDDI_WIN10_CO	// Windows 11
+#define _WIN32_WINNT		_WIN32_WINNT_WIN10
+#define NTDDI_VERSION		NTDDI_WIN10_CO	// Windows 11
 #define NOIME
 #define NOMCX
 #define NOSERVICE
 #define WIN32_LEAN_AND_MEAN
 
-#define fstat		__fstat
-#define ino_t		__ino_t
-#define rename		_rename
-#define stat		__sstat
-#define statvfs		__statvfs
-#define wstatvfs	__wstatvfs
+#define fstat			__fstat
+#define ino_t			__ino_t
+#define rename			_rename
+#define stat			__sstat
+#define statvfs			__statvfs
+#define wstatvfs		__wstatvfs
 #define _INO_T_DEFINED
 #define _STAT_DEFINED
 #define _STATVFS_DEFINED
@@ -147,7 +150,7 @@
 #if _MSC_VER >= 1900
 typedef __int64 _ino_t;	// -V677
 #endif
-#define __STDC__ 1
+#define __STDC__		1
 #include <ctype.h>
 #include <direct.h>
 #include <io.h>
@@ -157,7 +160,7 @@ typedef __int64 _ino_t;	// -V677
 #undef __STDC__
 #ifdef _CRT_INTERNAL_NONSTDC_NAMES
 #undef _CRT_INTERNAL_NONSTDC_NAMES
-#define _CRT_INTERNAL_NONSTDC_NAMES 1
+#define _CRT_INTERNAL_NONSTDC_NAMES	1
 #endif
 #include <stdlib.h>
 #include <string.h>
@@ -175,98 +178,128 @@ typedef __int64 _ino_t;	// -V677
 #undef rename
 #undef stat
 #undef wstat
-#define stricmp		_stricmp
-#define wcsicmp		_wcsicmp
+#define stricmp			_stricmp
+#define wcsicmp			_wcsicmp
 
 #ifndef __cplusplus
-#define inline		__inline
+#define inline			__inline
 #endif
 
-#define O_COMPRESSED	0x010000
-#define O_POSIX		0x020000
-#define O_SYNC		0x040000
-#define O_DIRECT	0x080000
-#define O_OVERLAPPED	0x100000
-#define O_BACKUP	0x200000
-#define O_NONBLOCK	0x400000
-#define O_CLOEXEC	0
-#define O_DSYNC		O_SYNC
-#define O_SHORT_LIVED	_O_SHORT_LIVED
-#define O_TMPFILE	O_TEMPORARY
+#define O_COMPRESSED		0x010000
+#define O_POSIX			0x020000
+#define O_SYNC			0x040000
+#define O_DIRECT		0x080000
+#define O_OVERLAPPED		0x100000
+#define O_BACKUP		0x200000
+#define O_NONBLOCK		0x400000
+#define O_CLOEXEC		0x0080	// _O_NOINHERIT
+#define O_DSYNC			O_SYNC
+#define O_SHORT_LIVED		_O_SHORT_LIVED
+#define O_TMPFILE		O_TEMPORARY
 
-#define SIGALRM		14	// POSIX value; exit status only
-#define SIGHUP		SIGBREAK
-#define SIGCHLD		80	// out of range
-#define SIGPIPE		81
+#define SIGALRM			14	// POSIX value; exit status only
+#define SIGHUP			SIGBREAK
+#define SIGCHLD			80	// out of range
+#define SIGPIPE			81
 
-#define S_IRUSR		_S_IREAD
-#define S_IWUSR		_S_IWRITE
-#define S_IXUSR		_S_IEXEC
-#define S_IRWXU		(S_IRUSR | S_IWUSR | S_IXUSR)
-#define S_IRGRP		00040
-#define S_IWGRP		00020
-#define S_IXGRP		00010
-#define S_IRWXG		(S_IRGRP | S_IWGRP | S_IXGRP)
-#define S_IROTH		00004
-#define S_IWOTH		00002
-#define S_IXOTH		00001
-#define S_IRWXO		(S_IROTH | S_IWOTH | S_IXOTH)
+#define S_IRUSR			_S_IREAD
+#define S_IWUSR			_S_IWRITE
+#define S_IXUSR			_S_IEXEC
+#define S_IRWXU			(S_IRUSR | S_IWUSR | S_IXUSR)
+#define S_IRGRP			00040
+#define S_IWGRP			00020
+#define S_IXGRP			00010
+#define S_IRWXG			(S_IRGRP | S_IWGRP | S_IXGRP)
+#define S_IROTH			00004
+#define S_IWOTH			00002
+#define S_IXOTH			00001
+#define S_IRWXO			(S_IROTH | S_IWOTH | S_IXOTH)
 
-#define F_OK		0
-#define X_OK		(1 << 0)
-#define W_OK		(1 << 1)
-#define R_OK		(1 << 2)
+#define F_OK			0
+#define X_OK			(1 << 0)
+#define W_OK			(1 << 1)
+#define R_OK			(1 << 2)
 
-#define F_ULOCK		0
-#define F_LOCK		1
-#define F_TLOCK		2
-#define F_TEST		3
+#define F_ULOCK			0
+#define F_LOCK			1
+#define F_TLOCK			2
+#define F_TEST			3
 
-#define F_RDLCK		0
-#define F_WRLCK		1
-#define F_UNLCK		2
-#define F_GETLK		5
-#define F_SETLK		6
-#define F_SETLKW	7
+#define F_RDLCK			0
+#define F_WRLCK			1
+#define F_UNLCK			2
+#define F_DUPFD			0
+#define F_GETFD			1
+#define F_SETFD			2
+#define F_GETFL			3
+#define F_SETFL			4
+#define F_GETLK			5
+#define F_SETLK			6
+#define F_SETLKW		7
 
-#define LOCK_SH		1
-#define LOCK_EX		2
-#define LOCK_NB		4
-#define LOCK_UN		8
+#define FD_CLOEXEC		1
 
-#define PATH_MAX	MAX_PATH
+#define STDIN_FILENO		0
+#define STDOUT_FILENO		1
+#define STDERR_FILENO		2
 
-#define bcopy(a, b, c)  memmove(b, a, c)
-#define bzero(a, b)	memset(a, 0, b)
-#define chown(p, o, g)	0
-#define fchown(f, o, g)	0
-#define lchown(p, o, g)	0
-#define getcwd		_getcwd
-#define getuid()	0
-#define getgid()	0
-#define geteuid		getuid
-#define getegid		getgid
-#define getpid		_getpid
-#define kill(pid, sig)	sigsend(P_PID, pid, sig)
-#define	popen		_popen
-#define	pclose		_pclose
-#define setuid(uid)	0
-#define setgid(gid)	0
-#define seteuid		setuid
-#define setegid		setgid
-#define sleep(x)	Sleep((x) * 1000)
-#define strcasecmp	stricmp
-#define strncasecmp	strnicmp
-#define snprintf	_snprintf
-#define usleep(x)	Sleep((x) / 1000)
+#define S_IFLNK			0xA000
+#define S_ISDIR(m)		(((m) & S_IFMT) == S_IFDIR)
+#define S_ISLNK(m)		(((m) & S_IFMT) == S_IFLNK)
+#define S_ISREG(m)		(((m) & S_IFMT) == S_IFREG)
+
+#define CLOCK_REALTIME			0
+#define CLOCK_MONOTONIC			1
+#define CLOCK_PROCESS_CPUTIME_ID	2
+#define CLOCK_THREAD_CPUTIME_ID		3
+#define CLOCK_BOOTTIME			CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC_COARSE		CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC_RAW		CLOCK_MONOTONIC
+#define CLOCK_REALTIME_COARSE		CLOCK_REALTIME
+
+#define _SC_CLK_TCK		2
+#define _SC_OPEN_MAX		4
+#define _SC_PAGESIZE		30
+#define _SC_PAGE_SIZE		_SC_PAGESIZE
+#define _SC_NPROCESSORS_CONF	83
+#define _SC_NPROCESSORS_ONLN	84
+
+#define LOCK_SH			1
+#define LOCK_EX			2
+#define LOCK_NB			4
+#define LOCK_UN			8
+
+#define PATH_MAX		MAX_PATH
+
+#define bcopy(a, b, c)		memmove(b, a, c)
+#define bzero(a, b)		memset(a, 0, b)
+#define chown(p, o, g)		0
+#define fchown(f, o, g)		0
+#define lchown(p, o, g)		0
+#define getcwd			_getcwd
+#define getuid()		0
+#define getgid()		0
+#define geteuid			getuid
+#define getegid			getgid
+#define getpid			_getpid
+#define kill(pid, sig)		sigsend(P_PID, pid, sig)
+#define	popen			_popen
+#define	pclose			_pclose
+#define setuid(uid)		0
+#define setgid(gid)		0
+#define seteuid			setuid
+#define setegid			setgid
+#define sleep(x)		Sleep((x) * 1000)
+#define strcasecmp		stricmp
+#define strncasecmp		strnicmp
 #define waitpid(pid, sts, opt)	cwait(sts, pid, opt)
-#define wcserror	_wcserror
-#define	wexecvp		_wexecvp
-#define wgetcwd		_wgetcwd
-#define wgetenv		_wgetenv
-#define wtof		_wtof
-#define wtoi		_wtoi
-#define wtol		_wtol
+#define wcserror		_wcserror
+#define	wexecvp			_wexecvp
+#define wgetcwd			_wgetcwd
+#define wgetenv			_wgetenv
+#define wtof			_wtof
+#define wtoi			_wtoi
+#define wtol			_wtol
 
 typedef __int64 llong;
 typedef unsigned short ushort;
@@ -275,6 +308,7 @@ typedef unsigned long ulong;
 typedef unsigned __int64 ullong;
 typedef wchar_t wchar;
 
+typedef int clockid_t;
 typedef ushort gid_t;
 typedef int id_t;
 typedef llong ino_t;	// -V677
@@ -282,6 +316,14 @@ typedef short nlink_t;
 typedef long pid_t;
 typedef long timer_t;
 typedef ushort uid_t;
+typedef ushort mode_t;
+typedef uint useconds_t;
+#if !defined(_SSIZE_T_) && !defined(_SSIZE_T_DEFINED)
+typedef intptr_t ssize_t;		// matches libuv
+#define SSIZE_MAX		INTPTR_MAX
+#define _SSIZE_T_
+#define _SSIZE_T_DEFINED
+#endif
 
 typedef enum idtype {
     P_PID, P_PPID, P_PGID, P_SID, P_CID, P_UID, P_GID, P_ALL
@@ -300,19 +342,21 @@ typedef struct wdirent {
     wchar *d_name;
 } wdirent;
 
+typedef struct WDIR WDIR;
+
+// UTF-8 names over the wide API
 typedef struct DIR {
-    void *hdl;
+    WDIR *wdir;
     dirent dir;
-    WIN32_FIND_DATAA wfd;
-    char path[1];
+    char name[MAX_PATH * 3];
 } DIR;
 
-typedef struct WDIR {
+struct WDIR {
     void *hdl;
     wdirent dir;
     WIN32_FIND_DATAW wfd;
     wchar path[1];
-} WDIR;
+};
 
 #define telldir(p)		(p->dir.d_off)
 #define rewinddir(dirp)		seekdir(dirp, 0L)
@@ -323,7 +367,7 @@ struct stat {
     ino_t st_ino;
     ulong st_dev;
     ulong st_rdev;
-    ulong st_size;
+    size_t st_size;
     ulong st_atime;
     ulong st_mtime;
     ulong st_ctime;
@@ -334,7 +378,7 @@ struct stat {
 };
 
 // statvfs emulation
-#define FSTYPSZ 16
+#define FSTYPSZ			16
 
 typedef struct statvfs {
     ulong f_bsize;			// preferred file system block size
@@ -355,21 +399,30 @@ typedef struct statvfs {
 typedef struct _WSABUF iovec;
 typedef struct _WSABUF iovec_t;
 typedef ULONG iovlen_t;
-#define iov_len len
-#define iov_base buf
+#define iov_len			len
+#define iov_base		buf
 
 struct timezone {
     int tz_minuteswest;
     int tz_dsttime;
 };
 
+struct flock {
+    short l_type;
+    short l_whence;
+    llong l_start;
+    llong l_len;
+    pid_t l_pid;
+};
+
 // replacement CLib supports atomic rename, deleting open files and socket fds
-#define fileno(stream)	((int)_get_osfhandle(_fileno(stream)))
+#define fileno(stream)		((int)_get_osfhandle(_fileno(stream)))
 
 EXTERNC
 extern BLISTER int access(const char *path, int mode);
 extern BLISTER int chmod(const char *path, int mode);
 extern BLISTER int chsize(int fd, long len);
+extern BLISTER int clock_gettime(clockid_t id, struct timespec *ts);
 extern BLISTER int close(int fd);
 extern BLISTER void closedir(DIR *dir);
 extern BLISTER int creat(const char *path, int mode);
@@ -377,31 +430,52 @@ extern BLISTER int copy_file(const char *from, const char *to, int check);
 extern BLISTER int dup(int fd);
 extern BLISTER int dup2(int from, int to);
 extern BLISTER int eof(int fd);
+extern BLISTER int fchmod(int fd, int mode);
+extern BLISTER int fcntl(int fd, int cmd, ...);
+extern BLISTER int fdatasync(int fd);
 extern BLISTER long filelength(int fd);
 extern BLISTER int flock(int fd, int op);
 extern BLISTER int fstat(int fd, struct stat *buf);
 extern BLISTER int fsync(int fd);
-extern BLISTER int ftruncate(int fd, long len);
+extern BLISTER int ftruncate(int fd, llong len);
+extern BLISTER int futimes(int fd, const struct timeval tv[2]);
+extern BLISTER int getpagesize(void);
 extern BLISTER int gettimeofday(struct timeval *tv, struct timezone *tz);
 extern BLISTER int isatty(int fd);
 extern BLISTER int link(const char *from, const char *to);
-extern BLISTER int lockf(int fd, int op, long len);
+extern BLISTER int lockf(int fd, int op, llong len);
 extern BLISTER long lseek(int, long, int);
+extern BLISTER int lstat(const char *path, struct stat *buf);
+extern BLISTER int mkdir(const char *path, int mode);
+extern BLISTER char *mkdtemp(char *path);
+extern BLISTER int mkstemp(char *path);
 extern BLISTER char *mktemp(char *path);
+extern BLISTER int nanosleep(const struct timespec *req, struct timespec *rem);
 extern BLISTER int open(const char *path, int mode, ...);
 extern BLISTER DIR *opendir(const char *path);
+extern BLISTER int pipe(int fds[2]);
+extern BLISTER ssize_t pread(int fd, void *buf, size_t len, llong off);
+extern BLISTER ssize_t pwrite(int fd, const void *buf, size_t len, llong off);
 extern BLISTER int read(int, void *, unsigned int);
 extern BLISTER dirent *readdir(DIR *dir);
-extern BLISTER long readv(int fd, iovec *vec, int numvec);
+extern BLISTER ssize_t readlink(const char *path, char *buf, size_t sz);
+extern BLISTER char *realpath(const char *path, char *resolved);
+extern BLISTER ssize_t readv(int fd, iovec *vec, int numvec);
 extern BLISTER int rename(const char *from, const char *to);
+extern BLISTER int rmdir(const char *path);
 extern BLISTER void seekdir(DIR *dir, long offset);
 extern BLISTER int setmode(int fd, int mode);
 extern BLISTER int sigsend(idtype_t idtype, id_t id, int sig);
 extern BLISTER int stat(const char *path, struct stat *buf);
 extern BLISTER int statvfs(const char *path, struct statvfs *buf);
+extern BLISTER int symlink(const char *target, const char *path);
+extern BLISTER long sysconf(int name);
 extern BLISTER long tell(int fd);
+extern BLISTER int truncate(const char *path, llong len);
 extern BLISTER int umask(int mode);
 extern BLISTER int unlink(const char *path);
+extern BLISTER int usleep(useconds_t usec);
+extern BLISTER int utimes(const char *path, const struct timeval tv[2]);
 extern BLISTER int waccess(const wchar *path, int mode);
 extern BLISTER int wchmod(const wchar *path, int mode);
 extern BLISTER void wclosedir(WDIR *dir);
@@ -409,16 +483,26 @@ extern BLISTER int wcopy_file(const wchar *from, const wchar *to, int check);
 extern BLISTER int wcreat(const wchar *path, int mode);
 extern BLISTER wchar *wmktemp(wchar *path);
 extern BLISTER int wlink(const wchar *from, const wchar *to);
+extern BLISTER int wlstat(const wchar *path, struct stat *buf);
+extern BLISTER int wmkdir(const wchar *path, int mode);
+extern BLISTER wchar *wmkdtemp(wchar *path);
+extern BLISTER int wmkstemp(wchar *path);
 extern BLISTER int wopen(const wchar *path, int mode, ...);
 extern BLISTER WDIR *wopendir(const wchar *path);
 extern BLISTER wdirent *wreaddir(WDIR *dir);
+extern BLISTER ssize_t wreadlink(const wchar *path, wchar *buf, size_t sz);
+extern BLISTER wchar *wrealpath(const wchar *path, wchar *resolved);
 extern BLISTER int wrename(const wchar *from, const wchar *to);
+extern BLISTER int wrmdir(const wchar *path);
 extern BLISTER int write(int, const void *, uint);
-extern BLISTER long writev(int fd, const iovec *vec, int numvec);
+extern BLISTER ssize_t writev(int fd, const iovec *vec, int numvec);
 extern BLISTER void wseekdir(WDIR *dir, long);
 extern BLISTER int wstat(const wchar *wpath, struct stat *buf);
 extern BLISTER int wstatvfs(const wchar *wpath, struct statvfs *buf);
+extern BLISTER int wsymlink(const wchar *target, const wchar *path);
+extern BLISTER int wtruncate(const wchar *path, llong len);
 extern BLISTER int wunlink(const wchar *path);
+extern BLISTER int wutimes(const wchar *path, const struct timeval tv[2]);
 EXTERNC_
 
 #define asctime_r(tm, buf, sz)	asctime_s(buf, sz, tm)
@@ -434,7 +518,7 @@ EXTERNC_
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#define MAC_OS_X_VERSION_MIN_REQUIRED MAC_OS_X_VERSION_15_0
+#define MAC_OS_X_VERSION_MIN_REQUIRED	MAC_OS_X_VERSION_15_0
 
 #include <ctype.h>
 #include <unistd.h>
@@ -462,34 +546,34 @@ EXTERNC_
 #define __stdcall
 
 #ifndef __DBL_EPSILON__
-#define DBL_EPSILON	2.2204460492503131e-016
-#define FLT_EPSILON	1.192092896e-07F
+#define DBL_EPSILON		2.2204460492503131e-016
+#define FLT_EPSILON		1.192092896e-07F
 #endif
 #ifndef ENOSR
-#define ENOSR		ENOBUFS
+#define ENOSR			ENOBUFS
 #endif
 
 #ifndef O_BINARY
-#define O_BINARY	0
+#define O_BINARY		0
 #endif
 #ifndef O_CLOEXEC
-#define O_CLOEXEC	0
+#define O_CLOEXEC		0
 #endif
-#define O_COMPRESSED	0
+#define O_COMPRESSED		0
 #ifndef O_DIRECT
-#define O_DIRECT	0
+#define O_DIRECT		0
 #endif
-#define O_SEQUENTIAL	0
-#define O_SHORT_LIVED	0
+#define O_SEQUENTIAL		0
+#define O_SHORT_LIVED		0
 #ifndef O_TMPFILE
-#define O_TMPFILE	0
+#define O_TMPFILE		0
 #endif
-#define O_TEMPORARY	O_TMPFILE
+#define O_TEMPORARY		O_TMPFILE
 
-#define stricmp		strcasecmp
-#define strnicmp	strncasecmp
-#define wcsicmp		wcscasecmp
-#define wcsnicmp	wcsncasecmp
+#define stricmp			strcasecmp
+#define strnicmp		strncasecmp
+#define wcsicmp			wcscasecmp
+#define wcsnicmp		wcsncasecmp
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 #ifdef __APPLE__
@@ -539,13 +623,13 @@ EXTERNC_
 #endif
 #endif // _WIN32
 
-#define ZERO(x)		memset(&(x), 0, sizeof (x))
+#define ZERO(x)			memset(&(x), 0, sizeof (x))
 
 #ifndef O_NOATIME
-#define O_NOATIME	0
+#define O_NOATIME		0
 #endif
 #ifndef O_NOFOLLOW
-#define O_NOFOLLOW	0
+#define O_NOFOLLOW		0
 #endif
 
 // 8 / 16 bit char string macros
@@ -554,195 +638,219 @@ EXTERNC_
 #define UNICODE
 #endif
 
-#define _T(str)		L##str
-#define T(str)		_T(str)
+#define _T(str)			L##str
+#define T(str)			_T(str)
 
-#define tstring		wstring
-#define tstring_view	wstring_view
-#define tstrcmp		wcscmp
-#define tstricmp	wcsicmp
-#define tstrncmp	wcsncmp
-#define tstrnicmp	wcsnicmp
-#define tstrcat		wcscat
-#define tstrlcat	wcslcat
-#define tstrncat	wcsncat
-#define tstrcpy		wcscpy
-#define tstrlcpy	wcslcpy
-#define tstrncpy	wcsncpy
-#define tstrlen		wcslen
-#define	tstrchr		wcschr
-#define tstrrchr	wcsrchr
-#define tstrspn		wcsspn
-#define tstrcspn	wcscspn
-#define tstrpbrk	wcspbrk
-#define tstrstr		wcsstr
-#define tstrtok		wcstok
-#define tstrdup		wcsdup
-#define tstrerror	wcserror
+#define tstring			wstring
+#define tstring_view		wstring_view
+#define tstrcmp			wcscmp
+#define tstricmp		wcsicmp
+#define tstrncmp		wcsncmp
+#define tstrnicmp		wcsnicmp
+#define tstrcat			wcscat
+#define tstrlcat		wcslcat
+#define tstrncat		wcsncat
+#define tstrcpy			wcscpy
+#define tstrlcpy		wcslcpy
+#define tstrncpy		wcsncpy
+#define tstrlen			wcslen
+#define	tstrchr			wcschr
+#define tstrrchr		wcsrchr
+#define tstrspn			wcsspn
+#define tstrcspn		wcscspn
+#define tstrpbrk		wcspbrk
+#define tstrstr			wcsstr
+#define tstrtok			wcstok
+#define tstrdup			wcsdup
+#define tstrerror		wcserror
 #define tstrerror_r(e, buf, sz)	wcsncpy(buf, wcserror(e), sz)
-#define tstrftime	wcsftime
-#define ttof		wtof
-#define ttoi		wtoi
-#define ttol		wtol
-#define tstrtod		wcstod
-#define tstrtol		wcstol
-#define tstrtoll	wcstoll
-#define tstrtoul	wcstoul
-#define tstrtoull	wcstoull
-#define tstrtoq		wcstoq
-#define texecvp		wexecvp
-#define tgetcwd		wgetcwd
-#define tgetenv		wgetenv
-#define istalnum	iswalnum
-#define istalpha	iswalpha
-#define istblank	iswblank
-#define istcntrl	iswcntrl
-#define istdigit	iswdigit
-#define istgraph	iswgraph
-#define istlower	iswlower
-#define istprint	iswprint
-#define istpunct	iswpunct
-#define istspace	iswspace
-#define istupper	iswupper
-#define istxdigit	iswxdigit
-#define totupper	towupper
-#define totlower	towlower
-#define tmain		wmain
+#define tstrftime		wcsftime
+#define ttof			wtof
+#define ttoi			wtoi
+#define ttol			wtol
+#define tstrtod			wcstod
+#define tstrtol			wcstol
+#define tstrtoll		wcstoll
+#define tstrtoul		wcstoul
+#define tstrtoull		wcstoull
+#define tstrtoq			wcstoq
+#define texecvp			wexecvp
+#define tgetcwd			wgetcwd
+#define tgetenv			wgetenv
+#define istalnum		iswalnum
+#define istalpha		iswalpha
+#define istblank		iswblank
+#define istcntrl		iswcntrl
+#define istdigit		iswdigit
+#define istgraph		iswgraph
+#define istlower		iswlower
+#define istprint		iswprint
+#define istpunct		iswpunct
+#define istspace		iswspace
+#define istupper		iswupper
+#define istxdigit		iswxdigit
+#define totupper		towupper
+#define totlower		towlower
+#define tmain			wmain
 
-#define tfprintf	fwprintf
-#define tprintf		wprintf
-#define tsnprintf	snwprintf
-#define tsprintf	swprintf
-#define tvfprintf	vfwprintf
-#define tvprintf	vwprintf
-#define tvsprintf	vswprintf
-#define tfscanf		fwscanf
-#define tscanf		wscanf
-#define tsscanf		swscanf
+#define tfprintf		fwprintf
+#define tprintf			wprintf
+#define tsnprintf		swprintf
+#define tsprintf		swprintf
+#define tvfprintf		vfwprintf
+#define tvprintf		vwprintf
+#define tvsprintf		vswprintf
+#define tfscanf			fwscanf
+#define tscanf			wscanf
+#define tsscanf			swscanf
 
-#define tdirent		wdirent
-#define tDIR		WDIR
+#define tdirent			wdirent
+#define tDIR			WDIR
 
-#define taccess		_waccess
-#define tclosedir	wclosedir
-#define tlink		wlink
-#define topendir	wopendir
-#define treaddir	wreaddir
-#define trename		wrename
-#define trewinddir	wrewinddir
-#define tseekdir	wseekdir
-#define tstat		wstat
-#define tstatvfs	wstatvfs
-#define tunlink		wunlink
+#define taccess			waccess
+#define tchmod			wchmod
+#define tclosedir		wclosedir
+#define tlink			wlink
+#define tlstat			wlstat
+#define tmkdir			wmkdir
+#define tmkdtemp		wmkdtemp
+#define tmkstemp		wmkstemp
+#define tmktemp			wmktemp
+#define topendir		wopendir
+#define treaddir		wreaddir
+#define treadlink		wreadlink
+#define trealpath		wrealpath
+#define trename			wrename
+#define trewinddir		wrewinddir
+#define trmdir			wrmdir
+#define tseekdir		wseekdir
+#define tstat			wstat
+#define tstatvfs		wstatvfs
+#define tsymlink		wsymlink
+#define ttruncate		wtruncate
+#define tunlink			wunlink
+#define tutimes			wutimes
 
-#define tspawnl		_wspawnl
-#define tspawnle	_wspawnle
-#define tspawnlp	_wspawnlp
-#define tspawnlpe	_wspawnlpe
-#define tspawnv		_wspawnv
-#define tspawnve	_wspawnve
-#define tspawnvp	_wspawnvp
-#define tspawnvpe	_wspawnvpe
+#define tspawnl			_wspawnl
+#define tspawnle		_wspawnle
+#define tspawnlp		_wspawnlp
+#define tspawnlpe		_wspawnlpe
+#define tspawnv			_wspawnv
+#define tspawnve		_wspawnve
+#define tspawnvp		_wspawnvp
+#define tspawnvpe		_wspawnvpe
 
 typedef wchar tchar;
 typedef wchar tuchar;
 
 #else	// UNICODE
-#define T(str)		str
+#define T(str)			str
 
-#define tstring		string
-#define tstring_view	string_view
-#define tstrcmp		strcmp
-#define tstricmp	stricmp
-#define tstrncmp	strncmp
-#define tstrnicmp	strnicmp
-#define tstrcat		strcat
-#define tstrlcat	strlcat
-#define tstrncat	strncat
-#define tstrcpy		strcpy
-#define tstrlcpy	strlcpy
-#define tstrncpy	strncpy
-#define tstrlen		strlen
-#define	tstrchr		strchr
-#define tstrrchr	strrchr
-#define tstrspn		strspn
-#define tstrcspn	strcspn
-#define tstrpbrk	strpbrk
-#define tstrstr		strstr
-#define tstrtok		strtok
-#define tstrdup		strdup
-#define tstrerror	strerror
-#define tstrerror_r	strerror_r
-#define tstrftime	strftime
-#define ttof		atof
-#define ttoi		atoi
-#define ttol		atol
-#define tstrtod		strtod
-#define tstrtol		strtol
-#define tstrtoll	strtoll
-#define tstrtoul	strtoul
-#define tstrtoull	strtoull
-#define tstrtoq		strtoq
-#define texecvp		execvp
-#define tgetcwd		getcwd
-#define tgetenv		getenv
-#define istalnum(c)	isalnum((uchar)c)
-#define istalpha(c)	isalpha((uchar)c)
-#define istblank(c)	isblank((uchar)c)
-#define istcntrl(c)	iscntrl((uchar)c)
-#define istdigit(c)	isdigit((uchar)c)
-#define istgraph(c)	isgraph((uchar)c)
-#define istlower(c)	islower((uchar)c)
-#define istprint(c)	isprint((uchar)c)
-#define istpunct(c)	ispunct((uchar)c)
-#define istspace(c)	isspace((uchar)c)
-#define istupper(c)	isupper((uchar)c)
-#define istxdigit(c)	isxdigit((uchar)c)
-#define totupper(c)	toupper((uchar)c)
-#define totlower(c)	tolower((uchar)c)
-#define tmain		main
+#define tstring			string
+#define tstring_view		string_view
+#define tstrcmp			strcmp
+#define tstricmp		stricmp
+#define tstrncmp		strncmp
+#define tstrnicmp		strnicmp
+#define tstrcat			strcat
+#define tstrlcat		strlcat
+#define tstrncat		strncat
+#define tstrcpy			strcpy
+#define tstrlcpy		strlcpy
+#define tstrncpy		strncpy
+#define tstrlen			strlen
+#define	tstrchr			strchr
+#define tstrrchr		strrchr
+#define tstrspn			strspn
+#define tstrcspn		strcspn
+#define tstrpbrk		strpbrk
+#define tstrstr			strstr
+#define tstrtok			strtok
+#define tstrdup			strdup
+#define tstrerror		strerror
+#define tstrerror_r		strerror_r
+#define tstrftime		strftime
+#define ttof			atof
+#define ttoi			atoi
+#define ttol			atol
+#define tstrtod			strtod
+#define tstrtol			strtol
+#define tstrtoll		strtoll
+#define tstrtoul		strtoul
+#define tstrtoull		strtoull
+#define tstrtoq			strtoq
+#define texecvp			execvp
+#define tgetcwd			getcwd
+#define tgetenv			getenv
+#define istalnum(c)		isalnum((uchar)c)
+#define istalpha(c)		isalpha((uchar)c)
+#define istblank(c)		isblank((uchar)c)
+#define istcntrl(c)		iscntrl((uchar)c)
+#define istdigit(c)		isdigit((uchar)c)
+#define istgraph(c)		isgraph((uchar)c)
+#define istlower(c)		islower((uchar)c)
+#define istprint(c)		isprint((uchar)c)
+#define istpunct(c)		ispunct((uchar)c)
+#define istspace(c)		isspace((uchar)c)
+#define istupper(c)		isupper((uchar)c)
+#define istxdigit(c)		isxdigit((uchar)c)
+#define totupper(c)		toupper((uchar)c)
+#define totlower(c)		tolower((uchar)c)
+#define tmain			main
 
-#define tfprintf	fprintf
-#define tprintf		printf
-#define tsnprintf	snprintf
-#define tsprintf	sprintf
-#define tvfprintf	vfprintf
-#define tvprintf	vprintf
-#define tvsprintf	vsprintf
-#define tfscanf		fscanf
-#define tscanf		scanf
-#define tsscanf		sscanf
+#define tfprintf		fprintf
+#define tprintf			printf
+#define tsnprintf		snprintf
+#define tsprintf		sprintf
+#define tvfprintf		vfprintf
+#define tvprintf		vprintf
+#define tvsprintf		vsprintf
+#define tfscanf			fscanf
+#define tscanf			scanf
+#define tsscanf			sscanf
 
-#define tdirent		dirent
-#define tDIR		DIR
+#define tdirent			dirent
+#define tDIR			DIR
 
-#define taccess		access
-#define tclosedir	closedir
-#define tlink		link
-#define topendir	opendir
-#define treaddir	readdir
-#define trename		rename
-#define trewinddir	rewinddir
-#define tseekdir	seekdir
-#define tstat		stat
-#define tstatvfs	statvfs
-#define tunlink		unlink
+#define taccess			access
+#define tchmod			chmod
+#define tclosedir		closedir
+#define tlink			link
+#define tlstat			lstat
+#define tmkdir			mkdir
+#define tmkdtemp		mkdtemp
+#define tmkstemp		mkstemp
+#define tmktemp			mktemp
+#define topendir		opendir
+#define treaddir		readdir
+#define treadlink		readlink
+#define trealpath		realpath
+#define trename			rename
+#define trewinddir		rewinddir
+#define trmdir			rmdir
+#define tseekdir		seekdir
+#define tstat			stat
+#define tstatvfs		statvfs
+#define tsymlink		symlink
+#define ttruncate		truncate
+#define tunlink			unlink
+#define tutimes			utimes
 
-#define tspawnl		_spawnl
-#define tspawnle	_spawnle
-#define tspawnlp	_spawnlp
-#define tspawnlpe	_spawnlpe
-#define tspawnv		_spawnv
-#define tspawnve	_spawnve
-#define tspawnvp	_spawnvp
-#define tspawnvpe	_spawnvpe
+#define tspawnl			_spawnl
+#define tspawnle		_spawnle
+#define tspawnlp		_spawnlp
+#define tspawnlpe		_spawnlpe
+#define tspawnv			_spawnv
+#define tspawnve		_spawnve
+#define tspawnvp		_spawnvp
+#define tspawnvpe		_spawnvpe
 
 typedef char tchar;
 typedef unsigned char tuchar;
 #endif // UNICODE
 
-#define tstreq(a, b)	!tstrcmp(a, b)
-#define tstrieq(a, b)	!tstricmp(a, b)
+#define tstreq(a, b)		!tstrcmp(a, b)
+#define tstrieq(a, b)		!tstricmp(a, b)
 
 typedef unsigned char byte;
 typedef unsigned char uchar;

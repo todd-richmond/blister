@@ -302,11 +302,11 @@ public:
 
     virtual tstring errstr(void) const = 0;
     virtual long handshake(const Socket &s) = 0;
-    virtual long read(const Socket &s, void *buf, ulong len) = 0;
+    virtual ssize_t read(const Socket &s, void *buf, ulong len) = 0;
     // before the fd closes
     virtual void shutdown(void) = 0;
     virtual uint state(void) const = 0;
-    virtual long write(const Socket &s, const iovec *iov, int count) = 0;
+    virtual ssize_t write(const Socket &s, const iovec *iov, int count) = 0;
 };
 
 /*
@@ -438,17 +438,17 @@ public:
     int read(void *buf, uint len, Sockaddr &sa) const;
     template<class C> requires is_trivially_copyable_v<C>
     int read(C &c) const { return read(&c, sizeof (c)); }
-    long readv(iovec *iov, int count) const;
-    long readv(iovec *iov, int count, Sockaddr &sa) const;
+    ssize_t readv(iovec *iov, int count) const;
+    ssize_t readv(iovec *iov, int count, Sockaddr &sa) const;
 #ifndef _WIN32
-    long sendmsg(const msghdr &msgh, int flags = 0) const;
+    ssize_t sendmsg(const msghdr &msgh, int flags = 0) const;
 #endif
     int write(const void *buf, uint len) const;
     int write(const void *buf, uint len, const Sockaddr &sa) const;
     template<class C> requires is_trivially_copyable_v<C>
     int write(const C &c) const { return write(&c, sizeof (c)); }
-    long writev(const iovec *iov, int count) const;
-    long writev(const iovec *iov, int count, const Sockaddr &sa) const;
+    ssize_t writev(const iovec *iov, int count) const;
+    ssize_t writev(const iovec *iov, int count, const Sockaddr &sa) const;
 
 protected:
     class BLISTER SocketBuf: public RefCount {
@@ -465,7 +465,7 @@ protected:
 	bool __forceinline interrupted(void) const {
 	    return ::interrupted(err);
 	}
-	bool __forceinline check(const int ret) const {
+	bool __forceinline check(const ssize_t ret) const {
 	    if (LIKELY(ret != -1))
 		return true;
 	    err = sockerrno();
@@ -528,10 +528,10 @@ protected:
 	friend class Socket;
     };
 
-    bool __forceinline check(int ret) const { return sbuf->check(ret); }
-    long layerread(iovec *iov, int count) const;
-    long layerwrite(const iovec *iov, int count) const;
-    long rdret(long in) const;
+    bool __forceinline check(ssize_t ret) const { return sbuf->check(ret); }
+    ssize_t layerread(iovec *iov, int count) const;
+    ssize_t layerwrite(const iovec *iov, int count) const;
+    ssize_t rdret(ssize_t in) const;
     bool iowait(bool out) const;
     bool __forceinline iotimeo(bool out) const {
 	return LIKELY(out ? sbuf->wto == sbuf->kwto : sbuf->rto == sbuf->krto) ||
@@ -543,7 +543,7 @@ protected:
 	return (out ? sbuf->wto : sbuf->rto) != SOCK_INFINITE && sbuf->blck &&
 	    sbuf->err == EAGAIN;
     }
-    long wrret(long out) const {
+    ssize_t wrret(ssize_t out) const {
 	return UNLIKELY(out < 0 && blocked() && !timedout(true)) ? 0 : out;
     }
     static bool stalesock(const char *path);

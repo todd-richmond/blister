@@ -316,7 +316,7 @@ public:
 
     tstring errstr(void) const override { return tlserr; }
     long handshake(const Socket &s) override;
-    long read(const Socket &s, void *buf, ulong len) override;
+    ssize_t read(const Socket &s, void *buf, ulong len) override;
     void shutdown(void) override;
     uint state(void) const override {
 	// whole record buffered
@@ -325,7 +325,7 @@ public:
 
 	return flags | (dlen || rec ? to_underlying(Pending) : 0U);
     }
-    long write(const Socket &s, const iovec *iov, int count) override;
+    ssize_t write(const Socket &s, const iovec *iov, int count) override;
 
     CtxtHandle ctxt;
     tstring verify, verifyerr;
@@ -357,7 +357,7 @@ private:
 
 void TLSLayer::append(const void *p, ulong len) {
     reserve(olen + len);
-    memcpy(obuf.get() + olen, p, len);
+    memcpy(obuf.get() + olen, p, len);	// NOSONAR: reserved above
     olen += len;
 }
 
@@ -484,7 +484,7 @@ long TLSLayer::handshake(const Socket &s) {
     }
 }
 
-long TLSLayer::read(const Socket &s, void *buf, ulong len) {
+ssize_t TLSLayer::read(const Socket &s, void *buf, ulong len) {
     for (;;) {
 	SECURITY_STATUS st;
 
@@ -496,7 +496,7 @@ long TLSLayer::read(const Socket &s, void *buf, ulong len) {
 	    if (!(dlen -= n))
 		compact();
 	    flags &= ~ReadWrites;
-	    return (long)n;
+	    return (ssize_t)n;
 	}
 	// post-handshake reply
 	if (olen && flush(s) < 0) {
@@ -622,11 +622,11 @@ SECURITY_STATUS TLSLayer::step(void) {
     return st;
 }
 
-long TLSLayer::write(const Socket &s, const iovec *iov, int count) {
+ssize_t TLSLayer::write(const Socket &s, const iovec *iov, int count) {
     const ulong rec = sizes.cbHeader + sizes.cbMaximumMessage +
 	sizes.cbTrailer;
     ulong off = 0;
-    long out = 0;
+    ssize_t out = 0;
     int i = 0;
 
     flags &= ~WriteReads;
@@ -634,7 +634,7 @@ long TLSLayer::write(const Socket &s, const iovec *iov, int count) {
 	return -1;
     // read() may have sent them
     if (pend) {
-	out = (long)pend;
+	out = (ssize_t)pend;
 	pend = 0;
 	return out;
     }
@@ -678,7 +678,7 @@ long TLSLayer::write(const Socket &s, const iovec *iov, int count) {
 	    pend = batch;
 	    return out ? out : -1;
 	}
-	out += (long)batch;
+	out += (ssize_t)batch;
     }
 }
 
@@ -969,13 +969,13 @@ public:
 
     tstring errstr(void) const override { return tlserr; }
     long handshake(const Socket &s) override;
-    long read(const Socket &s, void *buf, ulong len) override;
+    ssize_t read(const Socket &s, void *buf, ulong len) override;
     void shutdown(void) override;
     uint state(void) const override {
 	return (flags & ~Partial) | (!(flags & Partial) && SSL_has_pending(ssl)
 	    ? (uint)Pending : 0U);
     }
-    long write(const Socket &s, const iovec *iov, int count) override;
+    ssize_t write(const Socket &s, const iovec *iov, int count) override;
 
     string key; // client session cache key
     SSL *const ssl;
@@ -1050,13 +1050,13 @@ long TLSLayer::onread(BIO *b, int op, const char *, size_t len, int, long,
     return ret;
 }
 
-long TLSLayer::read(const Socket &s, void *buf, ulong len) {
+ssize_t TLSLayer::read(const Socket &s, void *buf, ulong len) {
     size_t in;
 
     ERR_clear_error();
     if (LIKELY(SSL_read_ex(ssl, buf, len, &in))) {
 	flags &= ~(ReadWrites | Partial);
-	return (long)in;
+	return (ssize_t)in;
     }
     return fail(s, 0, Op::Read);
 }
@@ -1084,9 +1084,9 @@ void TLSLayer::shutdown(void) {
  * retry after a block or short count rebuilds the same leading record as
  * SSL_write requires since grouping restarts at the first unsent iovec
  */
-long TLSLayer::write(const Socket &s, const iovec *iov, int count) {
+ssize_t TLSLayer::write(const Socket &s, const iovec *iov, int count) {
     char buf[8192];
-    long out = 0, ret = 0;
+    ssize_t out = 0, ret = 0;
     ulong used = 0;
     const auto put = [&](const void *p, ulong len) {
 	if ((ret = send(s, p, len)) > 0)

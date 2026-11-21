@@ -132,7 +132,7 @@ const char *HTTPServerSocket::httpdate(time_t t, char (&buf)[30]) {
 // read exactly len bytes: a single read() is short for large or slow files
 bool HTTPServerSocket::readfull(int fd, char *buf, size_t len) {
     while (len) {
-	long n = (long)::read(fd, buf, (uint)min(len, (size_t)1 << 30));
+	ssize_t n = ::read(fd, buf, (uint)min(len, (size_t)1 << 30));
 
 	if (n > 0) {
 	    buf += n;
@@ -641,7 +641,7 @@ void HTTPServerSocket::keepalive(void) {
 }
 
 void HTTPServerSocket::send(void) {
-    ulong out;
+    ssize_t out;
 
     if (error()) {
 	disconnect();
@@ -651,16 +651,17 @@ void HTTPServerSocket::send(void) {
 	nodelay(true);
 	nagleon = false;
     }
-    out = (ulong)writev(iov, 3);
-    if (out != (ulong)-1) {
+    out = writev(iov, 3);
+    if (out != -1) {
 	bool more = false;
+	size_t left = (size_t)out;
 
 	for (auto &v : iov) {
-	    ulong n = min(out, (ulong)v.iov_len);
+	    const size_t n = min<size_t>(left, v.iov_len);
 
 	    v.iov_len -= (iovlen_t)n;
 	    v.iov_base = (char *)v.iov_base + n;
-	    out -= n;
+	    left -= n;
 	    more |= v.iov_len != 0;
 	}
 	if (more) {
@@ -669,7 +670,7 @@ void HTTPServerSocket::send(void) {
 	}
     }
     unmap();
-    if (ka && out != (ulong)-1) {
+    if (ka && out != -1) {
 	// own body buffer may hold pipelined bytes read past a chunked body
 	datasz = postdatasz ? postin - postsz : datasz - postsz -
 	    (ulong)(postdata - data);

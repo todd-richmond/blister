@@ -3,6 +3,7 @@
 The Blister library. Link against `libblister`.
 
 - `stdapi.h` — portability base included first: Windows POSIX emulation, `tchar` layer, `BLISTER` export macro, hash/parse/compare helpers, intrusive lists.
+- `utf8.manifest` — add to Windows executables so narrow CRT and `-A` APIs take UTF-8; the POSIX emulation always treats `char` paths as UTF-8.
 - `Dispatch` — epoll/kqueue/devpoll/poll reactor of event, timer and socket objects; `SimpleDispatchListenSocket<D, C>` spawns a `C` per connection.
 - `Thread` — threads, thread groups, locks, semaphores and thread-local storage.
 - `Socket` — sockets, addresses, CIDR matching, poll sets and iostream adapters; `SocketLayer` is an optional stream transform such as TLS.

@@ -813,7 +813,7 @@ bool Socket::ktimeo(bool out) const {
     return msec == SOCK_INFINITE || !blocking() || iowait(out);
 }
 
-long Socket::rdret(long in) const {
+ssize_t Socket::rdret(ssize_t in) const {
     if (LIKELY(in > 0))
 	return in;
     if (in)
@@ -840,30 +840,30 @@ long Socket::handshake(void) const {
     return wrret(ret);
 }
 
-long Socket::layerread(iovec *iov, int count) const {
-    long in = 0;
+ssize_t Socket::layerread(iovec *iov, int count) const {
+    ssize_t in = 0;
 
     if (!iotimeo(false))
 	return -1;
     for (int i = 0; i < count; ++i) {
-	long n;
+	ssize_t n;
 
 	if (!iov[i].iov_len)
 	    continue;
 	do {
-	    n = sbuf->layer->read(*this, iov[i].iov_base, (ulong)iov[i].iov_len);
+	    n = sbuf->layer->read(*this, iov[i].iov_base, iov[i].iov_len);
 	} while (n < 0 && interrupted());
 	if (n <= 0)
 	    return in ? in : rdret(n);
 	in += n;
-	if ((ulong)n < (ulong)iov[i].iov_len)
+	if ((size_t)n < iov[i].iov_len)
 	    break;
     }
     return in;
 }
 
-long Socket::layerwrite(const iovec *iov, int count) const {
-    long out;
+ssize_t Socket::layerwrite(const iovec *iov, int count) const {
+    ssize_t out;
 
     if (!iotimeo(true))
 	return -1;
@@ -906,8 +906,8 @@ int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
     return (int)rdret(in);
 }
 
-long Socket::readv(iovec *iov, int count) const {
-    long in;
+ssize_t Socket::readv(iovec *iov, int count) const {
+    ssize_t in;
 
     if (UNLIKELY(sbuf->layer))
 	return layerread(iov, count);
@@ -915,34 +915,38 @@ long Socket::readv(iovec *iov, int count) const {
 	if (!iotimeo(false))
 	    return -1;
 #ifdef _WIN32
-	ulong flags = 0;
+	DWORD flags = 0, n;
 
 	in = -1;
-	if (check(WSARecv(sbuf->sock, iov, (ulong)count, (ulong *)&in, // NOSONAR
-	    &flags, NULL, NULL)))
+	if (check(WSARecv(sbuf->sock, iov, (DWORD)count, &n, &flags, NULL,
+	    NULL))) {
+	    in = n;
 	    break;
+	}
 #else
-	if (check((int)(in = ::readv(sbuf->sock, iov, count))))
+	if (check(in = ::readv(sbuf->sock, iov, count)))
 	    break;
 #endif
     } while (interrupted());
     return rdret(in);
 }
 
-long Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
-    long in;
+ssize_t Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
+    ssize_t in;
 
     do {
 	if (!iotimeo(false))
 	    return -1;
 #ifdef _WIN32
-	ulong flags = 0;
+	DWORD flags = 0, n;
 	int asz = sa.size();
 
 	in = -1;
-	if (check(WSARecvFrom(sbuf->sock, iov, (ulong)count, // NOSONAR
-	    (ulong *)&in, &flags, sa.data(), &asz, NULL, NULL)))
+	if (check(WSARecvFrom(sbuf->sock, iov, (DWORD)count, &n, &flags,
+	    sa.data(), &asz, NULL, NULL))) {
+	    in = n;
 	    break;
+	}
 #else
 	msghdr msgh {};
 
@@ -954,7 +958,7 @@ long Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
 #else
 	msgh.msg_iovlen = (size_t)count;
 #endif
-	if (check((int)(in = ::recvmsg(sbuf->sock, &msgh, 0))))
+	if (check(in = ::recvmsg(sbuf->sock, &msgh, 0)))
 	    break;
 #endif
     } while (interrupted());
@@ -962,15 +966,15 @@ long Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
 }
 
 #ifndef _WIN32
-long Socket::sendmsg(const msghdr &msgh, int flags) const {
-    long out;
+ssize_t Socket::sendmsg(const msghdr &msgh, int flags) const {
+    ssize_t out;
 
     if (UNLIKELY(sbuf->layer))
 	return layerwrite(msgh.msg_iov, (int)msgh.msg_iovlen);
     do {
 	if (!iotimeo(true))
 	    return -1;
-	if (check((int)(out = ::sendmsg(sbuf->sock, &msgh, flags))))
+	if (check(out = ::sendmsg(sbuf->sock, &msgh, flags)))
 	    break;
     } while (interrupted());
     return wrret(out);
@@ -1016,33 +1020,34 @@ int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
     return (int)wrret(out);
 }
 
-long Socket::writev(const iovec *iov, int count) const {
-    long out;
+ssize_t Socket::writev(const iovec *iov, int count) const {
+    ssize_t out;
 
     if (UNLIKELY(sbuf->layer))
 	return layerwrite(iov, count);
 #ifdef _WIN32
-    out = -1;
-    check(WSASend(sbuf->sock, (iovec *)iov, count, (ulong *)&out, 0, // NOSONAR
-	NULL, NULL));
+    DWORD n;
+
+    out = check(WSASend(sbuf->sock, (iovec *)iov, (DWORD)count, // NOSONAR
+	&n, 0, NULL, NULL)) ? (ssize_t)n : -1;
 #else
     do {
 	if (!iotimeo(true))
 	    return -1;
-	if (check((int)(out = ::writev(sbuf->sock, iov, count))))
+	if (check(out = ::writev(sbuf->sock, iov, count)))
 	    break;
     } while (interrupted());
 #endif
     return wrret(out);
 }
 
-long Socket::writev(const iovec *iov, int count, const Sockaddr &sa) const {
+ssize_t Socket::writev(const iovec *iov, int count, const Sockaddr &sa)
+    const {
 #ifdef _WIN32
-    long out = -1;
+    DWORD n;
 
-    check(WSASendTo(sbuf->sock, (iovec *)iov, count, (ulong *)&out, // NOSONAR
-	0, sa, sa.size(), NULL, NULL));
-    return wrret(out);
+    return wrret(check(WSASendTo(sbuf->sock, (iovec *)iov, // NOSONAR
+	(DWORD)count, &n, 0, sa, sa.size(), NULL, NULL)) ? (ssize_t)n : -1);
 #else
     msghdr msgh {};
 

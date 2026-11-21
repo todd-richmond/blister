@@ -206,7 +206,7 @@ private:
 	streamsize done = 0;
 
 	while (done < used + n) {
-	    long out;
+	    ssize_t out;
 
 	    if (done >= used) {
 		out = fd->write(p + (done - used), chunk(n - (done - used)));

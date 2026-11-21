@@ -63,7 +63,7 @@ Per-class docs in `lib/README.md`: update its terse entry when public API or con
 - Skip build output: `build/` (except `build/build`), `CMakeFiles/`, `.cache/`, `.lto/`, `Testing/`, `autom4te.cache/`, `bak/`, `*.pch`. No vendored code.
 - `lib/` files over 24KB: grep or offset reads.
 - Scratch files in `$TMPDIR` (if unset, `/tmp/claude-$UID`), not named like system tools (`.` in PATH). Compile scratch tests with flags from `compile_commands.json` (`jq`), `-fsanitize=thread` or `address,undefined`, linking `lib/libblister.a -lpthread -ldl`.
-- HTTP: `cd test && ./uhttpd console` (port 8080, serves `test/htdocs`) + `curl`; stop with `timeout`, not `pkill -f`.
+- HTTP: `cd test && ./uhttpd [-p port] [-s]` (default 8080, serves `test/htdocs`) + `curl`; stop with `timeout`, not `pkill -f`.
 - SMTP: `test/smtpsink -p <port>` or a byte-logging fake server.
 - Don't run downloaded package code (pip, toolchains); verify output by hand.
 - Don't `git stash -- <path>` with staged changes.
