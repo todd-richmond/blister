@@ -146,7 +146,10 @@ bool HTTPServerSocket::readfull(int fd, char *buf, size_t len) {
 
 HTTPServerSocket::HTTPServerSocket(Dispatcher &d, const Socket &sock):
     DispatchServerSocket(d, sock) {
-    static const bool configured = (configure(d.config()), true);
+    static const bool configured = [&d] {
+	configure(d.config());
+	return true;
+    }();
 
     (void)configured;
     stats.accepted.fetch_add(1, memory_order_relaxed);

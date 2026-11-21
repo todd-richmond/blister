@@ -325,6 +325,7 @@ bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
 // RFC 9112 6.3 body length. keep is whether the server allows reuse
 HTTPResponse::Body HTTPResponse::framing(const HTTPHeaders &hdrs, uint sts,
     bool head, bool http11, bool &keep, ulong &len) {
+    using enum Body;
     const tchar *p = hdrs.find(T("Connection"));
     const tchar *te = hdrs.find(T("Transfer-Encoding"));
 
@@ -332,21 +333,21 @@ HTTPResponse::Body HTTPResponse::framing(const HTTPHeaders &hdrs, uint sts,
 	hastoken(p, T("keep-alive"))));
     len = 0;
     if (head || sts == 204 || sts == 304 || sts / 100 == 1)
-	return Body::None;
+	return None;
     if (te) {
 	const tstring_view v(te);
 	const size_t pos = v.rfind(',');
 
 	// only a final chunked coding delimits the body
 	if (hastoken(pos == v.npos ? v : v.substr(pos + 1), T("chunked")))
-	    return Body::Chunked;
+	    return Chunked;
     } else if ((p = hdrs.find(T("Content-Length"))) != nullptr) {
 	if (!parsenum(tchartoachar(p), len, false))
-	    return Body::Bad;
-	return len ? Body::Length : Body::None;
+	    return Bad;
+	return len ? Length : None;
     }
     keep = false;
-    return Body::Eof;
+    return Eof;
 }
 
 void HTTPHeaders::add(string_view hdr) {
@@ -1177,17 +1178,19 @@ AsyncHTTPClient::Flow AsyncHTTPClient::readall(void) {
 }
 
 AsyncHTTPClient::Step AsyncHTTPClient::reserve(Request &r, ulong newcap) {
+    using enum Step;
+
     r.cap = newcap;
     growing = inreserve = true;
     r.result_grow(IOSocket::ongrown, sock, r.result, (uint)r.sz, (uint)newcap);
     inreserve = false;
     // cppcheck-suppress knownConditionTrueFalse
     if (growing)
-	return Step::Wait;			// subclass is allocating
+	return Wait;				// subclass is allocating
     if (r.result)
-	return Step::Done;
+	return Done;
     r.sz = r.cap = 0;
-    return Step::Proto;
+    return Proto;
 }
 
 void AsyncHTTPClient::status(tostream &out, uint indent) const {

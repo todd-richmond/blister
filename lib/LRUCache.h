@@ -74,6 +74,7 @@ public:
     }
     C get(const void *data, ulong sz) {
 	C entry(data, sz);
+	// cppcheck-suppress variableScope
 	lru_list freed;		// NOSONAR: destroyed after lkr unlocks
 	const msec_t tm = maxtm.load(memory_order_relaxed);
 	const msec_t now = LIKELY(tm) ? mticks() : 0;

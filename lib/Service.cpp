@@ -1517,7 +1517,7 @@ bool Daemon::update(Status status) {
     return Service::update(status);
 }
 
-void Daemon::unavailable(bool state) {
+void Daemon::unavailable(bool state) const {
     (void)lockfile(lckfd, state ? F_RDLCK : F_UNLCK, SEEK_SET, Unavailable, 1,
 	1);
 }

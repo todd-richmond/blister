@@ -363,7 +363,7 @@ int Dispatcher::onStart() {
 		removeTimer(*ds);
 	    }
 	} else if (msg.message == WM_TIMER) {
-	    DispatchTimer *dt;
+	    const DispatchTimer *dt;
 	    msec_t now = mticks();
 
 	    cache.store(now, memory_order_relaxed);

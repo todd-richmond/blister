@@ -229,8 +229,6 @@ public:
 	bool pauseable = false);
     virtual ~Daemon();
 
-    atomic<Quit> qflag = None;
-
     Config &config(void) { return cfg; }
 
 protected:
@@ -240,12 +238,13 @@ protected:
     int lckfd = -1;
     msec_t msec = mticks();
     uint nworkers = 1;			// worker.count default
+    atomic<Quit> qflag = None;
     bool refreshed = false;
     int slot = -1;			// worker index, -1 outside a worker
     bool watch = false;
 
     bool setids(void);
-    void unavailable(bool state);
+    void unavailable(bool state) const;
     bool worker(void) const { return slot >= 0; }
 
     virtual bool check(Status status, tstring &err) {

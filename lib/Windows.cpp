@@ -22,7 +22,7 @@
 #include <errno.h>
 #include <mmsystem.h>
 #include <fcntl.h>
-#include <psapi.h>
+#include <Psapi.h>
 #include <share.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -176,23 +176,23 @@ static DWORD setlock(int fd, ullong start, ullong end, bool unlock,
 	    winunlock(hdl, a, b);
 	it = locks.erase(it);
 	if (left)
-	    locks.emplace(a, FileLock{is, old});
+	    locks.try_emplace(a, FileLock{is, old});
 	if (right)
-	    it = locks.emplace(ie, FileLock{b, old}).first;
+	    it = locks.try_emplace(ie, FileLock{b, old}).first;
 	if (unlock)
 	    continue;
 	if (winlock(hdl, is, ie, excl, test)) {
-	    locks.emplace(is, FileLock{ie, excl});
+	    locks.try_emplace(is, FileLock{ie, excl});
 	    conv.emplace_back(is, ie);
 	} else {
 	    err = GetLastError();
 	    if (winlock(hdl, is, ie, old, true))
-		locks.emplace(is, FileLock{ie, old});
+		locks.try_emplace(is, FileLock{ie, old});
 	}
     }
     if (!err) {
 	for (const auto &[a, b] : added)
-	    locks.emplace(a, FileLock{b, excl});
+	    locks.try_emplace(a, FileLock{b, excl});
 	return 0;
     }
     for (const auto &[a, b] : added)
@@ -311,7 +311,7 @@ int wchmod(const wchar *path, int mode) {
     DWORD attr = GetFileAttributesW(path);
 
     if (attr != INVALID_FILE_ATTRIBUTES) {
-	attr = (mode & S_IWUSR ? attr & ~FILE_ATTRIBUTE_READONLY : attr |
+	attr = ((mode & S_IWUSR) ? attr & ~FILE_ATTRIBUTE_READONLY : attr |
 	    FILE_ATTRIBUTE_READONLY) & ~FILE_ATTRIBUTE_NORMAL;
 	if (SetFileAttributesW(path, attr ? attr : FILE_ATTRIBUTE_NORMAL))
 	    return 0;
@@ -395,7 +395,7 @@ int dup2(int from, int to) {
 }
 
 int eof(int fd) {
-    LARGE_INTEGER pos = {}, sz;
+    LARGE_INTEGER pos = {.QuadPart = 0}, sz = {.QuadPart = 0};
 
     if (!SetFilePointerEx(to_handle(fd), pos, &pos, FILE_CURRENT) ||
 	!GetFileSizeEx(to_handle(fd), &sz)) {
@@ -486,7 +486,7 @@ int ftruncate(int fd, llong len) {
 // resolve a POSIX lock range: len 0 runs to EOF and negative len ends at start
 static int lockrange(int fd, short whence, llong start, llong len,
     ullong *s, ullong *e) {
-    LARGE_INTEGER li = {};
+    LARGE_INTEGER li = {.QuadPart = 0};
 
     if (whence == SEEK_CUR) {
 	if (!SetFilePointerEx(to_handle(fd), li, &li, FILE_CURRENT))
@@ -737,13 +737,13 @@ char *mktemp(char *path) {
     wchar pbuf[MAX_PATH];
     size_t len = strlen(path), wlen;
 
-    if (len < 6 || !A_TO_W(path, pbuf) || !wmktemp(pbuf)) {
+    if (len < 6 || !A_TO_W(path, pbuf) || !*wmktemp(pbuf) ||
+	(wlen = wcslen(pbuf)) < 6) {
 	if (len < 6)
 	    errno = EINVAL;
 	*path = '\0';
 	return path;
     }
-    wlen = wcslen(pbuf);
     for (size_t i = 1; i <= 6; i++)
 	path[len - i] = (char)pbuf[wlen - i];
     return path;
@@ -858,7 +858,7 @@ struct wdirent *wreaddir(WDIR *dirp) {
 
 // each UTF-16 code unit expands to at most 3 UTF-8 bytes so name always fits
 struct dirent *readdir(DIR *dirp) {
-    wdirent *wd;
+    const wdirent *wd;
 
     if ((wd = wreaddir(dirp->wdir)) == NULL)
 	return NULL;
@@ -1127,7 +1127,7 @@ static int posix_delete(const wchar *path, bool dir) {
     if (!err)
 	return 0;
     if (no_posix_info(err)) {
-	if (fati.FileAttributes & FILE_ATTRIBUTE_DIRECTORY ?
+	if ((fati.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) ?
 	    RemoveDirectoryW(path) : DeleteFileW(path))
 	    return 0;
 	err = GetLastError();
@@ -1172,10 +1172,10 @@ static int file_stat(HANDLE hdl, struct stat *buf) {
 	dosmaperr(GetLastError());
 	return -1;
     }
-    perm = bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY ? S_IREAD :
+    perm = (bhfi.dwFileAttributes & FILE_ATTRIBUTE_READONLY) ? S_IREAD :
 	S_IREAD | S_IWRITE;
-    buf->st_mode = (ushort)((bhfi.dwFileAttributes &
-	FILE_ATTRIBUTE_DIRECTORY ? S_IFDIR : S_IFREG) | perm | perm >> 3 |
+    buf->st_mode = (ushort)(((bhfi.dwFileAttributes &
+	FILE_ATTRIBUTE_DIRECTORY) ? S_IFDIR : S_IFREG) | perm | perm >> 3 |
 	perm >> 6);
     buf->st_uid = buf->st_gid = 0;
     buf->st_nlink = (nlink_t)bhfi.nNumberOfLinks;
@@ -1242,7 +1242,7 @@ int fchmod(int fd, int mode) {
     if (!GetFileInformationByHandleEx(to_handle(fd), FileBasicInfo, &fbi,
 	sizeof (fbi)))
 	return oserr();
-    attr = (mode & S_IWUSR ? fbi.FileAttributes & ~FILE_ATTRIBUTE_READONLY :
+    attr = ((mode & S_IWUSR) ? fbi.FileAttributes & ~FILE_ATTRIBUTE_READONLY :
 	fbi.FileAttributes | FILE_ATTRIBUTE_READONLY) & ~FILE_ATTRIBUTE_NORMAL;
     // zero times and attributes mean unchanged
     ZERO(fbi);
@@ -1436,7 +1436,7 @@ ssize_t wreadlink(const wchar *path, wchar *buf, size_t sz) {
     HANDLE hdl;
     size_t len;
     const wchar *p;
-    auto *rb = (ReparseBuf *)malloc(sizeof (ReparseBuf));
+    auto *rb = (ReparseBuf *)calloc(1, sizeof (ReparseBuf));
 
     if (!rb) {
 	errno = ENOMEM;
@@ -1491,17 +1491,19 @@ int symlink(const char *target, const char *path) {
 // needs developer mode or SeCreateSymbolicLinkPrivilege
 int wsymlink(const wchar *target, const wchar *path) {
     DWORD attr, flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
-    size_t dlen = 0, tlen = wcslen(target);
+    size_t tlen = wcslen(target);
     wchar full[MAX_PATH], tbuf[MAX_PATH];
 
-    if (tlen >= MAX_PATH) {
-	errno = ENAMETOOLONG;
+    if (!tlen || tlen >= MAX_PATH) {
+	errno = tlen ? ENAMETOOLONG : ENOENT;
 	return -1;
     }
     // relative targets resolve against the link's directory and need '\\'
     for (size_t i = 0; i <= tlen; i++)
 	tbuf[i] = target[i] == '/' ? '\\' : target[i];
-    if (*tbuf != '\\' && tbuf[1] != ':') {
+    if (tbuf[0] != '\\' && tbuf[1] != ':') {
+	size_t dlen = 0;
+
 	for (const wchar *p = path; *p; p++) {
 	    if (*p == '\\' || *p == '/')
 		dlen = (size_t)(p - path) + 1;
@@ -1564,10 +1566,10 @@ wchar *wrealpath(const wchar *path, wchar *resolved) {
 	return NULL;
     }
     // drop the \\?\ prefix: \\?\UNC\host becomes \\host
-    if (len < MAX_PATH + 8 && !wcsncmp(buf, L"\\\\?\\UNC\\", 8)) {
+    if (len < MAX_PATH + 8 && !wcsncmp(buf, LR"(\\?\UNC\)", 8)) {
 	p = buf + 6;
 	*p = '\\';
-    } else if (len < MAX_PATH + 8 && !wcsncmp(buf, L"\\\\?\\", 4)) {
+    } else if (len < MAX_PATH + 8 && !wcsncmp(buf, LR"(\\?\)", 4)) {
 	p = buf + 4;
     }
     if ((len -= (DWORD)(p - buf)) >= MAX_PATH) {
@@ -1602,7 +1604,7 @@ int fcntl(int fd, int cmd, ...) {
     case F_GETFD:
 	if (!GetHandleInformation(to_handle(fd), &flags))
 	    return oserr();
-	return flags & HANDLE_FLAG_INHERIT ? 0 : FD_CLOEXEC;
+	return (flags & HANDLE_FLAG_INHERIT) ? 0 : FD_CLOEXEC;
     case F_SETFD:
 	return SetHandleInformation(to_handle(fd), HANDLE_FLAG_INHERIT, arg &
 	    FD_CLOEXEC ? 0 : HANDLE_FLAG_INHERIT) ? 0 : oserr();

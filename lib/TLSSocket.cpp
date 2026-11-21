@@ -22,7 +22,7 @@
 #define SCHANNEL_USE_BLACKLISTS
 #define SECURITY_WIN32
 #include <wincrypt.h>
-#include <subauth.h>
+#include <SubAuth.h>
 #include <schannel.h>
 #include <security.h>
 #include <ncrypt.h>
@@ -244,7 +244,7 @@ static PCCERT_CONTEXT selfsign(void) {
 }
 
 struct SChannelCreds: RefCount {
-    SChannelCreds() { SecInvalidateHandle(&h); }
+    SChannelCreds() { SecInvalidateHandle(&h) }	// macro ends in ;
     ~SChannelCreds() {
 	if (SecIsValidHandle(&h))
 	    FreeCredentialsHandle(&h);
@@ -305,7 +305,7 @@ public:
 	bool hostname): creds(c), fd(s),
 	ibuf(make_unique_for_overwrite<char[]>(INBUF)), sni(hostname),
 	srv(server), target(tstringtowstring(name)) {
-	SecInvalidateHandle(&ctxt);
+	SecInvalidateHandle(&ctxt)		// macro ends in ;
     }
     ~TLSLayer() override {
 	if (SecIsValidHandle(&ctxt))
@@ -327,10 +327,9 @@ public:
     }
     ssize_t write(const Socket &s, const iovec *iov, int count) override;
 
-    CtxtHandle ctxt;
-    tstring verify, verifyerr;
-
 private:
+    friend class TLSContext;
+
     void append(const void *p, ulong len);
     bool checkpeer(void);
     void compact(void);
@@ -342,6 +341,7 @@ private:
     SECURITY_STATUS step(void);
 
     SChannelCreds *creds;
+    CtxtHandle ctxt;
     bool done = false, renego = false;
     char *dptr = nullptr;
     ulong dlen = 0, ilen = 0, ocap = 0, olen = 0, ooff = 0, pend = 0;
@@ -351,7 +351,7 @@ private:
     const bool sni, srv;
     SecPkgContext_StreamSizes sizes = {};
     wstring target;
-    tstring tlserr;
+    tstring tlserr, verify, verifyerr;
     ulong xlen = 0, xoff = 0;
 };
 

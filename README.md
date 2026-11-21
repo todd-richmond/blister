@@ -43,6 +43,8 @@ Other build systems:
 | `CHECK_CLANG_TIDY`, `CHECK_CPPCHECK`, `CHECK_CPPLINT`, `CHECK_IWYU` | run that static analyzer during the build; `CHECK_ALL` enables clang-tidy, cppcheck and cpplint |
 | `CHECK_TSAN=<sanitizer>` | sanitizer build (`ON` means thread) |
 | `PGO=generate\|use` | profile-guided optimization; profiles live in `.pgo/` |
+| `COMPILE_LIBCPP` | `COMPILE_LLVM` linked to libc++, with an RPATH to its directory |
+| `COMPILE_LLVM` | build with clang/clang++ from `PATH`; on Linux uses the libstdc++ of the `g++` in `PATH` |
 | `COMPILE_PCH` | precompiled headers (default on) |
 
 `configure` has equivalents for the sanitizer and PGO builds: `--enable-tsan` and `--with-pgo=generate|use`. Like CMake it uses OpenSSL 3 from the compiler prefix, else pkg-config; `--with-openssl=DIR|no` overrides.
