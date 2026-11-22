@@ -14,12 +14,12 @@ The Blister library. Link against `libblister`.
 - `Service` — Windows services and Unix daemons. A watcher runs `worker.count` workers and restarts them on exit, hang, memory limits or a failed `check()`; Unix forks them, Windows 11+ spawns processes that rerun `onInit()` and inherit `onSpawn()` handles.
 - `HTTPClient` — blocking and pipelining async HTTP clients, URL and date parsing.
 - `HTTPServer` — HTTP/1.x server with keep-alive, chunking and file replies from `http.docroot` (default `${installdir}/htdocs`). `GET /metrics` serves Prometheus/OpenMetrics: HTTP stats, top `timing=N` Timing keys, `name[]=` filter and `prometheus.label.*` default labels; extend via `metrics()` or the `cntrstats`, `gaugestats`, `gdstats`, `sumstats` and `tdstats` registries.
-- `MPHTTPServer` — prefork HTTP/HTTPS server (`libblistertls`): workers recycle after `worker.maxrequests`; `/check`, `/metrics`, `/timing` and `/version`; `ShMemHTTPSocket` takes POST data from a file, SysV shared memory or a Windows file mapping.
+- `MPHTTPServer` — prefork HTTP/HTTPS server (`libblistertls`): workers recycle after `worker.maxrequests`; `/check`, `/metrics`, `/timing` and `/version`; `ShMemHTTPSocket` takes POST data from a file, SysV shared memory or a Windows file mapping (loopback/UNIX peers only).
 - `SMTPClient` — blocking and async SMTP/LMTP clients (SMTPUTF8, pipelining, BDAT), address parsers and MIME codecs.
 - `LRUCache.h` — size, count and time-bounded LRU cache.
 - `ResourcePool.h` — blocking and `Dispatcher`-integrated pools of lazily created resources.
 - `Unix.c`, `Windows.cpp`, `Version.rc` — platform implementations.
 
 `libblistertls` (SChannel on Windows, else OpenSSL 3) depends on `libblister`. Without either, enabling TLS fails instead of running in plaintext.
-- `TLSSocket` — `TLSContext` loads `tls.*` keys and adds a TLS `SocketLayer` to any socket. Servers without a cert self-sign; clients verify unless `tls.verify` is false; `tls.ktls` enables kernel TLS. On Windows `tls.certfile` is PKCS#12 or a `MY` store subject and OpenSSL-only keys fail `init()`.
+- `TLSSocket` — `TLSContext` loads `tls.*` keys and adds a TLS `SocketLayer` to any socket; `handshake()` also runs a blocking client handshake. Servers without a cert self-sign; clients verify unless `tls.verify` is false; `tls.ktls` enables kernel TLS. On Windows `tls.certfile` is PKCS#12 or a `MY` store subject and OpenSSL-only keys fail `init()`.
 - `HTTPTLSServer`, `HTTPTLSClient`, `AsyncHTTPTLSClient`, `SMTPTLSClient` and `AsyncSMTPTLSClient` enable TLS per config section: `<sect>.tls.enable`, or `<sect>.starttls.enable` for SMTP.

@@ -134,11 +134,10 @@ protected:
 
     static constexpr ulong Unknown = ~0UL;
 
-    // false if op or path could inject into the request line. A small body
-    // is appended, zeroing datasz
-    static bool buildreq(string &out, const tchar *op, const tchar *path,
-	string_view host, bool keep, tstring_view hdrs, const void *data,
-	ulong &datasz);
+    // consumes hstrm; EINVAL if op or path could inject into the request
+    // line. A small body is appended, zeroing datasz
+    bool buildreq(string &out, const tchar *op, const tchar *path,
+	string_view host, bool keep, const void *data, ulong &datasz);
     static string hosthdr(const Sockaddr &sa);
     static bool idempotent(const tchar *op);
 
@@ -186,7 +185,7 @@ public:
     int err(void) const { return ecode; }
     bool keep(void) const { return reuse; }
 
-    // grow(r, newcap) allocates r.result and returns Done, Wait or Proto
+    // grow(newcap) allocates r.result and returns Done, Wait or Proto
     template<class G>
     Step advance(HTTPResponse &r, bool head, G grow);
     // 1 data buffered, 0 would block, -1 error

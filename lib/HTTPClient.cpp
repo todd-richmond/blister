@@ -178,7 +178,8 @@ size_t URL::unescape(tchar *str, bool plus) {
 	size_t n;
 	int v;
 
-	if (*p == '%' && p[1] && p[2] && (v = hexbyte(p[1], p[2])) >= 0) {
+	// %00 stays literal: decoded strings never hold a NUL
+	if (*p == '%' && p[1] && p[2] && (v = hexbyte(p[1], p[2])) > 0) {
 	    *d++ = (tchar)v;
 	    p += 3;
 	} else {
@@ -204,26 +205,17 @@ void URL::unescape(tstring &str, bool plus) {
 
 void HTTPHeaders::tappend(tstring &s, string_view sv) {
 #ifdef UNICODE
-    s += achartotstring(string(sv).c_str());
+    s += achartotstring(sv);
 #else
     s += sv;
 #endif
 }
 
 bool HTTPResponse::parsenum(string_view s, ulong &n, bool hex) {
-    const ulong base = hex ? 16 : 10;
+    const char *end = s.data() + s.size();
+    auto [p, ec] = from_chars(s.data(), end, n, hex ? 16 : 10);
 
-    n = 0;
-    if (s.empty())
-	return false;
-    for (char c : s) {
-	const ulong d = hex ? hexval((tuchar)c) : (ulong)(c - '0');
-
-	if (d >= base || n > (MaxBody - d) / base)
-	    return false;
-	n = n * base + d;
-    }
-    return true;
+    return ec == errc() && p == end && n <= MaxBody;
 }
 
 bool HTTPResponse::parsestatus(string_view str, uint &code, bool &http11) {
@@ -275,11 +267,11 @@ bool HTTPResponse::idempotent(const tchar *op) {
 	!tstrcmp(op, m); });
 }
 
-// false if op or path could inject into the request line. A small body is
-// appended, zeroing datasz, since a copy is cheaper than a second iovec
+// a small body is appended, zeroing datasz, since a copy is cheaper than a
+// second iovec
 bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
-    string_view host, bool keep, tstring_view hdrs, const void *data,
-    ulong &datasz) {
+    string_view host, bool keep, const void *data, ulong &datasz) {
+    const tstring_view hdrs(hstrm.str(), (size_t)hstrm.size());
     auto bad = [](const tchar *s) {
 	for (const tchar *p = s; *p; p++) {
 	    if ((tuchar)*p <= ' ' || *p == 0x7f)
@@ -288,8 +280,11 @@ bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
 	return !*s;
     };
 
-    if (bad(op) || bad(path))
+    if (bad(op) || bad(path)) {
+	hstrm.reset();
+	sockerr = EINVAL;
 	return false;
+    }
     out.reserve(max(MaxCopy, 256 + hdrs.size()));
     out = tchartoachar(op);
     out += ' ';
@@ -315,6 +310,7 @@ bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
     if (!hdrs.empty())
 	out.append(tchartoachar(hdrs.data()), hdrs.size());
     out += "\r\n";
+    hstrm.reset();
     if (data && datasz && out.size() + datasz <= MaxCopy) {
 	out.append((const char *)data, datasz);
 	datasz = 0;
@@ -338,6 +334,9 @@ HTTPResponse::Body HTTPResponse::framing(const HTTPHeaders &hdrs, uint sts,
 	const tstring_view v(te);
 	const size_t pos = v.rfind(',');
 
+	// RFC 9112 6.3: possible smuggling
+	if (hdrs.find(T("Content-Length")))
+	    keep = false;
 	// only a final chunked coding delimits the body
 	if (hastoken(pos == v.npos ? v : v.substr(pos + 1), T("chunked")))
 	    return Chunked;
@@ -406,8 +405,7 @@ bool HTTPResponse::resize(ulong newcap) {
     return p;
 }
 
-template<class S>
-template<class G>
+template<class S> template<class G>
 HTTPParser<S>::Step HTTPParser<S>::advance(HTTPResponse &r, bool head,
     G grow) {
     Step s;
@@ -573,14 +571,13 @@ HTTPParser<S>::Step HTTPParser<S>::nextline(string_view &out) {
     }
 }
 
-template<class S>
-template<class G>
+template<class S> template<class G>
 HTTPParser<S>::Step HTTPParser<S>::reserve(HTTPResponse &r, ulong need,
     G &grow) {
     if (r.result && r.cap > need)
 	return Step::Done;
 
-    const Step s = grow(r, r.capfor(need, phase == Length));
+    const Step s = grow(r.capfor(need, phase == Length));
 
     if (s == Step::Proto)
 	ecode = ENOMEM;
@@ -612,6 +609,7 @@ long HTTPParser<S>::take(HTTPResponse &r, ulong want) {
 	return n;
     }
     r.sz += (ulong)n;
+    r.result[r.sz] = '\0';		// reserve() left room
     return n;
 }
 
@@ -635,8 +633,10 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
     cto = to;
     if (sock.open() && sa == addr)
 	return true;
-    addr = sa;
-    hostval = hosthdr(addr);
+    if (hostval.empty() || sa != addr) {
+	addr = sa;
+	hostval = hosthdr(addr);
+    }
     sock.close();
     if (!sock.connect(addr, to)) {
 	sockerr = sock.err();
@@ -659,8 +659,9 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
 }
 
 HTTPClient::Step HTTPClient::receive(bool head, bool &keep) {
-    const Step s = parser.advance(*this, head, [this](HTTPResponse &, ulong
-	newcap) { return resize(newcap) ? Step::Done : Step::Proto; });
+    const Step s = parser.advance(*this, head, [this](ulong newcap) {
+	return resize(newcap) ? Step::Done : Step::Proto;
+    });
 
     if (s == Step::Done)
 	keep = parser.keep() && ka && !parser.buffered();
@@ -677,73 +678,71 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     bool ret = false;
 
     reset();
-    if (buildreq(req, op, path, hostval, ka, tstring_view(hstrm.str(),
-	(size_t)hstrm.size()), msgh ? nullptr : data, datasz)) {
-	const bool head = !tstrcmp(op, T("HEAD"));
-	const ulong total = (ulong)req.size() + datasz;
+    if (!buildreq(req, op, path, hostval, ka, msgh ? nullptr : data,
+	datasz))
+	return false;
+
+    const bool head = !tstrcmp(op, T("HEAD"));
+    const ulong total = (ulong)req.size() + datasz;
 #ifndef _WIN32
-	iovec iov[2] = { { (void *)req.data(), req.size() },
-	    { (void *)data, datasz } };
+    iovec iov[2] = { { (void *)req.data(), req.size() },
+	{ (void *)data, datasz } };
+
+    if (msgh) {
+	msgh->msg_iov = iov;
+	msgh->msg_iovlen = datasz ? 2 : 1;
+    }
+#endif
+
+    for (bool first = true; sock.open() || (!msgh && connect(addr, ka,
+	cto)); first = false) {
+	const msec_t start = mticks();
+	ulong off = 0;
+	bool sent = true;
 
 	if (msgh) {
-	    msgh->msg_iov = iov;
-	    msgh->msg_iovlen = datasz ? 2 : 1;
-	}
-#endif
-
-	for (bool first = true; sock.open() || (!msgh && connect(addr, ka,
-	    cto)); first = false) {
-	    const msec_t start = mticks();
-	    ulong off = 0;
-	    bool sent = true;
-
-	    if (msgh) {
 #ifdef _WIN32
-		sent = false;
+	    sent = false;
 #else
-		const ssize_t n = sock.sendmsg(*msgh, MSG_NOSIGNAL);
+	    const ssize_t n = sock.sendmsg(*msgh, MSG_NOSIGNAL);
 
-		sent = n > 0;
-		off = sent ? (ulong)n : 0;
+	    sent = n > 0;
+	    off = sent ? (ulong)n : 0;
 #endif
-	    }
-	    // ancillary data goes with the first byte so only finish the rest
-	    if (sent && off < total)
-		sent = transmit(data, datasz, off);
-	    if (sent) {
-		const Step s = receive(head, keep);
-
-		ret = s == Step::Done;
-		if (s != Step::Sock || sts)
-		    break;
-	    } else {
-		sockerr = sock.err();
-	    }
-	    sock.close();
-	    // retry once if a stale keep-alive connection failed quickly
-	    if (first && ka && !msgh && (!sent || (idempotent(op) &&
-		rto > (mticks() - start) + 200))) {
-		dlogd(Log::mod(T("http")), Log::cmd(T("reconnect")),
-		    Log::kv(T("addr"), addr.ipstr()));
-		continue;
-	    }
-	    dlogn(Log::mod(T("http")), Log::cmd(T("disconnect")),
-		Log::kv(T("addr"), addr.ipstr()));
-	    break;
 	}
-	if (sts)
-	    dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
-		Log::kv(T("path"), path), Log::kv(T("sts"), sts));
+	// ancillary data goes with the first byte so only finish the rest
+	if (sent && off < total)
+	    sent = transmit(data, datasz, off);
+	if (sent) {
+	    const Step s = receive(head, keep);
+
+	    ret = s == Step::Done;
+	    if (s != Step::Sock || sts)
+		break;
+	} else {
+	    sockerr = sock.err();
+	}
+	sock.close();
+	// retry once if a stale keep-alive connection failed quickly
+	if (first && ka && !msgh && (!sent || (idempotent(op) &&
+	    rto > (mticks() - start) + 200))) {
+	    dlogd(Log::mod(T("http")), Log::cmd(T("reconnect")),
+		Log::kv(T("addr"), addr.ipstr()));
+	    continue;
+	}
+	dlogn(Log::mod(T("http")), Log::cmd(T("disconnect")),
+	    Log::kv(T("addr"), addr.ipstr()));
+	break;
     }
+    if (sts)
+	dlogd(Log::mod(T("http")), Log::kv(T("addr"), addr.ipstr()),
+	    Log::kv(T("path"), path), Log::kv(T("sts"), sts));
     if (ret)
 	sockerr = 0;
     else if (!sockerr)
 	sockerr = sock.err();
     if ((!keep && !msgh) || !ret)
 	sock.close();
-    if (result)
-	result[sz] = '\0';
-    hstrm.reset();
     return ret;
 }
 WARN_POP()
@@ -755,14 +754,8 @@ bool HTTPClient::sendbegin(const tchar *op, const tchar *path) {
 	sock.close();
     streaming = false;
     reset();
-    const bool ok = buildreq(req, op, path, hostval, ka,
-	tstring_view(hstrm.str(), (size_t)hstrm.size()), nullptr, len);
-
-    hstrm.reset();
-    if (!ok) {
-	sockerr = EINVAL;
+    if (!buildreq(req, op, path, hostval, ka, nullptr, len))
 	return false;
-    }
     if (!sock.open() && !connect(addr, ka, cto))
 	return false;
     streaming = parser.buf().write(req.data(), (streamsize)req.size()) ==
@@ -815,8 +808,6 @@ void HTTPClient::sendfail(void) {
 	sts = 0;
     }
     sock.close();
-    if (result)
-	result[sz] = '\0';
 }
 
 bool HTTPClient::sendend(void) {
@@ -837,8 +828,6 @@ bool HTTPClient::sendend(void) {
     } else {
 	sock.close();
     }
-    if (result)
-	result[sz] = '\0';
     return !sockerr;
 }
 
@@ -887,17 +876,13 @@ bool AsyncHTTPClient::Request::setup(DispatchObjCB cb, DispatchObj &co,
     attempts = 0;
     written = 0;
     reset();
-    if (!buildreq(req, op, path, c.host, true, tstring_view(hstrm.str(),
-	(size_t)hstrm.size()), data, datasz)) {
-	sockerr = EINVAL;
-	hstrm.reset();
+    if (!buildreq(req, op, path, c.host, true, data, datasz)) {
 	caller = nullptr;
 	co.ready(cb);
 	return false;
     }
     head = !tstrcmp(op, T("HEAD"));
     idem = idempotent(op);
-    hstrm.reset();
     return true;
 }
 
@@ -1083,8 +1068,6 @@ void AsyncHTTPClient::enqueue(Request &r) {
 AsyncHTTPClient::Flow AsyncHTTPClient::finish(Request &r) {
     const bool keep = parser.keep();
 
-    if (r.result)
-	r.result[r.sz] = '\0';
     rq.pop_front();
     if (timing) {
 	const timing_t now = timing->record(rkey, r.start);
@@ -1154,8 +1137,8 @@ AsyncHTTPClient::Flow AsyncHTTPClient::readall(void) {
     while (!rq.empty()) {
 	Request &r = *rq.front();
 
-	switch (parser.advance(r, r.head, [this, &r](HTTPResponse &,
-	    ulong newcap) { return reserve(r, newcap); })) {
+	switch (parser.advance(r, r.head, [this, &r](ulong newcap) {
+	    return reserve(r, newcap); })) {
 	case Step::Done:
 	    if ((f = finish(r)) != Ok)
 		return f;

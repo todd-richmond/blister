@@ -72,7 +72,9 @@ protected:
     const char *postarg(const attrkey &name) const {
 	return find(postargs, name);
     }
-    template<class C> ostream &operator <<(const C &c) { return ss << c; }
+    template<class C> bufferstream<char> &operator <<(const C &c) {
+	return ss << c;
+    }
     void header(const char *attr, const char *val);
     using DispatchObj::error;
     void error(uint sts, bool close = false);
@@ -108,6 +110,8 @@ protected:
     DSP_DECLARE(HTTPServerSocket, send);
 
 private:
+    enum class Method: uchar { Other, Delete, Get, Head, Post, Put };
+
     attrmap args, postargs;
     hdrmap attrs;
     ulong chunkin = 0;
@@ -115,9 +119,11 @@ private:
     const char *cmd = nullptr;
     char *data = nullptr;
     ulong datasz = 0, sz = 0;
+    unique_ptr<char[]> fbuf;
     char *fmap = nullptr;
     ulong fmapsz = 0;
     bool ka = false, nagleon = true, staticfile = false;
+    Method method = Method::Other;
     ulong postdatasz = 0, postin = 0;
     uint rto = 30 * 1000, wto = 150 * 1000;
     char savechar = 0;
@@ -139,7 +145,7 @@ private:
     static string_view resource(string_view p);
     void scan(char *buf, ulong len, bool append = false);
     static const char *statusmsg(uint sts);
-    static void unescape(char *s);
+    static size_t unescape(char *s, bool plus = true);
     void unmap(void);
     DSP_DECLARE(HTTPServerSocket, parse);
     DSP_DECLARE(HTTPServerSocket, readhdrs);

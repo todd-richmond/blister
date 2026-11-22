@@ -44,8 +44,12 @@ if(LIBUV_INCLUDE_DIR AND LIBUV_LIBRARY)
     endif()
 endif()
 
-add_test(NAME HashFunctors
-    COMMAND bash -c "${CMAKE_COMMAND} --build . --target hashtest && ${CMAKE_CURRENT_BINARY_DIR}/hashtest")
+# hashtest is EXCLUDE_FROM_ALL, so ctest builds it first
+add_test(NAME HashTestBuild COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+    --target hashtest --config $<CONFIG>)
+set_tests_properties(HashTestBuild PROPERTIES FIXTURES_SETUP hashtest)
+add_test(NAME HashFunctors COMMAND hashtest)
+set_tests_properties(HashFunctors PROPERTIES FIXTURES_REQUIRED hashtest)
 add_test(NAME EchoTest COMMAND echotest -h unix:./echotest.sock -l 1000000)
 add_test(NAME HTTPTest COMMAND httptest -h unix:./httptest.sock -l 1000000)
 if(TLS_LIBS)

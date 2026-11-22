@@ -18,18 +18,13 @@
 #include "stdapi.h"
 #include <errno.h>
 #include <fcntl.h>
-#include <time.h>
-#include <sys/times.h>
 #ifdef sun
 #include <procfs.h>
 #elif defined(__APPLE__)
-#include <stdatomic.h>
 #include <mach/task.h>
 #include <mach/mach_init.h>
 #include <mach/mach_port.h>
 #include <mach/mach_time.h>
-#include <sys/sysctl.h>
-#include "Thread.h"
 
 static uint32_t ticks_denom_ms;
 static uint32_t ticks_denom_us;
@@ -57,7 +52,6 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
     short test) {
     struct flock fl;
     int ret;
-
 
     ZERO(fl);
     fl.l_type = type;

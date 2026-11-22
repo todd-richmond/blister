@@ -19,7 +19,6 @@
 #define Timing_h
 
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include "Thread.h"
 
@@ -116,20 +115,8 @@ public:
     }
     void restart(void);
     vector<Row> snapshot(bool sort_key = false) const;	// sort by key or time
-    __forceinline void start(const strlit &key) {
-	start(*tls, key.data(), key.hash);
-    }
-    template<cstr_ptr P>
-    __forceinline void start(P &&key) {
-	const tchar *p = std::forward<P>(key);
-
-	start(*tls, p, stringhash(p));
-    }
-    template<same_as<tstring> S>
-    __forceinline void start(const S &key) {
-	Tlsdata &tlsd(*tls);
-
-	start(tlsd, tlsd.keys.insert(key).first->c_str(), stringhash(key));
+    __forceinline void start(const strkey &key) {
+	start(*tls, key, stringhash(key));
     }
     void stop(void);
     static __forceinline timing_t now(void) { return uticks(); }
@@ -154,15 +141,14 @@ private:
     };
 
     struct BLISTER Tlsdata {
+	// the key is the tail of path after pathlen
 	struct Entry {
-	    const tchar *caller;
 	    strhash_t hash;
 	    timing_t start;
 	    size_t pathlen;
 	};
 
 	vector<Entry> entries;
-	unordered_set<tstring, strhash, streq> keys;
 	tstring path;
     };
 
@@ -180,7 +166,7 @@ private:
     void add(const tchar *key, uint klen, strhash_t hash, timing_t diff);
     void defer(Stats *stats);
     static void release(Stats *s);
-    void start(Tlsdata &tlsd, const tchar *key, strhash_t hash);
+    void start(Tlsdata &tlsd, tstring_view key, strhash_t hash);
     static tstring format(timing_t t);
 };
 
@@ -217,11 +203,7 @@ private:
 // time a stack call including destructors
 class BLISTER TimingFrame: nocopy {
 public:
-    template<typename K> requires (!const_array<K> &&
-	!same_as<remove_cvref_t<K>, TimingFrame>)
-    __forceinline explicit TimingFrame(K &&key, Timing &t = dtiming):
-	timing(t) { timing.start(std::forward<K>(key)); }
-    __forceinline explicit TimingFrame(const strlit &key, Timing &t = dtiming):
+    __forceinline explicit TimingFrame(const strkey &key, Timing &t = dtiming):
 	timing(t) { timing.start(key); }
     __forceinline ~TimingFrame() { record(); }
 

@@ -58,6 +58,8 @@ public:
     bool enabled(void) const {
 	return ctx.load(memory_order_relaxed) != nullptr;
     }
+    // layer() with the peer's SNI, then a blocking handshake
+    bool handshake(Socket &s, const Sockaddr &peer) const;
     bool init(const Config &cfg, const tchar *sect, tstring &err);
     // host is the client SNI and verified name
     bool layer(Socket &s, const tchar *host = nullptr) const;
@@ -81,7 +83,6 @@ private:
 #endif
     mutable RWLock lock;
     const bool srv;
-    bool verify = true;
 };
 
 // HTTPS when tlsctx is enabled, else plain HTTP
@@ -186,11 +187,12 @@ public:
 
 protected:
     // NOLINTNEXTLINE(portability-template-virtual-member-function)
-    bool onconnect(void) override { return !implicit || handshake(); }
+    bool onconnect(void) override {
+	return !implicit || tctx->handshake(this->sock, this->peer);
+    }
 
 private:
     bool greet(bool lmtp, const tchar *domain);
-    bool handshake(void);
 
     TLSContext *tctx = &TLSContext::client();
     bool implicit = false, upgrade = false;

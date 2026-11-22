@@ -54,6 +54,7 @@ inline int sockerrno(void) { return WSAGetLastError(); }
 #define SSET_FD(i)	fds[i].fd
 #define SOCK_SIZE_T	size_t
 #define WSAEALREADY	EALREADY
+#define WSAECONNREFUSED	ECONNREFUSED
 #define WSAEINPROGRESS	EINPROGRESS
 #define WSAEINTR	EINTR
 #define WSAENOTSOCK	ENOTSOCK
@@ -136,7 +137,7 @@ public:
 
     const void *address(void) const;
     void clear(void) { ZERO(addr); name.clear(); }
-    sockaddr *data(void) { name.clear(); return &addr.sa; }
+    sockaddr *data(void) { clear(); return &addr.sa; }
     ushort family(void) const { return addr.sa.sa_family; }
     void family(sa_family_t fam) { addr.sa.sa_family = fam; }
     void family(Proto proto) { addr.sa.sa_family = families[(uint)proto]; }
@@ -176,7 +177,12 @@ public:
     bool set(const tchar *host, const tchar *service, Proto proto = TCP);
     bool set(const hostent *h);
     bool set(const sockaddr &sa);
-    ushort size(void) const { return size(family()); }
+    // Linux abstract names are the bytes up to the address length
+    ushort size(void) const {
+	return family() == AF_UNIX && !addr.sau.sun_path[0] &&
+	    addr.sau.sun_path[1] ? (ushort)(offsetof(sockaddr_un, sun_path) +
+	    1 + strlen(addr.sau.sun_path + 1)) : size(family());
+    }
     // like host() but never does a reverse DNS lookup
     tstring str(void) const {
 	return str(!name.empty() || !(ipv4() || ipv6()) ? host() : ip());
@@ -226,7 +232,6 @@ private:
     static SockInit init;
 #endif
 
-    // only Sockaddr(Proto) zeroes - every other constructor sets all of it
     sockaddr_any addr;
     mutable tstring name;
     static constexpr sa_family_t families[] = {
@@ -293,8 +298,8 @@ class BLISTER SocketLayer: nocopy {
 public:
     enum State: uint {
 	Pending = 1,		// buffered input that no poll reports
-	ReadWrites = 2,		// a blocked read or handshake needs writability
-	WriteReads = 4,		// a blocked write or handshake needs readability
+	ReadWrites = 2,		// blocked read or handshake needs writability
+	WriteReads = 4,		// blocked write or handshake needs readability
 	Drained = 8		// the last read emptied the fd
     };
 
@@ -334,7 +339,7 @@ public:
 	return s.fd() == sock;
     }
     friend bool operator ==(const Socket &a, const Socket &b) {
-	return a.sbuf == b.sbuf || a.fd() == b.fd();
+	return a.sbuf == b.sbuf || (a.open() && a.fd() == b.fd());
     }
     friend bool operator !(const Socket &s) {
 	return s.fd() == SOCK_INVALID;
@@ -347,6 +352,8 @@ public:
     void err(int err) const { sbuf->err = err; }
     tstring errstr(void) const;
     socket_t fd(void) const { return sbuf->sock; }
+    // run the layer handshake: 1 done, 0 would block, -1 error
+    long handshake(void) const;
     bool open(void) const { return sbuf->sock != SOCK_INVALID; }
     bool stream(void) const { return sbuf->type == SOCK_STREAM; }
 
@@ -355,8 +362,6 @@ public:
     bool bind(const Sockaddr &sa, bool reuse = true);
     bool close(void) { return sbuf->close(); }
     bool connect(const Sockaddr &sa, uint msec = SOCK_INFINITE);
-    // run the layer handshake: 1 done, 0 would block, -1 error
-    long handshake(void) const;
     SocketLayer *layer(void) const { return sbuf->layer; }
     // take ownership of l, replacing any current layer
     void layer(SocketLayer *l) { sbuf->unlayer(false); sbuf->layer = l; }
@@ -368,7 +373,10 @@ public:
     bool movehigh(void);
     bool open(int family);
     bool peername(Sockaddr &sa);
+#ifdef __linux__
+    // NAT original destination
     bool proxysockname(Sockaddr &sa);
+#endif
     bool sockname(Sockaddr &sa);
     bool shutdown(bool in = true, bool out = true);
 
@@ -529,15 +537,15 @@ protected:
     };
 
     bool __forceinline check(ssize_t ret) const { return sbuf->check(ret); }
+    bool iowait(bool out) const;
+    bool __forceinline iotimeo(bool out) const {
+	return LIKELY(out ? sbuf->wto == sbuf->kwto : sbuf->rto ==
+	    sbuf->krto) || ktimeo(out);
+    }
+    bool ktimeo(bool out) const;
     ssize_t layerread(iovec *iov, int count) const;
     ssize_t layerwrite(const iovec *iov, int count) const;
     ssize_t rdret(ssize_t in) const;
-    bool iowait(bool out) const;
-    bool __forceinline iotimeo(bool out) const {
-	return LIKELY(out ? sbuf->wto == sbuf->kwto : sbuf->rto == sbuf->krto) ||
-	    ktimeo(out);
-    }
-    bool ktimeo(bool out) const;
     // an expired kernel timeout is an error, not an empty read or write
     bool timedout(bool out) const {
 	return (out ? sbuf->wto : sbuf->rto) != SOCK_INFINITE && sbuf->blck &&
@@ -546,7 +554,7 @@ protected:
     ssize_t wrret(ssize_t out) const {
 	return UNLIKELY(out < 0 && blocked() && !timedout(true)) ? 0 : out;
     }
-    static bool stalesock(const char *path);
+    static bool stalesock(const Sockaddr &sa, int type);
 
     SocketBuf *sbuf;
 };

@@ -31,40 +31,41 @@ private:
     public:
 	HTTPCmd(const tchar *c, const tchar *a, const URL &u, const tchar *d,
 	    const tchar *s, const tchar *v, bool b): LoadCmd(c, a),
-	    data(d ? d : T("")), full(u.fullpath()), method(c),
+	    body(b), data(d ? d : T("")), full(u.fullpath()), method(c),
 	    path(u.relpath()), value(v ? v : T("")), status((ushort)ttoi(s)),
-	    body(b), tls(u.prot().starts_with(T("https"))),
+	    tls(u.prot().starts_with(T("https"))),
 	    vars(path.contains(T("$("))) {
 	    for (auto &ch : method)
 		ch = (tchar)totupper(ch);
 	}
 
 	Sockaddr addr;
+	bool body;			// request has a body
 	tstring data, full, method, path, value;
 	ushort status;
-	bool body;			// request has a body
 	bool tls;
 	bool vars;			// path has $() for per request values
     };
 
-    tchar buf[1024]{}, data[4096]{};
+    tchar buf[1024]{};
     vector<tstring> cookies;
+    tchar data[4096]{};
     tofstream fs;
     HTTPTLSClient hc;
     const tchar *path = nullptr;
-    static inline attrmap hdrs;
     static inline bool ctype = false;	// hdrs has a content-type
-
-    bool send(const HTTPCmd &cmd, const void *d, ulong len);
+    static inline attrmap hdrs;
 
     void begin(void) override;
-    bool exec(LoadCmd &lc, usec_t &io) override;
     bool check(LoadCmd &lc, bool ret, ulong diff) override;
+    void cookie(const tstring &s);
     void end(void) override {
 	if (!ka)
 	    hc.close();
 	cookies.clear();
     }
+    bool exec(LoadCmd &lc, usec_t &io) override;
+    bool send(const HTTPCmd &cmd, const void *d, ulong len);
 };
 
 bool HTTPLoad::parse(tchar *cmd, uint line) {
@@ -74,6 +75,8 @@ bool HTTPLoad::parse(tchar *cmd, uint line) {
 	{ T("put"), true }
     };
     const tchar *arg, *data = nullptr, *status, *value;
+    unique_ptr<HTTPCmd> lcmd;
+    const pair<tstring_view, bool> *m;
     URL url;
 
     if (!tstricmp(cmd, T("hdr"))) {
@@ -84,11 +87,9 @@ bool HTTPLoad::parse(tchar *cmd, uint line) {
 	});
 	return true;
     }
-
-    const auto *m = ranges::find_if(methods, [&](const auto &p) {
+    m = ranges::find_if(methods, [&](const auto &p) {
 	return !tstricmp(p.first.data(), cmd);
     });
-
     if (m == ranges::end(methods)) {
 	tcerr << T("invalid cmd: line ") << line << endl;
 	return false;
@@ -111,10 +112,8 @@ bool HTTPLoad::parse(tchar *cmd, uint line) {
     if (!status)
 	status = T("200");
     value = tstrtok(nullptr, T(""));
-
-    auto lcmd = make_unique<HTTPCmd>(cmd, arg, url, data, status, value,
+    lcmd = make_unique<HTTPCmd>(cmd, arg, url, data, status, value,
 	m->second);
-
     if (!lcmd->addr.set(url.host().c_str(), url.port())) {
 	tcerr << T("invalid host: line ") << line << endl;
 	return false;
@@ -134,51 +133,57 @@ void HTTPLoad::begin(void) {
 
 bool HTTPLoad::exec(LoadCmd &lc, usec_t &io) {
     const auto &cmd = static_cast<const HTTPCmd &>(lc);
-    bool ret;
+    const void *d = data;
+    ulong len = 0;
+    unique_ptr<char[]> rbuf;
 
     path = cmd.path.c_str();
     if (fs.is_open())
 	fs << T("\n\n******* ") << cmd.cmd << T(" ") << cmd.arg << T(" ") <<
 	    cmd.full << T(" *******") << endl;
     hc.tls(cmd.tls);
-    if ((ret = hc.connect(cmd.addr, ka, to)) == true) {
-	if (!cookies.empty()) {
-	    tstring s;
-
-	    for (const auto &c : cookies) {
-		if (!s.empty())
-		    s += T("; ");
-		s += c;
-	    }
-	    hc.header(T("cookie"), s);
-	    if (fs.is_open())
-		fs << T("SEND Cookie: ") << s << endl;
-	}
-	for (const auto &[key, value] : hdrs)
-	    hc.header(key, value);
-    } else {
+    if (!hc.connect(cmd.addr, ka, to)) {
 	path = cmd.full.c_str();
-    }
-    if (ret && cmd.vars && (ret = subst(cmd.path, buf, size(buf))) == true)
-	path = buf;
-    if (!ret)
 	return false;
+    }
+    if (cmd.vars) {
+	if (!subst(cmd.path, buf, size(buf)))
+	    return false;
+	path = buf;
+    }
+    // headers queue until the next request so add them only once it can run
+    if (cmd.body && cmd.data.empty()) {
+	uint u = pick();
+
+	if ((d = load(u, io, rbuf)) == nullptr)
+	    return false;
+	len = bodies[u].size;
+    } else if (cmd.body) {
+	if (!subst(cmd.data, data, size(data)))
+	    return false;
+	len = (ulong)(tstrlen(data) * sizeof (tchar));
+    }
+    if (!cookies.empty()) {
+	tstring s;
+
+	for (const auto &c : cookies) {
+	    if (!s.empty())
+		s += T("; ");
+	    s += c;
+	}
+	hc.header(T("cookie"), s);
+	if (fs.is_open())
+	    fs << T("SEND Cookie: ") << s << endl;
+    }
+    for (const auto &[key, value] : hdrs)
+	hc.header(key, value);
     if (!cmd.body)
 	return hc.cmd(cmd.method.c_str(), path);
-    if (cmd.data.empty()) {
-	unique_ptr<char[]> rbuf;
-	uint u = pick();
-	const char *d = load(u, io, rbuf);
-
-	if (!ctype)
-	    hc.header(T("content-type"), T("application/octet-stream"));
-	return d && send(cmd, d, bodies[u].size);
-    }
-    if (!subst(cmd.data, data, size(data)))
-	return false;
     if (!ctype)
-	hc.header(T("content-type"), T("application/x-www-form-urlencoded"));
-    return send(cmd, data, (ulong)(tstrlen(data) * sizeof (tchar)));
+	hc.header(T("content-type"), cmd.data.empty() ?
+	    T("application/octet-stream") :
+	    T("application/x-www-form-urlencoded"));
+    return send(cmd, d, len);
 }
 
 // -u sends the body chunked; an early reply ends the upload
@@ -194,6 +199,21 @@ bool HTTPLoad::send(const HTTPCmd &cmd, const void *d, ulong len) {
     return hc.sendend();
 }
 
+// a refreshed cookie replaces the one with the same name
+void HTTPLoad::cookie(const tstring &s) {
+    size_t eq = s.find('=');
+
+    if (s == T("invalid"))
+	return;
+    for (auto &c : cookies) {
+	if (eq != tstring::npos && !c.compare(0, eq + 1, s, 0, eq + 1)) {
+	    c = s;
+	    return;
+	}
+    }
+    cookies.push_back(s);
+}
+
 bool HTTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
     auto &cmd = static_cast<HTTPCmd &>(lc);
 
@@ -201,25 +221,21 @@ bool HTTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
 	(!cmd.status && hc.status() != 200 && hc.status() != 302)) {
 	if (ret)
 	    fail(cmd);
-	dlog << Log::Err << T("cmd=") << cmd.cmd << T(" arg=") << path <<
-	    T(" status=") << hc.status() << T(" expected=") << cmd.status <<
-	    T(" duration=") << (diff / 1000) << endlog;
+	dlog << Log::Err << Log::cmd(cmd.cmd) << Log::kv(T("arg"), path) <<
+	    Log::kv(T("status"), hc.status()) << Log::kv(T("expected"),
+	    cmd.status) << Log::kv(T("duration"), diff / 1000) << endlog;
 	return false;
     }
     if (fs.is_open())
 	fs << cmd.cmd << T(" status: ") << hc.status() << endl << endl;
-    for (const auto &[key, val] : hc.responses()) {
-	if (key == T("set-cookie")) {
-	    tstring s(val);
-	    tstring::size_type pos;
-
-	    if ((pos = s.find_first_of(T(';'))) != string::npos)
-		s.erase(pos);
-	    if (s != T("invalid"))
-		cookies.push_back(s);
+    // responses() copies every header
+    if (fs.is_open() || hc.response(T("set-cookie"))) {
+	for (const auto &[key, val] : hc.responses()) {
+	    if (fs.is_open())
+		fs << key << ": " << val << endl;
+	    if (!tstricmp(key.c_str(), T("set-cookie")))
+		cookie(tstring(val, 0, val.find(';')));
 	}
-	if (fs.is_open())
-	    fs << key << ": " << val << endl;
     }
 #ifndef UNICODE	// TODO
     if (fs.is_open()) {
@@ -229,16 +245,16 @@ bool HTTPLoad::check(LoadCmd &lc, bool ret, ulong diff) {
     }
     if (!cmd.value.empty() && !tstring_view(hc.data(),
 	hc.size()).contains(cmd.value)) {
-	dlog << Log::Err << T("cmd=") << cmd.cmd << T(" arg=") << path <<
-	    T(" invalid return data") << endlog;
+	dlog << Log::Err << Log::cmd(cmd.cmd) << Log::kv(T("arg"), path) <<
+	    Log::error(T("invalid return data")) << endlog;
 	fail(cmd);
 	return false;
     }
 #endif
     if (dlog.level() >= Log::Info)
-	dlog << Log::Info << T("cmd=") << cmd.cmd << T(" arg=") << path <<
-	    T(" status=") << hc.status() << T(" duration=") << (diff / 1000) <<
-	    endlog;
+	dlog << Log::Info << Log::cmd(cmd.cmd) << Log::kv(T("arg"), path) <<
+	    Log::kv(T("status"), hc.status()) << Log::kv(T("duration"),
+	    diff / 1000) << endlog;
     return true;
 }
 
@@ -248,7 +264,8 @@ int tmain(int argc, tchar *argv[]) {
 
     // test servers use self-signed certs
     cfg.set(T("tls.verify"), false);
-    (void)TLSContext::client().init(cfg, nullptr, err);
+    if (!TLSContext::client().init(cfg, nullptr, err))
+	tcerr << T("TLS disabled: ") << err << endl;
     return Load::run<HTTPLoad>(argc, argv, T("http.wld"), T("localhost:80"),
 	T("[-d] [-k] [-u[chunksize]]"), [](const tchar *arg) {
 	if (!tstricmp(arg, T("-d")))

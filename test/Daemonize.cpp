@@ -29,29 +29,47 @@ public:
     WatchDaemon(int argc, const tchar * const *argv);
 
 protected:
-    ulong interval = 60, maxmem = 0;
     atomic<pid_t> cpid = 0;		// read by onStop on the signal thread
+    ulong interval = 60, maxmem = 0;
 
     bool onRefresh(void) override;
     int onStart(int argc, const tchar * const *argv) override;
     void onStop(bool fast) override;
+
+private:
+    static int cmdindex(int argc, const tchar * const *argv);
+    // options without a value; every other option is followed by one
+    static bool flagopt(const tchar *p) {
+	return tstreq(p, T("console")) || tstreq(p, T("daemon"));
+    }
+    void stopchild(bool fast) const;
 };
 
-// options without a value; every other option is followed by one
-static bool flag_opt(const tchar *p) {
-    return tstreq(p, T("console")) || tstreq(p, T("daemon"));
+// index of the command word after global options
+int WatchDaemon::cmdindex(int argc, const tchar * const *argv) {
+    int ac;
+
+    for (ac = 1; ac < argc && *argv[ac] == '-'; ++ac) {
+	if (!flagopt(argv[ac] + tstrspn(argv[ac], T("-"))))
+	    ++ac;
+    }
+    return ac;
+}
+
+void WatchDaemon::stopchild(bool fast) const {
+#ifdef _WIN32
+    (void)fast;
+    kill(cpid, SIGKILL);	// console Ctrl-C can't target one process
+#else
+    kill(cpid, fast ? SIGTERM : SIGINT);
+#endif
 }
 
 WatchDaemon::WatchDaemon(int argc, const tchar * const *argv):
     Daemon(T("")) {
     int ac;
 
-    // skip global options before the command word, then the command itself
-    for (ac = 1; ac < argc && *argv[ac] == '-'; ++ac) {
-	if (!flag_opt(argv[ac] + tstrspn(argv[ac], T("-"))))
-	    ++ac;
-    }
-    for (++ac; ac < argc; ++ac) {
+    for (ac = cmdindex(argc, argv) + 1; ac < argc; ++ac) {
 	const tchar *p = argv[ac];
 
 	if (*p != '-')
@@ -63,7 +81,7 @@ WatchDaemon::WatchDaemon(int argc, const tchar * const *argv):
 	    maxmem = atoi<ulong>(argv[++ac]);
 	else if (tstreq(p, T("name")) && ac + 1 < argc)
 	    name = argv[++ac];
-	else if (!flag_opt(p))
+	else if (!flagopt(p))
 	    ++ac;
     }
     if (ac >= argc) {
@@ -100,15 +118,16 @@ bool WatchDaemon::onRefresh(void) {
 int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     int ac;
     tstring args;
+#ifdef _WIN32
+    intptr_t hdl;
+#else
+    pid_t child;
+#endif
     int ret = Daemon::onStart(argc, argv);
 
     if (ret)
 	return ret;
-    for (ac = 1; ac < argc && argv[ac][0] == '-'; ++ac) {
-	if (!flag_opt(argv[ac] + tstrspn(argv[ac], T("-"))))
-	    ++ac;
-    }
-    if (ac >= argc) {
+    if ((ac = cmdindex(argc, argv)) >= argc) {
 	dloge(Log::mod(name), Log::cmd(T("exec")),
 	    Log::error(T("no command")));
 	return -1;
@@ -125,25 +144,38 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
     dlog.stop();
     (void)dlog.close();
 #ifdef _WIN32
-    if ((ret = (int)tspawnvp(P_WAIT, argv[ac], (tchar *const *)&argv[ac])) !=
-	-1)
-	return ret;
+    hdl = tspawnvp(P_NOWAIT, argv[ac], (tchar *const *)&argv[ac]);
+    dlog.start();
+    if (hdl != -1) {
+	DWORD sts;
+
+	cpid = (pid_t)GetProcessId((HANDLE)hdl);
+	if (qflag != None)		// stop arrived before cpid was set
+	    stopchild(qflag == Fast);
+	WaitForSingleObject((HANDLE)hdl, INFINITE);
+	cpid = 0;
+	if (!GetExitCodeProcess((HANDLE)hdl, &sts))
+	    sts = (DWORD)-1;
+	CloseHandle((HANDLE)hdl);
+	return (int)sts;
+    }
 #else
-    cpid = fork();
-    if (cpid == 0) {
+    if ((child = fork()) == 0) {
 	unsetsignal();
 	texecvp(argv[ac], (tchar *const *)&argv[ac]);	// NOSONAR
 	dloge(Log::mod(name), Log::cmd(T("exec")), Log::kv(T("file"),
 	    argv[ac]), Log::error(tstrerror(errno)));
 	dlog.flush();
 	_exit(127);
-    } else if (cpid > 0) {
+    }
+    dlog.start();
+    if (child > 0) {
 	int sts;
 
-	dlog.start();
+	cpid = child;
 	if (qflag != None)		// stop arrived before cpid was set
-	    kill(cpid, qflag == Fast ? SIGTERM : SIGINT);
-	while ((ret = waitpid(cpid, &sts, 0)) == -1 && errno == EINTR)
+	    stopchild(qflag == Fast);
+	while ((ret = waitpid(child, &sts, 0)) == -1 && errno == EINTR)
 	    ;
 	cpid = 0;
 	if (ret != -1)
@@ -158,7 +190,7 @@ int WatchDaemon::onStart(int argc, const tchar * const *argv) {
 void WatchDaemon::onStop(bool fast) {
     Daemon::onStop(fast);
     if (cpid)
-	kill(cpid, fast ? SIGTERM : SIGINT);
+	stopchild(fast);
 }
 
 int tmain(int argc, const tchar * const argv[]) {

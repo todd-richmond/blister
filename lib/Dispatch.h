@@ -219,6 +219,7 @@ private:
 	    delete t;
 	return true;
     }
+    static void nosigpipe(void);
     static int worker(void *param);
 
     uint maxthreads = 0;
@@ -328,7 +329,7 @@ public:
     static constexpr msec_t DSP_NEVER_DUE = (msec_t)-1;
     static constexpr msec_t DSP_FIRING = DSP_NEVER_DUE - 1;
 
-    DispatchTimer(const DispatchTimer &dt): DispatchTimer((DispatchObj &)dt) {}
+    DispatchTimer(const DispatchTimer &) = delete;
     explicit DispatchTimer(Dispatcher &d, ulong msec = DSP_NEVER):
 	DispatchObj(d), to(msec) { init(); }
     DispatchTimer(Dispatcher &d, ulong msec, DispatchObjCB cb):
@@ -637,6 +638,8 @@ public:
     uint set(uint count = 1) {
 	uint woken = 0;
 
+	if (UNLIKELY(!count))
+	    return 0;
 	while (count && waiters) {
 	    wake();
 	    --count;

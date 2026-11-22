@@ -43,15 +43,6 @@ static constexpr const tchar *USubst = T("\001\001");
 static constexpr const tchar *ZSubst = T("\002\002");
 #endif
 
-const tstring_view Log::LevelStr[] = {
-    T("none"), T("emrg"), T("alrt"), T("crit"), T("err "), T("warn"), T("note"),
-    T("info"), T("debg"), T("trce")
-};
-const tstring_view Log::LevelStr2[] = {
-    T("nothing"), T("emergency"), T("alert"), T("critical"), T("error"),
-    T("warning"), T("notice"), T("information"), T("debug"), T("trace")
-};
-
 // UNIX loaders may try to construct static objects > 1 time
 static Log &_dlog(void) {
     static Log __dlog;
@@ -64,7 +55,7 @@ Log &dlog(_dlog());
 Log &Log::log(Tlsdata &tlsd, const Log::Escalator &escalator) {
     FastSpinLocker lkr(escalator.lck);
     ulong count;
-    msec_t now = mticks() / 1000, start;
+    ulong now = (ulong)(mticks() / 1000), start;
 
     count = escalator.count;
     start = escalator.start;
@@ -275,7 +266,7 @@ void Log::LogFile::roll(void) {
 	return;
     now = ::time(NULL);
     s1 = path;
-    if ((pos = s1.rfind('/')) == s1.npos && (pos = s1.rfind('\\')) == s1.npos) {
+    if ((pos = s1.find_last_of(T("/\\"))) == s1.npos) {
 	sep = '/';
 	s2 = s1;
 	s1.erase();
@@ -320,18 +311,11 @@ void Log::LogFile::roll(void) {
 	tclosedir(dir);
 	ranges::sort(entries);
 	files = (uint)entries.size();
-	if (cnt || sec) {
-	    for (auto it = entries.begin(); it != entries.end(); ) {
-		if ((!sec || it->first < ((ulong)now - sec)) &&
-		    (!cnt || files >= cnt)) {
-		    if (tunlink(it->second.c_str()))
-			break;
-		    --files;
-		    it = entries.erase(it);
-		} else {
-		    break;
-		}
-	    }
+	for (const auto &[age, name] : entries) {
+	    if ((!cnt && !sec) || (sec && age >= (ulong)now - sec) ||
+		(cnt && files < cnt) || tunlink(name.c_str()))
+		break;
+	    --files;
 	}
     }
     if (path == file) {
@@ -786,10 +770,14 @@ void Log::endlog(Tlsdata &tlsd) {
     tlsd.strm.reset();
     tlsd.suppress = true;
     if (syslogenable && clvl <= sysloglvl) {
-	char cbuf[32];
+	static constexpr const char mon[][4] = { "Jan", "Feb", "Mar", "Apr",
+	    "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+	struct tm tmbuf {};
+	const struct tm *tm = localtime_r(&now_sec, &tmbuf);
 	uint u = (syslogfac << 3) | (uint)(clvl - (clvl <= Debug ? 1 : 2));
-	string ss = std::format("<{}>{:.15}.{:06} {}", u,
-	    ctime_r(&now_sec, cbuf) + 4, (uint)now_usec,
+	// RFC 3164 timestamp: C locale, no fraction
+	string ss = std::format("<{}>{} {:2} {:02}:{:02}:{:02} {}", u,
+	    mon[tm->tm_mon], tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec,
 	    tstringtoastring(hostname));
 
 	if (!mailfrom.empty() && mailfrom != T("<>")) {
@@ -895,7 +883,7 @@ void Log::logv(int il, ...) {
     tlsd.sep = ' ';
     va_start(vl, il);
     while ((p = va_arg(vl, const tchar *)) != NULL)
-	*this << p;
+	log(tlsd, p);
     va_end(vl);
     endlog(tlsd);
 }

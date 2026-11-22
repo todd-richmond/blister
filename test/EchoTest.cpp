@@ -16,16 +16,11 @@
  */
 
 #include "stdapi.h"
-#include <fcntl.h>
-#include <random>
 #include <signal.h>
-#ifndef _WIN32
-#include <sys/resource.h>
-#endif
-#include <sys/stat.h>
 #include "Config.h"
 #include "Dispatch.h"
 #include "Log.h"
+#include "TestUtil.h"
 #include "Timing.h"
 #include "TLSSocket.h"
 
@@ -45,17 +40,17 @@ public:
     class EchoClientSocket: public DispatchClientSocket {
     public:
 	EchoClientSocket(EchoTest &es, const Sockaddr &a, ulong t, ulong w):
-	    DispatchClientSocket(es), sa(a), begin(0), in(0), out(0),
-	    rbuf(new char[(size_t)dsz + MAXREAD]), tmt(t), wait(w) {}
+	    DispatchClientSocket(es), begin(0), in(0), out(0),
+	    rbuf(new char[(size_t)dsz + MAXREAD]), sa(a), tmt(t), wait(w) {}
 	~EchoClientSocket() override { delete [] rbuf; }
 
 	void start(ulong msec) { timeout(start, msec); }
 
     protected:
-	const Sockaddr &sa;
 	timing_t begin;
 	uint in, out;
 	char *rbuf;
+	const Sockaddr &sa;
 	ulong tmt, wait;
 
 	void fail(const tchar *what);
@@ -75,7 +70,6 @@ public:
 	    out(0), tmt(TIMEOUT) {}
 	~EchoServerSocket() override { delete [] buf; }
 
-	void timeout(ulong timeout) { tmt = timeout; }
 	static constexpr const tchar *section(void) { return T("echo"); }
 
 	void start(void) override {
@@ -90,6 +84,7 @@ public:
 	    }
 	    readable(input, tmt);
 	}
+	void timeout(ulong timeout) { tmt = timeout; }
 
     private:
 	char *buf;
@@ -117,9 +112,9 @@ public:
 	ulong tmt;
     };
 
-    bool listen(const Sockaddr &sa, ulong timeout);
     void connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
 	ulong wait);
+    bool listen(const Sockaddr &sa, ulong timeout);
 };
 
 static atomic<uint> errs, ops;
@@ -161,7 +156,7 @@ void EchoTest::EchoClientSocket::onConnect(void) {
     }
 }
 
-void EchoTest::EchoClientSocket::shake() {
+void EchoTest::EchoClientSocket::shake(void) {
     int ret;
 
     if (error() || (ret = handshake(shake, tmt)) < 0) {
@@ -172,7 +167,7 @@ void EchoTest::EchoClientSocket::shake() {
     }
 }
 
-void EchoTest::EchoClientSocket::input() {
+void EchoTest::EchoClientSocket::input(void) {
     uint len;
 
     // read past the reply like a normal server so short reads skip re-arming
@@ -190,10 +185,8 @@ void EchoTest::EchoClientSocket::input() {
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read="), len);
 	    if (wait) {
-		static thread_local mt19937 rng(random_device {}());
-
 		timeout(repeat, wait + (wait < 2000 ? 0 :
-		    uniform_int_distribution<uint>(0, 49)(rng)));
+		    (ulong)(Timing::now() % 50)));
 	    } else {
 		repeat();
 	    }
@@ -206,7 +199,7 @@ void EchoTest::EchoClientSocket::input() {
     }
 }
 
-void EchoTest::EchoClientSocket::output() {
+void EchoTest::EchoClientSocket::output(void) {
     uint len;
 
     if (UNLIKELY((loops.load(memory_order_relaxed) <= 0 || qflag) &&
@@ -235,20 +228,20 @@ void EchoTest::EchoClientSocket::output() {
     }
 }
 
-void EchoTest::EchoClientSocket::repeat() {
+void EchoTest::EchoClientSocket::repeat(void) {
     in = out = 0;
     begin = Timing::now();
     ready(output);
 }
 
-void EchoTest::EchoClientSocket::start() {
+void EchoTest::EchoClientSocket::start(void) {
     in = out = 0;
     close();
     dlogd(T("connecting"));
     connect(sa, tmt);
 }
 
-void EchoTest::EchoServerSocket::input() {
+void EchoTest::EchoServerSocket::input(void) {
     char tmp[MAXREAD];
 
     if (UNLIKELY(error() || ((in = (uint)read(tmp, sizeof (tmp))) ==
@@ -281,7 +274,7 @@ void EchoTest::EchoServerSocket::input() {
     }
 }
 
-void EchoTest::EchoServerSocket::shake() {
+void EchoTest::EchoServerSocket::shake(void) {
     int ret;
 
     if (error() || (ret = handshake(shake, tmt)) < 0) {
@@ -294,7 +287,7 @@ void EchoTest::EchoServerSocket::shake() {
     }
 }
 
-void EchoTest::EchoServerSocket::output() {
+void EchoTest::EchoServerSocket::output(void) {
     uint len;
 
     if (UNLIKELY(error() || ((len = (uint)write(buf + out, in - out)) ==
@@ -333,7 +326,6 @@ bool EchoTest::listen(const Sockaddr &sa, ulong timeout) {
     return false;
 }
 
-// only async-signal-safe work here so main notices qflag and stops
 static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
@@ -341,13 +333,11 @@ int tmain(int argc, const tchar * const argv[]) {
     ulong delay = 0, failed = 0, tmt = TIMEOUT, wait = 0;
     Config config;
     EchoTest et(config);
-    int fd;
     const tchar *host = nullptr;
     int i;
     timing_t last, now;
     const tchar *path = T("echo this short test string as quickly as possible");
     Sockaddr sa;
-    struct stat sbuf;
     uint sockets = 20, threads = 20;
 
     for (i = 1; i < argc; i++) {
@@ -392,29 +382,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    return 1;
 	}
     }
-    if ((fd = open(tchartoachar(path), O_CLOEXEC | O_RDONLY)) == -1) {
-	if (access(tchartoachar(path), 0) == 0) {
-	    tcerr << T("echotest: unable to open ") << path << endl;
-	    return 1;
-	}
-	dsz = (uint)(tstrlen(path) * sizeof (tchar));
-	dbuf = new char[dsz];
-	memcpy(dbuf, path, dsz);
-    } else {
-	if (fstat(fd, &sbuf) == -1) {
-	    close(fd);
-	    tcerr << T("echotest: unable to stat ") << path << endl;
-	    return 1;
-	}
-	dsz = (uint)sbuf.st_size;
-	dbuf = new char[dsz];
-	if ((dsz = (uint)read(fd, dbuf, dsz)) == (uint)-1) {
-	    close(fd);
-	    tcerr << T("echotest: unable to read ") << path << endl;
-	    return 1;
-	}
-	close(fd);
-    }
+    if ((dbuf = loaddata(T("echotest"), path, dsz)) == nullptr)
+	return 1;
     if (!host)
 	host = T("unix:./socket");
     if (!sa.set(host)) {
@@ -424,17 +393,7 @@ int tmain(int argc, const tchar * const argv[]) {
     if (!sa.port())
 	sa.port(8888);
     signal(SIGINT, signal_handler);
-#ifndef _WIN32
-    struct rlimit rl;
-    struct sigaction sig {};
-
-    if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
-	rl.rlim_cur = rl.rlim_max;
-	setrlimit(RLIMIT_NOFILE, &rl);
-    }
-    sig.sa_handler = SIG_IGN;
-    sigaction(SIGPIPE, &sig, nullptr);
-#endif
+    setlimits();
     if (dlog.level() >= Log::Debug)
 	dlog.buffer(true);
     if (!et.start(threads, 32 * 1024)) {

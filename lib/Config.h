@@ -42,6 +42,7 @@
  *      falling back to environment variables
  *   4) lines beginning with # are comments
  *   5) lines beginning with #include will recursively include the filename arg
+ *      relative to the including file
  *   6) key += val appends the value
  *   7) repeated keys are stored as "last read key wins"
  *
@@ -143,8 +144,10 @@ public:
 
 	pre = str ? str : T("");
     }
-    bool read(tistream &is, const tchar *pre = nullptr,
-	bool append = false, ulong sz = 0);
+    bool read(tistream &is, const tchar *prestr = nullptr,
+	bool append = false, ulong sz = 0) {
+	return load(is, prestr, append, sz, {});
+    }
     template<typename T> requires is_arithmetic_v<T>
     Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
 	if constexpr (is_same_v<T, tchar>) {
@@ -153,7 +156,7 @@ public:
 	    return set(key, tstrlen(key), &val, 1, sect, sect ?
 		tstrlen(sect) : 0);
 	} else {
-	    char buf[64] = {};
+	    char buf[64];
 	    auto [ptr, ec] = to_chars(buf, buf + std::size(buf), val);
 
 	    if (UNLIKELY(ec != errc{}))
@@ -185,12 +188,6 @@ public:
     Config &set(const tchar *key, const bool val, const tchar *sect = nullptr) {
 	return set(key, val ? T("t") : T("f"), sect);
     }
-    Config &set(const tstring &key, const tstring &val, const tstring &sect) {
-	SpinWLocker lkr(lck);
-
-	return set(key.c_str(), key.size(), val.c_str(), val.size(),
-	    sect.c_str(), sect.size());
-    }
     Config &set(tstring_view key, tstring_view val, tstring_view sect = {}) {
 	SpinWLocker lkr(lck);
 
@@ -218,13 +215,21 @@ public:
     void unlock(void) { lck.unlock(); }
 
 protected:
+    // dir resolves relative #include paths
+    bool load(tistream &is, const tchar *prestr, bool append, ulong sz,
+	tstring_view dir);
+    static tstring_view dirname(tstring_view path) {
+	auto pos = path.find_last_of(T("/\\"));
+
+	return pos == path.npos ? tstring_view{} : path.substr(0, pos + 1);
+    }
     static bool open_file(const tstring &file, tifstream &is,
 	unique_ptr<tchar[]> &fbuf, ulong &sz);
 
 private:
     // key is stored after val
     struct KV {
-	uint klen, vlen;
+	uint vlen;
 	bool expand;
 	tchar quote;
 	tchar val[];
@@ -257,7 +262,12 @@ private:
     void clear_locked(void);
     void expandkv(const KV *kv, tstring &val) const;
     void reserve(ulong sz) { amap.reserve(amap.size() + sz / 64); }
-    const KV *getkv(const strkey &key, const tchar *sect) const;
+    kvmap::const_iterator findkv(const strkey &key, const tchar *sect) const;
+    const KV *getkv(const strkey &key, const tchar *sect) const {
+	auto it = findkv(key, sect);
+
+	return it == amap.end() ? nullptr : it->second;
+    }
     tstring getstr(const strkey &key, const tchar *def, const tchar *sect)
 	const;
     template<typename T, typename F>
@@ -275,7 +285,7 @@ private:
 	}
 	return def;
     }
-    bool parse(tistream &is, uint depth = 0);
+    bool parse(tistream &is, tstring_view dir, uint depth = 0);
     Config &set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
 	const tchar *sect, size_t slen, bool append = false);
     static void delkv(const KV *kv) { delete [] (const char *)kv; }

@@ -43,7 +43,7 @@ using attrmap = unordered_map<tstring, tstring, strhash, streq>;
  */
 class Load: public Thread {
 public:
-    Load(): id(threads++) {}
+    Load(): id(nextid++) { ++threads; }
 
     template <class L, class F>
     static int run(int argc, tchar *argv[], const tchar *wld,
@@ -87,15 +87,15 @@ protected:
     static inline uint to = 30000;
     static inline attrmap vars;
 
+    uint pick(void) {
+	return allfiles ? next() : (uint)(dist(rng) % bodies.size());
+    }
     // per request $() values from str into buf
     bool subst(const tstring &str, tchar *buf, size_t sz) const {
 	if (str.size() >= sz)
 	    return false;
 	tstrcpy(buf, str.c_str());
 	return expand(buf, sz, lvars);
-    }
-    uint pick(void) {
-	return allfiles ? next() : (uint)(dist(rng) % bodies.size());
     }
     static void fail(LoadCmd &cmd) {
 	statlock.lock();
@@ -113,27 +113,27 @@ protected:
     static bool setattr(attrmap &amap, uint line);
 
 private:
+    uniform_int_distribution<ulong> dist;
     attrmap lvars;
     mt19937 rng{random_device {}()};
-    uniform_int_distribution<ulong> dist;
     static inline bool allfiles = false, hostarg = false, needid = false,
 	needpass = false, needuser = false, ruser = false;
-    static inline atomic<ulong> count = 0, tcount = 0, tusec = 0, usec = 0;
+    static inline atomic<ulong> count = 0, nextid = 0, tcount = 0, tusec = 0,
+	usec = 0;
     static inline Lock lock;		// before cv which uses it
     static inline Condvar cv{lock};
     static inline uint mthread = 0, startfile = 0;
-    static inline atomic<uint> threads = 0;
     static inline ulong muser = 0;
-    static inline atomic<uint> nextfile = 0;
+    static inline atomic<uint> nextfile = 0, threads = 0;
     static inline atomic_bool qflag = false, rflag = false;
     static inline atomic_long remain = 0;
     static inline SpinLock statlock{SPIN_LIMIT};
+    static inline usec_t tstart = 0;	// wall clock for cumulative rates
 
-    // per thread setup, request, result check and per loop cleanup
     virtual void begin(void) = 0;
-    virtual bool exec(LoadCmd &cmd, usec_t &io) = 0;
     virtual bool check(LoadCmd &cmd, bool ret, ulong diff) = 0;
     virtual void end(void) = 0;
+    virtual bool exec(LoadCmd &cmd, usec_t &io) = 0;
 
     int onStart(void) override;
     static void add(const tchar *file);
@@ -402,7 +402,7 @@ inline int Load::onStart(void) {
 	end();
 	diff = (ulong)(uticks() - start);
 	usec += cusec;
-	tusec += diff - smsec * 1000;
+	tusec += diff - min(diff, smsec * 1000);	// Sleep may wake early
 	++count;
 	++tcount;
 	dlog << Log::Info << Log::cmd(T("all")) << Log::kv(T("duration"),
@@ -420,7 +420,7 @@ inline tstring Load::format(ulong u) { return std::format(T(" {:7}"), u); }
 inline tstring Load::format(float f) {
     if (f < FLT_EPSILON)
 	return T("       0");
-    else if (f >= 100)
+    else if (f >= 99.5F)		// 2 digit %g rounds up to 1e+02
 	return std::format(T(" {:7}"), lround(f));
     else
 	return std::format(T(" {:7.2g}"), f);
@@ -430,7 +430,7 @@ inline void Load::print(tostream &os, usec_t last) {
     const auto per = [](ulong n, ulong div) {
 	return div ? (float)n / (float)div : 0;
     };
-    ulong lusec = (ulong)(uticks() - last);
+    ulong lusec = (ulong)(uticks() - last), wusec = (ulong)(uticks() - tstart);
     ulong tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0;
     bufferstream<tchar> bs;
@@ -455,7 +455,7 @@ inline void Load::print(tostream &os, usec_t last) {
 	    format(per(cmd->count, lusec) * 1000000) <<
 	    format(per(cmd->usec, cmd->count) / 1000) <<
 	    format(cmd->maxusec / 1000) << format(cmd->err) <<
-	    format(per(cmd->tcount, tusec) * 1000000) <<
+	    format(per(cmd->tcount, wusec) * 1000000) <<
 	    format(per(cmd->tusec, cmd->tcount) / 1000) <<
 	    format(cmd->terr) << format(cmd->tminusec / 1000) <<
 	    format(cmd->tmaxusec / 1000) << endl;
@@ -464,12 +464,12 @@ inline void Load::print(tostream &os, usec_t last) {
     bs << T("ALL    ") << format(per(count, lusec) * 1000000) <<
 	format(per(usec, count) / 1000) <<
 	format(maxusec / 1000) << format(err) <<
-	format(per(tcount, tusec) * 1000000) <<
+	format(per(tcount, wusec) * 1000000) <<
 	format(per(tusec, tcount) / 1000) << format(terr) <<
 	format(tminusec / 1000) << format(tmaxusec / 1000) << endl;
     bs << T("AVG/TOT") << format(per(ops, lusec) * 1000000) <<
 	format(per(usec, ops) / 1000) << format(maxusec / 1000) <<
-	format(err) << format(per(tops, tusec) * 1000000) <<
+	format(err) << format(per(tops, wusec) * 1000000) <<
 	format(per(tusec, tops) / 1000) << format(terr) <<
 	format(tminusec / 1000) << format(tmaxusec / 1000) << endl << endl;
     os.write(bs.str(), bs.pcount());
@@ -494,6 +494,7 @@ inline void Load::reset(bool all) {
     if (all) {
 	tusec = 0;
 	tcount = 0;
+	tstart = uticks();
     }
 }
 
@@ -559,7 +560,7 @@ int Load::run(int argc, tchar *argv[], const tchar *wld,
 	    break;
 	}
     }
-    if (argc == 1 || i < argc || !nthreads) {
+    if (argc == 1 || i < argc || !nthreads || !stattime) {
 	const tchar *program = tstrrchr(argv[0], '/');
 
 	if (!program)
@@ -574,6 +575,9 @@ int Load::run(int argc, tchar *argv[], const tchar *wld,
     setvbuf(stdout, nullptr, _IOFBF, 4096);
     signal(SIGINT, signal_handler);
     signal(SIGHUP, signal_handler);
+#ifndef _WIN32
+    signal(SIGPIPE, SIG_IGN);		// Socket::write uses plain send()
+#endif
     mthread = nthreads;
     if (!muser)
 	muser = nthreads;
@@ -582,6 +586,7 @@ int Load::run(int argc, tchar *argv[], const tchar *wld,
     if (!init<L>(host, defhost, file, bodyfile, cachesz * 1024 * 1024,
 	filecnt, loops))
 	return 1;
+    tstart = uticks();
     dlog << Log::Info << T("test ") << file << T(" (") << nthreads <<
 	T(" thread") << (nthreads == 1 ? T("") : T("s")) << T(", ") <<
 	loops << T(" loop") << (loops == 1 ? T("") : T("s")) << ')' << endlog;

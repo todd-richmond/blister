@@ -31,7 +31,7 @@ static constexpr size_t BDAT_CHUNK = 1 << 20;
 static constexpr size_t MAX_REPLY_LINE = 1024;
 static constexpr uint MAX_REPLY_LINES = 1000;
 
-const char SMTPClient::crlf[] = "\r\n";
+static constexpr char crlf[] = "\r\n";
 
 static constexpr bool nonascii(tchar c) { return (tuchar)c > 0x7f; }
 
@@ -948,7 +948,7 @@ void SMTPClient::encodedwords(string &out, string_view text) {
 // RFC 2047 encode UTF-8 words of unstructured header text, merging adjacent
 // ones because a decoder drops the whitespace between them
 string SMTPClient::encodewords(string_view text) {
-    static constexpr const char *ws = " \t\r\n";
+    static constexpr const char *ws = " \t";	// hdrtext() dropped CR/LF
     string out;
     auto wordend = [&](size_t p) {
 	size_t e = text.find_first_of(ws, p);
@@ -976,8 +976,7 @@ string SMTPClient::encodewords(string_view text) {
 	for (;;) {
 	    size_t next = text.find_first_not_of(ws, end);
 
-	    if (next == text.npos || text.substr(end, next - end).find_first_of(
-		"\r\n") != text.npos)
+	    if (next == text.npos)
 		break;
 
 	    size_t nend = wordend(next);
@@ -1029,10 +1028,6 @@ size_t SMTPClient::ifind(tstring_view s, tstring_view needle) {
     });
 
     return r.empty() ? tstring_view::npos : (size_t)(r.begin() - s.begin());
-}
-
-tstring SMTPClient::numstr(size_t n) {
-    return astringtotstring(to_string(n));
 }
 
 // RFC 3492 punycode encoder
@@ -1301,7 +1296,7 @@ bool SMTPClient::sendcmd(tstring_view s1, const tchar *s2, int retcode, bool
     check) {
     multi.erase();
     if (fstrm) {
-	multi = sts = numstr((size_t)retcode);
+	multi = sts = format(T("{}"), retcode);
 	return true;
     }
     if (chunked) {
@@ -1378,11 +1373,6 @@ bool SMTPClient::reply() {
 
     multi.erase();
     do {
-	if (!sstrm) {
-	    sts.erase();
-	    dlogd(Log::mod(T("smtp")), Log::kv(T("status"), T("closed")));
-	    return false;
-	}
 	if (!readline(sstrm, sts)) {
 	    sock.close();
 	    sts = T("000 socket disconnect");
@@ -1400,7 +1390,7 @@ bool SMTPClient::reply() {
 	    sock.close();
 	    return false;
 	}
-	if (!multi.empty())
+	if (lines > 1)		// even after an empty first line
 	    multi += '\n';
 	if (sts.length() > 4)
 	    multi += tstring_view(sts).substr(4);
@@ -1464,8 +1454,7 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
     expectv.clear();
     resultsv.clear();
     timeout(rtmo, wtmo);
-    sstrm.clear();
-    sstrm.rdbuf()->str(nullptr, 4096);
+    dropinput();
     if (!onconnect()) {
 	sts = T("000 socket handshake failed: ") + sock.errstr();
 	sock.close();
@@ -1476,8 +1465,7 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
 
 // RFC 5321 3.2: fall back to HELO for a server without ESMTP
 bool SMTPClient::ehlo(const tchar *domain) {
-    return hello(T("EHLO"), domain) || ((code() == 500 || code() == 502) &&
-	helo(domain));
+    return hello(T("EHLO"), domain) || (code() / 100 == 5 && helo(domain));
 }
 
 bool SMTPClient::hello(tstring_view c, const tchar *domain) {
@@ -1583,7 +1571,13 @@ bool SMTPClient::rcptcmd(tstring &id, const tchar *parms) {
     tstring arg;
 
     if (downgrade(T("rcpt"), id, canutf8())) {
-	arg = id[0] == '<' ? id : T('<') + id + T('>');
+	if (id[0] == '<') {
+	    arg = id;
+	} else {
+	    arg = T('<');
+	    arg += id;
+	    arg += T('>');
+	}
 	if (parms && *parms) {
 	    arg += T(' ');
 	    arg += parms;
@@ -1644,7 +1638,13 @@ bool SMTPClient::envarg(const tchar *c, tstring &id, const tchar *parms,
     }
     if (!downgrade(c, id, utf8))
 	return false;
-    arg = !brkt || (!id.empty() && id[0] == '<') ? id : T('<') + id + T('>');
+    if (!brkt || (!id.empty() && id[0] == '<')) {
+	arg = id;
+    } else {
+	arg = T('<');
+	arg += id;
+	arg += T('>');
+    }
     if (parms && *parms) {
 	arg += T(' ');
 	arg += parms;
@@ -1676,7 +1676,9 @@ static string noeol(string s) {
 string SMTPClient::hdrtext(const tchar *s) const {
     string a(noeol(tchartoachar(s)));
 
-    return canutf8() || !highbit8(a) ? a : encodewords(a);
+    if (canutf8() || !highbit8(a))
+	return a;
+    return encodewords(a);
 }
 
 // header form of an envelope address using the (possibly downgraded) sent
@@ -1870,7 +1872,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
     return txt ? stuff(body.data(), body.size()) : strm->good();
 }
 
-bool SMTPClient::data(const void *p, uint sz, const tchar *type,
+bool SMTPClient::data(const void *p, size_t sz, const tchar *type,
     const tchar *desc, const tchar *encoding, const tchar *disp,
     const tchar *name) {
     if (mime)
@@ -1946,10 +1948,8 @@ bool SMTPClient::startdata() {
 }
 
 bool SMTPClient::bdat(const void *start, size_t sz, bool last) {
-    tstring c(T("BDAT ") + numstr(sz));
+    const tstring c(format(T("BDAT {}{}"), sz, last ? T(" LAST") : T("")));
 
-    if (last)
-	c += T(" LAST");
     if (!ext_chunking && !fstrm) {
 	sts = T("550 5.6.7 CHUNKING required but unavailable");
 	dlogd(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("exts"), exts),
@@ -1990,7 +1990,7 @@ bool SMTPClient::bigchunk(const void *p, size_t sz, bool dotstuff) {
     string buf = std::move(bstrm).str();
     const size_t n = buf.size() + sz + (dotstuff ? barelfs(s, s + sz) : 0) +
 	(size_t)(s[sz - 1] == '\n' ? 0 : 2);
-    tstring c(T("BDAT ") + numstr(n));
+    const tstring c(format(T("BDAT {}"), n));
     bool ret;
 
     buffer(false);

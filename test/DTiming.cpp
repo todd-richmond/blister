@@ -19,7 +19,14 @@
 #include <fstream>
 #include "Timing.h"
 
-// parse "key[= ]duration", skipping lines without a key
+static bool add(const tchar *key, uint klen, const tchar *val, uint mult) {
+    if (!istdigit(*val) && *val != '.')
+	return false;
+    dtiming.add(key, klen, (usec_t)(atod<double>(val) * mult));
+    return true;
+}
+
+// parse "key[= ]duration"
 static bool add_line(const tchar *line, uint mult) {
     const tchar *p = line, *pp;
 
@@ -35,8 +42,7 @@ static bool add_line(const tchar *line, uint mult) {
 
     while (*pp == '=' || istspace(*pp))
 	pp++;
-    dtiming.add(p, klen, (usec_t)atoi<ulong>(pp) * mult);
-    return true;
+    return add(p, klen, pp, mult);
 }
 
 int tmain(int argc, const tchar * const argv[]) {
@@ -83,10 +89,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	    if (tstrpbrk(argv[i], T("= \t"))) {
 		if (!add_line(argv[i], mult))
 		    break;
-	    } else if (i + 1 == argc || argv[i + 1][0] == '-') {
+	    } else if (i + 1 == argc || !add(argv[i], (uint)tstrlen(argv[i]),
+		argv[i + 1], mult)) {
 		break;
 	    } else {
-		dtiming.add(argv[i], (usec_t)atoi<ulong>(argv[i + 1]) * mult);
 		i++;
 	    }
 	    out = true;
@@ -96,13 +102,13 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     if (i < argc) {
 	tcerr << T("Usage: dtiming\n")
-	    T("\t[-c|--columns #]\n")
+	    T("\t[-c|--columns #]\t(0 for CSV)\n")
 	    T("\t[-i|--input file]\n")
 	    T("\t[-m|--msec]\n")
 	    T("\t[-n|--sortbyname]\n")
 	    T("\t[-s|--sec]\n")
 	    T("\t[-u|--usec]\n")
-	    T("\t<key[= ]duration>\\n*") << endl;
+	    T("\t<key[= ]duration>*") << endl;
 	return 1;
     }
     if (!out) {

@@ -19,7 +19,6 @@
 #define stdapi_h
 
 // defines, typedefs and code to make non-UNIX systems support POSIX APIs
-#define CPP_STR(s)		#s
 
 #if defined(__GNUC__) || defined(__clang__)
 #define CONSTANT_P(x)		__builtin_constant_p(x)
@@ -39,32 +38,24 @@
 #define __no_sanitize_address
 #define __no_sanitize_memory
 #define __no_sanitize_thread
-#define __no_sanitize_unsigned
 #define DLL_EXPORT		__declspec(dllexport)
 #define DLL_IMPORT		__declspec(dllimport)
 #define DLL_LOCAL
 #define PRAGMA_STR(s)		__pragma(s)
 #define WARN_DISABLE(w)		PRAGMA_STR(warning(disable: w))
-#define WARN_ENABLE(w)		PRAGMA_STR(warning(enable: w))
+#define WARN_ENABLE(w)		PRAGMA_STR(warning(default: w))
 #define WARN_POP()		PRAGMA_STR(warning(pop))
 #define WARN_PUSH()		PRAGMA_STR(warning(push))
 #elif defined(__GNUC__)
-#define GNUC_VERSION		(__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + \
-    __GNUC_PATCHLEVEL__)
 #ifdef __OPTIMIZE__
 #define __forceinline		inline __attribute__((always_inline))
 #else
 #define __forceinline		inline
 #endif
-#ifdef __has_feature
 #define __no_sanitize(check)	__attribute__((no_sanitize(check)))
-#else
-#define __no_sanitize(check)
-#endif
 #define __no_sanitize_address	__no_sanitize("address")
 #define __no_sanitize_memory	__no_sanitize("memory")
 #define __no_sanitize_thread	__no_sanitize("thread")
-#define __no_sanitize_unsigned	__no_sanitize("unsigned-integer-overflow")
 #define DLL_EXPORT		__attribute__((visibility("default")))
 #define DLL_IMPORT		__attribute__((visibility("default")))
 #define DLL_LOCAL		__attribute__((visibility("hidden")))
@@ -87,7 +78,6 @@
 #ifdef __cplusplus
 #define EXTERNC			extern "C" {
 #define EXTERNC_		}
-#define LAMBDA(m)		[this]() { m(); }
 #else
 #define EXTERNC
 #define EXTERNC_
@@ -120,10 +110,10 @@
 #pragma warning(disable: 4251 4335 4324 4503 4511 4512 4530 4577 4619 4625 4626)
 #pragma warning(disable: 4668 4702 4710 4711 4786 4820 4996 5026 5027 26110)
 #pragma warning(disable: 26135 26400 26401 26402 26408 26409 26426 26429 26432)
-#pragma warning(disable: 26433 26434 26438 26440 26443 26446 26447 26455 26457)
-#pragma warning(disable: 26462 26472 26475 26494 26496 26497 28125 26477 26481)
-#pragma warning(disable: 26482 26485 26486 26487 26489 26492 26493 26812 26814)
-#pragma warning(disable: 26466 26818 26819 26826)
+#pragma warning(disable: 26433 26434 26438 26440 26443 26445 26446 26447 26455)
+#pragma warning(disable: 26457 26462 26472 26475 26494 26496 26497 28125 26477)
+#pragma warning(disable: 26481 26482 26485 26486 26487 26489 26492 26493 26812)
+#pragma warning(disable: 26814 26466 26818 26819 26821 26826)
 
 #ifndef WIN32
 #define WIN32
@@ -199,6 +189,7 @@ typedef __int64 _ino_t;	// -V677
 
 #define SIGALRM			14	// POSIX value; exit status only
 #define SIGHUP			SIGBREAK
+#define SIGKILL			9	// POSIX value
 #define SIGCHLD			80	// out of range
 #define SIGPIPE			81
 
@@ -507,9 +498,9 @@ EXTERNC_
 
 #define asctime_r(tm, buf, sz)	asctime_s(buf, sz, tm)
 #define ctime_r(clock, buf)	(ctime_s(buf, 26, clock), (buf))
-#define gmtime_r(clock, buf)	(gmtime_s((buf), (clock)), (buf))
+#define gmtime_r(clock, buf)	(gmtime_s((buf), (clock)) ? nullptr : (buf))
 #define localtime_r(clock, buf)	(localtime_s((buf), (clock)) ? nullptr : (buf))
-#define strerror_r(e, buf, sz)	strlcpy(buf, strerror(e), sz)
+#define strerror_r(e, buf, sz)	strerror_s(buf, sz, e)
 
 #else // _WIN32
 
@@ -545,10 +536,6 @@ EXTERNC_
 #endif
 #define __stdcall
 
-#ifndef __DBL_EPSILON__
-#define DBL_EPSILON		2.2204460492503131e-016
-#define FLT_EPSILON		1.192092896e-07F
-#endif
 #ifndef ENOSR
 #define ENOSR			ENOBUFS
 #endif
@@ -648,10 +635,8 @@ EXTERNC_
 #define tstrncmp		wcsncmp
 #define tstrnicmp		wcsnicmp
 #define tstrcat			wcscat
-#define tstrlcat		wcslcat
 #define tstrncat		wcsncat
 #define tstrcpy			wcscpy
-#define tstrlcpy		wcslcpy
 #define tstrncpy		wcsncpy
 #define tstrlen			wcslen
 #define	tstrchr			wcschr
@@ -663,7 +648,7 @@ EXTERNC_
 #define tstrtok			wcstok
 #define tstrdup			wcsdup
 #define tstrerror		wcserror
-#define tstrerror_r(e, buf, sz)	wcsncpy(buf, wcserror(e), sz)
+#define tstrerror_r(e, buf, sz)	_wcserror_s(buf, sz, e)
 #define tstrftime		wcsftime
 #define ttof			wtof
 #define ttoi			wtoi
@@ -753,10 +738,8 @@ typedef wchar tuchar;
 #define tstrncmp		strncmp
 #define tstrnicmp		strnicmp
 #define tstrcat			strcat
-#define tstrlcat		strlcat
 #define tstrncat		strncat
 #define tstrcpy			strcpy
-#define tstrlcpy		strlcpy
 #define tstrncpy		strncpy
 #define tstrlen			strlen
 #define	tstrchr			strchr
@@ -1052,7 +1035,7 @@ __forceinline T atod(const tchar *str) {
 
 template<typename T>
 __forceinline T atoin(const tchar *str, size_t len) {
-    return *str == '-' ? (T)(~atoun<size_t>(str + 1, len - 1) + 1) :
+    return len && *str == '-' ? (T)(~atoun<size_t>(str + 1, len - 1) + 1) :
 	atoun<T>(str, len);
 }
 
@@ -1136,12 +1119,11 @@ auto to_chars(wchar_t *first, wchar_t *last, T value, A... args) {
 	args...);
     result r = {first, char_ec};
 
-    char *p = buf;
-
-    for (; p != char_end && r.ptr != last; ++p)
+    if (char_ec != errc() || char_end - buf > last - first)
+	return result{last, char_ec != errc() ? char_ec :
+	    errc::value_too_large};
+    for (const char *p = buf; p != char_end; ++p)
 	*r.ptr++ = (wchar_t)(uchar)*p;
-    if (p != char_end && char_ec == errc())
-	r.ec = errc::value_too_large;
     return r;
 }
 
@@ -1153,6 +1135,8 @@ __forceinline tchar *to_str(tchar *buf, tchar *last, T val) {
 	*end = '\0';
 	return end;
     }
+    if (buf < last)
+	*buf = '\0';
     return buf;
 }
 
@@ -1464,13 +1448,13 @@ constexpr auto ascii_fold = [](T c) {
     return c | (T)((U)(c - 'A') <= (U)('Z' - 'A') ? 0x20 : 0);
 };
 constexpr auto unicode_fold = [](wchar c) {
-    // towupper() is not constexpr so fold the ASCII subrange inline
+    // towlower() to match wcsicmp; not constexpr so fold ASCII inline
     if (c < 0x80)
-	return c >= L'a' && c <= L'z' ? (wchar)(c - (L'a' - L'A')) : c;
+	return c >= L'A' && c <= L'Z' ? (wchar)(c + (L'a' - L'A')) : c;
     if consteval {
 	return c;
     } else {
-	return (wchar)towupper((wint_t)c);
+	return (wchar)towlower((wint_t)c);
     }
 };
 
@@ -1640,7 +1624,7 @@ inline strhash_t rapid_hash(const void *data, size_t len, strhash_t seed = 0) {
     return rapid_hash((const uint8_t *)data, len, seed);
 }
 
-// wide case folding needs towupper per char so uses bernstein_hash
+// wide case folding needs towlower per char so uses bernstein_hash
 template<bool icase = false, typename T, class F = decltype([](T c) {
     return c; })>
 __forceinline constexpr strhash_t charhash(const T *s, size_t len,
@@ -1693,7 +1677,7 @@ private:
 	if constexpr (!icase) {
 	    return charhash(s.data(), s.size());
 	} else {
-	    // towupper() is runtime only so wide non ASCII keys hash later
+	    // towlower() is runtime only so wide non ASCII keys hash later
 	    if constexpr (sizeof (C) > 1) {
 		for (C c : s) {
 		    if ((make_unsigned_t<C>)c >= 0x80)

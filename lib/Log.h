@@ -78,6 +78,7 @@ public:
 
     class BLISTER Escalator: nocopy {
     public:
+	// per and to are in seconds
 	Escalator(Level l1, Level l2, ulong per, ulong min, ulong to):
 	    mincount(min), period(per), timeout(to), level1(l1), level2(l2) {}
 
@@ -89,7 +90,7 @@ public:
 	ulong period, timeout;
 	mutable SpinLock lck;
 	Level level1, level2;
-	mutable msec_t start = 0;
+	mutable ulong start = 0;
     };
 
     template<typename T>
@@ -111,7 +112,7 @@ public:
     friend Log &operator <<(Log &l, Log &(* const f)(Log &)) { return f(l); }
 
     bool alertfile(void) const { return afd.enable; }
-    void alertfile(bool b) { afd.enable = b; }
+    void alertfile(bool b) { afd.enable = b; updatelvl(); }
     void alertfile(Level L, const tchar *file = nullptr, uint cnt = 0,
 	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
     const tchar *alertname(void) const { return afd.filename(); }
@@ -124,7 +125,7 @@ public:
     uint bufsize(void) const { return bufsz; }
     ulong buftime(void) const { return buftm; }
     bool file(void) const { return ffd.enable; }
-    void file(bool b) { ffd.enable = b; }
+    void file(bool b) { ffd.enable = b; updatelvl(); }
     void file(Level l, const tchar *file = nullptr, uint cnt = 0,
 	ulong sz = 10UL * 1024 * 1024, ulong tm = 0);
     const tchar *filename(void) const { return ffd.filename(); }
@@ -134,9 +135,9 @@ public:
     bool gmttime(void) const { return gmt; }
     void gmttime(bool b) { gmt = b; }
     Level level(void) const { return lvl; }
-    void level(Level l) { ffd.lvl = lvl = l; }
+    void level(Level l) { ffd.lvl = l; updatelvl(); }
     void level(const tchar *l) { level(str2enum(l)); }
-    void mail(bool b) { mailenable = b; }
+    void mail(bool b) { mailenable = b; updatelvl(); }
     void mail(Level l, const tchar *to, const tchar *from = T("<>"), const tchar
 	*host = T("localhost"));
     const tchar *prefix(void) const { return tls->prefix.c_str(); }
@@ -145,7 +146,7 @@ public:
     const tchar *source(void) const { return src.c_str(); }
     void source(const tchar *s) { src = s; }
     bool syslog(void) const { return syslogenable; }
-    void syslog(bool b) { syslogenable = b; }
+    void syslog(bool b) { syslogenable = b; updatelvl(); }
     void syslog(Level l, const tchar *host = nullptr, uint fac = 1);
     uint syslogfacility(void) const { return syslogfac; }
     void syslogfacility(uint fac) { syslogfac = fac; }
@@ -196,51 +197,22 @@ public:
 	    }
 	}
     }
-    template<typename... T>
-    __forceinline void emerg(T &&...args) {
-	log(Emerg, std::forward<T>(args)...);
-    }
-    __forceinline Log &emerg(void) { return log(Emerg); }
-    template<typename... T>
-    __forceinline void alert(T &&...args) {
-	log(Alert, std::forward<T>(args)...);
-    }
-    __forceinline Log &alert(void) { return log(Alert); }
-    template<typename... T>
-    __forceinline void crit(T &&...args) {
-	log(Crit, std::forward<T>(args)...);
-    }
-    __forceinline Log &crit(void) { return log(Crit); }
-    template<typename... T>
-    __forceinline void err(T &&...args) {
-	log(Err, std::forward<T>(args)...);
-    }
-    __forceinline Log &err(void) { return log(Err); }
-    template<typename... T>
-    __forceinline void warn(T &&...args) {
-	log(Warn, std::forward<T>(args)...);
-    }
-    __forceinline Log &warn(void) { return log(Warn); }
-    template<typename... T>
-    __forceinline void note(T &&...args) {
-	log(Note, std::forward<T>(args)...);
-    }
-    __forceinline Log &note(void) { return log(Note); }
-    template<typename... T>
-    __forceinline void info(T &&...args) {
-	log(Info, std::forward<T>(args)...);
-    }
-    __forceinline Log &info(void) { return log(Info); }
-    template<typename... T>
-    __forceinline void debug(T &&...args) {
-	log(Debug, std::forward<T>(args)...);
-    }
-    __forceinline Log &debug(void) { return log(Debug); }
-    template<typename... T>
-    __forceinline void trace(T &&...args) {
-	log(Trace, std::forward<T>(args)...);
-    }
-    __forceinline Log &trace(void) { return log(Trace); }
+#define LOG_LEVEL_FN(name, l) \
+    template<typename... T> \
+    __forceinline void name(T &&...args) { \
+	log(l, std::forward<T>(args)...); \
+    } \
+    __forceinline Log &name(void) { return log(l); }
+    LOG_LEVEL_FN(emerg, Emerg)
+    LOG_LEVEL_FN(alert, Alert)
+    LOG_LEVEL_FN(crit,  Crit)
+    LOG_LEVEL_FN(err,   Err)
+    LOG_LEVEL_FN(warn,  Warn)
+    LOG_LEVEL_FN(note,  Note)
+    LOG_LEVEL_FN(info,  Info)
+    LOG_LEVEL_FN(debug, Debug)
+    LOG_LEVEL_FN(trace, Trace)
+#undef LOG_LEVEL_FN
 
     template<typename K, typename T>
     __forceinline static constexpr KV<T> kv(const K &key, T &&val) {
@@ -248,7 +220,7 @@ public:
     }
 #define LOG_KV_FN(name, key) \
     template<typename U> \
-    static constexpr const KV<U> name(U &&val) { \
+    static constexpr KV<U> name(U &&val) { \
 	return kv(T(key), std::forward<U>(val)); \
     }
     LOG_KV_FN(cmd,      "cmd")
@@ -382,14 +354,21 @@ private:
     Socket syslogsock{SOCK_DGRAM};
     Type _type = Simple;
     tstring::size_type upos = 0;
-    static const tstring_view LevelStr[];
-    static const tstring_view LevelStr2[];
+    static constexpr tstring_view LevelStr[] = {
+	T("none"), T("emrg"), T("alrt"), T("crit"), T("err "), T("warn"),
+	T("note"), T("info"), T("debg"), T("trce")
+    };
+    static constexpr tstring_view LevelStr2[] = {
+	T("nothing"), T("emergency"), T("alert"), T("critical"), T("error"),
+	T("warning"), T("notice"), T("information"), T("debug"), T("trace")
+    };
 
     void endlog(Tlsdata &tlsd);
     void drainbuffers(bool unlockedio);
     void rotatebuf(void);
     void updatelvl(void) {
-	lvl = (max)({afd.lvl, ffd.lvl, maillvl, sysloglvl});
+	lvl = (max)({afd.enable ? afd.lvl : None, ffd.enable ? ffd.lvl : None,
+	    mailenable ? maillvl : None, syslogenable ? sysloglvl : None});
     }
     void _mail(Level l, const tchar *to, const tchar *from, const tchar *host);
     void _syslog(Level l, const tchar *host, uint fac);

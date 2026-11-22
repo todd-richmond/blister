@@ -55,7 +55,7 @@ const tstring &Sockaddr::host(void) const {
     if (name.empty()) {
 	char buf[NI_MAXHOST];
 
-	if (getnameinfo(&addr.sa, sizeof (addr), buf, sizeof (buf), NULL, 0,
+	if (getnameinfo(&addr.sa, size(), buf, sizeof (buf), NULL, 0,
 	    NI_NAMEREQD))
 	    name = ip();
 	else
@@ -107,6 +107,12 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
     if (!::getaddrinfo(host ? tchartoachar(host) : NULL, service ?
 	tchartoachar(service) : NULL, &hints, &ai))
 	return ai;
+    if (hints.ai_flags & AI_NUMERICHOST) {	// digit led names: 3com.com
+	hints.ai_flags = (hints.ai_flags & ~AI_NUMERICHOST) | AI_CANONNAME |
+	    AI_ADDRCONFIG;
+	return ::getaddrinfo(tchartoachar(host), service ?
+	    tchartoachar(service) : NULL, &hints, &ai) ? NULL : ai;
+    }
     if (!any)
 	return NULL;
     hints.ai_family = AF_INET;
@@ -130,7 +136,10 @@ const tstring &Sockaddr::hostname() {
 	    return tstring(T("localhost"));
 #endif
 	}
-	return Sockaddr(achartotstring(buf).c_str()).host();
+	const tstring name{achartotstring(buf)};
+	const Sockaddr sa(name.c_str());
+
+	return sa.family() == AF_UNSPEC ? name : sa.host();
     }();
 
     return hname;
@@ -237,7 +246,7 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 
     if (!portno)
 	return set(host, (const tchar *)nullptr, proto);
-    to_str(portstr, portstr + 8, portno);
+    to_str(portstr, portstr + std::size(portstr), portno);
     return set(host, portstr, proto);
 }
 
@@ -307,7 +316,7 @@ tstring Sockaddr::service_name(ushort port, Proto proto) {
 	NI_DGRAM : 0)) {
 	tchar pbuf[8];
 
-	tsprintf(pbuf, T("%hu"), port);
+	to_str(pbuf, pbuf + std::size(pbuf), port);
 	return pbuf;
     }
     return achartotstring(buf);
@@ -329,12 +338,12 @@ ushort Sockaddr::size(ushort family) {
 }
 
 tstring Sockaddr::str(const tstring &val) const {
-    tchar buf[12] = T(":");
+    tchar buf[8] = T(":");
     ushort p = port();
 
     if (!p)
 	return val;
-    *to_chars(buf + 1, buf + std::size(buf) - 1, p).ptr = 0;
+    to_str(buf + 1, buf + std::size(buf), p);
     return val.contains(':') ? T("[") + val + T("]") + buf : val + buf;
 }
 
@@ -342,7 +351,7 @@ bool SockaddrList::insert(const tchar *host, ushort port, Sockaddr::Proto
     proto) {
     tchar buf[8];
 
-    tsprintf(buf, T("%hu"), port);
+    to_str(buf, buf + std::size(buf), port);
     return insert(host, buf, proto);
 }
 
@@ -510,8 +519,11 @@ bool Socket::accept(Socket &sock, bool _cloexec, bool nonblock) {
     return false;
 }
 
-// socket file left behind by a crashed process
-bool Socket::stalesock(const char *path) {
+// socket file left behind by a crashed process: refuses connections
+bool Socket::stalesock(const Sockaddr &sa, int type) {
+    const char *path = sa.path();
+    Socket s(type);
+
 #ifdef _WIN32
 #ifndef IO_REPARSE_TAG_AF_UNIX
 #define IO_REPARSE_TAG_AF_UNIX	0x80000023L
@@ -522,13 +534,16 @@ bool Socket::stalesock(const char *path) {
     if (h == INVALID_HANDLE_VALUE)
 	return false;
     FindClose(h);
-    return (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
-	fd.dwReserved0 == (DWORD)IO_REPARSE_TAG_AF_UNIX;
+    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+	fd.dwReserved0 != (DWORD)IO_REPARSE_TAG_AF_UNIX)
+	return false;
 #else
     struct stat st;
 
-    return !::stat(path, &st) && S_ISSOCK(st.st_mode);
+    if (::stat(path, &st) || !S_ISSOCK(st.st_mode))
+	return false;
 #endif
+    return !s.connect(sa) && s.err() == WSAECONNREFUSED;
 }
 
 bool Socket::bind(const Sockaddr &sa, bool reuse) {
@@ -541,7 +556,7 @@ bool Socket::bind(const Sockaddr &sa, bool reuse) {
 	IN6_IS_ADDR_UNSPECIFIED((const in6_addr *)sa))
 	(void)setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, false);
     if (sa.proto() == Sockaddr::UNIX &&
-	((const sockaddr_un *)sa)->sun_path[0] && stalesock(sa.path()))
+	((const sockaddr_un *)sa)->sun_path[0] && stalesock(sa, sbuf->type))
 	(void)::unlink(sa.path());
     if (!check(::bind(sbuf->sock, sa, sa.size())))
 	return false;
@@ -734,7 +749,7 @@ bool Socket::loopback(bool on) {
 }
 
 bool Socket::peername(Sockaddr &sa) {
-    socklen_t sz = sa.size();
+    socklen_t sz = Sockaddr::size(AF_UNSPEC);
 
     return check(getpeername(sbuf->sock, sa.data(), &sz));
 }
@@ -742,8 +757,14 @@ bool Socket::peername(Sockaddr &sa) {
 #ifdef __linux__
 #include <linux/netfilter_ipv4.h>
 
+// IP6T_SO_ORIGINAL_DST == SO_ORIGINAL_DST; mapped IPv4 is IPv4 conntrack
 bool Socket::proxysockname(Sockaddr &sa) {
-    return getsockopt(SOL_IP, SO_ORIGINAL_DST, *sa.data());
+    Sockaddr local;
+    socklen_t sz = Sockaddr::size(AF_UNSPEC);
+
+    return sockname(local) && check(::getsockopt(sbuf->sock, local.ipv6() &&
+	!local.v4mapped() ? SOL_IPV6 : SOL_IP, SO_ORIGINAL_DST, sa.data(),
+	&sz));
 }
 #endif
 
@@ -893,10 +914,11 @@ int Socket::read(void *buf, uint sz) const {
 }
 
 int Socket::read(void *buf, uint sz, Sockaddr &sa) const {
-    socklen_t asz = sa.size();
     int in;
 
     do {
+	socklen_t asz = Sockaddr::size(AF_UNSPEC);
+
 	if (!iotimeo(false))
 	    return -1;
 	if (check(in = (int)recvfrom(sbuf->sock, (char *)buf, (SOCK_SIZE_T)sz,
@@ -939,7 +961,7 @@ ssize_t Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
 	    return -1;
 #ifdef _WIN32
 	DWORD flags = 0, n;
-	int asz = sa.size();
+	int asz = Sockaddr::size(AF_UNSPEC);
 
 	in = -1;
 	if (check(WSARecvFrom(sbuf->sock, iov, (DWORD)count, &n, &flags,
@@ -951,7 +973,7 @@ ssize_t Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
 	msghdr msgh {};
 
 	msgh.msg_name = sa.data();
-	msgh.msg_namelen = sa.size();
+	msgh.msg_namelen = Sockaddr::size(AF_UNSPEC);
 	msgh.msg_iov = iov;
 #ifdef BSD_BASE
 	msgh.msg_iovlen = count;
@@ -982,7 +1004,7 @@ ssize_t Socket::sendmsg(const msghdr &msgh, int flags) const {
 #endif
 
 bool Socket::sockname(Sockaddr &sa) {
-    socklen_t sz = sa.size();
+    socklen_t sz = Sockaddr::size(AF_UNSPEC);
 
     return check(getsockname(sbuf->sock, sa.data(), &sz));
 }
@@ -1028,6 +1050,8 @@ ssize_t Socket::writev(const iovec *iov, int count) const {
 #ifdef _WIN32
     DWORD n;
 
+    if (!iotimeo(true))
+	return -1;
     out = check(WSASend(sbuf->sock, (iovec *)iov, (DWORD)count, // NOSONAR
 	&n, 0, NULL, NULL)) ? (ssize_t)n : -1;
 #else
@@ -1046,6 +1070,8 @@ ssize_t Socket::writev(const iovec *iov, int count, const Sockaddr &sa)
 #ifdef _WIN32
     DWORD n;
 
+    if (!iotimeo(true))
+	return -1;
     return wrret(check(WSASendTo(sbuf->sock, (iovec *)iov, // NOSONAR
 	(DWORD)count, &n, 0, sa, sa.size(), NULL, NULL)) ? (ssize_t)n : -1);
 #else

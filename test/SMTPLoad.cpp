@@ -50,6 +50,7 @@ private:
 	Op op;
 	bool qp = false;		// attach only
 	tstring type;			// attach only
+	bool vars;			// arg has $() for per message values
 	static constexpr pair<tstring_view, Op> ops[] = {
 	    { T("attach"), Op::Attach }, { T("auth"), Op::Auth },
 	    { T("bcc"), Op::Bcc }, { T("body"), Op::Body }, { T("cc"), Op::Cc },
@@ -65,20 +66,20 @@ private:
 	    { T("subject"), Op::Subject }, { T("to"), Op::Rcpt },
 	    { T("vrfy"), Op::Vrfy }, { T("xclient"), Op::Xclient }
 	};
-	bool vars;			// arg has $() for per message values
     };
 
+    const tchar *arg = nullptr;
     tchar buf[1024]{};
     SMTPTLSClient sc;
-    const tchar *arg = nullptr;
 
     void begin(void) override {
 	sc.chunking(!dflag);
 	sc.timeout(to, to);
     }
-    bool exec(LoadCmd &lc, usec_t &io) override;
     bool check(LoadCmd &lc, bool ret, ulong diff) override;
     void end(void) override { sc.close(); }
+    bool exec(LoadCmd &lc, usec_t &io) override;
+    static const tchar *address(const tchar *str, tstring &who);
 };
 
 bool SMTPLoad::parse(tchar *cmd, uint line) {
@@ -121,8 +122,21 @@ bool SMTPLoad::parse(tchar *cmd, uint line) {
     return true;
 }
 
+// "address [parameters]": a bracketed address may contain spaces
+const tchar *SMTPLoad::address(const tchar *str, tstring &who) {
+    const tchar *gt = tstrrchr(str, '>');
+    const tchar *parms = gt ? gt + 1 : str + tstrcspn(str, T(" \t"));
+
+    who.assign(str, parms);
+    while (istspace(*parms))
+	parms++;
+    return *parms ? parms : nullptr;
+}
+
 bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
     const auto &cmd = static_cast<const SMTPCmd &>(lc);
+    const tchar *parms;
+    tstring who;
 
     arg = cmd.arg.c_str();
     if (cmd.vars) {
@@ -130,16 +144,6 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	    return false;
 	arg = buf;
     }
-    // "address [parameters]": a bracketed address may contain spaces
-    const tchar *gt = tstrrchr(arg, '>');
-    const tchar *parms = gt ? gt + 1 : arg + tstrcspn(arg, T(" \t"));
-    tstring who;
-
-    who.assign(arg, parms);
-    while (istspace(*parms))
-	parms++;
-    if (!*parms)
-	parms = nullptr;
     switch (cmd.op) {
     using enum Op;
     case Attach: {
@@ -154,9 +158,9 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	    return false;
 	(cmd.qp ? qpencode : base64encode)(d, bodies[u].size, out, outsz);
 	enc.reset(out);
-	return sc.data(out, (uint)outsz, cmd.type.c_str(), nullptr, cmd.qp ?
+	return sc.data(out, outsz, cmd.type.c_str(), nullptr, cmd.qp ?
 	    T("quoted-printable") : T("base64"), T("attachment"), path.c_str() +
-	    path.find_last_of(T("/\\")) + 1);
+	    (path.find_last_of(T("/\\")) + 1));
     }
     case Auth:
 	if (const tchar *p = tstrchr(arg, ' '); p) {
@@ -168,6 +172,7 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	}
 	return false;
     case Bcc:
+	parms = address(arg, who);
 	return sc.bcc(who.c_str(), parms);
     case Body:
 	if (*arg || bodies.empty())
@@ -181,6 +186,7 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	return d && sc.data(d, bodies[u].size) && sc.enddata();
     }
     case Cc:
+	parms = address(arg, who);
 	return sc.cc(who.c_str(), parms);
     case Cmd:
 	return sc.cmd(cmd.cmd.c_str(), *arg ? arg : nullptr, cmd.code);
@@ -192,6 +198,7 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
     case End:
 	return sc.enddata();
     case From:
+	parms = address(arg, who);
 	if (pflag)
 	    sc.pipeline();
 	return sc.from(RFC822Addr(who.c_str(), true), parms);
@@ -207,6 +214,7 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
     case Quit:
 	return sc.quit();
     case Rcpt:
+	parms = address(arg, who);
 	return sc.to(who.c_str(), parms);
     case Rset:
 	return sc.rset();
@@ -216,6 +224,7 @@ bool SMTPLoad::exec(LoadCmd &lc, usec_t &io) {
 	sc.subject(arg);
 	return true;
     case Vrfy:
+	parms = address(arg, who);
 	return sc.vrfy(who.c_str(), parms);
     case Xclient:
 	return sc.xclient(arg);
@@ -251,7 +260,8 @@ int tmain(int argc, tchar *argv[]) {
 
     // test servers use self-signed certs
     cfg.set(T("tls.verify"), false);
-    (void)TLSContext::client().init(cfg, nullptr, err);
+    if (!TLSContext::client().init(cfg, nullptr, err))
+	tcerr << T("TLS disabled: ") << err << endl;
     return Load::run<SMTPLoad>(argc, argv, T("smtp.wld"), T("localhost:25"),
 	T("[-d] [-p]"), [](const tchar *a) {
 	if (!tstricmp(a, T("-d")))

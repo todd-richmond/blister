@@ -29,7 +29,6 @@
 #include <process.h>
 
 #pragma comment(lib, "advapi32.lib")
-#pragma warning(disable: 4390)
 
 #define DWORD_MULTIPLE(x) ((((x) + sizeof (DWORD) - 1 ) / sizeof (DWORD)) * \
     sizeof (DWORD))
@@ -75,9 +74,11 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	if ((pos = root.find_last_of('/')) == root.npos &&
 	    (pos = root.find_last_of('\\')) == root.npos)
 	    pos = 0;
-	else if (pos >= 4 && !tstrnicmp(root.c_str() + pos - 3, T("bin"), 3))
+	else if (pos >= 4 && (root[pos - 4] == '/' || root[pos - 4] == '\\') &&
+	    !tstrnicmp(root.c_str() + pos - 3, T("bin"), 3))
 	    pos -= 4;
-	else if (pos >= 6 && !tstrnicmp(root.c_str() + pos - 5, T(".libs"), 5))
+	else if (pos >= 6 && (root[pos - 6] == '/' || root[pos - 6] == '\\') &&
+	    !tstrnicmp(root.c_str() + pos - 5, T(".libs"), 5))
 	    pos -= 6;
 	root.erase(pos);
     }
@@ -90,7 +91,7 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	tsprintf(buf, T("SYSTEM\\CurrentControlSet\\Services\\%s\\Parameters"),
 	    id ? id : T("Service"));
 	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-	    buf, 0L, KEY_ALL_ACCESS, &key) == ERROR_SUCCESS) {
+	    buf, 0L, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
 	    size = sizeof (buf);
 	    if (RegQueryValueEx(key, T("Install Directory"), 0L, &type,
 		(LPBYTE)&buf, &size)) {
@@ -102,11 +103,13 @@ void Service::splitpath(const tchar *full, const tchar *id, tstring &root,
 	}
     }
 #endif
-    if ((p = tstrrchr(full, '/')) == nullptr && (p = tstrrchr(full, '\\')) == nullptr)
+    if ((p = tstrrchr(full, '/')) == nullptr &&
+	(p = tstrrchr(full, '\\')) == nullptr)
 	p = full;
     else
 	p++;
-    if ((sep = tstrrchr(full, '.')) != nullptr && !tstrnicmp(sep, T(".exe"), 4))
+    if ((sep = tstrrchr(full, '.')) != nullptr &&
+	!tstrnicmp(sep, T(".exe"), 4))
 	prog.assign(p, (tstring::size_type)(sep - p));
     else
 	prog = p;
@@ -198,23 +201,18 @@ int __stdcall Service::ctrl_handler(ulong sig) {
     return 1;
 }
 
-[[noreturn]] void Service::signal_handler(int sig) {
+void Service::signal_handler(int sig) {
     if (!aborted && (sig == SIGABRT || sig == SIGFPE || sig == SIGILL || sig ==
 	SIGSEGV))
 	service->onAbort();
     _exit(sig);
 }
 
-#pragma warning(push)
-#pragma warning(disable: 4702)
-
-[[noreturn]] long Service::exception_handler(_EXCEPTION_POINTERS *) {
+long Service::exception_handler(_EXCEPTION_POINTERS *) {
     if (!aborted)
 	service->onAbort();
     _exit(1);
 }
-
-#pragma warning(pop)
 
 void Service::setsignal(bool abrt) {
     if (console)
@@ -255,7 +253,7 @@ int Service::run(int argc, const tchar * const *argv) {
 void __stdcall Service::srv_main(DWORD argc, tchar **argv) {
     tchar *arg0 = argv[0];
     bool debug = false;
-    tchar modulename[128];
+    tchar modulename[PATH_MAX];
     int ret = 0;
 
     if (service->name == argv[0])
@@ -411,20 +409,18 @@ bool Service::install(const tchar *file, const tchar *desc, const tchar * const
 	desc = prog.c_str();
     }
     if (depend) {
+	tchar *pp;
 	size_t sz = 0;
 
 	for (i = 0; depend[i]; i++)
 	    sz += tstrlen(depend[i]) + 1;
-	if ((p = new tchar[sz + 1]) != nullptr) {
-	    tchar *pp;
-
-	    for (i = 0, pp = p; depend[i]; i++) {
-		tstrcpy(pp, depend[i]);
-		pp += tstrlen(pp);
-		*pp++ = '\0';
-	    }
-	    *pp = '\0';
+	pp = p = new tchar[sz + 1];
+	for (i = 0; depend[i]; i++) {
+	    tstrcpy(pp, depend[i]);
+	    pp += tstrlen(pp);
+	    *pp++ = '\0';
 	}
+	*pp = '\0';
     }
     hService = CreateService(hSCManager, name.c_str(),
 	desc, SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
@@ -517,7 +513,7 @@ tstring Service::errstr() const {
     tstring s(T("Service Error"));
 
     if (FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-	FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ARGUMENT_ARRAY, NULL,
+	FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
 	errnum, LANG_NEUTRAL, (tchar *)&msg, 0, NULL)) {
 	s = msg;
 	LocalFree((HLOCAL)msg);
@@ -563,7 +559,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    T("\\Performance"));
 
 	if (RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-	    s.c_str(), 0L, KEY_ALL_ACCESS, &key) != ERROR_SUCCESS) {
+	    s.c_str(), 0L, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
 	    dlog.err(Log::mod(name), Log::error(
 		T("unable to open performance registry")));
 	    return 1;
@@ -597,11 +593,7 @@ DWORD ServiceData::open(LPWSTR lpDeviceNames) {
 	    ctrs * sizeof (PERF_COUNTER_DEFINITION));
 	datasz = (uint)(size + sizeof (PERF_INSTANCE_DEFINITION) + DWORD_MULTIPLE(
 	    namesz) + sizeof (PERF_COUNTER_BLOCK));
-	if ((data = new char[datasz]) == nullptr) {
-	    UnmapViewOfFile(map);
-	    return 1;
-	}
-	memset(data, 0, datasz);
+	data = new char[datasz]();
 	PERF_OBJECT_TYPE *pot = (PERF_OBJECT_TYPE *)data;
 	pot->TotalByteLength = datasz + mapsz;
 	pot->DefinitionLength = size;
@@ -770,7 +762,7 @@ bool Service::open(const tchar *file) {
     stStatus = Stopped;
     if (file)
 	lckfile = file;
-    if ((fd = ::open(lckfile.c_str(), O_RDONLY | O_CLOEXEC | O_NOATIME)) == -1)
+    if ((fd = ::open(lckfile.c_str(), O_RDONLY | O_CLOEXEC)) == -1)
 	return false;
     if (!locked(0, Watching)) {
 	// a live watcher with no child is restarting or reaping the old group
@@ -829,7 +821,6 @@ void Service::signal_handler(int sig, siginfo_t *si, void *) {
 
     se.sigev_notify = SIGEV_THREAD;
     se.sigev_notify_function = abort_handler;
-    se.sigev_value.sival_ptr = &timer;	// NOLINT
     if (timer_create(CLOCK_MONOTONIC, &se, &timer)) {
 	timer = (timer_t)-1;
     } else {
@@ -1081,14 +1072,14 @@ int Service::run(int argc, const tchar * const *argv) {
 	int fd;
 	pid_t fpid = fork();
 
-	dlog.file(Log::Info, service->logfile.c_str());
 	if (fpid > 0) {
-	    ::exit(0);
+	    _exit(0);			// skip exit handlers and copied stdio
 	} else if (fpid == -1) {
 	    dlog.err(Log::mod(argv[0]), Log::cmd(T("fork")),
 		Log::error(tstrerror(errno)));
 	    return 4;
 	}
+	dlog.file(Log::Info, service->logfile.c_str());
 	if ((fd = ::open(T("/dev/null"), O_RDONLY)) != -1) {
 	    dup2(fd, 0);
 	    ::close(fd);
@@ -1569,11 +1560,11 @@ void Daemon::configfile(int argc, const tchar * const *argv) {
     }
     if (cfgfile.empty()) {
 	cfgfile = installdir + T("/etc/") + name + T(".cfg");
-	if (access(tstringtoachar(cfgfile), R_OK)) {
+	if (taccess(cfgfile.c_str(), R_OK)) {
 	    cfgfile = installdir + T("/") + name + T(".cfg");
-	    if (access(tstringtoachar(cfgfile), R_OK)) {
+	    if (taccess(cfgfile.c_str(), R_OK)) {
 		cfgfile = name + T(".cfg");
-		if (access(tstringtoachar(cfgfile), R_OK))
+		if (taccess(cfgfile.c_str(), R_OK))
 		    cfgfile.erase();
 	    }
 	}
@@ -1670,14 +1661,9 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
 	    return 5;
 	}
     }
-#ifndef OPEN_MAX
-#define OPEN_MAX 2048
-#endif
-    dlogd(Log::mod(name),
-	Log::kv(T("uid"), uid == (uid_t)-1 ? getuid() :
-	uid), Log::kv(T("gid"), gid <= 0 ? getgid() : (uid_t)gid),
-	Log::kv(T("maxfd"), getrlimit(RLIMIT_NOFILE, &rl) ? OPEN_MAX :
-	rl.rlim_cur));
+    dlogd(Log::mod(name), Log::kv(T("uid"), uid == (uid_t)-1 ? getuid() :
+	uid), Log::kv(T("gid"), uid == (uid_t)-1 ? getgid() : gid),
+	Log::kv(T("maxfd"), getrlimit(RLIMIT_NOFILE, &rl) ? 0 : rl.rlim_cur));
 #endif
     if ((ret = onInit(argc, argv)) != 0)
 	return ret;
@@ -1885,9 +1871,10 @@ bool Daemon::spawn(Worker &w) {
     (void)InitializeProcThreadAttributeList(nullptr, 2, 0, &sz);
     attrs.reset(new char[sz]);
     si.lpAttributeList = (LPPROC_THREAD_ATTRIBUTE_LIST)attrs.get();
+    if (!InitializeProcThreadAttributeList(si.lpAttributeList, 2, 0, &sz))
+	si.lpAttributeList = nullptr;
     // the job list assigns the job before the worker runs
-    ok = InitializeProcThreadAttributeList(si.lpAttributeList, 2, 0, &sz) &&
-	UpdateProcThreadAttribute(si.lpAttributeList, 0,
+    ok = si.lpAttributeList && UpdateProcThreadAttribute(si.lpAttributeList, 0,
 	PROC_THREAD_ATTRIBUTE_HANDLE_LIST, hdls.data(), hdls.size() *
 	sizeof (HANDLE), nullptr, nullptr) &&
 	UpdateProcThreadAttribute(si.lpAttributeList, 0,

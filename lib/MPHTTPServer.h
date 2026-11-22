@@ -61,14 +61,16 @@ private:
     HANDLE timer = nullptr;
 #endif
     MPHTTPListenSocket *lsock = nullptr;
-    bool many = true;
+    atomic<bool> many = true;
 
     void closed(void);
     void drain(void);
     void opened(void) { ++curcon; }
     void quit(void);
+    // complete() not == so a lowered maxrequests still drains
     void request(void) {
-	if (++totreq == maxreq)
+	++totreq;
+	if (complete())
 	    drain();
     }
 #ifdef _WIN32
@@ -100,7 +102,7 @@ protected:
 /*
  * POST body from the request, a file named by X-File or a SysV shared memory
  * segment (file mapping name on Windows) named by X-Shm-Id and X-Shm-Size,
- * for large local transfers
+ * for large transfers from loopback or UNIX socket peers only
  */
 class BLISTERTLS ShMemHTTPSocket: public MPHTTPSocket {
 public:
@@ -158,9 +160,6 @@ public:
     MPHTTPDaemon(const tchar *svc, const tchar *display, MPHTTPDispatcher &d):
 	Daemon(svc, display, true), dspr(d) {
 	nworkers = 2;
-#ifdef _WIN32
-	d.daemon = this;
-#endif
     }
 
 protected:

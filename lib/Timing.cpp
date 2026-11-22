@@ -262,10 +262,12 @@ void Timing::record(void) {
 
     const auto &entry = tlsd.entries.back();
     const timing_t diff = now() - entry.start;
+    const size_t off = entry.pathlen ? entry.pathlen + 2 : 0;
 
     if (entry.pathlen)
 	add(tlsd.path, diff);
-    add(entry.caller, 0, entry.hash, diff);
+    add(tlsd.path.data() + off, (uint)(tlsd.path.size() - off), entry.hash,
+	diff);
     tlsd.path.resize(entry.pathlen);
     tlsd.entries.pop_back();
 }
@@ -277,13 +279,13 @@ void Timing::restart() {
 	tlsd.entries.back().start = now();
 }
 
-void Timing::start(Tlsdata &tlsd, const tchar *key, strhash_t hash) {
+void Timing::start(Tlsdata &tlsd, tstring_view key, strhash_t hash) {
     size_t len = tlsd.path.size();
 
     if (len)
 	tlsd.path += T("->");
     tlsd.path += key;
-    tlsd.entries.emplace_back(key, hash, now(), len);
+    tlsd.entries.emplace_back(hash, now(), len);
 }
 
 void Timing::stop() {

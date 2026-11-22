@@ -157,14 +157,16 @@ Process Process::start(tchar *const *args, const int *fds) {
     ZERO(proc);
     ZERO(si);
     si.cb = sizeof (si);
-    if (fds) {				// only support 3 fds
+    if (fds) {
+	// STARTF_USESTDHANDLES leaves unset handles NULL, not inherited
+	auto hdl = [fds](int i, DWORD std) {
+	    return fds[i] == -1 ? GetStdHandle(std) : (HANDLE)(ullong)fds[i];
+	};
+
 	si.dwFlags = STARTF_USESTDHANDLES;
-	si.hStdInput = (HANDLE)(ullong)fds[0];
-	if (fds[1] != -1) {
-	    si.hStdOutput = (HANDLE)(ullong)fds[1];
-	    if (fds[2] != -1)
-		si.hStdError = (HANDLE)(ullong)fds[2];
-	}
+	si.hStdInput = hdl(0, STD_INPUT_HANDLE);
+	si.hStdOutput = hdl(1, STD_OUTPUT_HANDLE);
+	si.hStdError = hdl(2, STD_ERROR_HANDLE);
     }
     if (CreateProcess(NULL, cmd.data(), NULL, NULL, TRUE, // NOSONAR
 	0, NULL, NULL, &si, &proc)) {
@@ -307,11 +309,8 @@ bool DLLibrary::open(const tchar *dll) {
     close();
     file = dll ? dll : T("self");
 #ifdef _WIN32
+    // LoadLibrary appends .dll itself
     hdl = dll ? LoadLibrary(dll) : GetModuleHandle(NULL);
-    if (!hdl && dll && !file.contains(T(".dll"))) {
-	file += T(".dll");
-	hdl = LoadLibrary(file.c_str());
-    }
     if (!hdl) {
 	err = T("LoadLibrary failed");
 	file.erase();
@@ -753,6 +752,7 @@ void ThreadGroup::notify(const Thread &thread) {
 }
 
 void ThreadGroup::priority(int pri) {
+    master.priority(pri);
     control([pri](Thread &thread) { thread.priority(pri); });
 }
 
@@ -772,7 +772,6 @@ void ThreadGroup::stop(void) {
     const thread_id_t self = THREAD_ID();
 
     onStop();
-    setState(Terminated);
     control([self](Thread &thread) {
 	if (!THREAD_EQUAL(thread.getId(), self))
 	    thread.stop();

@@ -27,7 +27,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	*section = nullptr, *val = nullptr;
     ConfigFile cfg;
     bool boolean = false, check = false, integer = false, nonewline = false,
-	quiet = false, update = false;
+	quiet = false, stdio, update = false;
     int i;
 
     for (i = 1; i < argc; i++) {
@@ -87,8 +87,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("\t[-u|--update]\n");
 	return -1;
     }
-    bool stdio = tstreq(file, T("-"));
-
+    stdio = tstreq(file, T("-"));
     if (!(stdio ? cfg.read(tcin, prefix) : cfg.read(file, prefix))) {
 	tcerr << T("unable to read ") << file << T(": ") << tstrerror(errno) <<
 	    endl;

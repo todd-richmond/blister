@@ -38,6 +38,21 @@
 #include "Log.h"
 #include "TLSSocket.h"
 
+#ifdef BLISTER_TLS
+static constexpr long CERTDAYS = 3650;	// self-signed: init() never renews
+
+// TLS 1.x minor version or -1
+static int protomin(const tstring &ver) {
+    static constexpr const tchar *vers[] = {
+	T("TLSv1_0"), T("TLSv1_1"), T("TLSv1_2"), T("TLSv1_3")
+    };
+    const auto *const it = ranges::find(vers, ver);
+
+    return ver.empty() ? 0 : it == ranges::end(vers) ? -1 :
+	(int)(it - ranges::begin(vers));
+}
+#endif
+
 #ifndef BLISTER_TLS
 // built without SChannel or OpenSSL: TLS requests fail
 
@@ -132,7 +147,8 @@ static HCERTSTORE loadcas(const tstring &path) {
 }
 
 // a PKCS#12 file, else a subject in the user's personal store
-static PCCERT_CONTEXT loadcert(const tstring &path, const tstring &pass) {
+static PCCERT_CONTEXT loadcert(const tstring &path, const tstring &pass,
+    bool &imported) {
     constexpr DWORD ENC = X509_ASN_ENCODING | PKCS_7_ASN_ENCODING;
     string data;
     PCCERT_CONTEXT cert = nullptr;
@@ -143,11 +159,12 @@ static PCCERT_CONTEXT loadcert(const tstring &path, const tstring &pass) {
 
 	if (!PFXIsPFXBlob(&blob))
 	    return nullptr;
-	// SChannel can't use non-persisted keys
+	// SChannel can't use non-persisted keys: ~SChannelCreds deletes it
 	if ((store = PFXImportCertStore(&blob, tstringtowchar(pass),
-	    CRYPT_USER_KEYSET)) != nullptr)
+	    CRYPT_USER_KEYSET | PKCS12_ALWAYS_CNG_KSP)) != nullptr)
 	    cert = CertFindCertificateInStore(store, ENC, 0,
 		CERT_FIND_HAS_PRIVATE_KEY, nullptr, nullptr);
+	imported = cert != nullptr;
     } else if ((store = CertOpenStore(CERT_STORE_PROV_SYSTEM_W, 0, 0,
 	CERT_SYSTEM_STORE_CURRENT_USER | CERT_STORE_READONLY_FLAG,
 	L"MY")) != nullptr) {
@@ -233,7 +250,7 @@ static PCCERT_CONTEXT selfsign(void) {
 	kpi.pwszProvName = (LPWSTR)MS_KEY_STORAGE_PROVIDER;
 	alg.pszObjId = (LPSTR)szOID_ECDSA_SHA256;
 	systime(3600, false, start);
-	systime(365ULL * 86400, true, end);
+	systime((ULONGLONG)CERTDAYS * 86400, true, end);
 	cert = CertCreateSelfSignCertificate(key, &subj, 0, &kpi, &alg, &start,
 	    &end, &exts);
     }
@@ -248,6 +265,8 @@ struct SChannelCreds: RefCount {
     ~SChannelCreds() {
 	if (SecIsValidHandle(&h))
 	    FreeCredentialsHandle(&h);
+	if (cert && imported)
+	    dropkey(cert);
 	if (cert)
 	    CertFreeCertificateContext(cert);
 	if (engine)
@@ -259,8 +278,20 @@ struct SChannelCreds: RefCount {
     PCCERT_CONTEXT cert = nullptr;
     HCERTCHAINENGINE engine = nullptr; // tls.cacertfile roots, else system
     CredHandle h;
-    bool mutual = false, verify = false;
+    bool imported = false, mutual = false, verify = false;
     HCERTSTORE roots = nullptr;
+
+private:
+    static void dropkey(PCCERT_CONTEXT c) {
+	HCRYPTPROV_OR_NCRYPT_KEY_HANDLE key;
+	DWORD spec;
+	BOOL owned;
+
+	if (CryptAcquireCertificatePrivateKey(c,
+	    CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG | CRYPT_ACQUIRE_SILENT_FLAG,
+	    nullptr, &key, &spec, &owned) && owned)
+	    NCryptDeleteKey(key, 0);		// also frees the handle
+    }
 };
 
 // 0 or the chain and name policy error
@@ -342,7 +373,7 @@ private:
 
     SChannelCreds *creds;
     CtxtHandle ctxt;
-    bool done = false, renego = false;
+    bool anon = false, done = false, renego = false;
     char *dptr = nullptr;
     ulong dlen = 0, ilen = 0, ocap = 0, olen = 0, ooff = 0, pend = 0;
     socket_t fd;
@@ -475,8 +506,9 @@ long TLSLayer::handshake(const Socket &s) {
 		flags = WriteReads;
 		return ret;
 	    }
-	} else if (st != SEC_I_CONTINUE_NEEDED &&
-	    st != SEC_I_INCOMPLETE_CREDENTIALS) {
+	} else if (st == SEC_I_INCOMPLETE_CREDENTIALS && !anon) {
+	    anon = true;	// no client cert: step() kept the input to retry
+	} else if (st != SEC_I_CONTINUE_NEEDED) {
 	    if (olen)
 		(void)flush(s);
 	    return fail(s, syserr(st));
@@ -601,8 +633,8 @@ SECURITY_STATUS TLSLayer::step(void) {
 	    nullptr);
     else
 	st = InitializeSecurityContextW(&creds->h, cur, sni ? target.data() :
-	    nullptr, ISC, 0, 0, ilen ? &id : nullptr, 0, &ctxt, &od, &attr,
-	    nullptr);
+	    nullptr, ISC | (anon ? ISC_REQ_USE_SUPPLIED_CREDS : 0), 0, 0,
+	    ilen ? &id : nullptr, 0, &ctxt, &od, &attr, nullptr);
     for (const SecBuffer &b : ob) {
 	if (!b.pvBuffer)
 	    continue;
@@ -610,7 +642,8 @@ SECURITY_STATUS TLSLayer::step(void) {
 	    append(b.pvBuffer, b.cbBuffer);
 	FreeContextBuffer(b.pvBuffer);
     }
-    if (st != SEC_E_INCOMPLETE_MESSAGE && ilen) {
+    if (st != SEC_E_INCOMPLETE_MESSAGE && st != SEC_I_INCOMPLETE_CREDENTIALS &&
+	ilen) {
 	if (ib[1].BufferType == SECBUFFER_EXTRA && ib[1].cbBuffer) {
 	    memmove(ibuf.get(), ibuf.get() + ilen - ib[1].cbBuffer,
 		ib[1].cbBuffer);
@@ -691,6 +724,7 @@ static SChannelCreds *newcreds(const Config &cfg, const tchar *sect,
     SCH_CREDENTIALS sc = {};
     SECURITY_STATUS st;
     TLS_PARAMETERS tp = {};
+    const int ver = protomin(minver);
     const auto fail = [&](const tchar *msg, long code) {
 	err = msg;
 	err += T(": ");
@@ -707,18 +741,13 @@ static SChannelCreds *newcreds(const Config &cfg, const tchar *sect,
 	    return nullptr;
 	}
     }
-    tp.grbitDisabledProtocols = SP_PROT_SSL2 | SP_PROT_SSL3;
-    if (minver == T("TLSv1_3")) {
-	tp.grbitDisabledProtocols |= SP_PROT_TLS1_0 | SP_PROT_TLS1_1 |
-	    SP_PROT_TLS1_2;
-    } else if (minver == T("TLSv1_2")) {
-	tp.grbitDisabledProtocols |= SP_PROT_TLS1_0 | SP_PROT_TLS1_1;
-    } else if (minver == T("TLSv1_1")) {
-	tp.grbitDisabledProtocols |= SP_PROT_TLS1_0;
-    } else if (!minver.empty() && minver != T("TLSv1_0")) {
+    if (ver < 0) {
 	err = T("unknown tls.proto_min");
 	return nullptr;
     }
+    tp.grbitDisabledProtocols = SP_PROT_SSL2 | SP_PROT_SSL3 |
+	(ver > 0 ? SP_PROT_TLS1_0 : 0) | (ver > 1 ? SP_PROT_TLS1_1 : 0) |
+	(ver > 2 ? SP_PROT_TLS1_2 : 0);
     if (!cafile.empty()) {
 	CERT_CHAIN_ENGINE_CONFIG ecfg = {};
 
@@ -731,7 +760,7 @@ static SChannelCreds *newcreds(const Config &cfg, const tchar *sect,
     }
     if (!certfile.empty()) {
 	if ((c->cert = loadcert(certfile, cfg.get(T("tls.password"), nullptr,
-	    sect))) == nullptr)
+	    sect), c->imported)) == nullptr)
 	    return fail(T("cannot load tls.certfile"), (long)GetLastError());
 	keysrc = certfile;
     } else if (server) {
@@ -750,7 +779,8 @@ static SChannelCreds *newcreds(const Config &cfg, const tchar *sect,
     // trusted client cert issuers
     if (server)
 	sc.hRootStore = c->roots;
-    sc.dwFlags = SCH_USE_STRONG_CRYPTO | (server ? 0 :
+    // servers only report client certs, never map them to accounts
+    sc.dwFlags = SCH_USE_STRONG_CRYPTO | (server ? SCH_CRED_NO_SYSTEM_MAPPER :
 	SCH_CRED_MANUAL_CRED_VALIDATION | SCH_CRED_NO_DEFAULT_CREDS);
     sc.cTlsParameters = 1;
     sc.pTlsParameters = &tp;
@@ -769,9 +799,9 @@ TLSContext::~TLSContext() {
 bool TLSContext::init(const Config &cfg, const tchar *sect, tstring &err) {
     SChannelCreds *c = nullptr, *old;
     tstring keysrc;
+    const bool verify = !srv && cfg.get(T("tls.verify"), true, sect);
 
     err.clear();
-    verify = !srv && cfg.get(T("tls.verify"), true, sect);
     if (!srv || cfg.get(T("tls.enable"), false, sect)) {
 	if ((c = newcreds(cfg, sect, srv, verify, err, keysrc)) == nullptr)
 	    return false;
@@ -843,17 +873,25 @@ bool TLSContext::layer(Socket &s, const tchar *host) const {
 	return false;
     }
     // no name: the cert must list the peer IP
-    if (!srv && name.empty() && verify && s.peername(sa))
+    if (!srv && name.empty() && c->verify) {
+	if (!s.peername(sa)) {
+	    if (c->release())
+		delete c;
+	    s.err(EPROTO);
+	    return false;
+	}
 	name = sa.ip();
+    }
     s.layer(new TLSLayer(c, s.fd(), srv, name, host && *host));
     return true;
 }
 
 #else
 
-template<class T, void (*F)(T *)> struct sslfree {
-    void operator ()(T *p) const { F(p); }
+template<class C, void (*F)(C *)> struct sslfree {
+    void operator ()(C *p) const { F(p); }
 };
+using bn_ptr = unique_ptr<BIGNUM, sslfree<BIGNUM, BN_free>>;
 using ctx_ptr = unique_ptr<SSL_CTX, sslfree<SSL_CTX, SSL_CTX_free>>;
 using key_ptr = unique_ptr<EVP_PKEY, sslfree<EVP_PKEY, EVP_PKEY_free>>;
 using name_ptr = unique_ptr<X509_NAME, sslfree<X509_NAME, X509_NAME_free>>;
@@ -907,9 +945,9 @@ static EVP_PKEY *defaultkey(tstring &src) {
 		src = achartotstring(path);
 		return key;
 	    }
+	    ERR_clear_error();	// a later success must not report this
 	}
     }
-    ERR_clear_error();
     src = T("ephemeral");
     return EVP_PKEY_Q_keygen(nullptr, nullptr, "EC", "P-256");
 }
@@ -917,23 +955,20 @@ static EVP_PKEY *defaultkey(tstring &src) {
 static X509 *selfsign(EVP_PKEY *key) {
     char host[256] = {};
     x509_ptr x(X509_new());
-    BIGNUM *bn = BN_new();
+    bn_ptr bn(BN_new());
     X509_EXTENSION *ext;
+    int added;
     name_ptr name(X509_NAME_new());
     X509V3_CTX v3;
 
     if (gethostname(host, sizeof (host) - 1) || !*host)
 	strcpy(host, "localhost");
     if (!x || !name || !bn ||
-	!BN_rand(bn, 63, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) ||
-	!BN_to_ASN1_INTEGER(bn, X509_get_serialNumber(x.get()))) {
-	BN_free(bn);
-	return nullptr;
-    }
-    BN_free(bn);
-    if (!X509_set_version(x.get(), X509_VERSION_3) ||
+	!BN_rand(bn.get(), 63, BN_RAND_TOP_ANY, BN_RAND_BOTTOM_ANY) ||
+	!BN_to_ASN1_INTEGER(bn.get(), X509_get_serialNumber(x.get())) ||
+	!X509_set_version(x.get(), X509_VERSION_3) ||
 	!X509_gmtime_adj(X509_getm_notBefore(x.get()), -3600) ||
-	!X509_gmtime_adj(X509_getm_notAfter(x.get()), 365L * 86400) ||
+	!X509_gmtime_adj(X509_getm_notAfter(x.get()), CERTDAYS * 86400) ||
 	!X509_set_pubkey(x.get(), key) || !X509_NAME_add_entry_by_txt(
 	name.get(), "CN", MBSTRING_ASC, (const uchar *)host, -1, -1, 0) ||
 	!X509_set_subject_name(x.get(), name.get()) ||
@@ -944,8 +979,10 @@ static X509 *selfsign(EVP_PKEY *key) {
 	"DNS:{},DNS:localhost,IP:127.0.0.1,IP:::1", host).c_str());
     if (!ext)
 	return nullptr;
-    X509_add_ext(x.get(), ext, -1);
+    added = X509_add_ext(x.get(), ext, -1);
     X509_EXTENSION_free(ext);
+    if (!added)
+	return nullptr;
     // EdDSA signs without a separate digest
     if (!X509_sign(x.get(), key, EVP_PKEY_is_a(key, "ED25519") ||
 	EVP_PKEY_is_a(key, "ED448") ? nullptr : EVP_sha256()))
@@ -1010,12 +1047,15 @@ long TLSLayer::fail(const Socket &s, int ret, Op op) {
 	return -1;
     case SSL_ERROR_ZERO_RETURN:
 	return 0;
-    case SSL_ERROR_SYSCALL:
+    case SSL_ERROR_SYSCALL: {
+	const int e = sockerrno();	// before ERR_clear_error() can reset it
+
 	ERR_clear_error();
-	if (!sockerrno())
+	if (!e)
 	    return 0;
-	s.err(sockerrno());
+	s.err(e);
 	return -1;
+    }
     default:
 	tlserr = sslerrors();
 	s.err(EPROTO);
@@ -1103,8 +1143,9 @@ ssize_t TLSLayer::write(const Socket &s, const iovec *iov, int count) {
 		return out ? out : ret;
 	    used = 0;
 	}
-	if (len >= sizeof (buf)) {
-	    if (!put(p, len))
+	// a lone iovec needs no copy
+	if (len >= sizeof (buf) || (!used && i == count - 1)) {
+	    if (len && !put(p, len))
 		return out ? out : ret;
 	} else if (len) {
 	    memcpy(buf + used, p, len);
@@ -1129,7 +1170,7 @@ static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
     string keyfile = confstr(cfg, T("tls.keyfile"), sect);
     tstring minver = cfg.get(T("tls.proto_min"), T("TLSv1_2"), sect);
     string suites = confstr(cfg, T("tls.ciphersuites"), sect);
-    int ver = 0;
+    const int ver = protomin(minver);
     const auto fail = [&](const tchar *msg) {
 	tstring e = sslerrors();
 
@@ -1143,17 +1184,9 @@ static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
 
     if (!ctx)
 	return fail(T("cannot create TLS context"));
-    if (minver == T("TLSv1_3"))
-	ver = TLS1_3_VERSION;
-    else if (minver == T("TLSv1_2"))
-	ver = TLS1_2_VERSION;
-    else if (minver == T("TLSv1_1"))
-	ver = TLS1_1_VERSION;
-    else if (minver == T("TLSv1_0"))
-	ver = TLS1_VERSION;
-    else if (!minver.empty())
+    if (ver < 0)
 	return fail(T("unknown tls.proto_min"));
-    SSL_CTX_set_min_proto_version(ctx.get(), ver);
+    SSL_CTX_set_min_proto_version(ctx.get(), TLS1_VERSION + ver);
     // KTLS slows small writes, so it is opt-in
     SSL_CTX_set_options(ctx.get(), SSL_OP_ALL | SSL_OP_IGNORE_UNEXPECTED_EOF |
 	SSL_OP_NO_RENEGOTIATION | (cfg.get(T("tls.ktls"), false, sect) ?
@@ -1218,28 +1251,23 @@ static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
 	if (certfile.empty())
 	    return ctx.release();
     }
+    const string &kpath = keyfile.empty() ? certfile : keyfile;
+    key_ptr key(kpath.empty() ? defaultkey(keysrc) : readkey(kpath.c_str()));
+
+    if (!key || SSL_CTX_use_PrivateKey(ctx.get(), key.get()) != 1)
+	return fail(T("cannot load tls.keyfile"));
+    if (!kpath.empty())
+	keysrc = achartotstring(certfile.empty() ? keyfile : certfile);
     if (!certfile.empty()) {
 	if (SSL_CTX_use_certificate_chain_file(ctx.get(),
 	    certfile.c_str()) != 1)
 	    return fail(T("cannot load tls.certfile"));
-	if (SSL_CTX_use_PrivateKey_file(ctx.get(), (keyfile.empty() ?
-	    certfile : keyfile).c_str(), SSL_FILETYPE_PEM) != 1)
-	    return fail(T("cannot load tls.keyfile"));
-	keysrc = achartotstring(certfile);
     } else {
-	key_ptr key(keyfile.empty() ? defaultkey(keysrc) :
-	    readkey(keyfile.c_str()));
-	x509_ptr cert;
+	x509_ptr cert(selfsign(key.get()));
 
-	if (!key)
-	    return fail(T("cannot load tls.keyfile"));
-	if (!keyfile.empty())
-	    keysrc = achartotstring(keyfile);
-	cert.reset(selfsign(key.get()));
 	if (!cert)
 	    return fail(T("cannot create self-signed certificate"));
-	if (SSL_CTX_use_certificate(ctx.get(), cert.get()) != 1 ||
-	    SSL_CTX_use_PrivateKey(ctx.get(), key.get()) != 1)
+	if (SSL_CTX_use_certificate(ctx.get(), cert.get()) != 1)
 	    return fail(T("cannot use self-signed certificate"));
     }
     if (SSL_CTX_check_private_key(ctx.get()) != 1)
@@ -1261,11 +1289,11 @@ void TLSContext::clear(void) {
 bool TLSContext::init(const Config &cfg, const tchar *sect, tstring &err) {
     tstring keysrc;
     SSL_CTX *c = nullptr, *old;
+    const bool verify = !srv && cfg.get(T("tls.verify"), true, sect);
 
     err.clear();
     // static TLSContexts are freed after exit handlers run
     OPENSSL_init_ssl(OPENSSL_INIT_NO_ATEXIT, nullptr);
-    verify = !srv && cfg.get(T("tls.verify"), true, sect);
     if (!srv || cfg.get(T("tls.enable"), false, sect)) {
 	if ((c = newctx(cfg, sect, srv, verify, err, keysrc)) == nullptr)
 	    return false;
@@ -1295,8 +1323,7 @@ TLSContext::Info TLSContext::info(const Socket &s) {
 
     const SSL *ssl = static_cast<const TLSLayer *>(s.layer())->ssl;
     const SSL_CIPHER *c = SSL_get_current_cipher(ssl);
-    const char *g = SSL_group_to_name((SSL *)ssl, (int)
-	SSL_get_negotiated_group((SSL *)ssl));
+    const char *g = SSL_get0_group_name((SSL *)ssl);
     X509 *cert = SSL_get1_peer_certificate(ssl);
     long vr = SSL_get_verify_result(ssl);
 
@@ -1335,6 +1362,12 @@ bool TLSContext::layer(Socket &s, const tchar *host) const {
     TLSLayer *l;
     Sockaddr sa;
     SSL *ssl = nullptr;
+    const auto fail = [&] {
+	SSL_free(ssl);
+	ERR_clear_error();
+	s.err(EPROTO);
+	return false;
+    };
 
     if (!host)
 	host = T("");
@@ -1350,26 +1383,27 @@ bool TLSContext::layer(Socket &s, const tchar *host) const {
 	    SSL_set_session(ssl, it->second);
     }
     lock.unlock_shared();
-    if (!ssl) {
-	ERR_clear_error();
-	s.err(EPROTO);
-	return false;
-    }
-    SSL_set_fd(ssl, (int)s.fd());
+    if (!ssl || !SSL_set_fd(ssl, (int)s.fd()))
+	return fail();
     if (srv) {
 	SSL_set_accept_state(ssl);
     } else {
+	// from the context so a failed init() can't change it
+	const bool verify = SSL_get_verify_mode(ssl) & SSL_VERIFY_PEER;
+
 	SSL_set_connect_state(ssl);
 	if (*host) {
 	    string h(tchartoachar(host));
 
 	    SSL_set_tlsext_host_name(ssl, h.c_str());
-	    if (verify)
-		SSL_set1_host(ssl, h.c_str());
-	} else if (verify && !key.empty()) {
-	    // no name: the cert must list the peer IP
-	    X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl),
-		tstringtoachar(sa.ip()));
+	    // no "f*.example.com" or CN fallback for certs without a SAN
+	    SSL_set_hostflags(ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS |
+		X509_CHECK_FLAG_NEVER_CHECK_SUBJECT);
+	    if (verify && !SSL_set1_host(ssl, h.c_str()))
+		return fail();
+	} else if (verify && (key.empty() || !X509_VERIFY_PARAM_set1_ip_asc(
+	    SSL_get0_param(ssl), tstringtoachar(sa.ip())))) {
+	    return fail();		// no name: the cert must list the peer IP
 	}
     }
     l = new TLSLayer(ssl);
@@ -1420,6 +1454,10 @@ TLSContext &TLSContext::client(void) {
     return *tc;
 }
 WARN_POP()
+
+bool TLSContext::handshake(Socket &s, const Sockaddr &peer) const {
+    return layer(s, sni(peer).c_str()) && s.handshake() > 0;
+}
 
 tstring TLSContext::sni(const Sockaddr &sa) {
     tstring s(sa.str());
@@ -1493,8 +1531,7 @@ void HTTPTLSServer::starttls(void) {
 }
 
 bool HTTPTLSClient::starttls(void) {
-    if (!tctx.layer(sock, TLSContext::sni(addr).c_str()) ||
-	sock.handshake() <= 0) {
+    if (!tctx.handshake(sock, addr)) {
 	sockerr = sock.err() ? sock.err() : EPROTO;
 	return false;
     }
@@ -1518,19 +1555,11 @@ bool SMTPTLSClientT<B>::greet(bool lmtp, const tchar *domain) {
 }
 
 template<class B>
-bool SMTPTLSClientT<B>::handshake(void) {
-    return tctx->layer(this->sock, TLSContext::sni(this->peer).c_str()) &&
-	this->sock.handshake() > 0;
-}
-
-template<class B>
 bool SMTPTLSClientT<B>::starttls(void) {
     if (!this->cmd(T("STARTTLS"), nullptr, 220))
 	return false;
-    // drop plaintext read ahead of the handshake
-    this->sstrm.clear();
-    this->sstrm.rdbuf()->str(nullptr, 4096);
-    if (!handshake()) {
+    this->dropinput();	// plaintext read ahead of the handshake
+    if (!tctx->handshake(this->sock, this->peer)) {
 	this->sts = T("000 TLS handshake failed: ") + this->sock.errstr();
 	this->sock.close();
 	return false;

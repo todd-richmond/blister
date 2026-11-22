@@ -1,11 +1,11 @@
 # test/
 
-Sample and load-test programs for `lib/`. `ctest` runs `hashtest` (`HashFunctors`), `echotest` and `httptest` (`EchoTest`, `HTTPTest`: 1000000 loops) and, when built with TLS, their `-ssl` runs (`EchoTestTLS`, `HTTPTestTLS`: 500000 loops); a non-zero exit fails the test. The network programs link `libblistertls`; their TLS options fail when it was built without TLS. They exit non-zero when they cannot run their test: a failed start, listen, connect or TLS setup, or any failed operation.
+Sample and load-test programs for `lib/`. `ctest` builds and runs `hashtest` (`HashTestBuild`, `HashFunctors`), `echotest` and `httptest` (`EchoTest`, `HTTPTest`: 1000000 loops) and, when built with TLS, their `-ssl` runs (`EchoTestTLS`, `HTTPTestTLS`: 500000 loops); a non-zero exit fails the test. The network programs link `libblistertls`; their TLS options fail when it was built without TLS. They exit non-zero when they cannot run their test: a failed start, listen, connect or TLS setup, or any failed operation.
 
 - `cfg` — `Config`: look up, check, update or erase keys from the shell.
-- `dlog` — `Log`: rollover, multi-process writes, syslog and mail.
-- `dtiming` — `Timing`: pretty-prints timing data.
-- `hashtest` — `stdapi.h` hash functors.
+- `dlog` — `Log`: rollover, multi-process writes, syslog and mail. `-o` ends the optional arguments of the preceding option.
+- `dtiming` — `Timing`: pretty-prints timing data; `-c 0` prints CSV.
+- `hashtest` — `stdapi.h` hash and string functors; `-b|-r [file]` prints the bernstein or rapid hash of a file or stdin.
 - `daemonize` — `Daemon`: wraps a child process as a watched, auto-restarting daemon.
 - `echotest` — `Dispatcher`: canonical reactor client and server. `-ssl` uses TLS.
 - `httptest` — `HTTPServer` + `AsyncHTTPClient`/`HTTPClient`: POST echo stress test with the same CLI as `echotest`. `-ssl` uses HTTPS.

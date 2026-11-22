@@ -55,7 +55,7 @@ public:
 	const streamsize left = egptr() - gp;
 	int in;
 
-	if (left == bufsz)
+	if (left == bufsz || UNLIKELY(sync()))	// sync: output shares buf
 	    return -1;
 	memmove(buf, gp, (size_t)left);
 	in = fd->read(buf + left, chunk(bufsz - left));
@@ -81,7 +81,7 @@ public:
 	setp(buf, buf + bufsz);
     }
     streambuf *setbuf(char *p, streamsize sz) override {
-	if (p || !sz || bufsz < sz) {
+	if (p || !sz || !owned || bufsz < sz) {
 	    owned.reset();
 	    if (!p && sz) {
 		owned = make_unique_for_overwrite<char[]>((size_t)sz);

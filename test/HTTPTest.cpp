@@ -16,15 +16,11 @@
  */
 
 #include "stdapi.h"
-#include <fcntl.h>
 #include <signal.h>
-#ifndef _WIN32
-#include <sys/resource.h>
-#endif
-#include <sys/stat.h>
 #include "Config.h"
 #include "Dispatch.h"
 #include "Log.h"
+#include "TestUtil.h"
 #include "Timing.h"
 #include "TLSSocket.h"
 
@@ -45,7 +41,7 @@ public:
     class AsyncClient: public DispatchTimer {
     public:
 	AsyncClient(HTTPTest &ht, const Sockaddr &sa, ulong t, ulong n):
-	    DispatchTimer(ht), client(*this, sa), req(*this), nap(n) {
+	    DispatchTimer(ht), client(*this, sa), nap(n), req(*this) {
 	    client.timeout((uint)t, (uint)t);
 	    client.configure(ht.config(), HTTPServerSocket::section());
 	    active++;
@@ -55,10 +51,10 @@ public:
 	void start(ulong msec) { timeout(go, msec); }
 
     private:
-	AsyncHTTPTLSClient client;
-	AsyncHTTPClient::Request req;
 	timing_t begin = 0;
+	AsyncHTTPTLSClient client;
 	ulong nap;
+	AsyncHTTPClient::Request req;
 
 	DSP_DECLARE(AsyncClient, done);
 	DSP_DECLARE(AsyncClient, go);
@@ -78,24 +74,25 @@ public:
 
     using ListenSocket = SimpleDispatchListenSocket<HTTPTest, EchoSocket>;
 
-    bool listen(const Sockaddr &sa);
     void connect(const Sockaddr &sa, uint count, ulong delay, ulong tmt,
 	ulong nap);
+    bool listen(const Sockaddr &sa);
 };
 
 // blocking HTTPClient on its own thread
 class SyncClient: public Thread {
 public:
     SyncClient(const Config &c, const Sockaddr &a, ulong t, ulong n, ulong s):
-	cfg(c), sa(a), tmt(t), nap(n), stagger(s) {}
+	cfg(c), nap(n), sa(a), stagger(s), tmt(t) {}
 
 protected:
     int onStart(void) override;
 
 private:
     const Config &cfg;
+    ulong nap;
     const Sockaddr &sa;
-    ulong tmt, nap, stagger;
+    ulong stagger, tmt;
 };
 
 static atomic<uint> errs, ops;
@@ -130,7 +127,7 @@ static void bad(const tstring &why) {
     dloge(T("client post="), why);
 }
 
-void HTTPTest::AsyncClient::done() {
+void HTTPTest::AsyncClient::done(void) {
     if (req.err()) {
 	bad(req.errstr());
     } else if (const tchar *why = check(req.status(), req.data(),
@@ -147,7 +144,7 @@ void HTTPTest::AsyncClient::done() {
     timeout(go, max(nap, (ulong)RETRY));
 }
 
-void HTTPTest::AsyncClient::go() {
+void HTTPTest::AsyncClient::go(void) {
     if (loop_exit()) {
 	erase();
 	return;
@@ -204,7 +201,6 @@ bool HTTPTest::listen(const Sockaddr &sa) {
     return false;
 }
 
-// only async-signal-safe work here so main notices qflag and stops
 static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
@@ -212,13 +208,11 @@ int tmain(int argc, const tchar * const argv[]) {
     ulong delay = 0, failed = 0, tmt = TIMEOUT, nap = 0;
     Config config;
     HTTPTest ht(config);
-    int fd;
     const tchar *host = nullptr;
     int i;
     timing_t last, now;
     const tchar *path = T("echo this short test string as quickly as possible");
     Sockaddr sa;
-    struct stat sbuf;
     uint sockets = 20, threads = 20;
     vector<unique_ptr<SyncClient>> syncs;
 
@@ -272,29 +266,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	    return 1;
 	}
     }
-    if ((fd = open(tchartoachar(path), O_CLOEXEC | O_RDONLY)) == -1) {
-	if (access(tchartoachar(path), 0) == 0) {
-	    tcerr << T("httptest: unable to open ") << path << endl;
-	    return 1;
-	}
-	dsz = (uint)(tstrlen(path) * sizeof (tchar));
-	dbuf = new char[dsz];
-	memcpy(dbuf, path, dsz);
-    } else {
-	if (fstat(fd, &sbuf) == -1) {
-	    close(fd);
-	    tcerr << T("httptest: unable to stat ") << path << endl;
-	    return 1;
-	}
-	dsz = (uint)sbuf.st_size;
-	dbuf = new char[dsz];
-	if ((dsz = (uint)read(fd, dbuf, dsz)) == (uint)-1) {
-	    close(fd);
-	    tcerr << T("httptest: unable to read ") << path << endl;
-	    return 1;
-	}
-	close(fd);
-    }
+    if ((dbuf = loaddata(T("httptest"), path, dsz)) == nullptr)
+	return 1;
     if (!host)
 	host = T("unix:./http.sock");
     if (!sa.set(host)) {
@@ -304,17 +277,7 @@ int tmain(int argc, const tchar * const argv[]) {
     if (!sa.port())
 	sa.port(8888);
     signal(SIGINT, signal_handler);
-#ifndef _WIN32
-    struct rlimit rl;
-    struct sigaction sig {};
-
-    if (!getrlimit(RLIMIT_NOFILE, &rl) && rl.rlim_cur != rl.rlim_max) {
-	rl.rlim_cur = rl.rlim_max;
-	setrlimit(RLIMIT_NOFILE, &rl);
-    }
-    sig.sa_handler = SIG_IGN;
-    sigaction(SIGPIPE, &sig, nullptr);
-#endif
+    setlimits();
     if (dlog.level() >= Log::Debug)
 	dlog.buffer(true);
     if (!ht.start(threads, 32 * 1024)) {

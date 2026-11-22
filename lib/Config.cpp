@@ -62,8 +62,10 @@ void Config::clear(void) {
 void Config::erase(const strkey &key, const tchar *sect) {
     SpinWLocker lkr(lck);
 
-    if (const KV *kv = getkv(key, sect)) {
-	amap.erase(kv->key());
+    if (auto it = findkv(key, sect); it != amap.end()) {
+	const KV *kv = it->second;
+
+	amap.erase(it);
 	delkv(kv);
     }
 }
@@ -135,13 +137,13 @@ tstring Config::getstr(const strkey &key, const tchar *def, const tchar *sect)
 }
 
 // a literal key hash is only usable without a section
-const Config::KV *Config::getkv(const strkey &key, const tchar *sect) const {
+Config::kvmap::const_iterator Config::findkv(const strkey &key, const tchar
+    *sect) const {
     tchar buf[KEYSZ];
     tstring str;
-    auto it = sect && *sect ? amap.find(joinkey(buf, str, sect, tstrlen(sect),
-	key.data(), key.size())) : amap.find(key);
 
-    return it == amap.end() ? nullptr : it->second;
+    return sect && *sect ? amap.find(joinkey(buf, str, sect, tstrlen(sect),
+	key.data(), key.size())) : amap.find(key);
 }
 
 // 1 allocation for key, val, state
@@ -159,7 +161,6 @@ Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     }
     kv = (KV *)new char[offsetof(KV, val) + (klen + vlen + 2) * sizeof (tchar)];
     kv->quote = quote;
-    kv->klen = (uint)klen;
     kv->vlen = (uint)vlen;
     memcpy(kv->val, val, vlen * sizeof (tchar));
     kv->val[vlen] = '\0';
@@ -199,10 +200,16 @@ bool Config::open_file(const tstring &file, tifstream &is, unique_ptr<tchar[]>
     return (bool)is;
 }
 
-bool Config::parse(tistream &is, uint depth) {
-    bool app;
+bool Config::parse(tistream &is, tstring_view dir, uint depth) {
     tstring_view key, val;
     tstring line, sect;
+    auto rtrim = [](const tstring &str) {
+	size_t len = str.size();
+
+	while (len > 0 && istspace(str[len - 1]))
+	    --len;
+	return len;
+    };
 
     if (!is)
 	return false;
@@ -212,10 +219,8 @@ bool Config::parse(tistream &is, uint depth) {
 #endif
     line.reserve(240);
     while (getline(is, line)) {
-	size_t len = line.size();
+	size_t len = rtrim(line);
 
-	while (len > 0 && istspace(line[len - 1]))
-	    --len;
 	if (len == 0)
 	    continue;
 	if (UNLIKELY(line[len - 1] == '\\')) {
@@ -224,10 +229,7 @@ bool Config::parse(tistream &is, uint depth) {
 
 	    do {
 		line.pop_back();
-		len = line.size();
-		while (len > 0 && istspace(line[len - 1]))
-		    --len;
-		line.resize(len);
+		line.resize(rtrim(line));
 		if (getline(is, s)) {
 		    tstring_view sv(s);
 
@@ -241,10 +243,7 @@ bool Config::parse(tistream &is, uint depth) {
 			    s.data()));
 		}
 	    } while (!line.empty() && line.back() == '\\');
-	    len = line.size();
-	    while (UNLIKELY(len > 0 && istspace(line[len - 1])))
-		--len;
-	    if (UNLIKELY(len == 0))
+	    if (UNLIKELY((len = rtrim(line)) == 0))
 		continue;
 	}
 	key = tstring_view(line.data(), len);
@@ -263,9 +262,12 @@ bool Config::parse(tistream &is, uint depth) {
 
 		key.remove_prefix(9);
 		trim(key);
-		file.assign(key);
+		if (!key.starts_with('/') && !key.starts_with('\\') &&
+		    !(key.size() > 1 && key[1] == ':'))
+		    file = dir;
+		file += key;
 		if (depth >= MAXINCLUDE || !open_file(file, iis, fbuf, sz) ||
-		    !parse(iis, depth + 1))
+		    !parse(iis, dirname(file), depth + 1))
 		    return false;
 	    }
 	    break;
@@ -282,29 +284,16 @@ bool Config::parse(tistream &is, uint depth) {
 	    break;
 	default:
 	    auto pos = key.find('=');
+	    bool app = false;
 
-	    app = false;
 	    if (UNLIKELY(pos == key.npos)) {
-		val = tstring_view(T(""));
+		val = {};
 	    } else {
-		const tchar *kstart, *kend, *vstart, *vend;
-
-		if (UNLIKELY(pos > 0 && key[pos - 1] == '+')) {
-		    app = true;
-		    --pos;
-		}
-		kstart = key.data();
-		kend = kstart + pos;
-		while (kend > kstart && istspace(kend[-1]))
-		    --kend;
-		vstart = key.data() + (app ? pos + 2 : pos + 1);
-		vend = key.data() + key.size();
-		while (vstart < vend && istspace(*vstart))
-		    ++vstart;
-		while (vend > vstart && istspace(vend[-1]))
-		    --vend;
-		key = tstring_view(kstart, (size_t)(kend - kstart));
-		val = tstring_view(vstart, (size_t)(vend - vstart));
+		val = key.substr(pos + 1);
+		app = pos > 0 && key[pos - 1] == '+';
+		key = key.substr(0, app ? pos - 1 : pos);
+		trim(key);
+		trim(val);
 	    }
 	    if (UNLIKELY(key.size() > 1 && key[0] == '*' && key[1] == '.')) {
 		key.remove_prefix(2);
@@ -323,7 +312,8 @@ bool Config::parse(tistream &is, uint depth) {
     return true;
 }
 
-bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
+bool Config::load(tistream &is, const tchar *str, bool app, ulong sz,
+    tstring_view dir) {
     if (!is)
 	return false;
     if (app) {
@@ -333,14 +323,14 @@ bool Config::read(tistream &is, const tchar *str, bool app, ulong sz) {
 	    pre = str;
 	if (sz)
 	    reserve(sz);
-	return parse(is);
+	return parse(is, dir);
     }
     // parse outside the lock so readers are not blocked by file I/O
     Config tmp(str ? str : prefix().c_str(), ck);
 
     if (sz)
 	tmp.reserve(sz);
-    if (!tmp.parse(is))
+    if (!tmp.parse(is, dir))
 	return false;
 
     SpinWLocker lkr(lck);
@@ -413,30 +403,29 @@ void Config::trim(tstring_view &s) {
 bool Config::write(tostream &os, bool inistyle) const {
     ulong cnt = 0;
     SpinRLocker lkr(lck);
-    vector<pair<const tchar *, const KV *>> keys;
+    vector<const KV *> kvs;
     tstring sect;
 
-    keys.reserve(amap.size());
+    kvs.reserve(amap.size());
     for (const auto &[k, v] : amap)
-	keys.emplace_back(k, v);
+	kvs.push_back(v);
     if (inistyle)
-	ranges::sort(keys, keyless{}, &pair<const tchar *, const KV *>::first);
+	ranges::sort(kvs, keyless{}, &KV::key);
     else
-	ranges::sort(keys, strless{},
-	    &pair<const tchar *, const KV *>::first);
-    for (size_t u = 0; u < keys.size(); ++u) {
+	ranges::sort(kvs, strless{}, &KV::key);
+    for (size_t u = 0; u < kvs.size(); ++u) {
 	const tchar *dot;
-	const tchar *key = keys[u].first;
-	const KV *kv = keys[u].second;
+	const tchar *key = kvs[u]->key();
+	const KV *kv = kvs[u];
 
 	if ((dot = tstrchr(key, '.')) == nullptr) {
 	    if (inistyle) {
 		sect = '.';
 	    } else {
 		sect.assign(key);
-		if (cnt > 1 || (cnt == 1 && u + 1 < keys.size() &&
-		    tstring_view(keys[u + 1].first).starts_with(sect) &&
-		    keys[u + 1].first[sect.size()] == '.'))
+		if (cnt > 1 || (cnt == 1 && u + 1 < kvs.size() &&
+		    tstring_view(kvs[u + 1]->key()).starts_with(sect) &&
+		    kvs[u + 1]->key()[sect.size()] == '.'))
 		    os << '\n';
 		cnt = 0;
 	    }
@@ -481,7 +470,8 @@ bool ConfigFile::read(const tchar *file, const tchar *_pre, bool app) {
 
     if (file)
 	path = file;
-    return open_file(path, is, fbuf, sz) && read(is, _pre, app, sz);
+    return open_file(path, is, fbuf, sz) && load(is, _pre, app, sz,
+	dirname(path));
 }
 
 bool ConfigFile::write(const tchar *file, bool inistyle) const {

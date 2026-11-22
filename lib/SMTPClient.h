@@ -209,7 +209,7 @@ public:
     // an exact match so a string never converts to the bool mime parameter
     bool data(const tchar *msg) { return rawdata(msg ? msg : T("")); }
     bool data(const tstring &msg) { return rawdata(msg); }
-    bool data(const void *p, uint sz, const tchar *type,
+    bool data(const void *p, size_t sz, const tchar *type,
 	const tchar *desc = nullptr, const tchar *encoding = nullptr,
 	const tchar *disp = nullptr, const tchar *name = nullptr);
     bool bdat(const void *p, size_t sz, bool last = true);
@@ -244,7 +244,11 @@ protected:
     fstream *fstrm = nullptr;
     iostream *strm = &sstrm;
     bool ext_8bitmime = false, ext_chunking = false, ext_smtputf8 = false;
-    static const char crlf[];
+
+    void dropinput(void) {
+	sstrm.clear();
+	sstrm.rdbuf()->str(nullptr, 4096);
+    }
 
 private:
     friend class AsyncSMTPClient;
@@ -286,7 +290,6 @@ private:
     static string encodewords(string_view text);
     static bool idna(string_view domain, string &out);
     static size_t ifind(tstring_view s, tstring_view needle);
-    static tstring numstr(size_t n);
     static bool punycode(const vector<char32_t> &in, string &out);
     static tstring sasl64(const string &in);
 #ifdef __AVX2__

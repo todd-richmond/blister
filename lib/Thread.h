@@ -77,7 +77,7 @@ typedef pthread_t thread_id_t;
 
 typedef pthread_key_t tlskey_t;
 
-#define tls_init(k)		ZERO(k); pthread_key_create(&k, NULL)
+#define tls_init(k)		(ZERO(k), pthread_key_create(&k, NULL))
 #define tls_free(k)		pthread_key_delete(k)
 #define tls_get(k)		pthread_getspecific(k)
 #define tls_set(k, v)		pthread_setspecific(k, v)
@@ -102,7 +102,6 @@ typedef pthread_key_t tlskey_t;
 #include <set>
 #include <shared_mutex>
 #include <thread>
-#include <unordered_map>
 
 #if defined(__APPLE__) && defined(__aarch64__)
 inline constexpr size_t CACHELINE_SZ = 128;
@@ -196,7 +195,6 @@ protected:
     tlskey_t key;
 };
 
-// Thread local storage for classes with proper destruction when theads exit
 using ThreadLocalFree = void (*)(void *data);
 
 /*
@@ -413,21 +411,21 @@ class TicketLock: nocopy {
 public:
     explicit TicketLock(uint lmt = 0): yield(lmt ? lmt :
 	Processor::count() / 2) {}
-    __forceinline void lock() {
+    __forceinline void lock(void) {
 	uint32_t ticket = next.fetch_add(1, memory_order_relaxed);
 	uint pos;
 
 	while ((pos = ticket - current.load(memory_order_acquire)) != 0)
 	    spin_release(LIKELY(pos <= yield), true);
     }
-    __forceinline bool try_lock() {
+    __forceinline bool try_lock(void) {
 	uint32_t n = next.load(memory_order_relaxed);
 
 	return current.load(memory_order_acquire) == n &&
 	    next.compare_exchange_strong(n, n + 1,
 	    memory_order_acquire, memory_order_relaxed);
     }
-    __forceinline void unlock() {
+    __forceinline void unlock(void) {
 	// slight improvement over current.fetch_add(1, memory_order_release);
 	current.store(current.load(memory_order_relaxed) + 1,
 	    memory_order_release);
@@ -831,7 +829,6 @@ public:
 	close();
 	return (hdl = CreateEvent(NULL, manual, set, name)) != nullptr;
     }
-    __forceinline bool pulse(void) const { return PulseEvent(hdl) != 0; }
     __forceinline bool reset(void) const { return ResetEvent(hdl) != 0; }
     __forceinline bool set(void) const { return SetEvent(hdl) != 0; }
     __forceinline bool wait(ulong msec = INFINITE) const {
@@ -1067,9 +1064,6 @@ public:
 
     ulong getId(void) const { return id; }
     const Thread &getMainThread(void) const { return master; }
-    ThreadState getState(void) const {
-	return state.load(memory_order_acquire);
-    }
     size_t size(void) const { Locker lkr(cvlck); return threads.size(); }
 
     friend bool operator ==(const ThreadGroup &a, const ThreadGroup &b) {
@@ -1099,18 +1093,17 @@ private:
     mutable Lock cvlck;
     ulong id = ++next_id;
     const Thread *pinned = nullptr;
-    atomic<ThreadState> state { Init };
     set<Thread *> threads;
     // last since it is destroyed first and its destructor uses the above
     Thread master;
     static atomic_ulong next_id;
 
     template<class F> void control(F func);
-    void setState(ThreadState s) { state.store(s, memory_order_release); }
     static int init(void *thisp);
     friend class Thread;
 };
 
+// Thread local class instances deleted when their thread exits
 template<class C> class BLISTER ThreadLocalClass: nocopy {
 public:
     // cppcheck-suppress useInitializationList

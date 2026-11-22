@@ -406,13 +406,7 @@ int eof(int fd) {
 }
 
 FILE *fdopen(int fd, const char *how) {
-    int flags = 0;
-
-    if (*how == 'a')
-	flags |= O_APPEND;
-    else if (!strcmp(how, "r"))
-	flags |= O_RDONLY;
-    return _fdopen(_open_osfhandle(fd, flags), how);
+    return _fdopen(_open_osfhandle(fd, *how == 'a' ? O_APPEND : 0), how);
 }
 
 int flock(int fd, int op) {
@@ -449,7 +443,6 @@ int fsync(int fd) {
     return 0;
 }
 
-// SetEndOfFile would move the file pointer: POSIX leaves it alone
 long filelength(int fd) {
     LARGE_INTEGER sz;
 
@@ -472,6 +465,7 @@ int isatty(int fd) {
     return 0;
 }
 
+// SetEndOfFile would move the file pointer: POSIX leaves it alone
 int ftruncate(int fd, llong len) {
     FILE_END_OF_FILE_INFO eof;
 
@@ -732,26 +726,52 @@ long tell(int fd) {
     return lseek(fd, 0, SEEK_CUR);
 }
 
-// the XXXXXX suffix is ASCII so it maps back to the same UTF-8 bytes
+// replace a trailing XXXXXX with random letters and digits
+static bool tmpname(wchar *path) {
+    static const char chars[] =
+	"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    uchar rnd[6];
+    size_t len = wcslen(path);
+
+    if (len < 6 || wcscmp(path + len - 6, L"XXXXXX")) {
+	errno = EINVAL;
+	return false;
+    }
+    (void)BCryptGenRandom(NULL, rnd, sizeof (rnd),
+	BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    for (size_t i = 0; i < 6; i++)
+	path[len - 6 + i] = (wchar)chars[rnd[i] % (sizeof (chars) - 1)];
+    return true;
+}
+
+// the suffix is ASCII so it maps back to the same UTF-8 bytes
+static void tmpcopy(char *path, const wchar *wpath) {
+    size_t len = strlen(path), wlen = wcslen(wpath);
+
+    for (size_t i = 1; i <= 6; i++)
+	path[len - i] = (char)wpath[wlen - i];
+}
+
 char *mktemp(char *path) {
     wchar pbuf[MAX_PATH];
-    size_t len = strlen(path), wlen;
 
-    if (len < 6 || !A_TO_W(path, pbuf) || !*wmktemp(pbuf) ||
-	(wlen = wcslen(pbuf)) < 6) {
-	if (len < 6)
-	    errno = EINVAL;
+    if (!A_TO_W(path, pbuf) || !*wmktemp(pbuf))
 	*path = '\0';
-	return path;
-    }
-    for (size_t i = 1; i <= 6; i++)
-	path[len - i] = (char)pbuf[wlen - i];
+    else
+	tmpcopy(path, pbuf);
     return path;
 }
 
 wchar *wmktemp(wchar *path) {
-    if (_wmktemp_s(path, wcslen(path) + 1))
-	*path = L'\0';
+    for (int i = 0; i < 100; i++) {
+	if (!tmpname(path))
+	    break;
+	if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES)
+	    return path;
+	wcscpy(path + wcslen(path) - 6, L"XXXXXX");
+	errno = EEXIST;
+    }
+    *path = L'\0';
     return path;
 }
 
@@ -774,7 +794,7 @@ int umask(int mode) {
 WDIR *wopendir(const wchar *name) {
     WDIR *dirp;
     DWORD attr;
-    const wchar *p;
+    const wchar *dir = name, *p;
     const wchar *wild = NULL;
     size_t len, wlen;
 
@@ -799,14 +819,19 @@ WDIR *wopendir(const wchar *name) {
 	    p = name + len;
 	}
     }
-    len = p - name;
+    // a bare root or pattern leaves no directory part
+    if ((len = p - name) == 0) {
+	if (*name != '\\' && *name != '/')
+	    dir = L".";
+	len = 1;
+    }
     if (!wild)
 	wild = L"*.*";
     wlen = wcslen(wild);
     if ((dirp = (WDIR *)malloc(sizeof (struct WDIR) + (len + 1 + wlen) *
 	sizeof (wchar))) == NULL)
 	return dirp;
-    memcpy(dirp->path, name, len * sizeof (wchar));
+    memcpy(dirp->path, dir, len * sizeof (wchar));
     dirp->path[len] = '\0';
     if ((attr = GetFileAttributesW(dirp->path)) == (DWORD)-1 ||
 	!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
@@ -814,8 +839,9 @@ WDIR *wopendir(const wchar *name) {
 	free(dirp);
 	return NULL;
     }
-    dirp->path[len] = '/';
-    memcpy(dirp->path + len + 1, wild, (wlen + 1) * sizeof (wchar)); // NOSONAR
+    if (dirp->path[len - 1] != '\\' && dirp->path[len - 1] != '/')
+	dirp->path[len++] = '/';
+    memcpy(dirp->path + len, wild, (wlen + 1) * sizeof (wchar)); // NOSONAR
     dirp->hdl = 0;
     dirp->dir.d_ino = NULL;
     dirp->dir.d_off = 0;
@@ -929,7 +955,7 @@ int wopen(const wchar *path, int oflag, ...) {	// NOSONAR
     DWORD filecreate;
     DWORD fileattrib;
     SECURITY_ATTRIBUTES sa;
-    int mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+    int mode = 0;
 
     if (oflag & O_CREAT) {
 	va_list ap;
@@ -978,14 +1004,9 @@ int wopen(const wchar *path, int oflag, ...) {	// NOSONAR
     case O_TRUNC | O_EXCL:	    /* ignore EXCL w/o CREAT */
 	filecreate = TRUNCATE_EXISTING;
 	break;
-    case O_CREAT | O_TRUNC:
+    default:			    /* O_CREAT | O_TRUNC */
 	filecreate = CREATE_ALWAYS;
 	break;
-    default:
-	/* this can't happen ... all cases are covered */
-	errno = EINVAL;
-	_doserrno = 0L;
-	return -1;
     }
     fileattrib = FILE_ATTRIBUTE_NORMAL;
     if (oflag & O_CREAT && !(mode & ~fmask & S_IWUSR))
@@ -1326,32 +1347,6 @@ int wmkdir(const wchar *path, int mode) {
     return CreateDirectoryW(path, NULL) ? 0 : oserr();
 }
 
-// replace a trailing XXXXXX with random letters and digits
-static bool tmpname(wchar *path) {
-    static const char chars[] =
-	"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    uchar rnd[6];
-    size_t len = wcslen(path);
-
-    if (len < 6 || wcscmp(path + len - 6, L"XXXXXX")) {
-	errno = EINVAL;
-	return false;
-    }
-    (void)BCryptGenRandom(NULL, rnd, sizeof (rnd),
-	BCRYPT_USE_SYSTEM_PREFERRED_RNG);
-    for (size_t i = 0; i < 6; i++)
-	path[len - 6 + i] = (wchar)chars[rnd[i] % (sizeof (chars) - 1)];
-    return true;
-}
-
-// the suffix is ASCII so it maps back to the same UTF-8 bytes
-static void tmpcopy(char *path, const wchar *wpath) {
-    size_t len = strlen(path), wlen = wcslen(wpath);
-
-    for (size_t i = 1; i <= 6; i++)
-	path[len - i] = (char)wpath[wlen - i];
-}
-
 int mkstemp(char *path) {
     int fd;
     wchar pbuf[MAX_PATH];
@@ -1575,12 +1570,12 @@ wchar *wrealpath(const wchar *path, wchar *resolved) {
     if ((len -= (DWORD)(p - buf)) >= MAX_PATH) {
 	errno = ENAMETOOLONG;
 	return NULL;
-    } else if (!resolved && (resolved = (wchar *)malloc((len + 1) *
+    } else if (!resolved && (resolved = (wchar *)malloc(((size_t)len + 1) *
 	sizeof (wchar))) == NULL) {
 	errno = ENOMEM;
 	return NULL;
     }
-    wmemcpy(resolved, p, len + 1);
+    wmemcpy(resolved, p, (size_t)len + 1);
     return resolved;
 }
 
@@ -1612,6 +1607,15 @@ int fcntl(int fd, int cmd, ...) {
     case F_SETFL:
 	return 0;
     case F_GETLK:
+    case F_SETLK:
+    case F_SETLKW:
+	if (!fl) {
+	    errno = EFAULT;
+	    return -1;
+	}
+	if (cmd != F_GETLK)
+	    return setlockrange(fd, fl->l_type, fl->l_whence, fl->l_start,
+		fl->l_len, cmd == F_SETLK);
 	if (lockrange(fd, fl->l_whence, fl->l_start, fl->l_len, &s, &e))
 	    return -1;
 	if ((fl->l_type = getlock(fd, s, e, fl->l_type == F_WRLCK)) !=
@@ -1622,10 +1626,6 @@ int fcntl(int fd, int cmd, ...) {
 	    fl->l_pid = 0;		    // owner is unknown
 	}
 	return 0;
-    case F_SETLK:
-    case F_SETLKW:
-	return setlockrange(fd, fl->l_type, fl->l_whence, fl->l_start,
-	    fl->l_len, cmd == F_SETLK);
     default:
 	errno = EINVAL;
 	return -1;
@@ -1765,15 +1765,16 @@ int nanosleep(const struct timespec *req, struct timespec *rem) {
 	errno = EINVAL;
 	return -1;
     }
-    due.QuadPart = -((llong)req->tv_sec * 10000000 + (req->tv_nsec + 99) /
-	100);
+    due.QuadPart = -((llong)req->tv_sec * 10000000 +
+	((llong)req->tv_nsec + 99) / 100);
     if ((hdl = CreateWaitableTimerExW(NULL, NULL,
 	CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS)) == NULL)
 	return oserr();
     if (SetWaitableTimer(hdl, &due, 0, NULL, NULL, FALSE))
 	WaitForSingleObject(hdl, INFINITE);
     else
-	Sleep((DWORD)(req->tv_sec * 1000 + (req->tv_nsec + 999999) / 1000000));
+	Sleep((DWORD)(req->tv_sec * 1000 + ((llong)req->tv_nsec + 999999) /
+	    1000000));
     CloseHandle(hdl);
     if (rem)
 	rem->tv_sec = rem->tv_nsec = 0;
@@ -1786,33 +1787,14 @@ int statvfs(const char *path, struct statvfs *buf) {
     return A_TO_W(path, pbuf) ? wstatvfs(pbuf, buf) : -1;
 }
 
+// GetDiskFreeSpaceW takes only a volume root with a trailing backslash
 int wstatvfs(const wchar *path, struct statvfs *buf) {
     ulong bytesPerSector, freeClusters, sectorsPerCluster, totalClusters;
-    const wchar *cp;
-    int rc;
+    wchar root[MAX_PATH];
 
-    /* try root directory. This doesn't handle filesystems not mapped
-     * to drive a letter or a path without a drive letter
-     */
-    cp = wcschr(path, ':');
-    if (cp) {
-	wchar rootdir[4];
-	size_t size = cp - path + 1;
-
-	if (size >= std::size(rootdir))
-	    size = std::size(rootdir) - 1;
-	memcpy(rootdir, path, size * sizeof (wchar));
-	rootdir[size] = '\0';
-	rc = GetDiskFreeSpaceW(rootdir, &sectorsPerCluster, &bytesPerSector,
-	    &freeClusters, &totalClusters);
-    } else {
-	rc = GetDiskFreeSpaceW(path, &sectorsPerCluster, &bytesPerSector,
-	    &freeClusters, &totalClusters);
-    }
-    if (!rc) {
-	dosmaperr(GetLastError());
-	return -1;
-    }
+    if (!GetVolumePathNameW(path, root, MAX_PATH) || !GetDiskFreeSpaceW(root,
+	&sectorsPerCluster, &bytesPerSector, &freeClusters, &totalClusters))
+	return oserr();
     memset(buf, 0, sizeof (*buf));
     buf->f_bsize = buf->f_frsize = sectorsPerCluster * bytesPerSector;
     buf->f_blocks = totalClusters;
@@ -1821,19 +1803,37 @@ int wstatvfs(const wchar *path, struct statvfs *buf) {
 }
 
 int sigsend(idtype_t type, id_t id, int sig) {
-    int ret;
+    HANDLE hdl;
+    BOOL ret;
 
-    if (type != P_PID && type != P_PPID && type != P_SID && type != P_ALL)
+    if (type != P_PID && type != P_PPID && type != P_SID && type != P_ALL) {
+	errno = EINVAL;
 	return -1;
+    }
     if (id < 0)
 	id *= -1;
-    if (sig == SIGINT || sig == SIGTERM)
-	ret = GenerateConsoleCtrlEvent(CTRL_C_EVENT, id);
-    else if (sig == SIGBREAK)
-	ret = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, id);
-    else
-	ret = 0;
-    return ret ? 0 : -1;
+    if (!sig || sig == SIGKILL) {
+	if ((hdl = OpenProcess(sig ? PROCESS_TERMINATE :
+	    PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)id)) == NULL) {
+	    if (GetLastError() != ERROR_INVALID_PARAMETER)
+		return oserr();
+	    errno = ESRCH;		// no such pid
+	    return -1;
+	}
+	ret = !sig || TerminateProcess(hdl, 1);
+	if (!ret)
+	    dosmaperr(GetLastError());
+	CloseHandle(hdl);
+	return ret ? 0 : -1;
+    } else if (sig == SIGINT || sig == SIGTERM) {
+	ret = GenerateConsoleCtrlEvent(CTRL_C_EVENT, (DWORD)id);
+    } else if (sig == SIGBREAK) {
+	ret = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, (DWORD)id);
+    } else {
+	errno = EINVAL;
+	return -1;
+    }
+    return ret ? 0 : oserr();
 }
 
 int pidstat(pid_t pid, struct pidstat *psbuf) {

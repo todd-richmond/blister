@@ -92,6 +92,15 @@ void ShMemHTTPSocket::post(void) {
 
     if (!name)
 	name = file ? file : "";
+    if (file || val) {
+	Sockaddr peer;
+
+	// both map local resources into this process
+	if (!peername(peer) || !peer.localhost()) {
+	    error(403);
+	    return;
+	}
+    }
     if (val) {
 #ifdef _WIN32
 	MEMORY_BASIC_INFORMATION mbi;
@@ -107,8 +116,9 @@ void ShMemHTTPSocket::post(void) {
 	    if (!hdl || (shm = MapViewOfFile(hdl, FILE_MAP_READ |
 		FILE_MAP_WRITE, 0, 0, 0)) == nullptr || !VirtualQuery(shm, &mbi,
 		sizeof (mbi))) {
-		dlog.note(Log::cmd(op), Log::kv(T("shm"), val), Log::kv(T("err"),
-		    GetLastError()), T("unable to map shm data"));
+		dlog.note(Log::cmd(op), Log::kv(T("shm"), val),
+		    Log::kv(T("err"), GetLastError()),
+		    T("unable to map shm data"));
 		if (shm)
 		    UnmapViewOfFile(shm);
 		if (hdl)
@@ -281,7 +291,6 @@ bool MPHTTPDispatcher::listen(MPHTTPListenSocket *ls, const tchar *host) {
     const tchar *sect = HTTPServerSocket::section();
     tstring addr(cfg.get(T("host"), host, sect));
 
-    lsock = ls;
     ls->detach();
 #ifdef _WIN32
     if (insock != SOCK_INVALID) {
@@ -289,6 +298,7 @@ bool MPHTTPDispatcher::listen(MPHTTPListenSocket *ls, const tchar *host) {
 	(void)ls->blocking(false);
 	(void)ls->sockname(ls->addr);
 	ls->callback(MPHTTPListenSocket::accepted);
+	lsock = ls;
 	return true;
     }
 #endif
@@ -300,6 +310,7 @@ bool MPHTTPDispatcher::listen(MPHTTPListenSocket *ls, const tchar *host) {
 	return false;
     }
     dlogi(Log::mod(sect), Log::cmd(T("listen")), Log::kv(T("addr"), addr));
+    lsock = ls;
     return true;
 }
 
@@ -393,9 +404,12 @@ void MPHTTPDaemon::onResume(void) {
 }
 
 int MPHTTPDaemon::onStart(int argc, const tchar * const *argv) {
-    int ret = Daemon::onStart(argc, argv);
+    int ret;
 
-    if (ret)
+#ifdef _WIN32
+    dspr.daemon = this;		// not in ctor: dspr may be an unbuilt member
+#endif
+    if ((ret = Daemon::onStart(argc, argv)) != 0)
 	return ret;
     if (worker()) {
 	*format_to_n(pidprefix, std::size(pidprefix) - 1, T("pid={}"),

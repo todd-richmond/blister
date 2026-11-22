@@ -94,9 +94,7 @@ public:
 protected:
     MPHTTPDispatcher mpd;
 
-    int command(const tchar *cmd, int argc, const tchar * const *argv)
-	override {
-	(void)argc; (void)argv;
+    int command(const tchar *cmd, int, const tchar * const *) override {
 	if (tstreq(cmd, T("help")) || tstreq(cmd, T("?")))
 	    tcout << T("args:\t[start] [-p port] [-s]") << endl;
 	return -1;

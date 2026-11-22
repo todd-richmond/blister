@@ -253,8 +253,6 @@ bool Dispatcher::exec() {
 }
 
 int Dispatcher::run() {
-    static uint cpus = Processor::count();
-
     // producers skip wakeups while this thread counts as scanning or before
     // it is a registered waiter so recheck rlist once registered
     auto pending = [this] { return !rlist.empty(); };
@@ -263,7 +261,7 @@ int Dispatcher::run() {
     while (exec()) {
 	dspsema4_t::WaitResult r;
 
-	if (workers < cpus) {
+	if (workers < Processor::count()) {
 #ifdef THREAD_PAUSE                     // enqueue then spin before parking
 	    if (scanning.load(memory_order_acquire) == 0)
 		r = sema4.wait(INFINITE, 1024, pending);
@@ -284,6 +282,7 @@ int Dispatcher::run() {
 }
 
 int Dispatcher::worker(void *param) {
+    nosigpipe();
     return ((Dispatcher *)param)->run();
 }
 
@@ -411,8 +410,8 @@ int Dispatcher::onStart() {
 
 #else
 
-int Dispatcher::onStart() {
-    msec_t now;
+// Linux socket writes raise SIGPIPE in the writing thread
+void Dispatcher::nosigpipe(void) {
 #ifndef _WIN32
     sigset_t sigs;
 
@@ -420,23 +419,33 @@ int Dispatcher::onStart() {
     sigaddset(&sigs, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &sigs, NULL);
 #endif
+}
+
+int Dispatcher::onStart() {
+    msec_t now;
+
+    nosigpipe();
 #if defined(DSP_POLL) || defined(DSP_DEVPOLL)
-    Sockaddr addr(T("localhost"));
+    Sockaddr addr(T("localhost")), raddr, waddr;
     Socket asock(SOCK_STREAM);
-    uint u = 0;
 #ifdef DSP_POLL
     SocketSet irset, iwset, orset, owset, oeset;
+
+    rset.clear();
+    wset.clear();
 #endif
 
+    rsock.close();
+    wsock.close();
+    // a completed connect is queued so the blocking accepts cannot hang
     if (!asock.listen(addr) || !asock.sockname(addr) ||
-	!asock.blocking(false))
+	!wsock.connect(addr, 5000) || !wsock.sockname(waddr))
 	return -1;
-    (void)wsock.connect(addr, 0);
-    while (!asock.accept(rsock)) {
-	if (++u == 50)
+    // any local process can connect so accept only our own wsock
+    do {
+	if (!asock.accept(rsock) || !rsock.peername(raddr))
 	    return -1;
-	msleep(100);
-    }
+    } while (!(raddr == waddr));
     asock.close();
     rsock.blocking(false);
 #ifdef DSP_POLL
@@ -451,12 +460,14 @@ int Dispatcher::onStart() {
     ZERO(evts);
 #endif
 #ifdef DSP_DEVPOLL
-    evtfd = open("/dev/poll", O_RDWR);
+    if ((evtfd = open("/dev/poll", O_RDWR)) == -1)
+	return -1;
 #elif defined(DSP_EPOLL)
     if ((evtfd = epoll_create1(EPOLL_CLOEXEC)) == -1)
 	return -1;
 #elif defined(DSP_KQUEUE)
-    evtfd = kqueue();
+    if ((evtfd = kqueue()) == -1)
+	return -1;
     EV_SET(&evts[0], 1, EVFILT_USER, EV_ADD | EV_CLEAR, NOTE_TRIGGER, 0,
 	NULL);
     RETRY(kevent(evtfd, &evts[0], 1, NULL, 0, NULL));
@@ -520,14 +531,16 @@ int Dispatcher::onStart() {
 	iwset = wset;
 	slock.unlock();
 	if (!SocketSet::iopoll(irset, orset, iwset, owset, oeset, msec)) {
+	    // Windows fills the error set before select() fails
 	    orset.clear();
 	    owset.clear();
+	    oeset.clear();
 	}
 	polling.store(false, memory_order_release);
 	cache.store(now = mticks(), memory_order_relaxed);
 	handlePoll(orset, owset, oeset);
 #elif defined(DSP_DEVPOLL)
-	dvpoll dvp = {evts, MAX_EVENTS, msec};
+	dvpoll dvp = {evts, MAX_EVENTS, (int)msec};
 
 	nevts = ioctl(evtfd, DP_POLL, &dvp);
 #elif defined(DSP_EPOLL)
@@ -548,6 +561,8 @@ int Dispatcher::onStart() {
 	cache.store(now = mticks(), memory_order_relaxed);
 	if (LIKELY(nevts > 0))
 	    handleEvents(evts, (uint)nevts);
+#endif
+#ifdef DSP_EPOLL
 	if (UNLIKELY(zpending.load(memory_order_relaxed)))
 	    reclaim();
 #endif
@@ -912,7 +927,7 @@ void Dispatcher::reset(void) const {
 bool Dispatcher::start(uint mthreads, uint stack) {
     maxthreads = mthreads;
     stacksz = stack ? stack : 128 * 1024;
-    if (ThreadGroup::start(mthreads ? 8 * 1024 : stacksz)) {
+    if (ThreadGroup::start(mthreads ? 64 * 1024 : stacksz)) {
 	while (shutdown && getMainThread().getState() == Running)
 	    msleep(20);
     }

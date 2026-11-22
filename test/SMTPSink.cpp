@@ -107,8 +107,7 @@ public:
 private:
     enum class State { Cmd, Data, Bdat };
 
-    // SASL responses still expected
-    uint auth = 0, chunks = 0, rcpts = 0;
+    uint auth = 0, chunks = 0, rcpts = 0;	// auth: SASL replies expected
     string body, out;
     unique_ptr<char[]> buf;
     uint have = 0, pos = 0, scan = 0;
@@ -152,9 +151,9 @@ void SMTPSinkSocket::command(const char *p, uint len) {
 	w |= 0x20202020U;
     }
     // only STARTTLS and XCLIENT are not 4 characters
-    if (vlen != 4 && !(vlen == 8 && w == verb("star") && !cstrnicmp(p + 4,
-	"TTLS", 4)) && !(vlen == 7 && w == verb("xcli") && !cstrnicmp(p + 4,
-	"ENT", 3)))
+    if (w == verb("star") ? vlen != 8 || cstrnicmp(p + 4, "TTLS", 4) :
+	w == verb("xcli") ? vlen != 7 || cstrnicmp(p + 4, "ENT", 3) :
+	vlen != 4)
 	w = 0;
     switch (w) {
     case verb("rcpt"):
@@ -275,16 +274,15 @@ void SMTPSinkSocket::chunk(void) {
 
 // reply to the end of a message, once per accepted recipient for LMTP
 void SMTPSinkSocket::delivered(void) {
+    char reply[128], *end;
+
     if (!rcpts) {
 	out += "554 5.5.1 No valid recipients\r\n";
 	reset();
 	return;
     }
-
-    char reply[128];
-    char *end = format_to_n(reply, sizeof (reply) - 2, "250 2.0.0 Ok via={}",
+    end = format_to_n(reply, sizeof (reply) - 2, "250 2.0.0 Ok via={}",
 	chunks ? "BDAT" : "DATA").out;
-
     if (chunks)
 	end = format_to(end, "{}", chunks);
     if (verify) {
@@ -318,9 +316,9 @@ void SMTPSinkSocket::delivered(void) {
     reset();
 }
 
-// process all complete input
 void SMTPSinkSocket::parse(void) {
     char *b = buf.get();
+    uint keep;
 
     while (pos < have && !quit && !starting) {
 	if (state == State::Bdat) {
@@ -338,6 +336,7 @@ void SMTPSinkSocket::parse(void) {
 	    // a line with only a dot ends the message
 	    const char *d = b + max(scan, pos);
 	    const char *end = b + have;
+	    uint dot;
 
 	    while ((d = dotscan(d, end)) + 2 < end && (d[1] != '\r' ||
 		d[2] != '\n'))
@@ -346,9 +345,7 @@ void SMTPSinkSocket::parse(void) {
 		scan = (uint)(min(d, end) - b);
 		break;
 	    }
-
-	    uint dot = (uint)(d - b);
-
+	    dot = (uint)(d - b);
 	    if (verify)
 		body.append(b + pos, (size_t)(dot - pos));
 	    size += (size_t)(dot - pos);
@@ -360,6 +357,7 @@ void SMTPSinkSocket::parse(void) {
 	    const char *p = b + pos;
 	    const char *nl = (const char *)memchr(p, '\n', (size_t)(have -
 		pos));
+	    uint len;
 
 	    if (!nl) {
 		if (pos == 0 && have == BUFSZ) {
@@ -369,8 +367,7 @@ void SMTPSinkSocket::parse(void) {
 		break;
 	    }
 	    pos = (uint)(nl - b) + 1;
-	    uint len = (uint)(nl - p);
-
+	    len = (uint)(nl - p);
 	    if (len && nl[-1] == '\r')
 		--len;
 	    command(p, len);
@@ -381,8 +378,7 @@ void SMTPSinkSocket::parse(void) {
     }
 
     // keep unprocessed input and the byte before the next scan position
-    uint keep = state == State::Data ? scan - 1 : pos;
-
+    keep = state == State::Data ? scan - 1 : pos;
     if (state == State::Data && keep > pos) {
 	if (verify)
 	    body.append(b + pos, (size_t)(keep - pos));
@@ -465,13 +461,14 @@ static void signal_handler(int) { qflag = true; }
 int tmain(int argc, const tchar * const argv[]) {
     Config cfg;
     Dispatcher dspr(cfg);
-    tstring err;
+    tstring addr, err;
+    usec_t begin, last;
+    ulong lastbytes = 0, lastmsgs = 0, stattime = 0;
+    SimpleDispatchListenSocket<Dispatcher, SMTPSinkSocket> *lsock;
     uint port = 2525, threads = 32;
-    ulong stattime = 0;
-    WARN_PUSH_DISABLE(26403)
-    auto *lsock = new SimpleDispatchListenSocket<Dispatcher, SMTPSinkSocket>(
-	dspr);
-    WARN_POP()
+#ifndef _WIN32
+    struct sigaction sig {};
+#endif
 
     for (int i = 1; i < argc; ++i) {
 	if (!tstricmp(argv[i], T("-d"))) {
@@ -487,7 +484,6 @@ int tmain(int argc, const tchar * const argv[]) {
 	} else {
 	    tcerr << T("usage: smtpsink [-d] [-p port] [-s stattime] ")
 		T("[-t threads] [-v]") << endl;
-	    delete lsock;
 	    return 1;
 	}
     }
@@ -496,43 +492,38 @@ int tmain(int argc, const tchar * const argv[]) {
 	tcerr << T("smtpsink: STARTTLS disabled: ") << err << endl;
     signal(SIGINT, signal_handler);
 #ifndef _WIN32
-    struct sigaction sig {};
-
     sig.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sig, nullptr);
 #endif
-
-    tstring addr = std::format(T("*:{}"), port);
-
+    addr = std::format(T("*:{}"), port);
     if (!dspr.start(threads, 32 * 1024)) {
 	tcerr << T("smtpsink: unable to start") << endl;
-	delete lsock;
 	return 1;
     }
+    WARN_PUSH_DISABLE(26403)
+    lsock = new SimpleDispatchListenSocket<Dispatcher, SMTPSinkSocket>(dspr);
+    WARN_POP()
     if (!lsock->listen(Sockaddr(addr.c_str()))) {
 	tcerr << T("smtpsink: unable to listen on ") << addr << endl;
 	delete lsock;
 	dspr.stop();
 	return 1;
     }
-
-    usec_t begin = uticks(), last = begin;
-    ulong lastmsgs = 0, lastbytes = 0;
-
-    while (!qflag && !dspr.waitForMain(stattime ? stattime : 1000)) {
-	if (!stattime)
-	    continue;
-
+    begin = last = uticks();
+    // short waits so SIGINT is seen promptly with a long stattime
+    while (!qflag && !dspr.waitForMain(1000)) {
 	usec_t now = uticks();
-	ulong m = msgs.load(memory_order_relaxed);
 	ulong b = bytes.load(memory_order_relaxed);
+	ulong m = msgs.load(memory_order_relaxed);
 	double secs = (double)(now - last) / 1e6;
 
+	if (!stattime || now - last < stattime * 1000)
+	    continue;
 	tcout << format("{:.0f} msg/s {:.1f} MB/s", (double)(m - lastmsgs) /
 	    secs, (double)(b - lastbytes) / secs / 1e6).c_str() << endl;
 	last = now;
-	lastmsgs = m;
 	lastbytes = b;
+	lastmsgs = m;
     }
     dspr.stop();
     tcout << format("{} msgs {} bytes in {:.1f}s", msgs.load(), bytes.load(),

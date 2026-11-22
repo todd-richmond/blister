@@ -108,6 +108,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    dlog.buffer(sz, msec);
 	} else if (tstrieq(argv[i], T("-c")) ||
 	    tstrieq(argv[i], T("--config"))) {
+	    ConfigFile cfg;
 	    const tchar *file, *pre = nullptr;
 
 	    if (i + 1 == argc || argv[++i][0] == '-')
@@ -115,9 +116,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	    file = argv[i];
 	    if (more())
 		pre = argv[++i];
-
-	    ConfigFile cfg(file, pre);
-
+	    if (!cfg.read(file, pre)) {
+		tcerr << T("unable to read ") << file << endl;
+		return 1;
+	    }
 	    dlog.set(cfg);
 	} else if (tstrieq(argv[i], T("-d")) ||
 	    tstrieq(argv[i], T("--date"))) {
@@ -246,7 +248,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("trace]\n")
 	    T("\t[-m|--mail to [level [from [host]]]]\n")
 	    T("\t[-n|--name sourcename]\n")
-	    T("\t[-o|--output logstr ...]\n")
+	    T("\t[-o|--output logstr ...]\t(ends optional arguments)\n")
 	    T("\t[-p|--prefix logstr]\n")
 	    T("\t[-r|--roll]\n")
 	    T("\t[-s|--syslog [level [host [facility]]]]\n")

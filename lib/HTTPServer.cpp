@@ -33,6 +33,7 @@
 static constexpr ulong MaxHdrs = 64UL * 1024;	// request + header bytes
 static constexpr size_t MaxHdrCount = 100;
 static constexpr ulong MaxBody = 256UL * 1024 * 1024;
+static constexpr ulong MaxChunkLine = 1024;
 static constexpr ulong MaxRead = 64UL * 1024;	// larger files are mmapped
 static constexpr char CRLF[] = "\r\n";
 
@@ -165,6 +166,7 @@ HTTPServerSocket::~HTTPServerSocket(void) {
 }
 
 void HTTPServerSocket::unmap(void) {
+    fbuf.reset();
     if (fmap) {
 #ifdef _WIN32
 	UnmapViewOfFile(fmap);
@@ -275,16 +277,18 @@ void HTTPServerSocket::readpost() {
 	datasz += in;
     postin += in;
     left -= in;
-    // decode chunks in place: [0, chunkin) is decoded body
-    while (postchunking && chunkin < postin) {
+    // in place: [0, chunkin) is decoded, raw data resumes at chunkin + gap
+    ulong gap = 0;
+
+    while (postchunking && chunkin + gap < postin) {
 	ulong chunksize = 0;
-	ulong pos = chunkin;
+	ulong pos = chunkin + gap;
 
 	// skip over terminating CRLF of previous chunk
 	if (chunkin && !chunktrailer) {
-	    if (postin < chunkin + 2)
+	    if (postin < pos + 2)
 		break;
-	    if (postdata[chunkin] != '\r' || postdata[chunkin + 1] != '\n') {
+	    if (postdata[pos] != '\r' || postdata[pos + 1] != '\n') {
 		error(400, true);
 		return;
 	    }
@@ -293,11 +297,16 @@ void HTTPServerSocket::readpost() {
 	if (postin <= pos)
 	    break;
 
-	const char *lf = (const char *)memchr(postdata + pos, '\n', postin -
-	    pos);
+	const char *lf = (const char *)memchr(postdata + pos, '\n',
+	    (size_t)postin - pos);
 
-	if (!lf)
+	if (!lf) {
+	    if (postin - pos > MaxChunkLine) {
+		error(400, true);
+		return;
+	    }
 	    break;
+	}
 	if (chunktrailer) {
 	    if (postdata[pos] == '\r' || postdata[pos] == '\n') {
 		// final CRLF
@@ -323,17 +332,22 @@ void HTTPServerSocket::readpost() {
 	    }
 	}
 	++lf;
-
-	ulong used = (ulong)(lf - (postdata + chunkin));
-
-	memmove(postdata + chunkin, lf, (size_t)(postdata + postin - lf));
-	postin -= used;
+	gap = (ulong)(lf - postdata) - chunkin;
 	if (postsz != (ulong)-1)
 	    break;
-	else if (chunksize == 0)
+	if (!chunksize) {
 	    chunktrailer = true;
-	else
-	    chunkin += chunksize;
+	    continue;
+	}
+	memmove(postdata + chunkin, lf, min((size_t)(postdata + postin - lf),
+	    (size_t)chunksize));
+	chunkin += chunksize;
+    }
+    if (gap) {
+	if (chunkin + gap < postin)
+	    memmove(postdata + chunkin, postdata + chunkin + gap,
+		(size_t)(postin - chunkin - gap));
+	postin -= gap;
     }
     if (left || postsz == (ulong)-1) {
 	if (eof)
@@ -366,6 +380,11 @@ void HTTPServerSocket::scan(char *buf, ulong len, bool append) {
 
 #pragma warning(disable: 26430)
 void HTTPServerSocket::parse(void) {
+    // RFC 9110 9.1: methods are case-sensitive
+    static constexpr pair<const char *, Method> methods[] = {
+	{"GET", Method::Get}, {"HEAD", Method::Head}, {"POST", Method::Post},
+	{"PUT", Method::Put}, {"DELETE", Method::Delete}
+    };
     char *p, *pp, *end;
     char *buf = data;
     const char *val;
@@ -374,7 +393,8 @@ void HTTPServerSocket::parse(void) {
     begin = uticks();
     path = "/";
     prot = "HTTP/1.0";
-    postsz = 0;
+    method = Method::Other;
+    postin = postsz = 0;
     // scan() ended the header block with a NUL, so any earlier one is injected
     if (strlen(data) != (size_t)(postdata - 3 - data)) {
 	cmd = "BADCMD";
@@ -393,6 +413,12 @@ void HTTPServerSocket::parse(void) {
 	return;
     }
     *p++ = '\0';
+    for (const auto &[name, m] : methods) {
+	if (!strcmp(cmd, name)) {
+	    method = m;
+	    break;
+	}
+    }
     p += strspn(p, " \t");
     path = pp = p;
     p += strcspn(p, " \t\r");
@@ -563,36 +589,46 @@ void HTTPServerSocket::parse(void) {
 }
 
 void HTTPServerSocket::exec(void) {
+    const char *val;
+
     if (paused.load(memory_order_relaxed)) {
 	error(503);
-    } else if (LIKELY(stringieq(cmd, "GET"))) {
+	return;
+    }
+    switch (method) {
+    case Method::Get:
 	get(false);
-    } else if (stringieq(cmd, "HEAD")) {
+	break;
+    case Method::Head:
 	get(true);
-    } else if (stringieq(cmd, "POST")) {
-	const char *val = attr("content-type");
-
-	if (val != nullptr &&
-	    stringieq(val, "application/x-www-form-urlencoded"))
+	break;
+    case Method::Post:
+	// ignore parameters such as "; charset=..."
+	if ((val = attr("content-type")) != nullptr && stringieq(string_view(
+	    val, strcspn(val, " \t;")), "application/x-www-form-urlencoded"))
 	    urldecode(postdata, postargs);
 	post();
-    } else if (stringieq(cmd, "PUT")) {
+	break;
+    case Method::Put:
 	put();
-    } else if (stringieq(cmd, "DELETE")) {
+	break;
+    case Method::Delete:
 	del();
-    } else {
+	break;
+    default:
 	error(501);
     }
 }
 
-void HTTPServerSocket::unescape(char *s) {
+size_t HTTPServerSocket::unescape(char *s, bool plus) {
 #ifdef UNICODE
     tstring t(achartotchar(s));
 
-    URL::unescape(t);
+    URL::unescape(t, plus);
     strcpy(s, tstringtoachar(t));
+    return strlen(s);
 #else
-    URL::unescape(s);
+    return URL::unescape(s, plus);
 #endif
 }
 
@@ -731,7 +767,7 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     char *const last = key + sizeof (key) - 1;
     // RFC 9110 6.4.1: these have no body and 204/304 no length either
     const bool nolen = _status == 204 || _status == 304;
-    const bool nobody = nolen || stringieq(cmd, "HEAD");
+    const bool nobody = nolen || method == Method::Head;
     const usec_t elapsed = uticks() - begin;
 
     if (len == (ulong)-1)
@@ -751,10 +787,11 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     stats.durations[ranges::lower_bound(DurationBounds, (double)elapsed /
 	1e6) - DurationBounds].fetch_add(1, memory_order_relaxed);
     stats.duration.fetch_add(elapsed, memory_order_relaxed);
-    if (postsz != (ulong)-1)
-	stats.rxbytes.fetch_add(postsz, memory_order_relaxed);
-    stats.txbytes.fetch_add(iov[0].iov_len + iov[1].iov_len + iov[2].iov_len,
-	memory_order_relaxed);
+    // an early error may leave the body unread
+    if (const ulong rx = min(postin, postsz))
+	stats.rxbytes.fetch_add(rx, memory_order_relaxed);
+    stats.txbytes.fetch_add((ullong)iov[0].iov_len + iov[1].iov_len +
+	iov[2].iov_len, memory_order_relaxed);
     // Timing keeps every key forever: only 2xx API replies use a path prefix
     if (_status >= 200 && _status < 300) {
 	const string_view res(staticfile ? "file" : resource(path));
@@ -788,19 +825,12 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
 
 void HTTPServerSocket::reply(int fd, ulong len) {
     if (len <= MaxRead) {
-	char buf[4096];
-
-	for (ulong n = len; n; ) {
-	    ulong in = min(n, (ulong)sizeof (buf));
-
-	    if (!readfull(fd, buf, in)) {
-		error(500);
-		return;
-	    }
-	    ss.write(buf, (streamsize)in);
-	    n -= in;
-	}
-	len = 0;
+	fbuf = make_unique_for_overwrite<char[]>(len);
+	if (!readfull(fd, fbuf.get(), len))
+	    error(500);
+	else
+	    reply(fbuf.get(), len);
+	return;
     } else {
 #ifdef _WIN32
 	HANDLE hdl;
@@ -873,8 +903,17 @@ void HTTPServerSocket::status(uint sts, const char *mime, time_t mtime, const
     hdrs.reset();
     ss.reset();
     hdrs.writev(prot, ' ', sts, ' ', str, CRLF);
-    if (date)
-	header("Date", httpdate(time(nullptr), dt));
+    if (date) {
+	// gmtime_r takes a global lock: format once per second per thread
+	static thread_local char now[30];
+	static thread_local time_t last;
+
+	if (const time_t t = time(nullptr); t != last) {
+	    last = t;
+	    httpdate(t, now);
+	}
+	header("Date", now);
+    }
     if (mime)
 	header("Content-Type", mime);
     if (mtime)
@@ -950,18 +989,22 @@ void HTTPServerSocket::get(bool head) {
 	return;
     }
     staticfile = true;
-#ifdef _WIN32
-    if (string_view(path).contains('\\')) {
-	error(403);
-	return;
-    }
-#endif
     if (*path != '/')
 	s += '/';
-    if (path[0] == '/' && !path[1])
+    if (path[0] == '/' && !path[1]) {
 	s += "/default.html";		    // deal w/ language later
-    else
+    } else {
+	const size_t n = s.size();
+
 	s += path;
+	s.resize(n + unescape(s.data() + n, false));
+#ifdef _WIN32
+	if (string_view(s).substr(n).contains('\\')) {
+	    error(403);
+	    return;
+	}
+#endif
+    }
     for (const char *pp = s.c_str(); (pp = strstr(pp, "/..")) != nullptr;
 	pp += 3) {
 	if (pp[3] == '/' || pp[3] == '\0') {
