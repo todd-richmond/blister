@@ -50,6 +50,19 @@
 		F7AA215B13149FAF00272F6A /* Unix.c in Sources */ = {isa = PBXBuildFile; fileRef = F7AA214213149FAF00272F6A /* Unix.c */; };
 		F7AA218C131C710700272F6A /* EchoTest.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA2188131C24DF00272F6A /* EchoTest.cpp */; };
 		F7AA218E131C97BD00272F6A /* Blister.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = F7AA211913149F2C00272F6A /* Blister.dylib */; };
+		2AD7312223430615F4A351FC /* MPHTTPServer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7363C356AEF08D9F843A019B /* MPHTTPServer.cpp */; };
+		7CEE11B11AF9D398473650ED /* TLSSocket.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5C296D4D079C7C5D355DEEAD /* TLSSocket.cpp */; };
+		DD9F11282CAF29CB1E0149E2 /* MPHTTPServer.h in Headers */ = {isa = PBXBuildFile; fileRef = 3D9D0213919C9B6C50D86D97 /* MPHTTPServer.h */; };
+		F5FCE3D9E4A93CF4B8401B1A /* TLSSocket.h in Headers */ = {isa = PBXBuildFile; fileRef = B16C02715C10ABCBDC644BA8 /* TLSSocket.h */; };
+		0BB1B7958E442BEE082647C6 /* Blister.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = F7AA211913149F2C00272F6A /* Blister.dylib */; };
+		8E540618D35613FB299B1B8E /* SMTPSink.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ACA88DBB8EBD3B3078B499CD /* SMTPSink.cpp */; };
+		60E3EC3D3D7DC2758AF5B5CB /* Blister.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = F7AA211913149F2C00272F6A /* Blister.dylib */; };
+		B33E83E5F5B75952A6BC4207 /* BlisterTLS.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1054F99217C9F1E0373DCBE /* BlisterTLS.dylib */; };
+		145E81FC61B27B90C24C5002 /* BlisterTLS.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1054F99217C9F1E0373DCBE /* BlisterTLS.dylib */; };
+		8029B75B5BBE32227D325D83 /* BlisterTLS.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1054F99217C9F1E0373DCBE /* BlisterTLS.dylib */; };
+		63CD84AEDF76D6536B1CB8F6 /* BlisterTLS.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1054F99217C9F1E0373DCBE /* BlisterTLS.dylib */; };
+		62904C2D79B34E3E7FF46498 /* BlisterTLS.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1054F99217C9F1E0373DCBE /* BlisterTLS.dylib */; };
+		532F26DE4B8501CA0988D011 /* BlisterTLS.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A1054F99217C9F1E0373DCBE /* BlisterTLS.dylib */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -116,6 +129,55 @@
 			remoteGlobalIDString = F7AA211813149F2C00272F6A;
 			remoteInfo = Blister;
 		};
+		540373C71AB68A64BBAB8384 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0353FE4D8CB8720FDF925377;
+			remoteInfo = BlisterTLS;
+		};
+		9F18EFF00FE1A207F1F7DA47 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0353FE4D8CB8720FDF925377;
+			remoteInfo = BlisterTLS;
+		};
+		7FE5080C307FEE2BE342BCFC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0353FE4D8CB8720FDF925377;
+			remoteInfo = BlisterTLS;
+		};
+		F14015CF48C879B3B69E65CB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0353FE4D8CB8720FDF925377;
+			remoteInfo = BlisterTLS;
+		};
+		E4412143496564439154F60D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0353FE4D8CB8720FDF925377;
+			remoteInfo = BlisterTLS;
+		};
+		CDA5BE7CAE92119569FEDBF5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F7AA211813149F2C00272F6A;
+			remoteInfo = Blister;
+		};
+		2BE6C5E9C570B91014ACA89D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F7AA211013149F2C00272F6A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0353FE4D8CB8720FDF925377;
+			remoteInfo = BlisterTLS;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -163,6 +225,13 @@
 		F7AA214213149FAF00272F6A /* Unix.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = Unix.c; path = ../lib/Unix.c; sourceTree = "<group>"; };
 		F7AA217F131C246200272F6A /* Echotest */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Echotest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7AA2188131C24DF00272F6A /* EchoTest.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = EchoTest.cpp; sourceTree = "<group>"; };
+		5F0CC2570046E4E91DB68A80 /* SMTPSink */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = SMTPSink; sourceTree = BUILT_PRODUCTS_DIR; };
+		ACA88DBB8EBD3B3078B499CD /* SMTPSink.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SMTPSink.cpp; sourceTree = "<group>"; };
+		A1054F99217C9F1E0373DCBE /* BlisterTLS.dylib */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = BlisterTLS.dylib; sourceTree = BUILT_PRODUCTS_DIR; };
+		7363C356AEF08D9F843A019B /* MPHTTPServer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = MPHTTPServer.cpp; sourceTree = "<group>"; };
+		3D9D0213919C9B6C50D86D97 /* MPHTTPServer.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.h; fileEncoding = 4; path = MPHTTPServer.h; sourceTree = "<group>"; };
+		5C296D4D079C7C5D355DEEAD /* TLSSocket.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TLSSocket.cpp; sourceTree = "<group>"; };
+		B16C02715C10ABCBDC644BA8 /* TLSSocket.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.h; fileEncoding = 4; path = TLSSocket.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -187,18 +256,21 @@
 		9079E3521FDB1BB8008FA996 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				63CD84AEDF76D6536B1CB8F6 /* BlisterTLS.dylib in Frameworks */,
 				9079E3531FDB1BB8008FA996 /* Blister.dylib in Frameworks */,
 			);
 		};
 		9079E35F1FDB1BC3008FA996 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				62904C2D79B34E3E7FF46498 /* BlisterTLS.dylib in Frameworks */,
 				9079E3601FDB1BC3008FA996 /* Blister.dylib in Frameworks */,
 			);
 		};
 		9079E36C1FDB1BCD008FA996 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				532F26DE4B8501CA0988D011 /* BlisterTLS.dylib in Frameworks */,
 				9079E36D1FDB1BCD008FA996 /* Blister.dylib in Frameworks */,
 			);
 		};
@@ -211,6 +283,7 @@
 		90F85B0C3084802100281C4E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				8029B75B5BBE32227D325D83 /* BlisterTLS.dylib in Frameworks */,
 				90F85B0D3084802100281C4E /* Blister.dylib in Frameworks */,
 			);
 		};
@@ -222,7 +295,21 @@
 		F7AA217C131C246200272F6A /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				145E81FC61B27B90C24C5002 /* BlisterTLS.dylib in Frameworks */,
 				F7AA218E131C97BD00272F6A /* Blister.dylib in Frameworks */,
+			);
+		};
+		0EBACBD135CA58DA67B29F3F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+				0BB1B7958E442BEE082647C6 /* Blister.dylib in Frameworks */,
+			);
+		};
+		1AED81329978D0B3A6778A64 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+				60E3EC3D3D7DC2758AF5B5CB /* Blister.dylib in Frameworks */,
+				B33E83E5F5B75952A6BC4207 /* BlisterTLS.dylib in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -244,6 +331,7 @@
 			isa = PBXGroup;
 			children = (
 				F7AA211913149F2C00272F6A /* Blister.dylib */,
+				A1054F99217C9F1E0373DCBE /* BlisterTLS.dylib */,
 				F7AA217F131C246200272F6A /* Echotest */,
 				9079E31F1FDB1261008FA996 /* DLog */,
 				9079E33E1FDB1B9A008FA996 /* Daemonize */,
@@ -253,6 +341,7 @@
 				9079E3721FDB1BCD008FA996 /* SMTPLoad */,
 				9079E3841FDB1C1F008FA996 /* Cfg */,
 				90F85B123084802100281C4E /* HTTPTest */,
+				5F0CC2570046E4E91DB68A80 /* SMTPSink */,
 			);
 			name = Products;
 			sourceTree = SOURCE_ROOT;
@@ -272,6 +361,8 @@
 				F7AA213313149FAF00272F6A /* Log.h */,
 				90F85B173084835C00281C4E /* LRUCache.h */,
 				90F85B19308581D300281C4E /* ResourcePool.h */,
+				7363C356AEF08D9F843A019B /* MPHTTPServer.cpp */,
+				3D9D0213919C9B6C50D86D97 /* MPHTTPServer.h */,
 				F7AA213613149FAF00272F6A /* Service.cpp */,
 				F7AA213713149FAF00272F6A /* Service.h */,
 				F7AA213813149FAF00272F6A /* SMTPClient.cpp */,
@@ -280,6 +371,8 @@
 				F7AA213B13149FAF00272F6A /* Socket.h */,
 				F7AA213C13149FAF00272F6A /* stdapi.h */,
 				F7AA213D13149FAF00272F6A /* Streams.h */,
+				5C296D4D079C7C5D355DEEAD /* TLSSocket.cpp */,
+				B16C02715C10ABCBDC644BA8 /* TLSSocket.h */,
 				F7AA213E13149FAF00272F6A /* Thread.cpp */,
 				F7AA213F13149FAF00272F6A /* Thread.h */,
 				F7AA214013149FAF00272F6A /* Timing.cpp */,
@@ -302,6 +395,7 @@
 				9079E32C1FDB160A008FA996 /* HTTPLoad.cpp */,
 				90F85B153084809C00281C4E /* HTTPTest.cpp */,
 				9079E32B1FDB160A008FA996 /* SMTPLoad.cpp */,
+				ACA88DBB8EBD3B3078B499CD /* SMTPSink.cpp */,
 			);
 			name = Test;
 			path = ../test;
@@ -327,6 +421,13 @@
 				F7AA215813149FAF00272F6A /* Thread.h in Headers */,
 				90F85B1A308581D300281C4E /* ResourcePool.h in Headers */,
 				F7AA215A13149FAF00272F6A /* Timing.h in Headers */,
+			);
+		};
+		728E21C02F01FDAC773F7598 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			files = (
+				DD9F11282CAF29CB1E0149E2 /* MPHTTPServer.h in Headers */,
+				F5FCE3D9E4A93CF4B8401B1A /* TLSSocket.h in Headers */,
 			);
 		};
 /* End PBXHeadersBuildPhase section */
@@ -393,6 +494,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				2E8AC54E0B0997227DCA21B3 /* PBXTargetDependency */,
 				9079E34D1FDB1BB8008FA996 /* PBXTargetDependency */,
 			);
 			name = HTTPd;
@@ -410,6 +512,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				EB89769F70D76C2AE42E24B9 /* PBXTargetDependency */,
 				9079E35A1FDB1BC3008FA996 /* PBXTargetDependency */,
 			);
 			name = HTTPLoad;
@@ -427,6 +530,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				32D24B2925A2E9AB645B39B3 /* PBXTargetDependency */,
 				9079E3671FDB1BCD008FA996 /* PBXTargetDependency */,
 			);
 			name = SMTPLoad;
@@ -461,6 +565,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				18D9D548F3018F2003E933A6 /* PBXTargetDependency */,
 				90F85B083084802100281C4E /* PBXTargetDependency */,
 			);
 			name = HTTPTest;
@@ -493,11 +598,47 @@
 			buildRules = (
 			);
 			dependencies = (
+				70B45BF1FBA86A4EDE18E6ED /* PBXTargetDependency */,
 				F7AA2190131CA4D300272F6A /* PBXTargetDependency */,
 			);
 			name = Echotest;
 			productName = Echotest;
 			productReference = F7AA217F131C246200272F6A /* Echotest */;
+			productType = "com.apple.product-type.tool";
+		};
+		0353FE4D8CB8720FDF925377 /* BlisterTLS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AF886B3BA74C61FA5A4C1C8D /* Build configuration list for PBXNativeTarget "BlisterTLS" */;
+			buildPhases = (
+				C23274300087402A63F1E449 /* Sources */,
+				0EBACBD135CA58DA67B29F3F /* Frameworks */,
+				728E21C02F01FDAC773F7598 /* Headers */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				444858A12EA69CCE8FCB7D42 /* PBXTargetDependency */,
+			);
+			name = BlisterTLS;
+			productName = BlisterTLS;
+			productReference = A1054F99217C9F1E0373DCBE /* BlisterTLS.dylib */;
+			productType = "com.apple.product-type.library.dynamic";
+		};
+		F9A5F2794CEEC3BD065CC07F /* SMTPSink */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 446465B76245E31AB1A072A7 /* Build configuration list for PBXNativeTarget "SMTPSink" */;
+			buildPhases = (
+				1967B505879045512820D6B4 /* Sources */,
+				1AED81329978D0B3A6778A64 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				14FB16AAC86411BE253A8759 /* PBXTargetDependency */,
+			);
+			name = SMTPSink;
+			productName = SMTPSink;
+			productReference = 5F0CC2570046E4E91DB68A80 /* SMTPSink */;
 			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
@@ -523,6 +664,7 @@
 			projectRoot = "";
 			targets = (
 				F7AA211813149F2C00272F6A /* Blister */,
+				0353FE4D8CB8720FDF925377 /* BlisterTLS */,
 				9079E3791FDB1C1F008FA996 /* Cfg */,
 				9079E3321FDB1B9A008FA996 /* Daemonize */,
 				9079E3141FDB1261008FA996 /* DLog */,
@@ -531,6 +673,7 @@
 				9079E34C1FDB1BB8008FA996 /* HTTPd */,
 				9079E3591FDB1BC3008FA996 /* HTTPLoad */,
 				9079E3661FDB1BCD008FA996 /* SMTPLoad */,
+				F9A5F2794CEEC3BD065CC07F /* SMTPSink */,
 				90F85B073084802100281C4E /* HTTPTest */,
 			);
 		};
@@ -607,6 +750,19 @@
 				F7AA218C131C710700272F6A /* EchoTest.cpp in Sources */,
 			);
 		};
+		C23274300087402A63F1E449 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+				2AD7312223430615F4A351FC /* MPHTTPServer.cpp in Sources */,
+				7CEE11B11AF9D398473650ED /* TLSSocket.cpp in Sources */,
+			);
+		};
+		1967B505879045512820D6B4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+				8E540618D35613FB299B1B8E /* SMTPSink.cpp in Sources */,
+			);
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -654,6 +810,41 @@
 			isa = PBXTargetDependency;
 			target = F7AA211813149F2C00272F6A /* Blister */;
 			targetProxy = F7AA218F131CA4D300272F6A /* PBXContainerItemProxy */;
+		};
+		70B45BF1FBA86A4EDE18E6ED /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0353FE4D8CB8720FDF925377 /* BlisterTLS */;
+			targetProxy = 540373C71AB68A64BBAB8384 /* PBXContainerItemProxy */;
+		};
+		18D9D548F3018F2003E933A6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0353FE4D8CB8720FDF925377 /* BlisterTLS */;
+			targetProxy = 9F18EFF00FE1A207F1F7DA47 /* PBXContainerItemProxy */;
+		};
+		2E8AC54E0B0997227DCA21B3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0353FE4D8CB8720FDF925377 /* BlisterTLS */;
+			targetProxy = 7FE5080C307FEE2BE342BCFC /* PBXContainerItemProxy */;
+		};
+		EB89769F70D76C2AE42E24B9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0353FE4D8CB8720FDF925377 /* BlisterTLS */;
+			targetProxy = F14015CF48C879B3B69E65CB /* PBXContainerItemProxy */;
+		};
+		32D24B2925A2E9AB645B39B3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0353FE4D8CB8720FDF925377 /* BlisterTLS */;
+			targetProxy = E4412143496564439154F60D /* PBXContainerItemProxy */;
+		};
+		444858A12EA69CCE8FCB7D42 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F7AA211813149F2C00272F6A /* Blister */;
+			targetProxy = CDA5BE7CAE92119569FEDBF5 /* PBXContainerItemProxy */;
+		};
+		14FB16AAC86411BE253A8759 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0353FE4D8CB8720FDF925377 /* BlisterTLS */;
+			targetProxy = 2BE6C5E9C570B91014ACA89D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -937,6 +1128,52 @@
 			};
 			name = Release;
 		};
+		DDC3DE7C03D669D8BB3FB1D7 /* Debug configuration for PBXNativeTarget "BlisterTLS" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					BUILD_BLISTERTLS,
+					BLISTER_TLS,
+				);
+				HEADER_SEARCH_PATHS = /opt/homebrew/opt/openssl@3/include;
+				LIBRARY_SEARCH_PATHS = /opt/homebrew/opt/openssl@3/lib;
+				OTHER_LDFLAGS = (
+					"-lssl",
+					"-lcrypto",
+				);
+			};
+			name = Debug;
+		};
+		10288BE5E91EE6FA8620D7B7 /* Release configuration for PBXNativeTarget "BlisterTLS" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					BUILD_BLISTERTLS,
+					BLISTER_TLS,
+				);
+				HEADER_SEARCH_PATHS = /opt/homebrew/opt/openssl@3/include;
+				LIBRARY_SEARCH_PATHS = /opt/homebrew/opt/openssl@3/lib;
+				OTHER_LDFLAGS = (
+					"-lssl",
+					"-lcrypto",
+				);
+			};
+			name = Release;
+		};
+		FD86783488BF3025987C3573 /* Debug configuration for PBXNativeTarget "SMTPSink" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		911145CEE2991676E2529DEE /* Release configuration for PBXNativeTarget "SMTPSink" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1025,6 +1262,22 @@
 			buildConfigurations = (
 				F7AA2186131C246200272F6A /* Debug configuration for PBXNativeTarget "Echotest" */,
 				F7AA2187131C246200272F6A /* Release configuration for PBXNativeTarget "Echotest" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		AF886B3BA74C61FA5A4C1C8D /* Build configuration list for PBXNativeTarget "BlisterTLS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DDC3DE7C03D669D8BB3FB1D7 /* Debug configuration for PBXNativeTarget "BlisterTLS" */,
+				10288BE5E91EE6FA8620D7B7 /* Release configuration for PBXNativeTarget "BlisterTLS" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		446465B76245E31AB1A072A7 /* Build configuration list for PBXNativeTarget "SMTPSink" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FD86783488BF3025987C3573 /* Debug configuration for PBXNativeTarget "SMTPSink" */,
+				911145CEE2991676E2529DEE /* Release configuration for PBXNativeTarget "SMTPSink" */,
 			);
 			defaultConfigurationName = Release;
 		};

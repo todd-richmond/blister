@@ -595,24 +595,26 @@ void HTTPServerSocket::exec(void) {
 	error(503);
 	return;
     }
+    using enum Method;
+
     switch (method) {
-    case Method::Get:
+    case Get:
 	get(false);
 	break;
-    case Method::Head:
+    case Head:
 	get(true);
 	break;
-    case Method::Post:
+    case Post:
 	// ignore parameters such as "; charset=..."
 	if ((val = attr("content-type")) != nullptr && stringieq(string_view(
 	    val, strcspn(val, " \t;")), "application/x-www-form-urlencoded"))
 	    urldecode(postdata, postargs);
 	post();
 	break;
-    case Method::Put:
+    case Put:
 	put();
 	break;
-    case Method::Delete:
+    case Delete:
 	del();
 	break;
     default:
