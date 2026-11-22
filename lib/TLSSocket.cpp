@@ -16,6 +16,12 @@
  */
 
 #include "stdapi.h"
+// Xcode can't probe for OpenSSL; autolink needs -fms-extensions on Darwin
+#if defined(BLISTER_TLS_AUTO) && __has_include(<openssl/ssl.h>)
+#define BLISTER_TLS
+#pragma comment(lib, "crypto")
+#pragma comment(lib, "ssl")
+#endif
 #ifndef BLISTER_TLS
 #elif defined(_WIN32)
 #include <fstream>

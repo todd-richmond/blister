@@ -51,7 +51,7 @@
 		F7AA218C131C710700272F6A /* EchoTest.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7AA2188131C24DF00272F6A /* EchoTest.cpp */; };
 		F7AA218E131C97BD00272F6A /* Blister.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = F7AA211913149F2C00272F6A /* Blister.dylib */; };
 		2AD7312223430615F4A351FC /* MPHTTPServer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7363C356AEF08D9F843A019B /* MPHTTPServer.cpp */; };
-		7CEE11B11AF9D398473650ED /* TLSSocket.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5C296D4D079C7C5D355DEEAD /* TLSSocket.cpp */; };
+		7CEE11B11AF9D398473650ED /* TLSSocket.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5C296D4D079C7C5D355DEEAD /* TLSSocket.cpp */; settings = {COMPILER_FLAGS = "-fms-extensions"; }; };
 		DD9F11282CAF29CB1E0149E2 /* MPHTTPServer.h in Headers */ = {isa = PBXBuildFile; fileRef = 3D9D0213919C9B6C50D86D97 /* MPHTTPServer.h */; };
 		F5FCE3D9E4A93CF4B8401B1A /* TLSSocket.h in Headers */ = {isa = PBXBuildFile; fileRef = B16C02715C10ABCBDC644BA8 /* TLSSocket.h */; };
 		0BB1B7958E442BEE082647C6 /* Blister.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = F7AA211913149F2C00272F6A /* Blister.dylib */; };
@@ -1075,6 +1075,7 @@
 				LD_WARN_UNUSED_DYLIBS = YES;
 				LLVM_LTO = YES_THIN;
 				MACOSX_DEPLOYMENT_TARGET = 26.6;
+				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
@@ -1134,14 +1135,12 @@
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					BUILD_BLISTERTLS,
-					BLISTER_TLS,
+					BLISTER_TLS_AUTO,
 				);
-				HEADER_SEARCH_PATHS = "/opt/homebrew/opt/openssl@3/include";
-				LIBRARY_SEARCH_PATHS = "/opt/homebrew/opt/openssl@3/lib";
-				OTHER_LDFLAGS = (
-					"-lssl",
-					"-lcrypto",
-				);
+				"HEADER_SEARCH_PATHS[arch=arm64]" = "/opt/homebrew/opt/openssl@3/include";
+				"HEADER_SEARCH_PATHS[arch=x86_64]" = "/usr/local/opt/openssl@3/include";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "/opt/homebrew/opt/openssl@3/lib";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "/usr/local/opt/openssl@3/lib";
 			};
 			name = Debug;
 		};
@@ -1151,14 +1150,12 @@
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					BUILD_BLISTERTLS,
-					BLISTER_TLS,
+					BLISTER_TLS_AUTO,
 				);
-				HEADER_SEARCH_PATHS = "/opt/homebrew/opt/openssl@3/include";
-				LIBRARY_SEARCH_PATHS = "/opt/homebrew/opt/openssl@3/lib";
-				OTHER_LDFLAGS = (
-					"-lssl",
-					"-lcrypto",
-				);
+				"HEADER_SEARCH_PATHS[arch=arm64]" = "/opt/homebrew/opt/openssl@3/include";
+				"HEADER_SEARCH_PATHS[arch=x86_64]" = "/usr/local/opt/openssl@3/include";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "/opt/homebrew/opt/openssl@3/lib";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "/usr/local/opt/openssl@3/lib";
 			};
 			name = Release;
 		};
