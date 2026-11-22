@@ -505,6 +505,7 @@ bool hastoken(const A &l, const B &t) {
     return false;
 }
 
-BLISTER time_t parse_date(const tchar *hdr, int adjhr = 0, int adjmin = 0);
+extern BLISTER time_t parse_date(const tchar *hdr, int adjhr = 0,
+    int adjmin = 0);
 
 #endif // HTTPClient_h

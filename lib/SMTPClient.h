@@ -378,17 +378,21 @@ private:
     Waiter waiter;
 };
 
-void base64encode(const void *in, size_t len, char *&out, size_t &outsz);
-bool base64decode(const char *in, size_t sz, void *&out, size_t &outsz);
-void qpencode(const void *in, size_t len, char *&out, size_t &outsz);
-bool qpdecode(const char *in, size_t sz, void *&out, size_t &outsz);
-void uuencode(const tchar *file, const void *in, size_t len, char *&out,
+extern BLISTER void base64encode(const void *in, size_t len, char *&out,
     size_t &outsz);
-bool uudecode(const char *in, size_t sz, uint &perm, tstring &file, void *&out,
+extern BLISTER bool base64decode(const char *in, size_t sz, void *&out,
     size_t &outsz);
-void xxencode(const tchar *file, const void *in, size_t len, char *&out,
+extern BLISTER void qpencode(const void *in, size_t len, char *&out,
     size_t &outsz);
-bool xxdecode(const char *in, size_t sz, uint &perm, tstring &file, void *&out,
+extern BLISTER bool qpdecode(const char *in, size_t sz, void *&out,
     size_t &outsz);
+extern BLISTER void uuencode(const tchar *file, const void *in, size_t len,
+    char *&out, size_t &outsz);
+extern BLISTER bool uudecode(const char *in, size_t sz, uint &perm,
+    tstring &file, void *&out, size_t &outsz);
+extern BLISTER void xxencode(const tchar *file, const void *in, size_t len,
+    char *&out, size_t &outsz);
+extern BLISTER bool xxdecode(const char *in, size_t sz, uint &perm,
+    tstring &file, void *&out, size_t &outsz);
 
 #endif // SMTPClient_h

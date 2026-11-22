@@ -264,7 +264,7 @@ inline constexpr bool is_char_type_v = is_same_v<T, char> ||
  * tie or error state. Assumes the classic locale (no digit grouping)
  */
 template<class C>
-class BLISTER bufferstream: public basic_ostream<C> {
+class bufferstream: public basic_ostream<C> {
 public:
     bufferstream(): basic_ostream<C>(&sb) {}
 
@@ -386,7 +386,7 @@ private:
 	    !this->width() && this->good() && !this->tie();
     }
 
-    class BLISTER bufferbuf: public basic_stringbuf<C> {
+    class bufferbuf: public basic_stringbuf<C> {
     public:
 	explicit bufferbuf(ios::openmode m): basic_stringbuf<C>(m) {}
 
