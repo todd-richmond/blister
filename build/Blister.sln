@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EchoTest", "..\test\EchoTes
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Blister", "..\lib\Blister.vcxproj", "{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BlisterTLS", "..\lib\BlisterTLS.vcxproj", "{D6F3F297-34A1-4D61-84D4-A2899F15347E}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HTTPLoad", "..\test\HTTPLoad.vcxproj", "{2DBFE71C-71D2-9026-A726-AD6085F3B082}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SMTPLoad", "..\test\SMTPLoad.vcxproj", "{2DEFA78C-76D2-9926-B726-ADC00593B082}"
@@ -71,6 +73,22 @@ Global
 		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}.Release|Win32.Build.0 = Release|Win32
 		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}.Release|x64.ActiveCfg = Release|x64
 		{8D2B86FE-7FC9-49DC-9B46-AB7BFA937A38}.Release|x64.Build.0 = Release|x64
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Debug Unicode|Win32.ActiveCfg = Debug Unicode|Win32
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Debug Unicode|Win32.Build.0 = Debug Unicode|Win32
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Debug Unicode|x64.ActiveCfg = Debug Unicode|x64
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Debug Unicode|x64.Build.0 = Debug Unicode|x64
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Debug|Win32.ActiveCfg = Debug|Win32
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Debug|Win32.Build.0 = Debug|Win32
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Debug|x64.ActiveCfg = Debug|x64
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Debug|x64.Build.0 = Debug|x64
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Release Unicode|Win32.ActiveCfg = Release Unicode|Win32
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Release Unicode|Win32.Build.0 = Release Unicode|Win32
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Release Unicode|x64.ActiveCfg = Release Unicode|x64
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Release Unicode|x64.Build.0 = Release Unicode|x64
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Release|Win32.ActiveCfg = Release|Win32
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Release|Win32.Build.0 = Release|Win32
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Release|x64.ActiveCfg = Release|x64
+		{D6F3F297-34A1-4D61-84D4-A2899F15347E}.Release|x64.Build.0 = Release|x64
 		{2DBFE71C-71D2-9026-A726-AD6085F3B082}.Debug Unicode|Win32.ActiveCfg = Debug Unicode|Win32
 		{2DBFE71C-71D2-9026-A726-AD6085F3B082}.Debug Unicode|Win32.Build.0 = Debug Unicode|Win32
 		{2DBFE71C-71D2-9026-A726-AD6085F3B082}.Debug Unicode|x64.ActiveCfg = Debug Unicode|x64

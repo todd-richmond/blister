@@ -4,23 +4,20 @@ AM_CPPFLAGS = -I$(top_srcdir)/lib
 LDADD = $(top_builddir)/lib/libblister.la
 TLS_LDADD = $(top_builddir)/lib/libblistertls.la $(LDADD)
 
-# tools linked against the static library, as CMake's blister_static
+# load tools linked statically, as CMake's blistertls_static
 STATIC_LINK = $(AM_LDFLAGS) -static
 
 bin_PROGRAMS = cfg daemonize dlog httpload smtpload smtpsink
 noinst_PROGRAMS = dtiming echotest httptest uhttpd
 check_PROGRAMS = hashtest
-noinst_HEADERS = Load.h
+noinst_HEADERS = Load.h TestUtil.h
 sysconf_DATA = http.wld smtp.wld
 EXTRA_DIST = httpd.cfg
 TESTS = hashtest
 
 cfg_SOURCES = Cfg.cpp
-cfg_LDFLAGS = $(STATIC_LINK)
 daemonize_SOURCES = Daemonize.cpp
-daemonize_LDFLAGS = $(STATIC_LINK)
 dlog_SOURCES = DLog.cpp
-dlog_LDFLAGS = $(STATIC_LINK)
 dtiming_SOURCES = DTiming.cpp
 echotest_SOURCES = EchoTest.cpp
 echotest_LDADD = $(TLS_LDADD)

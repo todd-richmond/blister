@@ -4,7 +4,7 @@ EXTRA_DIST=.clang-tidy .cppcheck-suppressions CMakeLists.txt CPPLINT.cfg \
 	LICENSE NOTICE \
 	build/Blister.sln build/build build/clean \
 	build/Blister.xcodeproj/project.pbxproj \
-	lib/CMakeLists.txt test/CMakeLists.txt */*.vcxproj */*.vcxproj.filters
+	lib/CMakeLists.txt test/CMakeLists.txt */*.vcxproj
 
 SUBDIRS = lib test
 

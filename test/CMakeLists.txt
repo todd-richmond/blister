@@ -1,14 +1,14 @@
 add_executable(cfg Cfg.cpp)
-target_link_libraries(cfg blister_static)
+target_link_libraries(cfg blister)
 
 add_executable(daemonize Daemonize.cpp)
-target_link_libraries(daemonize blister_static)
+target_link_libraries(daemonize blister)
 if(CMAKE_COMPILER_IS_GNUCXX AND NOT CHECK_CLANG_TIDY)
     target_compile_options(daemonize PRIVATE -Werror=stack-usage=12288)
 endif()
 
 add_executable(dlog DLog.cpp)
-target_link_libraries(dlog blister_static)
+target_link_libraries(dlog blister)
 
 add_executable(dtiming DTiming.cpp)
 target_link_libraries(dtiming blister)
