@@ -35,6 +35,7 @@
 #pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "ncrypt.lib")
 #pragma comment(lib, "secur32.lib")
+#pragma comment(lib, "ws2_32.lib")
 #else
 #include <openssl/err.h>
 #include <openssl/pem.h>
