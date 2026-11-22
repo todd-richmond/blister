@@ -1136,8 +1136,8 @@
 					BUILD_BLISTERTLS,
 					BLISTER_TLS,
 				);
-				HEADER_SEARCH_PATHS = /opt/homebrew/opt/openssl@3/include;
-				LIBRARY_SEARCH_PATHS = /opt/homebrew/opt/openssl@3/lib;
+				HEADER_SEARCH_PATHS = "/opt/homebrew/opt/openssl@3/include";
+				LIBRARY_SEARCH_PATHS = "/opt/homebrew/opt/openssl@3/lib";
 				OTHER_LDFLAGS = (
 					"-lssl",
 					"-lcrypto",
@@ -1153,8 +1153,8 @@
 					BUILD_BLISTERTLS,
 					BLISTER_TLS,
 				);
-				HEADER_SEARCH_PATHS = /opt/homebrew/opt/openssl@3/include;
-				LIBRARY_SEARCH_PATHS = /opt/homebrew/opt/openssl@3/lib;
+				HEADER_SEARCH_PATHS = "/opt/homebrew/opt/openssl@3/include";
+				LIBRARY_SEARCH_PATHS = "/opt/homebrew/opt/openssl@3/lib";
 				OTHER_LDFLAGS = (
 					"-lssl",
 					"-lcrypto",
