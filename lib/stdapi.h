@@ -83,6 +83,15 @@
 #define EXTERNC_
 #endif
 
+#ifdef _WIN32
+#ifndef BLISTER_DLL
+#define BLISTER
+#define BLISTERTLS
+#elif !defined(_DLL)
+#error blister DLL needs the DLL CRT so errno and the heap are shared
+#endif
+#endif
+#ifndef BLISTER
 #ifdef BUILD_BLISTER
 #define BLISTER			DLL_EXPORT
 #else
@@ -93,18 +102,9 @@
 #else
 #define BLISTERTLS		DLL_IMPORT
 #endif
+#endif
 
 #ifdef _WIN32
-#if defined(BLISTER_DLL) && !defined(_DLL)
-#error blister DLL needs the DLL CRT so errno and the heap are shared
-#endif
-#ifndef BLISTER_DLL
-#undef BLISTER
-#define BLISTER
-#undef BLISTERTLS
-#define BLISTERTLS
-#endif
-
 #pragma inline_depth(69)
 #pragma warning(disable: 4018 4068 4081 4097 4100 4103 4127 4146 4200 4201 4250)
 #pragma warning(disable: 4251 4335 4324 4503 4511 4512 4530 4577 4619 4625 4626)

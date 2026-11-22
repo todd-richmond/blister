@@ -201,7 +201,9 @@ private:
 using AsyncSMTPTLSClient = SMTPTLSClientT<AsyncSMTPClient>;
 using SMTPTLSClient = SMTPTLSClientT<SMTPClient>;
 
+#ifndef BUILD_BLISTERTLS	// MSVC: dllexport and extern are incompatible
 extern template class BLISTERTLS SMTPTLSClientT<AsyncSMTPClient>;
 extern template class BLISTERTLS SMTPTLSClientT<SMTPClient>;
+#endif
 
 #endif // TLSSocket_h
