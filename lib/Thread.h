@@ -628,19 +628,26 @@ public:
     }
     __forceinline uint broadcast(void) { return (uint)-1 - release((uint)-1); }
     uint release(uint count = 1) {
+	uint spins = 0;
+
 	while (LIKELY(count)) {
-	    Node *n = popwait();
+	    Node *n = waitstack.pop();
 	    uint s;
 
-	    if (UNLIKELY(!n))
-		return count;
+	    if (UNLIKELY(!n)) {
+		if (LIKELY(!waiters.load(memory_order_seq_cst)))
+		    return count;
+		spin_release(LIKELY(spins++ < 128), true);
+		continue;
+	    }
+	    spins = 0;
 	    s = n->state.exchange(TAKEN, memory_order_acq_rel);
 	    if (LIKELY(s == PENDING)) {
 		waiters.fetch_sub(1, memory_order_acq_rel);
 		--count;
 		n->sema4.release();
 	    } else {
-		recycle(n);
+		freelist.push(n);
 	    }
 	}
 	return 0;
@@ -652,21 +659,33 @@ public:
     // cancel() checked after registering as release() drops unwaited wakeups
     template<class P>
     WaitResult wait(ulong msec, uint spin, P cancel) {
-	Node *n = claim();
+	Node *n = freelist.pop();
 
+	if (UNLIKELY(!n)) {
+	    Node *a;
+
+	    while ((n = new(nothrow) Node()) == nullptr)
+		THREAD_YIELD();
+	    a = allnodes.load(memory_order_relaxed);
+	    do {
+		n->allnext = a;
+	    } while (!allnodes.compare_exchange_weak(a, n,
+		memory_order_release, memory_order_relaxed));
+	}
 	n->state.store(PENDING, memory_order_relaxed);
-	pushwait(n);
+	waiters.fetch_add(1, memory_order_seq_cst);
+	waitstack.push(n);
 	if (UNLIKELY(cancel()))
 	    return unwait(n) ? Cancelled : Released;
 	for (uint u = 0; u < spin; ++u) {
 	    if (UNLIKELY(n->sema4.try_acquire())) {
-		recycle(n);
+		freelist.push(n);
 		return Released;
 	    }
 	    spin_release();
 	}
 	if (LIKELY(n->sema4.try_acquire_for(msec))) {
-	    recycle(n);
+	    freelist.push(n);
 	    return Released;
 	}
 	return unwait(n) ? Timeout : Released;
@@ -730,7 +749,6 @@ private:
 	    }
 	    return false;
 	}
-
 	void push(N *n) {
 	    uint64_t old = head.load(memory_order_relaxed);
 
@@ -739,7 +757,6 @@ private:
 	    } while (!head.compare_exchange_weak(old, pack(n, old + ONE),
 		memory_order_release, memory_order_relaxed));
 	}
-
 	N *top(void) const { return unpack(head.load(memory_order_acquire)); }
     };
 
@@ -748,43 +765,6 @@ private:
     alignas(CACHELINE_SZ) atomic_uint_fast32_t waiters { 0 };
     alignas(CACHELINE_SZ) TaggedStack<Node> waitstack;
 
-    Node *claim(void) {
-	Node *n = freelist.pop();
-
-	if (LIKELY(n != nullptr))
-	    return n;
-	for (;;) {
-	    Node *a;
-
-	    n = new(nothrow) Node();
-	    if (UNLIKELY(!n)) {
-		THREAD_YIELD();
-		continue;
-	    }
-	    a = allnodes.load(memory_order_relaxed);
-	    do {
-		n->allnext = a;
-	    } while (!allnodes.compare_exchange_weak(a, n, memory_order_release,
-		memory_order_relaxed));
-	    return n;
-	}
-    }
-    Node *popwait(void) {
-	for (uint i = 0; ; ++i) {
-	    Node *n = waitstack.pop();
-
-	    if (LIKELY(n != nullptr))
-		return n;
-	    if (LIKELY(!waiters.load(memory_order_seq_cst)))
-		return nullptr;
-	    spin_release(LIKELY(i < 128), true);
-	}
-    }
-    __forceinline void pushwait(Node *n) {
-	waiters.fetch_add(1, memory_order_seq_cst);
-	waitstack.push(n);
-    }
-    __forceinline void recycle(Node *n) { freelist.push(n); }
     // cancel a wait or consume an in-flight release; a top node is unlinked
     // for reuse, others are marked cancelled for release() to recycle
     bool unwait(Node *n) {
@@ -792,7 +772,7 @@ private:
 
 	if (LIKELY(waitstack.pop_if(n))) {
 	    waiters.fetch_sub(1, memory_order_acq_rel);
-	    recycle(n);
+	    freelist.push(n);
 	    return true;
 	}
 	if (LIKELY(n->state.compare_exchange_strong(s, CANCELLED,
@@ -801,7 +781,7 @@ private:
 	    return true;
 	}
 	n->sema4.acquire();
-	recycle(n);
+	freelist.push(n);
 	return false;
     }
 };
