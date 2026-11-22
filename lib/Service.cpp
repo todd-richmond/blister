@@ -1932,7 +1932,8 @@ int Daemon::spawned(int argc, const tchar * const *argv) {
     onSpawn(hdls);
     if ((ret = onInit(argc, argv)) != 0)
 	return ret;
-    CloseHandle(CreateThread(nullptr, 0, ctlread, nullptr, 0, nullptr));
+    if (HANDLE h = CreateThread(nullptr, 0, ctlread, nullptr, 0, nullptr))
+	CloseHandle(h);
     update(Starting);
     return Service::onStart(argc, argv);
 }
@@ -2040,7 +2041,7 @@ int Daemon::watchloop(void) {
     bool first = true, keep = true, paused = false;
     Status held = Starting;
     msec_t now = mticks();
-    msec_t due = now + cfg.get(T("watch.interval"), 60U) * 1000UL;
+    msec_t due = now + (msec_t)cfg.get(T("watch.interval"), 60U) * 1000;
     msec_t retry = 0, spawnat = 0, swapped = 0;
     int ret = 0;
     uint retries = 0;
@@ -2323,7 +2324,7 @@ int Daemon::watchloop(void) {
 		} else if (cur == Starting && now - w.since > startms) {
 		    why = T("start timeout");
 		} else if (cur == Refreshing && now - w.since >
-		    cfg.get(T("watch.refresh"), 60U) * 1000UL) {
+		    (msec_t)cfg.get(T("watch.refresh"), 60U) * 1000) {
 		    why = T("refresh timeout");
 		} else if (cur == Stopping && now - w.since > stopms) {
 		    why = T("stop timeout");

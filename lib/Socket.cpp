@@ -110,7 +110,7 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
     if (hints.ai_flags & AI_NUMERICHOST) {	// digit led names: 3com.com
 	hints.ai_flags = (hints.ai_flags & ~AI_NUMERICHOST) | AI_CANONNAME |
 	    AI_ADDRCONFIG;
-	return ::getaddrinfo(tchartoachar(host), service ?
+	return ::getaddrinfo(host ? tchartoachar(host) : NULL, service ?
 	    tchartoachar(service) : NULL, &hints, &ai) ? NULL : ai;
     }
     if (!any)

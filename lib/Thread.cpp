@@ -149,7 +149,7 @@ tstring Process::cmdline(const tchar * const *args) {
     return cmd;
 }
 
-Process Process::start(tchar *const *args, const int *fds) {
+Process Process::start(const tchar *const *args, const int *fds) {
     tstring cmd(cmdline(args));
     PROCESS_INFORMATION proc;
     STARTUPINFO si;

@@ -517,7 +517,7 @@ int tmain(int argc, const tchar * const argv[]) {
 	ulong m = msgs.load(memory_order_relaxed);
 	double secs = (double)(now - last) / 1e6;
 
-	if (!stattime || now - last < stattime * 1000)
+	if (!stattime || now - last < (usec_t)stattime * 1000)
 	    continue;
 	tcout << format("{:.0f} msg/s {:.1f} MB/s", (double)(m - lastmsgs) /
 	    secs, (double)(b - lastbytes) / secs / 1e6).c_str() << endl;

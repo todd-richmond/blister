@@ -22,7 +22,7 @@
 static bool add(const tchar *key, uint klen, const tchar *val, uint mult) {
     if (!istdigit(*val) && *val != '.')
 	return false;
-    dtiming.add(key, klen, (usec_t)(atod<double>(val) * mult));
+    dtiming.add(key, klen, (usec_t)(llong)(atod<double>(val) * mult));
     return true;
 }
 

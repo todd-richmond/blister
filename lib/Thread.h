@@ -892,7 +892,8 @@ public:
 	return SetProcessAffinityMask(hdl, m) != 0;
     }
     static tstring cmdline(const tchar * const *args);
-    static Process start(tchar * const *args, const int *fds = nullptr);
+    static Process start(const tchar * const *args, const int *fds =
+	nullptr);
 
 private:
     HANDLE hdl;

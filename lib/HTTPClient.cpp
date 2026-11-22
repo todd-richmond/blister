@@ -572,7 +572,7 @@ HTTPParser<S>::Step HTTPParser<S>::nextline(string_view &out) {
 }
 
 template<class S> template<class G>
-HTTPParser<S>::Step HTTPParser<S>::reserve(HTTPResponse &r, ulong need,
+HTTPParser<S>::Step HTTPParser<S>::reserve(const HTTPResponse &r, ulong need,
     G &grow) {
     if (r.result && r.cap > need)
 	return Step::Done;

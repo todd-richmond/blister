@@ -1392,8 +1392,8 @@ __forceinline constexpr strhash_t bernsteininline(const T *s, F xfrm) {
 	s += 4;
     }
     ret = r0 ^ r1;
-    while ((c0 = *s++) != '\0')
-	ret = ((ret << 5) + ret) ^ (strhash_t)xfrm(c0);
+    for (; *s; ++s)
+	ret = ((ret << 5) + ret) ^ (strhash_t)xfrm(*s);
     return ret;
 }
 

@@ -773,12 +773,12 @@ void Log::endlog(Tlsdata &tlsd) {
 	static constexpr const char mon[][4] = { "Jan", "Feb", "Mar", "Apr",
 	    "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 	struct tm tmbuf {};
-	const struct tm *tm = localtime_r(&now_sec, &tmbuf);
+	localtime_r(&now_sec, &tmbuf);
 	uint u = (syslogfac << 3) | (uint)(clvl - (clvl <= Debug ? 1 : 2));
 	// RFC 3164 timestamp: C locale, no fraction
 	string ss = std::format("<{}>{} {:2} {:02}:{:02}:{:02} {}", u,
-	    mon[tm->tm_mon], tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec,
-	    tstringtoastring(hostname));
+	    mon[tmbuf.tm_mon], tmbuf.tm_mday, tmbuf.tm_hour, tmbuf.tm_min,
+	    tmbuf.tm_sec, tstringtoastring(hostname));
 
 	if (!mailfrom.empty() && mailfrom != T("<>")) {
 	    ss += _type == KeyVal ? " nm=" : " ";

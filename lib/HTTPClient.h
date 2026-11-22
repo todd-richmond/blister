@@ -211,7 +211,7 @@ private:
     }
     Step nextline(string_view &line);
     template<class G>
-    Step reserve(HTTPResponse &r, ulong need, G &grow);
+    Step reserve(const HTTPResponse &r, ulong need, G &grow);
     Step sockfail(void) {
 	ecode = sock.err();
 	return Step::Sock;
