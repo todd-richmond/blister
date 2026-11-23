@@ -949,6 +949,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				"BLISTER_ARCH_CFLAGS[arch=x86_64]" = "-fcf-protection=full";
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
 				CLANG_CXX_STANDARD_LIBRARY_HARDENING = debug;
@@ -985,6 +986,7 @@
 				GCC_PREFIX_HEADER = ../lib/stdapi.h;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					DEBUG,
+					_DEBUG,
 				);
 				GCC_SYMBOLS_PRIVATE_EXTERN = YES;
 				GCC_TREAT_IMPLICIT_FUNCTION_DECLARATIONS_AS_ERRORS = YES;
@@ -999,9 +1001,15 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_CFLAGS = (
-					"-fno-standalone-debug",
+					"$(BLISTER_ARCH_CFLAGS)",
+					"-ffast-math",
+					"-fno-inline",
 					"-fno-optimize-sibling-calls",
+					"-fno-standalone-debug",
+					"-fstack-protector-strong",
+					"-fstrict-flex-arrays=2",
 				);
+				OTHER_LDFLAGS = "-Wl,-dead_strip_dylibs";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
@@ -1013,12 +1021,16 @@
 					"-Wextra",
 					"-Wextra-semi",
 					"-Wformat=2",
+					"-Wmultichar",
 					"-Wno-deprecated",
+					"-Wno-deprecated-declarations",
 					"-Wno-format-nonliteral",
 					"-Wno-null-pointer-subtraction",
 					"-Wno-unknown-pragmas",
 					"-Wnull-dereference",
+					"-Wodr",
 					"-Wsign-conversion",
+					"-Wwrite-strings",
 				);
 			};
 			name = Debug;
@@ -1027,6 +1039,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				"BLISTER_ARCH_CFLAGS[arch=x86_64]" = "-fcf-protection=full";
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
 				CLANG_DEBUG_INFORMATION_LEVEL = "line-tables-only";
@@ -1057,7 +1070,7 @@
 				GCC_ENABLE_CPP_RTTI = NO;
 				GCC_INCREASE_PRECOMPILED_HEADER_SHARING = YES;
 				GCC_INLINES_ARE_PRIVATE_EXTERN = YES;
-				GCC_OPTIMIZATION_LEVEL = fast;
+				GCC_OPTIMIZATION_LEVEL = 3;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = ../lib/stdapi.h;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -1076,6 +1089,13 @@
 				LLVM_LTO = YES_THIN;
 				MACOSX_DEPLOYMENT_TARGET = 26.6;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CFLAGS = (
+					"$(BLISTER_ARCH_CFLAGS)",
+					"-ffast-math",
+					"-fstack-protector-strong",
+					"-fstrict-flex-arrays=2",
+				);
+				OTHER_LDFLAGS = "-Wl,-dead_strip_dylibs";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SYMROOT = xcode;
@@ -1087,12 +1107,16 @@
 					"-Wextra",
 					"-Wextra-semi",
 					"-Wformat=2",
+					"-Wmultichar",
 					"-Wno-deprecated",
+					"-Wno-deprecated-declarations",
 					"-Wno-format-nonliteral",
 					"-Wno-null-pointer-subtraction",
 					"-Wno-unknown-pragmas",
 					"-Wnull-dereference",
+					"-Wodr",
 					"-Wsign-conversion",
+					"-Wwrite-strings",
 				);
 			};
 			name = Release;

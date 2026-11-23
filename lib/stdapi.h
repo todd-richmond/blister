@@ -105,7 +105,9 @@
 #endif
 
 #ifdef _WIN32
-#pragma inline_depth(69)
+#ifdef _DEBUG
+#pragma inline_depth(0)	// with /Ob1: only __forceinline expands
+#endif
 #pragma warning(disable: 4018 4068 4081 4097 4100 4103 4127 4146 4200 4201 4250)
 #pragma warning(disable: 4251 4335 4324 4503 4511 4512 4530 4577 4619 4625 4626)
 #pragma warning(disable: 4668 4702 4710 4711 4786 4820 4996 5026 5027 26110)
@@ -866,29 +868,59 @@ inline void time_adjust_msec(struct timespec *ts, ulong msec) {
 EXTERNC
 extern BLISTER int lockfile(int fd, short type, short whence, ulong start, ulong
     len, short test);
-#if defined(_WIN32) || defined(__APPLE__)
-extern BLISTER msec_t mticks(void);
-extern BLISTER usec_t uticks(void);
+WARN_PUSH_DISABLE(-Wshadow)
+extern BLISTER int pidstat(pid_t pid, struct pidstat *psbuf);
+WARN_POP()
+EXTERNC_
+
+#ifdef _WIN32
+// per module; initialized before statics of any file including this header
+inline const ULONGLONG qpc_freq = [] {
+    LARGE_INTEGER freq;
+
+    QueryPerformanceFrequency(&freq);
+    return (ULONGLONG)freq.QuadPart;
+}();
+
+static __forceinline msec_t mticks(void) {
+    LARGE_INTEGER now;
+
+    QueryPerformanceCounter(&now);
+    return (ULONGLONG)now.QuadPart * 1000 / qpc_freq;
+}
+
+static __forceinline usec_t uticks(void) {
+    LARGE_INTEGER now;
+    ULONGLONG ticks;
+
+    QueryPerformanceCounter(&now);
+    ticks = (ULONGLONG)now.QuadPart;
+    // split so ticks * 1000000 cannot overflow after ~21 days at 10MHz
+    return ticks / qpc_freq * 1000000 + ticks % qpc_freq * 1000000 / qpc_freq;
+}
+#elif defined(__APPLE__)
+static __forceinline msec_t mticks(void) {
+    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW_APPROX) / 1000000;
+}
+
+static __forceinline usec_t uticks(void) {
+    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1000;
+}
 #else
-// inline to avoid a call per timestamp in hot paths
-static inline __attribute__((always_inline)) msec_t mticks(void) {
+static __forceinline msec_t mticks(void) {
     struct timespec ts;
 
     clock_gettime(CLOCK_MONOTONIC_COARSE, &ts);
     return (msec_t)ts.tv_sec * 1000 + (msec_t)ts.tv_nsec / 1000000;
 }
 
-static inline __attribute__((always_inline)) usec_t uticks(void) {
+static __forceinline usec_t uticks(void) {
     struct timespec ts;
 
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (usec_t)ts.tv_sec * 1000000 + (usec_t)ts.tv_nsec / 1000;
 }
 #endif
-WARN_PUSH_DISABLE(-Wshadow)
-extern BLISTER int pidstat(pid_t pid, struct pidstat *psbuf);
-WARN_POP()
-EXTERNC_
 
 // common includes, defines and code for C++ software
 #ifdef __cplusplus
@@ -1637,8 +1669,11 @@ __forceinline constexpr strhash_t charhash(const T *s, size_t len,
 	if consteval {
 	    string b;	// native byte order to match the runtime hash
 
-	    for (size_t i = 0; i < len; ++i)
-		b.append_range(bit_cast<array<char, sizeof (T)>>(s[i]));
+	    for (size_t i = 0; i < len; ++i) {
+		auto a = bit_cast<array<char, sizeof (T)>>(s[i]);
+
+		b.append(a.data(), a.size());
+	    }
 	    return rapid_hash(b.data(), b.size());
 	} else {
 	    return rapid_hash((const char *)s, len * sizeof (T));

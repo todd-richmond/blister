@@ -252,33 +252,6 @@ int gettimeofday(struct timeval *tv, struct timezone *tz) {
     return 0;
 }
 
-static LARGE_INTEGER tps;
-
-static inline void tps_init(void) {
-    if (!tps.QuadPart)
-	QueryPerformanceFrequency(&tps);
-}
-
-msec_t mticks(void) {
-    LARGE_INTEGER now;
-
-    tps_init();
-    QueryPerformanceCounter(&now);
-    return (ULONGLONG)now.QuadPart * 1000 / (ULONGLONG)tps.QuadPart;
-}
-
-usec_t uticks(void) {
-    LARGE_INTEGER now;
-    ULONGLONG freq, ticks;
-
-    tps_init();
-    QueryPerformanceCounter(&now);
-    freq = (ULONGLONG)tps.QuadPart;
-    ticks = (ULONGLONG)now.QuadPart;
-    // split so ticks * 1000000 cannot overflow after ~21 days at 10MHz
-    return ticks / freq * 1000000 + ticks % freq * 1000000 / freq;
-}
-
 int access(const char *path, int mode) {
     wchar pbuf[MAX_PATH];
 
@@ -1729,12 +1702,10 @@ int clock_gettime(clockid_t id, struct timespec *ts) {
 	LARGE_INTEGER now;
 	ullong ticks;
 
-	tps_init();
 	QueryPerformanceCounter(&now);
 	ticks = (ullong)now.QuadPart;
-	ts->tv_sec = (time_t)(ticks / (ullong)tps.QuadPart);
-	ts->tv_nsec = (long)(ticks % (ullong)tps.QuadPart * 1000000000 /
-	    (ullong)tps.QuadPart);
+	ts->tv_sec = (time_t)(ticks / qpc_freq);
+	ts->tv_nsec = (long)(ticks % qpc_freq * 1000000000 / qpc_freq);
 	return 0;
     }
     case CLOCK_PROCESS_CPUTIME_ID:

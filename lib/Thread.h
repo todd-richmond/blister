@@ -111,7 +111,7 @@ inline constexpr size_t CACHELINE_SZ = 64;
 
 #ifdef THREAD_PAUSE
 // exponential spin backoff with constant-fold optimization
-inline void spin_backoff(uint &limit, uint spins) {
+__forceinline void spin_backoff(uint &limit, uint spins) {
     for (uint u = 0; u < limit; ++u)
 	THREAD_PAUSE();
     if (limit < spins)
@@ -120,16 +120,16 @@ inline void spin_backoff(uint &limit, uint spins) {
 	THREAD_YIELD();
 }
 
-inline void spin_release(bool pause = true, bool = false) {
+__forceinline void spin_release(bool pause = true, bool = false) {
     if (pause)
 	THREAD_PAUSE();
     else
 	THREAD_YIELD();
 }
 #else
-inline void spin_backoff(uint &, uint) { THREAD_YIELD(); }
+__forceinline void spin_backoff(uint &, uint) { THREAD_YIELD(); }
 
-inline void spin_release(bool = true, bool yield = false) {
+__forceinline void spin_release(bool = true, bool yield = false) {
     if (yield)
 	THREAD_YIELD();
 }
@@ -214,14 +214,14 @@ template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock
 class BLISTER FastLockerTemplate: nocopy {
 public:
     explicit __forceinline FastLockerTemplate(C &lock): lck(lock) {
-	invoke(LOCK, lck);
+	(lck.*LOCK)();
     }
-    __forceinline ~FastLockerTemplate() { invoke(UNLOCK, lck); }
+    __forceinline ~FastLockerTemplate() { (lck.*UNLOCK)(); }
 
     __forceinline void relock(void) {
-	invoke(UNLOCK, lck);
+	(lck.*UNLOCK)();
 	THREAD_YIELD();
-	invoke(LOCK, lck);
+	(lck.*LOCK)();
     }
 
 private:
@@ -232,9 +232,9 @@ template<class C, void (C::*LOCK)() = &C::lock, void (C::*UNLOCK)() = &C::unlock
 class BLISTER FastUnlockerTemplate: nocopy {
 public:
     explicit __forceinline FastUnlockerTemplate(C &lock): lck(lock) {
-	invoke(UNLOCK, lck);
+	(lck.*UNLOCK)();
     }
-    __forceinline ~FastUnlockerTemplate() { invoke(LOCK, lck); }
+    __forceinline ~FastUnlockerTemplate() { (lck.*LOCK)(); }
 
 private:
     C &lck;
@@ -246,29 +246,29 @@ public:
     explicit __forceinline LockerTemplate(C &lock, bool lockit = true):
 	lck(lock), locked(lockit) {
 	if (LIKELY(lockit))
-	    invoke(LOCK, lck);
+	    (lck.*LOCK)();
     }
-    __forceinline ~LockerTemplate() { if (LIKELY(locked)) invoke(UNLOCK, lck); }
+    __forceinline ~LockerTemplate() { if (LIKELY(locked)) (lck.*UNLOCK)(); }
 
     explicit __forceinline operator bool(void) const { return locked; }
 
     __forceinline void lock(void) {
 	if (LIKELY(!locked)) {
-	    invoke(LOCK, lck);
+	    (lck.*LOCK)();
 	    locked = true;
 	}
     }
     __forceinline void relock(void) {
 	if (LIKELY(locked)) {
-	    invoke(UNLOCK, lck);
+	    (lck.*UNLOCK)();
 	    THREAD_YIELD();
 	}
-	invoke(LOCK, lck);
+	(lck.*LOCK)();
 	locked = true;
     }
     __forceinline void unlock(void) {
 	if (LIKELY(locked)) {
-	    invoke(UNLOCK, lck);
+	    (lck.*UNLOCK)();
 	    locked = false;
 	}
     }
@@ -466,7 +466,7 @@ public:
     }
 
 private:
-    void lock_contended(uint32_t expected) {
+    __forceinline void lock_contended(uint32_t expected) {
 	for (uint i = 0; i < spins && expected != 2; ++i) {
 	    spin_release();
 	    if ((expected = state.load(memory_order_relaxed)) == 0 &&
@@ -543,12 +543,12 @@ public:
 
     explicit __forceinline operator bool(void) const { return waiting() != 0; }
 
-    void acquire(void) {
+    __forceinline void acquire(void) {
 	if (UNLIKELY(cnt.fetch_sub(1, memory_order_acq_rel) <= 0))
 	    sema4.acquire();
     }
     // wake only current waiters so a racing timeout cannot leave a permit
-    uint broadcast(void) {
+    __forceinline uint broadcast(void) {
 	int_fast32_t c = cnt.load(memory_order_relaxed);
 
 	do {
@@ -559,7 +559,7 @@ public:
 	sema4.release(-c);
 	return (uint)-c;
     }
-    uint release(uint count = 1) {
+    __forceinline uint release(uint count = 1) {
 	int_fast32_t c;
 	uint wake;
 
@@ -572,7 +572,7 @@ public:
 	sema4.release(wake);
 	return count - wake;
     }
-    bool try_acquire(void) {
+    __forceinline bool try_acquire(void) {
 	int_fast32_t c = cnt.load(memory_order_acquire);
 
 	while (LIKELY(c > 0)) {
@@ -582,7 +582,7 @@ public:
 	}
 	return false;
     }
-    bool try_acquire_for(ulong msec) {
+    __forceinline bool try_acquire_for(ulong msec) {
 	int_fast32_t c = cnt.fetch_sub(1, memory_order_acq_rel);
 
 	if (LIKELY(c > 0))
@@ -623,11 +623,11 @@ public:
 	return waiters.load(memory_order_acquire) != 0;
     }
 
-    void acquire(uint spin = 0) {
-	(void)wait(INFINITE, spin, [] { return false; });
+    __forceinline void acquire(uint spin = 0) {
+	(void)wait(INFINITE, spin, NoCancel());
     }
     __forceinline uint broadcast(void) { return (uint)-1 - release((uint)-1); }
-    uint release(uint count = 1) {
+    __forceinline uint release(uint count = 1) {
 	uint spins = 0;
 
 	while (LIKELY(count)) {
@@ -653,12 +653,12 @@ public:
 	return 0;
     }
     __forceinline bool try_acquire(void) { return false; }  // NOSONAR
-    bool try_acquire_for(ulong msec, uint spin = 0) {
-	return wait(msec, spin, [] { return false; }) == Released;
+    __forceinline bool try_acquire_for(ulong msec, uint spin = 0) {
+	return wait(msec, spin, NoCancel()) == Released;
     }
     // cancel() checked after registering as release() drops unwaited wakeups
     template<class P>
-    WaitResult wait(ulong msec, uint spin, P cancel) {
+    __forceinline WaitResult wait(ulong msec, uint spin, P cancel) {
 	Node *n = freelist.pop();
 
 	if (UNLIKELY(!n)) {
@@ -697,6 +697,10 @@ public:
 private:
     enum : uint { CANCELLED, PENDING, TAKEN };
 
+    struct NoCancel {	// a lambda is a call in debug builds
+	__forceinline bool operator ()(void) const { return false; }
+    };
+
     // cacheline aligned so spinning waiters do not share with releasers
     struct alignas(CACHELINE_SZ) Node {
 	Node *allnext = nullptr;
@@ -705,59 +709,84 @@ private:
 	atomic<uint> state = TAKEN;
     };
 
-    // ABA-safe Treiber stack head: ptr + tag in 64 bits (48/16 or 32/32 bit)
+    /*
+     * ABA-safe Treiber stack. Head = pointer >> alignment bits + pop count
+     * tag (22 bits for 48-bit pointers, 64-byte Nodes); ARM64 uses 128 bits as
+     * pointer tags (MTE, HWASan) fill the top byte. Only pops tag: a head can
+     * only regain a node with a new next via a pop
+     */
     template<class N>
     class TaggedStack: nocopy {
-	static_assert(atomic<uint64_t>::is_always_lock_free);
+#if defined(__aarch64__) || defined(_M_ARM64)
+	struct alignas(16) Head {
+	    N *ptr;
+	    uint64_t tag;
+	};
 
-	static constexpr uint SHIFT = sizeof(N *) == 8 ? 48 : 32;
-	static constexpr uint64_t ONE = (uint64_t)1 << SHIFT;
-	static constexpr uint64_t PMASK = ONE - 1;
-	atomic<uint64_t> head = 0;
+	static __forceinline Head bump(N *p, Head old) {
+	    return { p, old.tag + 1 };
+	}
+	static __forceinline Head pack(N *p, Head old) {
+	    return { p, old.tag };
+	}
+	static __forceinline N *unpack(Head h) { return h.ptr; }
+#else
+	using Head = uint64_t;
+	static_assert(atomic<Head>::is_always_lock_free);
 
-	static __forceinline uint64_t pack(N *p, uint64_t tagged) {
-	    return ((uint64_t)(uintptr_t)p & PMASK) | (tagged & ~PMASK);
+	static constexpr uint LOW = (uint)countr_zero(alignof(N));
+	static constexpr uint SHIFT = (sizeof(N *) == 8 ? 48 : 32) - LOW;
+	static constexpr Head ONE = (Head)1 << SHIFT;
+	static constexpr Head PMASK = ONE - 1;
+
+	static __forceinline Head bump(N *p, Head old) {
+	    return pack(p, old + ONE);
 	}
-	static __forceinline N *unpack(uint64_t v) {
-	    return (N *)(uintptr_t)(v & PMASK);
+	static __forceinline Head pack(N *p, Head old) {
+	    return (Head)(uintptr_t)p >> LOW | (old & ~PMASK);
 	}
+	static __forceinline N *unpack(Head h) {
+	    return (N *)(uintptr_t)((h & PMASK) << LOW);
+	}
+#endif
+	atomic<Head> head;
 
     public:
-	N *pop(void) {
-	    uint64_t old = head.load(memory_order_acquire);
+	__forceinline N *pop(void) {
+	    Head old = head.load(memory_order_acquire);
 	    N *p;
 
 	    while ((p = unpack(old)) != nullptr) {
-		uint64_t nw = pack(p->next.load(memory_order_acquire), old +
-		    ONE);
-
-		if (head.compare_exchange_weak(old, nw,
-		    memory_order_acq_rel, memory_order_acquire))
+		if (head.compare_exchange_weak(old, bump(p->next.load(
+		    memory_order_relaxed), old), memory_order_acquire,
+		    memory_order_acquire))
 		    return p;
 	    }
 	    return nullptr;
 	}
 	// pop n only if on top; caller owns n so it cannot be re-pushed
-	bool pop_if(N *n) {
-	    uint64_t old = head.load(memory_order_acquire);
+	__forceinline bool pop_if(N *n) {
+	    Head old = head.load(memory_order_relaxed);
 
 	    while (unpack(old) == n) {
-		if (head.compare_exchange_weak(old, pack(n->next.load(
-		    memory_order_relaxed), old + ONE), memory_order_acq_rel,
-		    memory_order_acquire))
+		if (head.compare_exchange_weak(old, bump(n->next.load(
+		    memory_order_relaxed), old), memory_order_acquire,
+		    memory_order_relaxed))
 		    return true;
 	    }
 	    return false;
 	}
-	void push(N *n) {
-	    uint64_t old = head.load(memory_order_relaxed);
+	__forceinline void push(N *n) {
+	    Head old = head.load(memory_order_relaxed);
 
 	    do {
 		n->next.store(unpack(old), memory_order_relaxed);
-	    } while (!head.compare_exchange_weak(old, pack(n, old + ONE),
+	    } while (!head.compare_exchange_weak(old, pack(n, old),
 		memory_order_release, memory_order_relaxed));
 	}
-	N *top(void) const { return unpack(head.load(memory_order_acquire)); }
+	__forceinline N *top(void) const {
+	    return unpack(head.load(memory_order_acquire));
+	}
     };
 
     alignas(CACHELINE_SZ) atomic<Node *> allnodes { nullptr };
@@ -767,7 +796,7 @@ private:
 
     // cancel a wait or consume an in-flight release; a top node is unlinked
     // for reuse, others are marked cancelled for release() to recycle
-    bool unwait(Node *n) {
+    __forceinline bool unwait(Node *n) {
 	uint s = PENDING;
 
 	if (LIKELY(waitstack.pop_if(n))) {

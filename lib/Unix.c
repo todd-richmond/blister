@@ -24,28 +24,6 @@
 #include <mach/task.h>
 #include <mach/mach_init.h>
 #include <mach/mach_port.h>
-#include <mach/mach_time.h>
-
-static uint32_t ticks_denom_ms;
-static uint32_t ticks_denom_us;
-static uint32_t ticks_numer;
-
-__attribute__((constructor)) static void ticks_init(void) {
-    struct mach_timebase_info mti;
-
-    mach_timebase_info(&mti);
-    ticks_numer = mti.numer;
-    ticks_denom_ms = mti.denom * 1000000U;
-    ticks_denom_us = mti.denom * 1000U;
-}
-
-msec_t mticks(void) {
-    return (msec_t)(mach_approximate_time() * ticks_numer / ticks_denom_ms);
-}
-
-usec_t uticks(void) {
-    return (usec_t)(mach_absolute_time() * ticks_numer / ticks_denom_us);
-}
 #endif
 
 int lockfile(int fd, short type, short whence, ulong start, ulong len,
