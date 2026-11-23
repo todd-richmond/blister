@@ -1093,9 +1093,8 @@ bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
 #ifdef _WIN32
     struct timeval tv = { (long)(msec / 1000), long((msec % 1000) * 1000) };
 
-    fds->fd_count = sz;
     eset = iset = *this;
-    if (select(0, iset.fds.get(), NULL, eset.fds.get(),
+    if (select(0, iset.fdset(), NULL, eset.fdset(),
 	msec == SOCK_INFINITE ? NULL : &tv) == -1)
 	return false;
     iset.sz = iset.fds->fd_count;
@@ -1127,9 +1126,8 @@ bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
 #ifdef _WIN32
     struct timeval tv = { (long)(msec / 1000), (long)((msec % 1000) * 1000) };
 
-    fds->fd_count = sz;
     eset = oset = *this;
-    if (select(0, NULL, oset.fds.get(), eset.fds.get(),
+    if (select(0, NULL, oset.fdset(), eset.fdset(),
 	msec == SOCK_INFINITE ? NULL : &tv) == -1)
 	return false;
     oset.sz = oset.fds->fd_count;
@@ -1162,9 +1160,8 @@ bool SocketSet::iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
 #ifdef _WIN32
     struct timeval tv = { (long)(msec / 1000), (long)((msec % 1000) * 1000) };
 
-    fds->fd_count = sz;
     eset = iset = oset = *this;
-    if (select(0, iset.fds.get(), oset.fds.get(), eset.fds.get(),
+    if (select(0, iset.fdset(), oset.fdset(), eset.fdset(),
 	msec == SOCK_INFINITE ? NULL : &tv) == -1)
 	return false;
     iset.sz = iset.fds->fd_count;
@@ -1202,14 +1199,12 @@ bool SocketSet::iopoll(const SocketSet &rset, SocketSet &iset,
 #ifdef _WIN32
     struct timeval tv = { (long)(msec / 1000), (long)((msec % 1000) * 1000) };
 
-    rset.fds->fd_count = rset.sz;
-    wset.fds->fd_count = wset.sz;
     eset = iset = rset;
     oset = wset;
     for (u = 0; u < oset.sz; u++)
 	if (!eset.get(oset[u]))
 	    eset.set(oset[u]);
-    if (select(0, iset.fds.get(), oset.fds.get(), eset.fds.get(),
+    if (select(0, iset.fdset(), oset.fdset(), eset.fdset(),
 	msec == SOCK_INFINITE ? NULL : &tv) == -1)
 	return false;
     iset.sz = iset.fds->fd_count;

@@ -63,6 +63,11 @@ using event_t = struct pollfd;
 #if !defined(_WIN32) && !defined(DSP_POLL)
 static constexpr uint MAX_EVENTS = 128;
 #endif
+#ifdef DSP_POLL
+// a worker wakes the poller once per exec() batch rather than per rearm
+static thread_local const Dispatcher *wakeowner;
+static thread_local bool wakedeferred;
+#endif
 static constexpr uint MAX_WAIT_TIME = 1 * 60 * 1000;
 static constexpr uint MAX_IDLE_TIMER = 10 * 1000;
 static constexpr uint MIN_IDLE_TIMER = 1 * 1000;
@@ -258,9 +263,18 @@ int Dispatcher::run() {
     auto pending = [this] { return !rlist.empty(); };
 
     Thread::current()->priority(-1);
+#ifdef DSP_POLL
+    wakeowner = this;
+#endif
     while (exec()) {
 	dspsema4_t::WaitResult r;
 
+#ifdef DSP_POLL
+	if (wakedeferred) {
+	    wakedeferred = false;
+	    wakeup(0);
+	}
+#endif
 	if (workers < Processor::count()) {
 #ifdef THREAD_PAUSE                     // enqueue then spin before parking
 	    if (scanning.load(memory_order_acquire) == 0)
@@ -951,9 +965,9 @@ void Dispatcher::wakeup(ulong msec) {
     } while (interval > msec);
 #else
     (void)msec;
-    if (!polling.load(memory_order_acquire))
+    if (!polling.load(memory_order_relaxed) ||
+	!polling.exchange(false, memory_order_acquire))
 	return;
-    polling.store(false, memory_order_relaxed);
 #if defined(DSP_POLL) || defined(DSP_DEVPOLL)
     wsock.write("", 1);
 #elif defined(DSP_EPOLL)
@@ -1312,8 +1326,12 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
     }
     slock.unlock();
     // the poller waits on a copy of the sets
-    if ((isr && !wasr) || (isw && !wasw))
-	wakeup(0);
+    if ((isr && !wasr) || (isw && !wasw)) {
+	if (wakeowner == this)
+	    wakedeferred = true;
+	else
+	    wakeup(0);
+    }
 #elif defined(DSP_DEVPOLL)
     event_t evt = {ds.fd(), sockevts[m] | POLLERR | POLLHUP, 0};
 

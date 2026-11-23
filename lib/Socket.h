@@ -72,6 +72,7 @@ inline int closesocket(socket_t fd) { return ::close(fd); }
 inline int sockerrno(void) { return errno; }
 #endif
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 #include "Streams.h"
@@ -583,7 +584,7 @@ public:
     }
 
     bool empty(void) const { return sz == 0; }
-    bool get(socket_t fd) const;
+    bool get(socket_t fd) const { return find(fd) < sz; }
     bool get(const Socket &sock) const { return get(sock.fd()); }
     uint size(void) const { return sz; }
 
@@ -611,11 +612,25 @@ private:
     static fdptr alloc(uint n) {
 	return fdptr((fd_set *)new socket_t[(size_t)n + 1]);
     }
+    fd_set *fdset(void) const {		// fd_count only matters to select()
+	fds->fd_count = sz;
+	return fds.get();
+    }
+    uint find(socket_t fd) const {	// vectorized by MSVC STL
+	const socket_t *p = fds->fd_array;
+
+	return (uint)(ranges::find(p, p + sz, fd) - p);
+    }
 #else
     using fdptr = unique_ptr<pollfd[]>;
 
     static fdptr alloc(uint n) {
 	return make_unique_for_overwrite<pollfd[]>(n);
+    }
+    uint find(socket_t fd) const {
+	const pollfd *p = fds.get();
+
+	return (uint)(ranges::find(p, p + sz, fd, &pollfd::fd) - p);
     }
 #endif
 
@@ -628,18 +643,10 @@ inline SocketSet::SocketSet(uint maxfds): maxsz(maxfds) {
     if (!maxsz)
 	maxsz = 32;
     fds = alloc(maxsz);
-    fds->fd_count = 0;
 #else
     if (maxsz)
 	fds = alloc(maxsz);
 #endif
-}
-
-inline bool SocketSet::get(socket_t fd) const {
-    for (uint u = 0; u < sz; u++)
-	if (SSET_FD(u) == fd)
-	    return true;
-    return false;
 }
 
 inline SocketSet &SocketSet::operator =(const SocketSet &ss) {
@@ -674,23 +681,16 @@ inline bool SocketSet::set(socket_t fd) {
 	fds = std::move(p);
     }
     SSET_FD(sz++) = fd;
-#ifdef _WIN32
-    fds->fd_count = sz;
-#endif
     return true;
 }
 
 inline bool SocketSet::unset(socket_t fd) {
-    for (uint u = 0; u < sz; u++) {
-	if (SSET_FD(u) == fd) {
-	    SSET_FD(u) = SSET_FD(--sz);
-#ifdef _WIN32
-	    fds->fd_count = sz;
-#endif
-	    return true;
-	}
-    }
-    return false;
+    uint u = find(fd);
+
+    if (u == sz)
+	return false;
+    SSET_FD(u) = SSET_FD(--sz);
+    return true;
 }
 
 // socket streams
