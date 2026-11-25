@@ -1572,11 +1572,10 @@ template<bool fold, typename B>
 __forceinline constexpr strhash_t rapidinline(const B *p, size_t len,
     strhash_t seed) {
     const strhash_t *secret = RAPID_SECRET;
-    size_t i = len;
-    strhash_t a = 0, b = 0;
+    strhash_t a, b;
 
     if (LIKELY(len <= 16)) {
-	if (len >= 4) {
+	if (LIKELY(len >= 4)) {
 	    seed ^= len;
 	    if (len >= 8) {
 		a = rapidload<fold>(p);
@@ -1588,9 +1587,11 @@ __forceinline constexpr strhash_t rapidinline(const B *p, size_t len,
 	} else if (len > 0) {
 	    a = (rapidbyte<fold>(p) << 45) | rapidbyte<fold>(p + len - 1);
 	    b = rapidbyte<fold>(p + (len >> 1));
+	} else {
+	    a = b = 0;
 	}
     } else {
-	if (i > 80) {
+	if (len > 80) {
 	    strhash_t see1 = seed, see2 = seed, see3 = seed, see4 = seed;
 
 	    do {
@@ -1605,32 +1606,32 @@ __forceinline constexpr strhash_t rapidinline(const B *p, size_t len,
 		see4 = rapidmix(rapidload<fold>(p + 64) ^ secret[4],
 		    rapidload<fold>(p + 72) ^ see4);
 		p += 80;
-		i -= 80;
-	    } while (i > 80);
+		len -= 80;
+	    } while (len > 80);
 	    seed ^= see1 ^ see2 ^ see3 ^ see4;
 	}
-	if (i > 16) {
+	if (len > 16) {
 	    seed = rapidmix(rapidload<fold>(p) ^ secret[2],
 		rapidload<fold>(p + 8) ^ seed);
-	    if (i > 32) {
+	    if (len > 32) {
 		seed = rapidmix(rapidload<fold>(p + 16) ^ secret[2],
 		    rapidload<fold>(p + 24) ^ seed);
-		if (i > 48) {
+		if (len > 48) {
 		    seed = rapidmix(rapidload<fold>(p + 32) ^ secret[1],
 			rapidload<fold>(p + 40) ^ seed);
-		    if (i > 64)
+		    if (len > 64)
 			seed = rapidmix(rapidload<fold>(p + 48) ^ secret[1],
 			    rapidload<fold>(p + 56) ^ seed);
 		}
 	    }
 	}
-	a = rapidload<fold>(p + i - 16) ^ i;
-	b = rapidload<fold>(p + i - 8);
+	a = rapidload<fold>(p + len - 16) ^ len;
+	b = rapidload<fold>(p + len - 8);
     }
     a ^= secret[1];
     b ^= seed;
     rapidmum(a, b);
-    return rapidmix(a ^ secret[7], b ^ secret[1] ^ i);
+    return rapidmix(a ^ secret[7], b ^ secret[1] ^ len);
 }
 
 template<bool fold, typename B>
