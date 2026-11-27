@@ -90,10 +90,10 @@ AM_CONDITIONAL([HAVE_LIBUV], [test "$have_libuv" = yes])
 AC_SUBST([LIBUV_CFLAGS])
 AC_SUBST([LIBUV_LIBS])
 
-# libblistertls uses OpenSSL 3 if found, else fails TLS requests; as
+# libblistertls uses OpenSSL 3.5+ if found, else fails TLS requests; as
 # CMakeLists.txt, prefer a toolchain bundled OpenSSL over an older system one
 AC_ARG_WITH([openssl],
-    [AS_HELP_STRING([--with-openssl=DIR],[OpenSSL 3 prefix @<:@default=compiler prefix, then pkg-config@:>@])],
+    [AS_HELP_STRING([--with-openssl=DIR],[OpenSSL 3.5+ prefix @<:@default=compiler prefix, then pkg-config@:>@])],
     [],
     [with_openssl=check]
 )
@@ -123,17 +123,23 @@ if test -n "$ssl_libs"; then
     save_LIBS=$LIBS
     CPPFLAGS="$CPPFLAGS $ssl_cflags"
     LIBS="$ssl_libs $LIBS"
-    AC_MSG_CHECKING([for OpenSSL 3])
+    AC_MSG_CHECKING([for OpenSSL 3.5 or newer])
     AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <openssl/ssl.h>
-#if OPENSSL_VERSION_MAJOR < 3
+#if OPENSSL_VERSION_NUMBER < 0x30500000L
 #error OpenSSL too old
-#endif]], [[SSL_CTX_free(SSL_CTX_new(TLS_method()));]])],
+#endif]], [[
+SSL_CTX *ctx = SSL_CTX_new(TLS_method());
+SSL *ssl = SSL_new(ctx);
+(void)SSL_get0_group_name(ssl);
+SSL_free(ssl);
+SSL_CTX_free(ctx);
+]])],
 	[AC_MSG_RESULT([yes])
 	 TLS_CPPFLAGS="-DBLISTER_TLS $ssl_cflags"
 	 TLS_LIBS=$ssl_libs],
 	[AC_MSG_RESULT([no])
 	 test "$with_openssl" = check ||
-	    AC_MSG_ERROR([OpenSSL 3 not found in $with_openssl])])
+	    AC_MSG_ERROR([OpenSSL 3.5 or newer not found in $with_openssl])])
     CPPFLAGS=$save_CPPFLAGS
     LIBS=$save_LIBS
 fi

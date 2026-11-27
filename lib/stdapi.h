@@ -414,7 +414,7 @@ struct flock {
 EXTERNC
 extern BLISTER int access(const char *path, int mode);
 extern BLISTER int chmod(const char *path, int mode);
-extern BLISTER int chsize(int fd, long len);
+extern BLISTER int chsize(int fd, llong len);
 extern BLISTER int clock_gettime(clockid_t id, struct timespec *ts);
 extern BLISTER int close(int fd);
 extern BLISTER void closedir(DIR *dir);
@@ -426,7 +426,7 @@ extern BLISTER int eof(int fd);
 extern BLISTER int fchmod(int fd, int mode);
 extern BLISTER int fcntl(int fd, int cmd, ...);
 extern BLISTER int fdatasync(int fd);
-extern BLISTER long filelength(int fd);
+extern BLISTER llong filelength(int fd);
 extern BLISTER int flock(int fd, int op);
 extern BLISTER int fstat(int fd, struct stat *buf);
 extern BLISTER int fsync(int fd);
@@ -436,8 +436,9 @@ extern BLISTER int getpagesize(void);
 extern BLISTER int gettimeofday(struct timeval *tv, struct timezone *tz);
 extern BLISTER int isatty(int fd);
 extern BLISTER int link(const char *from, const char *to);
+// Windows locks are mandatory: other handles can't access locked ranges
 extern BLISTER int lockf(int fd, int op, llong len);
-extern BLISTER long lseek(int, long, int);
+extern BLISTER llong lseek(int, llong, int);
 extern BLISTER int lstat(const char *path, struct stat *buf);
 extern BLISTER int mkdir(const char *path, int mode);
 extern BLISTER char *mkdtemp(char *path);
@@ -447,6 +448,7 @@ extern BLISTER int nanosleep(const struct timespec *req, struct timespec *rem);
 extern BLISTER int open(const char *path, int mode, ...);
 extern BLISTER DIR *opendir(const char *path);
 extern BLISTER int pipe(int fds[2]);
+// Windows moves then restores the fd offset: racy with concurrent read/write
 extern BLISTER ssize_t pread(int fd, void *buf, size_t len, llong off);
 extern BLISTER ssize_t pwrite(int fd, const void *buf, size_t len, llong off);
 extern BLISTER int read(int, void *, unsigned int);
@@ -463,7 +465,7 @@ extern BLISTER int stat(const char *path, struct stat *buf);
 extern BLISTER int statvfs(const char *path, struct statvfs *buf);
 extern BLISTER int symlink(const char *target, const char *path);
 extern BLISTER long sysconf(int name);
-extern BLISTER long tell(int fd);
+extern BLISTER llong tell(int fd);
 extern BLISTER int truncate(const char *path, llong len);
 extern BLISTER int umask(int mode);
 extern BLISTER int unlink(const char *path);
@@ -1146,14 +1148,16 @@ auto to_chars(wchar_t *first, wchar_t *last, T value, A... args) {
 	wchar_t *ptr;
 	errc ec;
     };
-    char buf[128];
-    auto [char_end, char_ec] = to_chars(buf, buf + sizeof (buf), value,
-	args...);
+    const ptrdiff_t cap = last - first;
+
+    if (cap <= 0)
+	return result{last, errc::value_too_large};
+    char *buf = (char *)last - cap;		// NOSONAR
+    auto [char_end, char_ec] = to_chars(buf, (char *)last, value, args...);
     result r = {first, char_ec};
 
-    if (char_ec != errc() || char_end - buf > last - first)
-	return result{last, char_ec != errc() ? char_ec :
-	    errc::value_too_large};
+    if (char_ec != errc())
+	return result{last, char_ec};
     for (const char *p = buf; p != char_end; ++p)
 	*r.ptr++ = (wchar_t)(uchar)*p;
     return r;
@@ -1230,6 +1234,8 @@ __forceinline int cstrcmp(const C *a, const C *b) {
 
 template<typename C>
 __forceinline int cstrncmp(const C *a, const C *b, size_t n) {
+    if (!n)
+	return 0;
     if constexpr (is_same_v<C, wchar>)
 	return wcsncmp(a, b, n);
     else
@@ -1259,7 +1265,9 @@ __forceinline int cstricmp(const C *a, const C *b) {
 
 template<typename C>
 __forceinline int cstrnicmp(const C *a, const C *b, size_t n) {
-    int ret = n ? cfirsticmp(*a, *b) : 0;
+    if (!n)
+	return 0;
+    int ret = cfirsticmp(*a, *b);
 
     if (ret)
 	return ret;
@@ -2029,7 +2037,7 @@ protected:
 template<class C>
 struct BLISTER ObjectListNode: ObjectList<ObjectListNode<C>>::Node {
     __forceinline explicit ObjectListNode(const C &c): val(c) {}
-    __forceinline explicit ObjectListNode(C &&c): val(move(c)) {}
+    __forceinline explicit ObjectListNode(C &&c): val(std::move(c)) {}
 
     C val;
 };

@@ -50,13 +50,11 @@ add_test(NAME HashTestBuild COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
 set_tests_properties(HashTestBuild PROPERTIES FIXTURES_SETUP hashtest)
 add_test(NAME HashFunctors COMMAND hashtest)
 set_tests_properties(HashFunctors PROPERTIES FIXTURES_REQUIRED hashtest)
-add_test(NAME EchoTest COMMAND echotest -h unix:./echotest.sock -l 1000000)
-add_test(NAME HTTPTest COMMAND httptest -h unix:./httptest.sock -l 1000000)
+add_test(NAME EchoTest COMMAND echotest -l 1000000)
+add_test(NAME HTTPTest COMMAND httptest -l 1000000)
 if(TLS_LIBS)
-    add_test(NAME EchoTestTLS
-	COMMAND echotest -h unix:./echotest-tls.sock -l 500000 -ssl)
-    add_test(NAME HTTPTestTLS
-	COMMAND httptest -h unix:./httptest-tls.sock -l 500000 -ssl)
+    add_test(NAME EchoTestTLS COMMAND echotest -l 500000 -ssl)
+    add_test(NAME HTTPTestTLS COMMAND httptest -l 500000 -ssl)
 endif()
 
 if(COMPILE_PCH)

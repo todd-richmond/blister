@@ -44,17 +44,9 @@ Timing::Stats *Timing::Stats::newstats(const tchar *k, uint klen, strhash_t h) {
 }
 
 Timing::~Timing() {
-    clear();
-    release(flist.exchange(nullptr, memory_order_acquire));
-    release(prior);
-}
-
-void Timing::release(Stats *s) {
-    while (s) {
-	Stats *next = s->flist;
-
-	Stats::delstats(s);
-	s = next;
+    for (const timingmap *m : { &tmap, &retired }) {
+	for (const auto &[hash, stats] : *m)
+	    Stats::delstats(stats);
     }
 }
 
@@ -72,14 +64,22 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
 	auto it = tmap.find(hash);
 	if (it == tmap.end()) {
 	    lck.unlock_shared();
-	    stats = Stats::newstats(key, klen, hash);
 	    lck.lock();
-	    auto [pos, inserted] = tmap.try_emplace(hash, stats);
-	    lck.downlock();
-	    if (!inserted) {
-		Stats::delstats(stats);
-		stats = pos->second;
+	    auto [pos, inserted] = tmap.try_emplace(hash);
+	    if (inserted) {
+		auto old = retired.extract(hash);
+
+		if (old) {
+		    pos->second = old.mapped();
+		    pos->second->tot.store(0, memory_order_relaxed);
+		    for (auto &c : pos->second->cnts)
+			c.store(0, memory_order_relaxed);
+		} else {
+		    pos->second = Stats::newstats(key, klen, hash);
+		}
 	    }
+	    stats = pos->second;
+	    lck.downlock();
 	} else {
 	    stats = it->second;
 	}
@@ -96,21 +96,12 @@ void Timing::add(const tchar *key, uint klen, strhash_t hash, timing_t diff) {
     stats->tot.fetch_add(diff, memory_order_relaxed);
 }
 
-// threads may still hold Stats pointers so defer freeing until the next clear
 void Timing::clear() {
-    timingmap old;
-
     lck.lock();
     for (auto &entry : cache)
 	entry.store(nullptr, memory_order_relaxed);
-    old.swap(tmap);
-    Stats *dead = prior;
-
-    prior = flist.exchange(nullptr, memory_order_acquire);
+    retired.merge(tmap);
     lck.unlock();
-    release(dead);
-    for (const auto &[k, stats] : old)
-	defer(stats);
 }
 
 tstring Timing::data(bool sort_key, uint columns) const {
@@ -134,7 +125,7 @@ tstring Timing::data(bool sort_key, uint columns) const {
     begin = (!columns || last < columns) ? 0 : last - columns + 1;
     s.reserve(rows.size() * (columns ? 60 : 90) + 200);
     s = columns ? T("key                            msec   cnt   avg") :
-	T("key,msec,cnt,avg");
+	T("key,tot_us,cnt,avg_us");
 
     auto out = back_inserter(s);
 
@@ -152,7 +143,7 @@ tstring Timing::data(bool sort_key, uint columns) const {
 	if (columns) {
 	    // keep the leaf end of long stack paths
 	    static constexpr size_t MAXKEY = 109;
-	    tstring_view key(row.key, row.klen);
+	    tstring_view key(row.key);
 	    const tstring cnt = scnt >= 10000000ULL ?
 		std::format(T("{:4}m"), scnt / 1000000) : scnt >= 10000ULL ?
 		std::format(T("{:4}k"), scnt / 1000) :
@@ -168,20 +159,21 @@ tstring Timing::data(bool sort_key, uint columns) const {
 	    else
 		format_to(out, T("{:<35}{:>6}"), key, cnt);
 	} else {
-	    const bool quote = tstrpbrk(row.key, T(", \t\"")) != nullptr;
+	    const bool quote = row.key.find_first_of(T(", \t\r\n\"")) !=
+		row.key.npos;
 
 	    if (quote)
 		s += '"';
-	    for (const tchar *p = row.key; *p; ++p) {
-		if (*p == '"')
+	    for (const tchar c : row.key) {
+		if (c == '"')
 		    s += '"';
-		s += *p;
+		s += c;
 	    }
 	    if (quote)
 		s += '"';
 	    format_to(out, T(",{},{},{}"), tot, scnt, scnt ? tot / scnt : 0);
 	}
-	for (uint u = begin; u <= last && tot; ++u) {
+	for (uint u = begin; u <= last && (tot || !columns); ++u) {
 	    const uint64_t cnt = (columns && u == begin) ? sum : row.cnts[u];
 
 	    if (!columns)
@@ -204,34 +196,22 @@ tstring Timing::data(bool sort_key, uint columns) const {
 }
 
 void Timing::erase(strhash_t hash) {
-    Stats *stats = nullptr;
-
     lck.lock();
-    auto it = tmap.find(hash);
-    if (it != tmap.end()) {
-	uint idx = hash & (CACHESIZE - 1);
 
-	stats = it->second;
-	tmap.erase(it);
+    auto node = tmap.extract(hash);
+
+    if (node) {
+	const uint idx = hash & (CACHESIZE - 1);
+
 	for (uint u : { idx, idx ^ 1 }) {
-	    Stats *expected = stats;
+	    Stats *expected = node.mapped();
 
 	    cache[u].compare_exchange_strong(expected, nullptr,
 		memory_order_relaxed);
 	}
+	retired.insert(std::move(node));
     }
     lck.unlock();
-    if (stats)
-	defer(stats);
-}
-
-void Timing::defer(Stats *stats) {
-    Stats *s = flist.load(memory_order_relaxed);
-
-    do {
-	stats->flist = s;
-    } while (!flist.compare_exchange_weak(s, stats, memory_order_release,
-	memory_order_relaxed));
 }
 
 tstring Timing::format(timing_t t) {
@@ -300,13 +280,18 @@ void Timing::stop() {
 }
 
 vector<Timing::Row> Timing::snapshot(bool sort_key) const {
+    return snapshot(sort_key, size_t(-1));
+}
+
+vector<Timing::Row> Timing::snapshot(bool sort_key, size_t top) const {
     vector<Row> rows;
 
     lck.lock_shared();
     rows.reserve(tmap.size());
     for (const auto &[hash, stats] : tmap) {
-	Row &row = rows.emplace_back(stats->key, stats->klen);
+	Row &row = rows.emplace_back();
 
+	row.key.assign(stats->key, stats->klen);
 	row.tot = stats->tot.load(memory_order_relaxed);
 	for (uint u = 0; u < TIMINGSLOTS; ++u) {
 	    row.cnts[u] = stats->cnts[u].load(memory_order_relaxed);
@@ -317,9 +302,16 @@ vector<Timing::Row> Timing::snapshot(bool sort_key) const {
     if (sort_key) {
 	ranges::sort(rows, strless{}, &Row::key);
     } else {
-	ranges::sort(rows, [](const Row &a, const Row &b) {
+	const auto bytime = [](const Row &a, const Row &b) {
 	    return a.tot == b.tot ? stringless(a.key, b.key) : a.tot > b.tot;
-	});
+	};
+
+	if (rows.size() > top) {
+	    ranges::partial_sort(rows, rows.begin() + (ptrdiff_t)top, bytime);
+	    rows.resize(top);
+	} else {
+	    ranges::sort(rows, bytime);
+	}
     }
     return rows;
 }

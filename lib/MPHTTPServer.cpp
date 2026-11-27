@@ -34,6 +34,7 @@
 #define MAP_POPULATE	0
 #endif
 
+static constexpr ulong AcceptDelay = 1000;	// ms before retrying a failed accept
 static constexpr ulong ShmKeep = 128UL * 1024;	// larger segments detach
 
 static tchar pidprefix[32];
@@ -67,6 +68,14 @@ void MPHTTPSocket::get(bool) {
 }
 
 void ShMemHTTPSocket::cleanup(bool force) {
+    if (filemem) {
+#ifdef _WIN32
+	UnmapViewOfFile(filemem);
+#else
+	munmap(filemem, filesz);
+#endif
+	filemem = nullptr;
+    }
     if (shm && (force || (!shmout && shmsz > ShmKeep))) {
 #ifdef _WIN32
 	UnmapViewOfFile(shm);
@@ -83,7 +92,6 @@ void ShMemHTTPSocket::cleanup(bool force) {
 
 void ShMemHTTPSocket::post(void) {
     const char *file = attr("X-File");
-    bool filemap = false;
     ulong len;
     void *mem;
     const char *name = attr("X-Name");
@@ -96,7 +104,8 @@ void ShMemHTTPSocket::post(void) {
 	Sockaddr peer;
 
 	// both map local resources into this process
-	if (!peername(peer) || !peer.localhost()) {
+	if (!dspr.config().get(T("post.local"), false, section()) ||
+	    !peername(peer) || !peer.localhost()) {
 	    error(403);
 	    return;
 	}
@@ -171,22 +180,30 @@ void ShMemHTTPSocket::post(void) {
 
 	if ((fh = CreateFileA(file, GENERIC_READ, FILE_SHARE_READ |
 	    FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-	    FILE_FLAG_SEQUENTIAL_SCAN, nullptr)) == INVALID_HANDLE_VALUE ||
-	    !GetFileSizeEx(fh, &fsz) || (mh = CreateFileMappingA(fh, nullptr,
-	    PAGE_READONLY, 0, 0, nullptr)) == nullptr || (mem =
-	    MapViewOfFile(mh, FILE_MAP_READ, 0, 0, 0)) == nullptr) {
+	    FILE_FLAG_SEQUENTIAL_SCAN, nullptr)) == INVALID_HANDLE_VALUE) {
+	    error(400);
+	    return;
+	}
+	if (GetFileType(fh) != FILE_TYPE_DISK || !GetFileSizeEx(fh, &fsz) ||
+	    fsz.QuadPart <= 0 || (ullong)fsz.QuadPart >= (ulong)-1) {
+	    CloseHandle(fh);
+	    error(400);
+	    return;
+	}
+	if ((mh = CreateFileMappingA(fh, nullptr, PAGE_READONLY, 0, 0,
+	    nullptr)) == nullptr || (mem = MapViewOfFile(mh, FILE_MAP_READ,
+	    0, 0, 0)) == nullptr) {
 	    dlog.note(Log::cmd(op), Log::kv(T("file"), file), Log::kv(T("err"),
 		GetLastError()), T("unable to map file data"));
 	    if (mh)
 		CloseHandle(mh);
-	    if (fh != INVALID_HANDLE_VALUE)
-		CloseHandle(fh);
+	    CloseHandle(fh);
 	    error(400);
 	    return;
 	}
 	CloseHandle(mh);
 	CloseHandle(fh);
-	filemap = true;
+	filemem = mem;
 	len = (ulong)fsz.QuadPart;
 	if (len > ShmKeep) {
 	    WIN32_MEMORY_RANGE_ENTRY r{mem, len};
@@ -197,10 +214,11 @@ void ShMemHTTPSocket::post(void) {
 	int fd;
 	struct stat st;
 
-	if ((fd = ::open(file, O_RDONLY | O_CLOEXEC)) == -1 ||
-	    fstat(fd, &st) || (mem = mmap(nullptr, (size_t)st.st_size,
-	    PROT_READ, MAP_NORESERVE | MAP_POPULATE | MAP_PRIVATE, fd, 0)) ==
-	    MAP_FAILED) {
+	// O_NONBLOCK: a FIFO must not block the open
+	if ((fd = ::open(file, O_RDONLY | O_CLOEXEC | O_NONBLOCK)) == -1 ||
+	    fstat(fd, &st) || (!S_ISREG(st.st_mode) && (errno = EINVAL)) ||
+	    (mem = mmap(nullptr, (size_t)st.st_size, PROT_READ, MAP_NORESERVE |
+	    MAP_POPULATE | MAP_PRIVATE, fd, 0)) == MAP_FAILED) {
 	    dlog.note(Log::cmd(op), Log::kv(T("file"), file),
 		Log::error(tstrerror(errno)), T("unable to map file data"));
 	    if (fd != -1)
@@ -209,8 +227,9 @@ void ShMemHTTPSocket::post(void) {
 	    return;
 	}
 	::close(fd);
-	filemap = true;
-	len = (ulong)st.st_size;
+	filemem = mem;
+	filesz = (ulong)st.st_size;
+	len = filesz;
 	if (len > ShmKeep) {
 	    (void)posix_madvise(mem, len, POSIX_MADV_SEQUENTIAL);
 	    (void)posix_madvise(mem, len, POSIX_MADV_WILLNEED);
@@ -224,12 +243,6 @@ void ShMemHTTPSocket::post(void) {
 	error(400);
     else if (!onPost(name, mem, len))
 	error(404);
-    if (filemap)
-#ifdef _WIN32
-	UnmapViewOfFile(mem);
-#else
-	munmap(mem, len);
-#endif
 }
 
 void ShMemHTTPSocket::replydone(DispatchObjCB cb) {
@@ -239,11 +252,31 @@ void ShMemHTTPSocket::replydone(DispatchObjCB cb) {
 }
 
 void MPHTTPListenSocket::accepted(void) {
-    const auto &d = (const MPHTTPDispatcher &)dspr;
+    auto &d = (MPHTTPDispatcher &)dspr;
     Socket s;
 
-    while (!d.complete() && accept(s, true, true)) {
-	s.movehigh();
+    if (UNLIKELY(reason() == DispatchClose)) {
+	dloge(Log::mod(HTTPServerSocket::section()), Log::cmd(T("accept")),
+	    Log::kv(T("addr"), addr.str()), T("listener poll failed"));
+	cancel();
+	d.retire();
+	return;
+    }
+    while (!d.complete()) {
+	if (UNLIKELY(!accept(s, true, true))) {
+	    if (err() == WSAEWOULDBLOCK)
+		break;
+	    dlogw(Log::mod(HTTPServerSocket::section()), Log::cmd(T("accept")),
+		Log::kv(T("addr"), addr.str()), Log::error(errstr()));
+	    // the queue is not empty: polling again would fire at once
+	    cancel();
+	    timeout(accepted, AcceptDelay);
+	    to = DSP_NEVER;		// relisten() reuses it as a poll timeout
+	    return;
+	}
+#ifndef __linux__
+	s.movehigh();			// some stdio implementations need low fds
+#endif
 	onAccept(s);
 	// one connection at a time: closed() resumes accepting
 	if (!d.acceptmany() && d.connections()) {
@@ -265,7 +298,7 @@ const Sockaddr *MPHTTPDispatcher::address(void) const {
 void MPHTTPDispatcher::closed(void) {
     if (--curcon == 0 && complete())
 	quit();
-    else if (!many && !complete())
+    else if (!many && !complete() && !stopping)
 	lsock->relisten();
 }
 
@@ -322,7 +355,7 @@ void MPHTTPDispatcher::logprefix(void) {
 
 // SIGTERM to self lets ctrl_handler stop the dispatcher off its own threads
 void MPHTTPDispatcher::quit(void) {
-    if (quitting.exchange(true))
+    if (stopping || quitting.exchange(true))
 	return;
 #ifdef _WIN32
     // ctrl-C reaches only this worker's hidden console
@@ -337,9 +370,15 @@ void MPHTTPDispatcher::quit(void) {
 #endif
 }
 
+void MPHTTPDispatcher::onStop(void) {
+    stopping = true;
+    Dispatcher::onStop();
+}
+
 void MPHTTPDispatcher::refresh(bool recycle) {
-    many = cfg.get(T("worker.acceptmany"), true);
     maxreq = recycle ? cfg.get(T("worker.maxrequests"), 10000U) : 0;
+    if (complete())
+	retire();
 }
 
 uint MPHTTPDispatcher::remaining(void) const {
@@ -356,6 +395,7 @@ void MPHTTPDispatcher::retire(void) {
 }
 
 bool MPHTTPDispatcher::start(void) {
+    many = cfg.get(T("worker.acceptmany"), true);
     if (!Dispatcher::start(many ? cfg.get(T("worker.threads"), 64U) : 0,
 	cfg.get(T("worker.stack"), 0U)))
 	return false;

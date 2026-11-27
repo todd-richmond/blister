@@ -26,6 +26,7 @@ int tmain(int argc, const tchar * const argv[]) {
     const tchar *attr = nullptr, *file = T("-"), *prefix = nullptr,
 	*section = nullptr, *val = nullptr;
     ConfigFile cfg;
+    tstring key;
     bool boolean = false, check = false, integer = false, nonewline = false,
 	quiet = false, stdio, update = false;
     int i;
@@ -87,8 +88,20 @@ int tmain(int argc, const tchar * const argv[]) {
 	    T("\t[-u|--update]\n");
 	return -1;
     }
+    update = update && !check && !boolean && !integer;
+    if (update && prefix && *prefix &&
+	!tstring_view(attr).starts_with(T("*."))) {
+	key = prefix;
+	key += '.';
+	key += attr;
+	attr = key.c_str();
+    }
     stdio = tstreq(file, T("-"));
-    if (!(stdio ? cfg.read(tcin, prefix) : cfg.read(file, prefix))) {
+    const bool readok = update ?
+	(stdio ? cfg.readunscoped(tcin) : cfg.readunscoped(file)) :
+	(stdio ? cfg.read(tcin, prefix) : cfg.read(file, prefix));
+
+    if (!readok) {
 	tcerr << T("unable to read ") << file << T(": ") << tstrerror(errno) <<
 	    endl;
 	return -1;

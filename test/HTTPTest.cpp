@@ -95,10 +95,9 @@ private:
     ulong stagger, tmt;
 };
 
-static atomic<uint> errs, ops;
 static atomic loops(LLONG_MAX);
 static atomic_bool qflag;
-alignas(CACHELINE_SZ) static atomic<usec_t> usecs;
+static TestStats stats;
 
 static inline bool loop_exit(void) {
     return loops.fetch_sub(1, memory_order_relaxed) <= 0 || qflag;
@@ -112,17 +111,17 @@ static ulong stagger(uint u, uint count, ulong delay, ulong nap) {
 static const tchar *check(uint sts, const char *data, ulong size) {
     if (sts != 200)
 	return T("status");
-    return size == dsz && !memcmp(data, dbuf, dsz) ? nullptr : T("data");
+    return samepayload(data, size, dbuf, dsz) ? nullptr : T("data");
 }
 
 static void good(timing_t usec) {
-    ::ops.fetch_add(1, memory_order_relaxed);
-    ::usecs.fetch_add(usec, memory_order_relaxed);
+    stats.ops.fetch_add(1, memory_order_relaxed);
+    stats.usecs.fetch_add(usec, memory_order_relaxed);
     dtiming.add(T("post"), usec);
 }
 
 static void bad(const tstring &why) {
-    errs.fetch_add(1, memory_order_relaxed);
+    stats.errs.fetch_add(1, memory_order_relaxed);
     dtiming.add(T("error"), 0);
     dloge(T("client post="), why);
 }
@@ -205,12 +204,12 @@ static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true, sync = false;
-    ulong delay = 0, failed = 0, tmt = TIMEOUT, nap = 0;
+    ulong delay = 0, tmt = TIMEOUT, nap = 0;
+    TestSocketPath endpoint;
     Config config;
     HTTPTest ht(config);
     const tchar *host = nullptr;
     int i;
-    timing_t last, now;
     const tchar *path = T("echo this short test string as quickly as possible");
     Sockaddr sa;
     uint sockets = 20, threads = 20;
@@ -268,8 +267,8 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     if ((dbuf = loaddata(T("httptest"), path, dsz)) == nullptr)
 	return 1;
-    if (!host)
-	host = T("unix:./http.sock");
+    if (!endpoint.set(T("httptest"), host, T("unix:./http.sock"), client && server))
+	return 1;
     if (!sa.set(host)) {
 	tcerr << T("httptest: unknown host ") << host << endl;
 	return 1;
@@ -306,7 +305,6 @@ int tmain(int argc, const tchar * const argv[]) {
 	dlogi(Log::mod(T("http")), Log::cmd(T("httptest")), Log::kv(T("addr"),
 	    sa.str()), Log::kv(T("data"), path));
 	dlog.flush();
-	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	if (sa.host() == T("*"))
 	    sa.host(T("localhost"));
 	if (sync) {
@@ -323,22 +321,11 @@ int tmain(int argc, const tchar * const argv[]) {
 	    ht.connect(sa, sockets, delay, tmt, nap);
 	}
 	Thread::MainThread.priority(10);
-	last = Timing::now();
+	stats.start();
 	do {
-	    ulong cnt, err, ok;
-
 	    if (ht.waitForMain(1000))
 		break;
-	    now = Timing::now();
-	    // swap counters so increments between read and reset are kept
-	    err = errs.exchange(0, memory_order_relaxed);
-	    failed += err;
-	    ok = ops.exchange(0, memory_order_relaxed);
-	    cnt = ok + err;
-	    tcout << (timing_t)cnt * 1000000 / (now - last) << T("\t\t") <<
-		(usecs.exchange(0, memory_order_relaxed) / (ok ? ok : 1)) <<
-		'\t' << err << endl;
-	    last = now;
+	    stats.print(!qflag && loops.load(memory_order_relaxed) <= 0);
 	} while (loops.load() > 0 && !qflag);
 	// the server and clients must outlive all in flight requests
 	for (const auto &t : syncs)
@@ -350,8 +337,9 @@ int tmain(int argc, const tchar * const argv[]) {
 	    continue;
     }
     ht.stop();
-    failed += errs.load(memory_order_relaxed);
+    if (client)
+	stats.print(true);
     delete [] dbuf;
     tcout << dtiming.data() << endl;
-    return qflag ? -1 : failed ? 1 : 0;
+    return qflag ? -1 : stats.failed() ? 1 : 0;
 }

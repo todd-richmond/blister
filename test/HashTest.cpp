@@ -17,13 +17,61 @@
 
 #include "stdapi.h"
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <iomanip>
 #include <fstream>
 #include <map>
+#include <thread>
 #include <unordered_map>
 #include <vector>
+#include "LRUCache.h"
+#include "ResourcePool.h"
+#include "Streams.h"
 
 // insert and look up through distinct but equal keys so neither a pointer
 // compare nor an address hash can pass
+struct TestCacheEntry: LRUCacheEntry {
+    using LRUCacheEntry::LRUCacheEntry;
+};
+
+struct GatedCacheEntry: LRUCacheEntry {
+    using LRUCacheEntry::LRUCacheEntry;
+    GatedCacheEntry(const GatedCacheEntry &other): LRUCacheEntry(other) {
+	if (block.exchange(false)) {
+	    started.store(true);
+	    while (hold.load())
+		this_thread::yield();
+	}
+    }
+
+    static inline atomic<bool> block = false;
+    static inline atomic<bool> hold = false;
+    static inline atomic<bool> started = false;
+};
+
+struct GatedResource {
+    GatedResource() {
+	started.store(true);
+	while (hold.load())
+	    this_thread::yield();
+    }
+
+    static inline atomic<bool> hold = false;
+    static inline atomic<bool> started = false;
+};
+
+struct TestResource {};
+
+template<typename P>
+concept CachePutData = requires(LRUCache<TestCacheEntry> &cache,
+    TestCacheEntry &entry, P p) { cache.put(entry, p, 1); };
+
+static_assert(CachePutData<::byte *>);
+static_assert(!CachePutData<char *>);
+static_assert(!CachePutData<void *>);
+static_assert(!CachePutData<const ::byte *>);
+
 template<class H, class E>
 static int check_hash(const tchar *name, const tchar *key,
     const tchar *lookup, int &tests) {
@@ -391,6 +439,201 @@ WARN_POP()
 	tests++;
 	if (bad)
 	    fail(T("FAIL: string compare type matrix, ") << bad << T(" bad"));
+    }
+    {
+	tcout << T("Testing LRU cache ownership and expiration...\n");
+	static constexpr char key[] = "cache key";
+	LRUCache<TestCacheEntry> cache(64, 0);
+	TestCacheEntry entry(key, sizeof (key) - 1);
+	::byte *data = new ::byte[4] { 1, 2, 3, 4 };
+
+	tests++;
+	if (!cache.put(entry, data, 4) ||
+	    cache.get(key, sizeof (key) - 1).data.get() != data)
+	    fail(T("FAIL: LRU cache byte ownership"));
+	cache.resize(64, 60000);
+	tests++;
+	if (!cache.get(key, sizeof (key) - 1))
+	    fail(T("FAIL: LRU cache enable expiration"));
+    }
+    {
+	tcout << T("Testing concurrent LRU expiration changes...\n");
+	static constexpr char key[] = "racing key";
+	LRUCache<GatedCacheEntry> cache(64, 0);
+	GatedCacheEntry entry(key, sizeof (key) - 1);
+	::byte *data = new ::byte[1] {};
+
+	GatedCacheEntry::hold.store(true);
+	GatedCacheEntry::started.store(false);
+	GatedCacheEntry::block.store(true);
+	thread inserter([&] { cache.put(entry, data, 1); });
+	while (!GatedCacheEntry::started.load())
+	    this_thread::yield();
+	cache.resize(64, 60000);
+	GatedCacheEntry::hold.store(false);
+	inserter.join();
+	tests++;
+	if (!cache.get(key, sizeof (key) - 1))
+	    fail(T("FAIL: LRU cache concurrent expiration change"));
+    }
+    {
+	tcout << T("Testing resource pool shrink synchronization...\n");
+	ResourcePool<GatedResource> pool(1);
+	GatedResource *resource;
+	atomic<bool> limited = false;
+
+	GatedResource::started.store(false);
+	GatedResource::hold.store(true);
+	thread creator([&] { resource = pool.get(); });
+	while (!GatedResource::started.load())
+	    this_thread::yield();
+	thread limiter([&] {
+	    pool.limit(0);
+	    limited.store(true);
+	});
+	this_thread::sleep_for(chrono::milliseconds(20));
+	bool waited = !limited.load();
+
+	GatedResource::hold.store(false);
+	creator.join();
+	this_thread::sleep_for(chrono::milliseconds(20));
+	waited = waited && !limited.load();
+	pool.release(resource);
+	limiter.join();
+	tests++;
+	if (!waited || pool.size())
+	    fail(T("FAIL: ResourcePool pending creation shrink"));
+    }
+    {
+	ResourcePool<TestResource> pool(2, 2);
+	TestResource *first = pool.get();
+	TestResource *second = pool.allocate();
+	TestResource *acquired = nullptr;
+	atomic<bool> limited = false, got = false;
+
+	thread limiter([&] {
+	    pool.limit(1);
+	    limited.store(true);
+	});
+	this_thread::sleep_for(chrono::milliseconds(20));
+	thread getter([&] {
+	    acquired = pool.get();
+	    got.store(true);
+	});
+	this_thread::sleep_for(chrono::milliseconds(20));
+	bool blocked = !limited.load() && !got.load();
+
+	pool.release(second);
+	limiter.join();
+	getter.join();
+	pool.release(first);
+	pool.release(acquired);
+	tests++;
+	if (!blocked || pool.size() != 1)
+	    fail(T("FAIL: ResourcePool acquisition during shrink"));
+    }
+    {
+	tcout << T("Testing empty string views...\n");
+	const tstring_view empty;
+
+	tests++;
+	if (!stringeq(T(""), empty) || stringcmp(T(""), empty) ||
+	    !stringieq(empty, empty) || stringicmp(empty, empty) ||
+	    cstrncmp<tchar>(nullptr, nullptr, 0) ||
+	    cstrnicmp<tchar>(nullptr, nullptr, 0))
+	    fail(T("FAIL: Empty string_view comparison"));
+    }
+    {
+	tcout << T("Testing wide to_chars capacity...\n");
+	char narrow[512];
+	wchar_t wide[512];
+	auto nr = to_chars(narrow, narrow + size(narrow), 1e300,
+	    chars_format::fixed, 6);
+	auto wr = to_chars(wide, wide + size(wide), 1e300,
+	    chars_format::fixed, 6);
+	bool same = nr.ec == errc() && wr.ec == errc() &&
+	    nr.ptr - narrow == wr.ptr - wide;
+
+	for (ptrdiff_t i = 0; same && i < nr.ptr - narrow; ++i)
+	    same = wide[i] == (wchar_t)(uchar)narrow[i];
+	tests++;
+	if (!same)
+	    fail(T("FAIL: Wide to_chars output over 128 characters"));
+    }
+    {
+	tcout << T("Testing bufferstream numeric writes...\n");
+	int bad = 0;
+	auto check = [&]<typename C>(C) {
+	    static constexpr char expected[] = "-123 1.5";
+	    bufferstream<C> strm;
+
+	    strm.write(-123).write(C(' ')).write(1.5);
+	    const auto out = strm.view();
+	    if (out.size() != size(expected) - 1)
+		return 1;
+	    for (size_t i = 0; i < out.size(); ++i)
+		if (out[i] != (C)expected[i])
+		    return 1;
+	    return 0;
+	};
+
+	bad += check(char {});
+	bad += check(wchar_t {});
+	bad += check(char16_t {});
+	bad += check(char32_t {});
+	tests++;
+	if (bad)
+	    fail(T("FAIL: bufferstream numeric character conversion"));
+    }
+    {
+	tcout << T("Testing bufferstream reset and aliasing...\n");
+	bufferstream<char> strm;
+	const char *nullstr = nullptr;
+
+	strm << nullstr;
+	strm << hex << setw(8) << setprecision(2);
+	strm.reset();
+	strm << 255 << ' ' << 1.5;
+	tests++;
+	if (!strm.good() || strm.view() != "255 1.5" || strm.width() ||
+	    strm.precision() != 6 || strm.tie())
+	    fail(T("FAIL: bufferstream reset state"));
+	strm.str("abcdefghij");
+	strm.str(strm.view().substr(3));
+	tests++;
+	if (strm.view() != "defghij")
+	    fail(T("FAIL: bufferstream aliased str"));
+	strm << hex;
+	strm.str("0x");
+	strm << 255;
+	tests++;
+	if (strm.view() != "0xff")
+	    fail(T("FAIL: bufferstream str preserves formatting"));
+    }
+    {
+	struct MockStream {
+	    mutable bool readone = false;
+
+	    int read(void *buf, uint) const {
+		if (readone)
+		    return 0;
+		*(char *)buf = 'x';
+		readone = true;
+		return 1;
+	    }
+	    int write(const void *, uint) const { return 0; }
+	    ssize_t writev(iovec *, int) const { return 0; }
+	};
+
+	tcout << T("Testing unbuffered faststreambuf fill...\n");
+	MockStream mock;
+	faststreambuf<MockStream> strm(mock, 0);
+	bool okay = strm.sgetc() == 'x' && strm.fill() < 0 &&
+	    strm.avail() == "x";
+
+	tests++;
+	if (!okay)
+	    fail(T("FAIL: Unbuffered faststreambuf fill"));
     }
     // aligned addresses must not leave the low hash bits constant
     {

@@ -17,6 +17,7 @@
 
 #include "stdapi.h"
 #include <algorithm>
+#include <fcntl.h>
 #include <fstream>
 #include <memory>
 #include <vector>
@@ -51,6 +52,7 @@ void Config::clear_locked(void) {
     amap.clear();
     sum = 0;
     ini = false;
+    order = 0;
 }
 
 void Config::clear(void) {
@@ -162,9 +164,12 @@ Config::KV *Config::newkv(const tchar *key, size_t klen, const tchar *val,
     kv = (KV *)new char[offsetof(KV, val) + (klen + vlen + 2) * sizeof (tchar)];
     kv->quote = quote;
     kv->vlen = (uint)vlen;
-    memcpy(kv->val, val, vlen * sizeof (tchar));
+    kv->order = kv->slen = 0;
+    if (vlen)
+	memcpy(kv->val, val, vlen * sizeof (tchar));
     kv->val[vlen] = '\0';
-    memcpy(kv->val + vlen + 1, key, klen * sizeof (tchar));
+    if (klen)
+	memcpy(kv->val + vlen + 1, key, klen * sizeof (tchar));
     kv->val[vlen + 1 + klen] = '\0';
     kv->expand = false;
     if (LIKELY(vlen > 3 && quote != '\'')) {
@@ -200,7 +205,7 @@ bool Config::open_file(const tstring &file, tifstream &is, unique_ptr<tchar[]>
     return (bool)is;
 }
 
-bool Config::parse(tistream &is, tstring_view dir, uint depth) {
+bool Config::parse(tistream &is, tstring_view dir, bool unscoped, uint depth) {
     tstring_view key, val;
     tstring line, sect;
     auto rtrim = [](const tstring &str) {
@@ -267,7 +272,7 @@ bool Config::parse(tistream &is, tstring_view dir, uint depth) {
 		    file = dir;
 		file += key;
 		if (depth >= MAXINCLUDE || !open_file(file, iis, fbuf, sz) ||
-		    !parse(iis, dirname(file), depth + 1))
+		    !parse(iis, dirname(file), unscoped, depth + 1))
 		    return false;
 	    }
 	    break;
@@ -295,25 +300,32 @@ bool Config::parse(tistream &is, tstring_view dir, uint depth) {
 		trim(key);
 		trim(val);
 	    }
-	    if (UNLIKELY(key.size() > 1 && key[0] == '*' && key[1] == '.')) {
-		key.remove_prefix(2);
-	    } else if (!pre.empty()) {
-		if (key.size() > pre.size() + 1 && key[pre.size()] == '.' &&
-		    key.starts_with(pre))
-		    key.remove_prefix(pre.size() + 1);
-		else if (key.contains('.'))
-		    continue;
+	    if (!unscoped) {
+		if (key.starts_with(T("*."))) {
+		    key.remove_prefix(2);
+		} else if (!pre.empty()) {
+		    if (key.size() > pre.size() + 1 && key[pre.size()] == '.' &&
+			key.starts_with(pre))
+			key.remove_prefix(pre.size() + 1);
+		    else if (key.contains('.'))
+			continue;
+		}
 	    }
 	    set(key.data(), key.size(), val.data(), val.size(), sect.data(),
 		sect.size(), app);
 	    break;
 	}
     }
-    return true;
+    return is.eof() && !is.bad();
 }
 
 bool Config::load(tistream &is, const tchar *str, bool app, ulong sz,
     tstring_view dir) {
+    return load(is, str, app, sz, dir, false);
+}
+
+bool Config::load(tistream &is, const tchar *str, bool app, ulong sz,
+    tstring_view dir, bool unscoped) {
     if (!is)
 	return false;
     if (app) {
@@ -323,20 +335,23 @@ bool Config::load(tistream &is, const tchar *str, bool app, ulong sz,
 	    pre = str;
 	if (sz)
 	    reserve(sz);
-	return parse(is, dir);
+	return parse(is, dir, unscoped);
     }
     // parse outside the lock so readers are not blocked by file I/O
     Config tmp(str ? str : prefix().c_str(), ck);
 
+    if (unscoped)
+	tmp.order = 1;
     if (sz)
 	tmp.reserve(sz);
-    if (!tmp.parse(is, dir))
+    if (!tmp.parse(is, dir, unscoped))
 	return false;
 
     SpinWLocker lkr(lck);
 
     pre.swap(tmp.pre);
     ini = tmp.ini;
+    order = tmp.order;
     amap.swap(tmp.amap);
     sum = tmp.sum;
     return true;
@@ -350,7 +365,8 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	klen) : tstring_view(key, klen);
 
     if (UNLIKELY(ck))
-	sum = rapid_hash(val, vlen * sizeof (tchar), rapid_hash(fkey.data(),
+	sum = rapid_hash(vlen ? val : T(""), vlen * sizeof (tchar),
+	    rapid_hash(fkey.empty() ? T("") : fkey.data(),
 	    fkey.size() * sizeof (tchar), sum));
     if (auto it = append ? amap.find(fkey) : amap.end(); it != amap.end()) {
 	const KV *oldkv = it->second;
@@ -362,7 +378,7 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
 	if (vlen > 1 && (val[0] == '"' || val[0] == '\'') && val[vlen - 1] ==
 	    val[0])
 	    s.append(val + 1, vlen - 2);
-	else
+	else if (vlen)
 	    s.append(val, vlen);
 	if (oldkv->quote)
 	    s += oldkv->quote;
@@ -373,6 +389,11 @@ Config &Config::set(const tchar *key, size_t klen, const tchar *val, size_t
     KV *kv = newkv(fkey.data(), fkey.size(), val, vlen);
     auto [it, inserted] = amap.try_emplace(kv->key(), kv);
 
+    if (order) {
+	kv->order = order++;
+	if (slen || !inserted)
+	    kv->slen = slen ? (uint)slen : it->second->slen;
+    }
     if (!inserted) {
 	// reuse the map node rather than erase + emplace
 	const KV *oldkv = it->second;
@@ -409,7 +430,9 @@ bool Config::write(tostream &os, bool inistyle) const {
     kvs.reserve(amap.size());
     for (const auto &[k, v] : amap)
 	kvs.push_back(v);
-    if (inistyle)
+    if (order)
+	ranges::sort(kvs, {}, &KV::order);
+    else if (inistyle)
 	ranges::sort(kvs, keyless{}, &KV::key);
     else
 	ranges::sort(kvs, strless{}, &KV::key);
@@ -418,9 +441,19 @@ bool Config::write(tostream &os, bool inistyle) const {
 	const tchar *key = kvs[u]->key();
 	const KV *kv = kvs[u];
 
-	if ((dot = tstrchr(key, '.')) == nullptr) {
+	if (inistyle && order)
+	    dot = kv->slen ? key + kv->slen : nullptr;
+	else
+	    dot = tstrchr(key, '.');
+	if (!dot) {
 	    if (inistyle) {
-		sect = '.';
+		if (order && !sect.empty()) {
+		    os << T("\n[global]\n");
+		    sect.clear();
+		    cnt = 0;
+		} else if (!order) {
+		    sect = '.';
+		}
 	    } else {
 		sect.assign(key);
 		if (cnt > 1 || (cnt == 1 && u + 1 < kvs.size() &&
@@ -474,21 +507,88 @@ bool ConfigFile::read(const tchar *file, const tchar *_pre, bool app) {
 	dirname(path));
 }
 
+bool ConfigFile::readunscoped(const tchar *file) {
+    unique_ptr<tchar[]> fbuf;
+    tifstream is;
+    ulong sz;
+
+    path = file;
+    return open_file(path, is, fbuf, sz) && load(is, T(""), false, sz,
+	dirname(path), true);
+}
+
 bool ConfigFile::write(const tchar *file, bool inistyle) const {
-    const tstring out(file ? tstring(file) : path + T(".tmp"));
-    tofstream os(tstringtoachar(out));
+    if (file) {
+	tofstream os(file);
+
+#ifdef _UNICODE
+	os.put(L'\xFEFF');
+#endif
+	const bool ok = write(os, inistyle);
+
+	os.close();
+	return ok && !os.fail();
+    }
+    if (path.empty()) {
+	errno = ENOENT;
+	return false;
+    }
+
+    tstring dir = path + T(".tmp.XXXXXX");
+    struct stat orig;
+    const bool exists = !tlstat(path.c_str(), &orig);
     bool ok;
+
+    if (!exists && errno != ENOENT)
+	return false;
+    if (exists && !S_ISREG(orig.st_mode)) {
+	errno = EINVAL;
+	return false;
+    }
+    if (!tmkdtemp(dir.data()))
+	return false;
+
+    const tstring out = dir + T("/config");
+
+    errno = 0;
+    tofstream os(out.c_str());
 
 #ifdef _UNICODE
     os.put(L'\xFEFF');
 #endif
-    if (file)
-	return write(os, inistyle);
     ok = write(os, inistyle);
     os.close();
-    if (!ok || rename(tstringtoachar(out), tstringtoachar(path))) {
-	unlink(tstringtoachar(out));
-	return false;
+    ok = ok && !os.fail();
+    if (!ok && !errno)
+	errno = EIO;
+#ifndef _WIN32
+    if (ok) {
+	const int fd = open(out.c_str(), O_RDONLY | O_CLOEXEC);
+	struct stat created;
+
+	ok = fd >= 0;
+	if (ok) {
+	    ok = (!exists || (!fstat(fd, &created) &&
+		((orig.st_uid == created.st_uid && orig.st_gid == created.st_gid) ||
+		!fchown(fd, orig.st_uid, orig.st_gid)))) &&
+		!fchmod(fd, exists ? orig.st_mode & 0777 : 0600);
+	    const int err = errno;
+
+	    if (close(fd) && ok)
+		ok = false;
+	    else if (!ok)
+		errno = err;
+	}
     }
-    return true;
+#endif
+    if (ok)
+	ok = !trename(out.c_str(), path.c_str());
+
+    const int err = errno;
+
+    if (!ok)
+	(void)tunlink(out.c_str());
+    (void)trmdir(dir.c_str());
+    errno = err;
+    return ok;
 }

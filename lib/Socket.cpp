@@ -31,7 +31,6 @@ Sockaddr::SockInit Sockaddr::init;
 #else
 
 #include <sys/ioctl.h>
-#include <sys/stat.h>
 #ifdef __sun__
 #include <sys/filio.h>
 #endif
@@ -64,12 +63,30 @@ const tstring &Sockaddr::host(void) const {
     return name;
 }
 
+Sockaddr::Proto Sockaddr::familyhint(const tchar *&host, Proto proto) {
+    if (host && !tstrnicmp(host, T("ipv4:"), 5)) {
+	host += 5;
+	return dgram(proto) ? UDP4 : TCP4;
+    }
+    if (host && !tstrnicmp(host, T("ipv6:"), 5)) {
+	host += 5;
+	return dgram(proto) ? UDP6 : TCP6;
+    }
+    return proto;
+}
+
 addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
     proto) {
-    struct addrinfo *ai, hints;
-    bool any = false;
+    proto = familyhint(host, proto);
+    return resolve(host, service, proto, nullptr);
+}
 
-    ZERO(hints);
+addrinfo *Sockaddr::resolve(const tchar *host, const tchar *service, Proto proto,
+    const tchar **requested) {
+    struct addrinfo *ai, hints{};
+    bool any = false;
+    const bool ipv6 = host && tstrchr(host, ':');
+
     hints.ai_family = families[proto];
     if (!host || !*host || *host == '*') {
 	// prefer dual-stack "::" but fall back to IPv4 on hosts without IPv6
@@ -88,37 +105,35 @@ addrinfo *Sockaddr::getaddrinfo(const tchar *host, const tchar *service, Proto
 	hints.ai_family = AF_INET;
 	hints.ai_flags = AI_PASSIVE;
 	host = nullptr;
-    } else if (istdigit(*host)) {
-	hints.ai_flags = AI_NUMERICHOST;
     } else {
-	hints.ai_flags = AI_CANONNAME | AI_ADDRCONFIG;
-	if (!tstrnicmp(host, T("ipv4:"), 5)) {
-	    hints.ai_family = AF_INET;
-	    host += 5;
-	} else if (!tstrnicmp(host, T("ipv6:"), 5)) {
-	    hints.ai_family = AF_INET6;
-	    host += 5;
-	}
+	hints.ai_flags = ipv6 || istdigit(*host) ? AI_NUMERICHOST :
+	    AI_CANONNAME | AI_ADDRCONFIG;
     }
+#ifdef AI_V4MAPPED
     hints.ai_flags |= AI_V4MAPPED;
+#endif
     if (service && istdigit(*service))
 	hints.ai_flags |= AI_NUMERICSERV;
     hints.ai_socktype = dgram(proto) ? SOCK_DGRAM : SOCK_STREAM;
-    if (!::getaddrinfo(host ? tchartoachar(host) : NULL, service ?
-	tchartoachar(service) : NULL, &hints, &ai))
-	return ai;
-    if (hints.ai_flags & AI_NUMERICHOST) {	// digit led names: 3com.com
-	hints.ai_flags = (hints.ai_flags & ~AI_NUMERICHOST) | AI_CANONNAME |
-	    AI_ADDRCONFIG;
-	return ::getaddrinfo(host ? tchartoachar(host) : NULL, service ?
-	    tchartoachar(service) : NULL, &hints, &ai) ? NULL : ai;
+    if (::getaddrinfo(host ? tchartoachar(host) : NULL, service ?
+	tchartoachar(service) : NULL, &hints, &ai)) {
+	if (!ipv6 && (hints.ai_flags & AI_NUMERICHOST)) {
+	    // digit led names: 3com.com
+	    hints.ai_flags = (hints.ai_flags & ~AI_NUMERICHOST) | AI_CANONNAME |
+		AI_ADDRCONFIG;
+	} else if (any) {
+	    hints.ai_family = AF_INET;
+	    hints.ai_flags &= ~AI_ADDRCONFIG;
+	} else {
+	    return nullptr;
+	}
+	if (::getaddrinfo(host ? tchartoachar(host) : NULL, service ?
+	    tchartoachar(service) : NULL, &hints, &ai))
+	    return nullptr;
     }
-    if (!any)
-	return NULL;
-    hints.ai_family = AF_INET;
-    hints.ai_flags &= ~AI_ADDRCONFIG;
-    return ::getaddrinfo(NULL, service ? tchartoachar(service) : NULL, &hints,
-	&ai) ? NULL : ai;
+    if (requested && (hints.ai_flags & AI_CANONNAME))
+	*requested = host;
+    return ai;
 }
 
 const tstring &Sockaddr::hostname() {
@@ -197,6 +212,11 @@ bool Sockaddr::service(const tchar *service, Proto proto) {
 }
 
 bool Sockaddr::set(const addrinfo *ai) {
+    return set(ai, {});
+}
+
+bool Sockaddr::set(const addrinfo *ai, tstring_view reqhost) {
+    requested = tstring(reqhost);
     family((sa_family_t)ai->ai_family);
     memcpy(&addr.sa, ai->ai_addr, ai->ai_addrlen);
     memset((char *)&addr.sa + ai->ai_addrlen, 0, sizeof (addr) -
@@ -216,27 +236,26 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
     const tchar *p;
     tstring s;
 
-    if (!host || !tstrncmp(host, T("unix:"), 5))
+    if (!host || proto == UNIX || tstring_view(host).contains('/') ||
+	tstring_view(host).starts_with(T("unix:")))
 	return set(host, (const tchar *)nullptr, proto);
-    if (*host == ':' && host[1] == ':') {
-	if ((p = tstrchr(host + 2, ':')) != nullptr) {
-	    s.assign(host, (tstring::size_type)(p - host));
-	    host = s.c_str();
-	}
-    } else if (*host == '[') {
-	if ((p = tstrchr(host, ']')) == nullptr) {
-	    family(AF_UNSPEC);
+    proto = familyhint(host, proto);
+    if (*host == '[') {
+	p = tstrchr(host + 1, ']');
+	if (!p || p == host + 1 || (p[1] && p[1] != ':')) {
+	    clear();
 	    return false;
 	}
-	s.assign(host + 1, (tstring::size_type)(p - host - 1));
+	s.assign(host + 1, p);
 	host = s.c_str();
-	p = tstrchr(p, ':');
-    } else if ((p = tstrrchr(host, ':')) != nullptr) {
-	s.assign(host, (tstring::size_type)(p - host));
-	if (s == T("unix"))
-	    p = nullptr;
-	else
+	p = p[1] ? p + 1 : nullptr;
+    } else if ((p = tstrchr(host, ':')) != nullptr) {
+	if (tstrchr(p + 1, ':')) {
+	    p = nullptr; // IPv6 ports require brackets
+	} else {
+	    s.assign(host, p);
 	    host = s.c_str();
+	}
     }
     return set(host, p ? p + 1 : nullptr, proto);
 }
@@ -251,9 +270,12 @@ bool Sockaddr::set(const tchar *host, ushort portno, Proto proto) {
 }
 
 bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
-    ZERO(addr);
-    family(AF_UNSPEC);
-    name.erase();
+    if (host && (host == requested.c_str() || host == name.c_str())) {
+	const tstring copy(host);
+
+	return set(copy.c_str(), service, proto);
+    }
+    clear();
     if (host && !tstrncmp(host, T("unix:"), 5)) {
 	host += 5;
 	proto = UNIX;
@@ -276,20 +298,30 @@ bool Sockaddr::set(const tchar *host, const tchar *service, Proto proto) {
 	memcpy(addr.sau.sun_path + anon, path.c_str(), path.length());
 	return true;
     }
-    addrinfo *ai = getaddrinfo(host, service, proto);
+    const tchar *identity = nullptr;
+
+    proto = familyhint(host, proto);
+    addrinfo *ai = resolve(host, service, proto, &identity);
 
     if (!ai)
 	return false;
-    set(ai);
+    set(ai, identity ? tstring_view(identity) : tstring_view());
     freeaddrinfo(ai);
     return true;
 }
 
 bool Sockaddr::set(const hostent *h) {
-    ZERO(addr);
+    return set(h, {});
+}
+
+bool Sockaddr::set(const hostent *h, tstring_view reqhost) {
+    tstring req(reqhost);
+
+    clear();
     family((sa_family_t)h->h_addrtype);
     memcpy((void *)address(), h->h_addr, (size_t)h->h_length);	// NOSONAR
     name = achartotstring(h->h_name);
+    requested = std::move(req);
     return true;
 }
 
@@ -305,6 +337,7 @@ bool Sockaddr::set(const sockaddr &sa) {
     }
     addr = tmp;
     name.clear();
+    requested.clear();
     return true;
 }
 
@@ -357,12 +390,16 @@ bool SockaddrList::insert(const tchar *host, ushort port, Sockaddr::Proto
 
 bool SockaddrList::insert(const tchar *host, const tchar *service,
     Sockaddr::Proto proto) {
-    addrinfo *ai = Sockaddr::getaddrinfo(host, service, proto);
+    const tchar *identity = nullptr;
+
+    proto = Sockaddr::familyhint(host, proto);
+    addrinfo *ai = Sockaddr::resolve(host, service, proto, &identity);
 
     if (!ai)
 	return false;
     for (const addrinfo *elem = ai; elem; elem = elem->ai_next)
-	insert(Sockaddr(elem));
+	push_back(*new ObjectListNode<Sockaddr>(Sockaddr(elem, identity ?
+	    tstring_view(identity) : tstring_view())));
     freeaddrinfo(ai);
     return true;
 }
@@ -519,33 +556,6 @@ bool Socket::accept(Socket &sock, bool _cloexec, bool nonblock) {
     return false;
 }
 
-// socket file left behind by a crashed process: refuses connections
-bool Socket::stalesock(const Sockaddr &sa, int type) {
-    const char *path = sa.path();
-    Socket s(type);
-
-#ifdef _WIN32
-#ifndef IO_REPARSE_TAG_AF_UNIX
-#define IO_REPARSE_TAG_AF_UNIX	0x80000023L
-#endif
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA(path, &fd);
-
-    if (h == INVALID_HANDLE_VALUE)
-	return false;
-    FindClose(h);
-    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
-	fd.dwReserved0 != (DWORD)IO_REPARSE_TAG_AF_UNIX)
-	return false;
-#else
-    struct stat st;
-
-    if (::stat(path, &st) || !S_ISSOCK(st.st_mode))
-	return false;
-#endif
-    return !s.connect(sa) && s.err() == WSAECONNREFUSED;
-}
-
 bool Socket::bind(const Sockaddr &sa, bool reuse) {
     if (!*this && !open(sa.family()))
 	return false;
@@ -555,9 +565,6 @@ bool Socket::bind(const Sockaddr &sa, bool reuse) {
     if (sa.family() == AF_INET6 &&
 	IN6_IS_ADDR_UNSPECIFIED((const in6_addr *)sa))
 	(void)setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, false);
-    if (sa.proto() == Sockaddr::UNIX &&
-	((const sockaddr_un *)sa)->sun_path[0] && stalesock(sa, sbuf->type))
-	(void)::unlink(sa.path());
     if (!check(::bind(sbuf->sock, sa, sa.size())))
 	return false;
     if (sa.proto() == Sockaddr::UNIX && ((const sockaddr_un *)sa)->sun_path[0])
@@ -573,32 +580,36 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
 
     const bool timed = msec != SOCK_INFINITE && sbuf->blck;
 
-    if (timed)
-	blocking(false);
+    if (timed && !blocking(false))
+	return false;
     if (check(::connect(sbuf->sock, sa, sa.size()))) {
 	ret = true;
-    } else if (blocked() && msec > 0 && msec != SOCK_INFINITE) {
-	SocketSet sset(1), oset(1), eset(1);
+    } else if (msec && msec != SOCK_INFINITE &&
+#ifdef _WIN32
+	blocked()) {
+	fd_set wset, eset;
+	timeval tv{(long)(msec / 1000), (long)((msec % 1000) * 1000)};
 
-	sset.set(sbuf->sock);
-	if (!sset.opoll(oset, eset, msec)) {
-	    sbuf->err = sockerrno();
-	} else if (oset.get(sbuf->sock) || eset.get(sbuf->sock)) {
-	    int err = 0;
+	// Winsock reports failed connects in the exception set.
+	wset.fd_count = eset.fd_count = 1;
+	wset.fd_array[0] = eset.fd_array[0] = sbuf->sock;
+	const int ready = select(0, nullptr, &wset, &eset, &tv);
+#else
+	(sbuf->err == EINPROGRESS || sbuf->err == EALREADY || interrupted())) {
+	const int ready = pollone(sbuf->sock, POLLOUT, msec);
+#endif
 
-	    if (getsockopt(SOL_SOCKET, SO_ERROR, err)) {
-		sbuf->err = err;
-		ret = !err;
-	    }
-	} else {
-	    sbuf->err = WSAETIMEDOUT;
-	}
+	if (ready <= 0)
+	    sbuf->err = ready ? sockerrno() : WSAETIMEDOUT;
+	else if (int err; getsockopt(SOL_SOCKET, SO_ERROR, err))
+	    ret = !(sbuf->err = err);
     }
     if (timed) {
-	int e = sbuf->err;
+	const int err = sbuf->err;
 
-	blocking(true);
-	sbuf->err = e;
+	if (!blocking(true))
+	    return false;
+	sbuf->err = err;
     }
     return ret;
 }
@@ -785,32 +796,49 @@ bool Socket::iowait(bool out) const {
 	!ioset.empty())
 	return true;
 #else
-    pollfd p{sbuf->sock, (short)(out ? POLLOUT : POLLIN), 0};
-    msec_t end = mticks() + msec;
-    int left = (int)min(msec, (uint)INT_MAX);
+    const int ready = pollone(sbuf->sock, (short)(out ? POLLOUT : POLLIN), msec);
 
-    for (;;) {
-	int ret = poll(&p, 1, left);
-
-	if (ret > 0)
-	    return true;
-	if (ret < 0 && !::interrupted(errno)) {
-	    sbuf->err = errno;
-	    return false;
-	}
-	if (ret == 0)
-	    break;
-
-	msec_t now = mticks();
-
-	if (now >= end)
-	    break;
-	left = (int)min<msec_t>(end - now, INT_MAX);
+    if (ready > 0)
+	return true;
+    if (ready < 0) {
+	sbuf->err = errno;
+	return false;
     }
 #endif
     sbuf->err = WSAEWOULDBLOCK;
     return false;
 }
+
+#ifndef _WIN32
+int Socket::pollone(socket_t fd, short events, uint msec) {
+    pollfd p{fd, events, 0};
+    const msec_t end = msec && msec != SOCK_INFINITE ? mticks() + msec : 0;
+
+    for (;;) {
+	const int left = msec == SOCK_INFINITE ? -1 : (int)min(msec, (uint)INT_MAX);
+	const int ready = poll(&p, 1, left);
+
+	if (ready > 0) {
+	    if (!(p.revents & POLLNVAL))
+		return ready;
+	    errno = EBADF;
+	    return -1;
+	}
+	if (ready < 0 && !::interrupted(errno))
+	    return -1;
+	if (!left || (ready == 0 && msec <= (uint)INT_MAX))
+	    return 0;
+	if (!end)
+	    continue;
+
+	const msec_t now = mticks();
+
+	if (now >= end)
+	    return 0;
+	msec = (uint)(end - now);
+    }
+}
+#endif
 
 bool Socket::ktimeo(bool out) const {
     const uint msec = out ? sbuf->wto : sbuf->rto;
@@ -975,11 +1003,7 @@ ssize_t Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
 	msgh.msg_name = sa.data();
 	msgh.msg_namelen = Sockaddr::size(AF_UNSPEC);
 	msgh.msg_iov = iov;
-#ifdef BSD_BASE
-	msgh.msg_iovlen = count;
-#else
-	msgh.msg_iovlen = (size_t)count;
-#endif
+	msgh.msg_iovlen = static_cast<decltype(msgh.msg_iovlen)>(count);
 	if (check(in = ::recvmsg(sbuf->sock, &msgh, 0)))
 	    break;
 #endif
@@ -991,8 +1015,14 @@ ssize_t Socket::readv(iovec *iov, int count, Sockaddr &sa) const {
 ssize_t Socket::sendmsg(const msghdr &msgh, int flags) const {
     ssize_t out;
 
-    if (UNLIKELY(sbuf->layer))
+    if (UNLIKELY(sbuf->layer)) {
+	if (msgh.msg_name || msgh.msg_namelen || msgh.msg_control ||
+	    msgh.msg_controllen || flags) {
+	    sbuf->err = EOPNOTSUPP;
+	    return -1;
+	}
 	return layerwrite(msgh.msg_iov, (int)msgh.msg_iovlen);
+    }
     do {
 	if (!iotimeo(true))
 	    return -1;
@@ -1080,11 +1110,7 @@ ssize_t Socket::writev(const iovec *iov, int count, const Sockaddr &sa)
     msgh.msg_name = (void *)(const sockaddr *)sa;	// NOSONAR
     msgh.msg_namelen = sa.size();
     msgh.msg_iov = (iovec *)iov;			// NOSONAR
-#ifdef BSD_BASE
-    msgh.msg_iovlen = count;
-#else
-    msgh.msg_iovlen = (size_t)count;
-#endif
+    msgh.msg_iovlen = static_cast<decltype(msgh.msg_iovlen)>(count);
     return sendmsg(msgh, 0);
 #endif
 }

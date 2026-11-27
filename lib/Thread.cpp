@@ -187,27 +187,32 @@ Process Process::start(const tchar *const *args, const int *fds) {
 #include <sys/stat.h>
 
 bool SharedSemaphore::open(const tchar *name, uint init, bool exclusive) {
-    int key = (int)(name ? stringhash(name) : IPC_PRIVATE);
+    int key = name ? (int)stringhash(name) : IPC_PRIVATE;
 
+    if (name && key == IPC_PRIVATE)	// 0 would create a set nobody can share
+	key = 1;
     close();
     if ((hdl = semget(key, 1, IPC_CREAT | IPC_EXCL | S_IRUSR | S_IWUSR)) !=
 	-1) {
+	bool ok;
 #ifdef __linux__
 	// new semaphores start at 0 so adding cannot clobber a racing opener
-	if (init <= SHRT_MAX) {
-	    sembuf op{0, (short)init, 0};
+	sembuf op{0, (short)init, 0};
 
-	    if (init)
-		::semop(hdl, &op, 1);
-	    return true;
-	}
+	if (init <= SHRT_MAX)
+	    ok = !init || semop(op);
+	else
 #endif
-	semctl(hdl, 0, SETVAL, init);
-	return true;
+	    ok = semctl(hdl, 0, SETVAL, init) == 0;
+	if (!ok) {
+	    semctl(hdl, 0, IPC_RMID);
+	    hdl = -1;
+	}
+	return ok;
     }
-    if (exclusive)
+    if (exclusive || errno != EEXIST)
 	return false;
-    hdl = semget(key, 1, IPC_CREAT | S_IRUSR | S_IWUSR);
+    hdl = semget(key, 1, S_IRUSR | S_IWUSR);
     return hdl != -1;
 }
 
@@ -450,10 +455,17 @@ Thread::Thread(thread_hdl_t handle, ThreadGroup *tg) noexcept: hdl(handle),
 }
 
 Thread::~Thread() {
-    if (hdl && getId() != NOID)
-	wait();
-    if (group)
-	group->remove(*this);
+    Locker lkr(lck);
+
+    // clear() runs on the OS thread and touches this until it unlocks
+    while (hdl && getId() != NOID && this != current())
+	cv.wait();
+
+    ThreadGroup *g = group;
+
+    lkr.unlock();
+    if (g)
+	g->remove(*this);
     if (this == &MainThread)
 	flocal.run();
 }
@@ -541,6 +553,7 @@ THREAD_FUNC Thread::thread_init(void *arg) {
     curgroup = thread->group;
     curthread = thread;
     thread->id.store(self, memory_order_release);
+    thread->setState(Running);
 #ifdef _WIN32
     srand((uint)((ulong)uticks() ^ (ulong)(usec_t)self));	// NOSONAR
 #endif
@@ -557,32 +570,41 @@ bool Thread::start(uint stacksz, ThreadGroup *tg, bool suspend) {
 
 // create Thread and start it running at a given function
 // a suspended Thread has no OS thread until resume()
+// the group sees the Thread only once it is Suspended or running with an id
 bool Thread::start(ThreadRoutine func, void *arg, uint stacksz, ThreadGroup *tg,
     bool suspend) {
-    ThreadGroup *g = ThreadGroup::add(*this, tg);
+    ThreadGroup *g = ThreadGroup::resolve(tg);
     Locker lkr(lck);
-
     // a stopped Thread keeps hdl until its OS thread exits
-    if ((getState() != Terminated && getState() != Init) || hdl) {
-	lkr.unlock();
-	if (g != group)
-	    g->remove(*this);
+    auto busy = [this] {
+	return (getState() != Terminated && getState() != Init) || hdl;
+    };
+
+    if (busy())
 	return false;
+    if (group) {			// restart: leave the old group first
+	ThreadGroup *old = group;
+
+	lkr.unlock();
+	old->remove(*this);
+	lkr.lock();
+	if (busy())
+	    return false;
     }
     group = g;
     argument = arg;
     main = func;
     stacksize = stacksz;
-    if (suspend) {
+    if (suspend)
 	setState(Suspended);
-	return true;
-    }
-    return launch(lkr);
+    else if (!launch(lkr))
+	return false;
+    ThreadGroup::add(*this, g);
+    return true;
 }
 
 // create the OS thread
 bool Thread::launch(Locker &lkr) {
-    setState(Running);
 #ifdef _WIN32
     uint tid;
 
@@ -648,22 +670,34 @@ bool Thread::stop(void) {
 // waiter at a time while others wait for it to finish
 bool Thread::wait(ulong timeout) {
     Locker lkr(lck);
-    const msec_t end = mticks() + timeout;
+    msec_t end;
+    ulong left = timeout;
 
-    if (getState() == Init || getState() == Suspended)
+    if (!hdl || getState() == Init || getState() == Suspended)
 	return true;
-    while (hdl) {
-	ulong left = INFINITE;
-
-	if (timeout != INFINITE) {
-	    msec_t now = mticks();
-
-	    if (now >= end)
-		return false;
-	    left = (ulong)(end - now);
-	}
+    if (!timeout || this == current())
+	return false;
+    if (getId() == NOID &&
+#ifdef _WIN32
+	GetThreadId(hdl) == GetCurrentThreadId())
+#else
+	pthread_equal(hdl, pthread_self()))
+#endif
+	return false;
+    end = timeout == INFINITE ? 0 : mticks() + timeout;
+    do {
 	if (getId() != NOID || joining) {
-	    cv.wait(left);
+	    if (!cv.wait(left) && hdl)
+		return false;
+	    if (!hdl)
+		return true;
+	    if (timeout != INFINITE) {
+		const msec_t now = mticks();
+
+		if (now >= end)
+		    return false;
+		left = (ulong)(end - now);
+	    }
 	    continue;
 	}
 
@@ -695,8 +729,8 @@ bool Thread::wait(ulong timeout) {
 	    return false;
 	setState(Terminated);		// a joined pthread cannot be joined again
 	hdl = 0;
-    }
-    return true;
+	return true;
+    } while (true);
 }
 
 ThreadGroup::~ThreadGroup() {
@@ -705,14 +739,17 @@ ThreadGroup::~ThreadGroup() {
 }
 
 ThreadGroup *ThreadGroup::add(Thread &thread, ThreadGroup *tg) {
-    if (!tg)
-	tg = curgroup ? curgroup : &MainThreadGroup;
+    tg = resolve(tg);
     if (&thread != &tg->master) {
 	tg->cvlck.lock();
 	tg->threads.insert(&thread);
 	tg->cvlck.unlock();
     }
     return tg;
+}
+
+ThreadGroup *ThreadGroup::resolve(ThreadGroup *tg) {
+    return tg ? tg : curgroup ? curgroup : &MainThreadGroup;
 }
 
 // run func unlocked; pinned keeps remove()/wait() from freeing the thread
@@ -769,18 +806,31 @@ bool ThreadGroup::start(uint stacksz, bool suspend) {
 }
 
 void ThreadGroup::stop(void) {
-    const thread_id_t self = THREAD_ID();
+    const Thread *self = Thread::current();
 
     onStop();
     control([self](Thread &thread) {
-	if (!THREAD_EQUAL(thread.getId(), self))
+	if (&thread != self)
 	    thread.stop();
     });
 }
 
+// a timed wait also bounds joining stopped wrapped threads
 Thread *ThreadGroup::wait(ulong msec, bool all) {
-    const thread_id_t self = THREAD_ID();
+    const Thread *self = Thread::current();
     Locker lkr(cvlck);
+    msec_t end = 0;
+    // remaining msec with the deadline set at the first need to block
+    auto left = [&] -> ulong {
+	if (!msec || msec == INFINITE)
+	    return msec;
+
+	const msec_t now = mticks();
+
+	if (!end)
+	    end = now + msec;
+	return now < end ? (ulong)(end - now) : 0;
+    };
 
     do {
 	Thread *batch[64];
@@ -790,18 +840,17 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	for (auto it = threads.begin(); it != threads.end(); ) {
 	    Thread *thread = *it;
 
+	    const ThreadState state = thread->getState();
+	    const bool hasid = thread->getId() != Thread::NOID;
+
 	    // stop() marks a live thread terminated so also require it exited
-	    if (thread->terminated() && thread->getId() == Thread::NOID &&
-		thread != pinned) {
+	    if (state == Terminated && !hasid && thread != pinned) {
 		it = threads.erase(it);
 		batch[count++] = thread;
 		if (!all || count == 64)
 		    break;
 	    } else {
-		thread_id_t tid = thread->getId();
-
-		if (thread == pinned || (tid != Thread::NOID &&
-		    !THREAD_EQUAL(tid, self)))
+		if (thread == pinned || (hasid && thread != self))
 		    running = true;
 		++it;
 	    }
@@ -809,7 +858,12 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	if (count > 0) {
 	    lkr.unlock();
 	    for (uint i = 0; i < count; i++) {
-		batch[i]->wait();
+		if (!batch[i]->wait(left()) && msec != INFINITE) {
+		    lkr.lock();
+		    threads.insert(batch + i, batch + count);
+		    cv.broadcast();
+		    return nullptr;
+		}
 		batch[i]->group = nullptr;
 	    }
 	    if (!all)
@@ -817,19 +871,8 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 	    lkr.lock();
 	    continue;
 	}
-	if (!running || !msec) {
+	if (!running || !msec || !cv.wait(left()))
 	    break;
-	} else if (msec == INFINITE) {
-	    cv.wait(msec);
-	} else {
-	    ulong diff;
-	    msec_t ticks = mticks();
-
-	    if (!cv.wait(msec))
-		break;
-	    diff = (ulong)(mticks() - ticks);
-	    msec = diff < msec ? msec - diff : 0;
-	}
     } while (true);
     return nullptr;
 }

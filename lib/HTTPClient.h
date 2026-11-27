@@ -78,7 +78,7 @@ public:
     }
     const tchar *find(tstring_view name) const {
 	for (const auto &h : hdrs) {
-	    if (stringieq(tstring_view(buf.data() + h.name, h.nlen), name))
+	    if (stringieq(tstring_view(buf.data() + h.name, h.val - h.name), name))
 		return buf.data() + h.val;
 	}
 	return nullptr;
@@ -87,13 +87,16 @@ public:
 	attrmap m;
 
 	for (const auto &h : hdrs)
-	    m.emplace(tstring(buf.data() + h.name, h.nlen), buf.data() + h.val);
+	    m.emplace(tstring(buf.data() + h.name, h.val - h.name),
+		buf.data() + h.val);
 	return m;
     }
 
 private:
+    friend class HTTPResponse;
+
     struct Hdr {
-	uint name, nlen, val;
+	uint name, val, vlen;
     };
 
     static void tappend(tstring &s, string_view sv);
@@ -234,7 +237,7 @@ private:
 
 class BLISTER HTTPClient: public HTTPResponse {
 public:
-    virtual ~HTTPClient() = default;
+    virtual ~HTTPClient();
 
     friend tostream &operator <<(tostream &os, const HTTPClient &hc) {
 	os << hc.sts << '\n';
@@ -251,7 +254,7 @@ public:
     uint rtimeout(void) const { return rto; }
     uint wtimeout(void) const { return wto; }
 
-    bool close(void) { return sock.close(); }
+    bool close(void);
     bool connect(const Sockaddr &sa, bool keepalive = false, uint timeout =
 	SOCK_INFINITE);
     // shares the caller's fd
@@ -305,10 +308,10 @@ protected:
     uint cto = SOCK_INFINITE;
     string hostval;
     bool ka = true;
-    HTTPParser<Socket> parser { sock };
     string req;
     uint rto = 90 * 1000;
     Socket sock;
+    HTTPParser<Socket> parser { sock };
     bool streaming = false;
     uint wto = 60 * 1000;
 
@@ -324,7 +327,9 @@ private:
 
     Step receive(bool head, bool &keep);
     void sendfail(void);
-    bool transmit(const void *data, ulong datasz, ulong off);
+    bool transmit(const void *data, ulong datasz, size_t &off);
+
+    bool shared = false;
 };
 
 /*
@@ -358,6 +363,7 @@ public:
 	bool setup(DispatchObjCB cb, DispatchObj &co, AsyncHTTPClient &client,
 	    const tchar *op, const tchar *path, const void *data, ulong datasz);
 	void queue(void) { client->submit(*this); }
+	bool replayable(void) const { return idem || (!written && !uncertain); }
 	// true if resubmitted to a client instead of completing
 	virtual bool resend(void) { return false; }
 
@@ -374,7 +380,7 @@ public:
 	ulong datasz = 0, written = 0;
 	timing_t start = 0;
 	uchar attempts = 0;
-	bool head = false, idem = true;
+	bool head = false, idem = true, uncertain = false;
     };
 
     // on a parent shares its group; parent callbacks must not delete the client

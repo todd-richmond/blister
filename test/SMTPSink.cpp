@@ -112,7 +112,7 @@ private:
     unique_ptr<char[]> buf;
     uint have = 0, pos = 0, scan = 0;
     bool last = false, lmtp = false, quit = false, starting = false;
-    size_t left = 0, size = 0;
+    size_t left = 0, sent = 0, size = 0;
     State state = State::Cmd;
 
     void chunk(void);
@@ -394,8 +394,8 @@ void SMTPSinkSocket::parse(void) {
 }
 
 void SMTPSinkSocket::flush(void) {
-    while (!out.empty()) {
-	int n = write(out.data(), (uint)out.size());
+    while (sent < out.size()) {
+	int n = write(out.data() + sent, (uint)(out.size() - sent));
 
 	if (n < 0) {
 	    erase();
@@ -404,8 +404,10 @@ void SMTPSinkSocket::flush(void) {
 	    writeable(output, TIMEOUT);
 	    return;
 	}
-	out.erase(0, (size_t)n);
+	sent += (size_t)n;
     }
+    out.clear();
+    sent = 0;
     if (quit) {
 	erase();
     } else if (starting) {

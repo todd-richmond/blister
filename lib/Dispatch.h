@@ -149,7 +149,7 @@ private:
 	DispatchTimer *claim(uint u) {
 	    return firing[u].exchange(nullptr, memory_order_acq_rel);
 	}
-	uint get(msec_t when, DispatchTimer **batch, uint maxcnt);
+	uint get(msec_t when);
 	void insert(DispatchTimer &dt) { unsorted.insert(&dt); }
 	DispatchTimer *reorder(msec_t when);
 	void set(DispatchTimer &dt, msec_t when);

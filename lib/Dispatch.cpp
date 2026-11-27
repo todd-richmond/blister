@@ -63,11 +63,6 @@ using event_t = struct pollfd;
 #if !defined(_WIN32) && !defined(DSP_POLL)
 static constexpr uint MAX_EVENTS = 128;
 #endif
-#ifdef DSP_POLL
-// a worker wakes the poller once per exec() batch rather than per rearm
-static thread_local const Dispatcher *wakeowner;
-static thread_local bool wakedeferred;
-#endif
 static constexpr uint MAX_WAIT_TIME = 1 * 60 * 1000;
 static constexpr uint MAX_IDLE_TIMER = 10 * 1000;
 static constexpr uint MIN_IDLE_TIMER = 1 * 1000;
@@ -78,6 +73,10 @@ static constexpr dspflag_t DSP_ReadyAll = DSP_Ready | DSP_ReadyGroup;
 static constexpr dspflag_t DSP_PostCB = DSP_Freed | DSP_Ready;
 static constexpr dspflag_t DSP_SelectAll = DSP_Connecting | DSP_SelectAccept |
     DSP_SelectRead | DSP_SelectWrite | DSP_SelectClose;
+#ifdef DSP_POLL
+static constexpr dspflag_t DSP_PollRead = DSP_SelectAccept | DSP_SelectRead |
+    DSP_SelectClose;
+#endif
 
 void Dispatcher::TimerSet::erase(DispatchTimer &dt) {
     if (dt.due() <= split)
@@ -93,21 +92,18 @@ void Dispatcher::TimerSet::erase(DispatchTimer &dt) {
     }
 }
 
-uint Dispatcher::TimerSet::get(msec_t when, DispatchTimer **batch,
-    uint maxcnt) {
+uint Dispatcher::TimerSet::get(msec_t when) {
     uint cnt = 0;
     auto it = sorted.begin();
 
-    while (cnt < maxcnt && it != sorted.end() && it->first <= when) {
+    while (cnt < BATCHSZ && it != sorted.end() && it->first <= when) {
 	DispatchTimer *dt = (it++)->second;
 
 	dt->due(DispatchTimer::DSP_FIRING);
-	firing[cnt].store(dt, memory_order_relaxed);
-	batch[cnt++] = dt;
+	firing[cnt++].store(dt, memory_order_relaxed);
     }
     nfiring = cnt;
     sorted.erase(sorted.begin(), it);
-    batch[cnt] = cnt < maxcnt && it != sorted.end() ? it->second : nullptr;
     return cnt;
 }
 
@@ -155,9 +151,11 @@ Dispatcher::Dispatcher(const Config &config): cfg(config),
 WARN_DISABLE(26430)
 bool Dispatcher::exec() {
     bool counted = maxthreads != 0;
+    bool running;
 
     olock.lock();
-    while (rlist) {
+    running = !shutdown.load(memory_order_relaxed);
+    while (LIKELY(running) && rlist) {
 	dspflag_t flags;
 	DispatchObj::Group *group;
 	DispatchObj *obj = rlist.pop_front();
@@ -175,6 +173,7 @@ bool Dispatcher::exec() {
 	    group->active = true;
 	} else if (UNLIKELY(flags & DSP_Freed)) {
 	    reap(*obj);
+	    running = !shutdown.load(memory_order_relaxed);
 	    continue;
 	}
 	__builtin_prefetch((const void *)obj->dcb, 0, 3);
@@ -192,6 +191,7 @@ bool Dispatcher::exec() {
 		olock.lock();
 		flags = obj->flags &= ~DSP_Active;
 		group = obj->group;
+		running = !shutdown.load(memory_order_relaxed);
 	    }
 	    if (UNLIKELY(flags & DSP_Freed)) {
 		if (!group)
@@ -199,24 +199,26 @@ bool Dispatcher::exec() {
 		// delete while holding the group so no other member can run
 		group->add();
 		reap(*obj);
+		running = running && !shutdown.load(memory_order_relaxed);
 		flags = 0;
 		if (group->refcount.release()) {
 		    delete group;
 		    group = nullptr;
 		    break;
 		}
-		if (!group->glist || rlist.size() >= workers.load(
+		if (UNLIKELY(!running) ||
+		    !group->glist || rlist.size() >= workers.load(
 		    memory_order_relaxed))
 		    break;
 	    } else {
-		// keep running here for locality unless rlist backs up
-		if (rlist.size() >= workers.load(memory_order_relaxed))
+		const bool groupready = group && group->glist;
+
+		if (UNLIKELY(!running) ||
+		    (!(flags & DSP_Ready) && !groupready) ||
+		    rlist.size() >= workers.load(memory_order_relaxed))
 		    break;
-		if (!group || !group->glist) {
-		    if (flags & DSP_Ready)
-			continue;
-		    break;
-		}
+		if (!groupready)
+		    continue;
 		// hand the still active group to its next ready member
 		if (flags & DSP_Ready) {
 		    obj->flags = (flags & ~DSP_Ready) | DSP_ReadyGroup;
@@ -245,36 +247,29 @@ bool Dispatcher::exec() {
 		    rlist.push_back(*next);
 		}
 	    }
-	    if (flags & DSP_Freed)
+	    if (flags & DSP_Freed) {
 		reap(*obj);
-	    else if (flags & DSP_Ready)
+		running = running && !shutdown.load(memory_order_relaxed);
+	    } else if (flags & DSP_Ready) {
 		rlist.push_back(*obj);
+	    }
 	}
     }
     olock.unlock();
     if (counted)
 	scanning.fetch_sub(1, memory_order_seq_cst);
-    return !shutdown;
+    return running;
 }
 
 int Dispatcher::run() {
     // producers skip wakeups while this thread counts as scanning or before
     // it is a registered waiter so recheck rlist once registered
-    auto pending = [this] { return !rlist.empty(); };
+    auto pending = [this] { return shutdown || !rlist.empty(); };
 
     Thread::current()->priority(-1);
-#ifdef DSP_POLL
-    wakeowner = this;
-#endif
     while (exec()) {
 	dspsema4_t::WaitResult r;
 
-#ifdef DSP_POLL
-	if (wakedeferred) {
-	    wakedeferred = false;
-	    wakeup(0);
-	}
-#endif
 	if (workers < Processor::count()) {
 #ifdef THREAD_PAUSE                     // enqueue then spin before parking
 	    if (scanning.load(memory_order_acquire) == 0)
@@ -323,12 +318,18 @@ int Dispatcher::onStart() {
     }
     due = DispatchTimer::DSP_NEVER_DUE;
     scanning = 0;
-    shutdown = false;
     workers = 0;
-    while (!shutdown.load(memory_order_relaxed)) {
+    shutdown = false;
+    for (;;) {
 	if (!maxthreads)
 	    exec();
+	tlock.lock();
 	polling.store(true, memory_order_relaxed);
+	if (UNLIKELY(shutdown.load(memory_order_relaxed))) {
+	    tlock.unlock();
+	    break;
+	}
+	tlock.unlock();
 	GetMessage(&msg, wnd, 0, 0);
 	polling.store(false, memory_order_release);
 	if (shutdown)
@@ -415,6 +416,7 @@ int Dispatcher::onStart() {
 	    continue;
 	}
     }
+    polling.store(false, memory_order_release);
     KillTimer(wnd, DSP_TimerID);
     cleanup();
     DestroyWindow(wnd);
@@ -500,14 +502,19 @@ int Dispatcher::onStart() {
 	return -1;
     }
     evts[0].events = EPOLLIN;
-    RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, wfd, evts));
+    RETRY(nevts = epoll_ctl(evtfd, EPOLL_CTL_ADD, wfd, evts));
+    if (UNLIKELY(nevts == -1)) {
+	close(wfd);
+	close(evtfd);
+	return -1;
+    }
 #endif
     cache.store(now = mticks(), memory_order_relaxed);
     due = DispatchTimer::DSP_NEVER_DUE;
     scanning = 0;
-    shutdown = false;
     workers = 0;
-    while (LIKELY(!shutdown.load(memory_order_relaxed))) {
+    shutdown = false;
+    for (;;) {
 	const DispatchTimer *dt;
 	uint msec;
 
@@ -531,13 +538,21 @@ int Dispatcher::onStart() {
 	    msec = d > now ? (uint)(d - now) : 0;
 	    due = now + msec;
 	}
-	tlock.unlock();
 	if (UNLIKELY(!maxthreads)) {
+	    tlock.unlock();
 	    exec();
+	    tlock.lock();
 	    polling.store(true, memory_order_relaxed);
-	    if (UNLIKELY(shutdown.load(memory_order_relaxed)))
-		break;
 	}
+	if (UNLIKELY(shutdown.load(memory_order_relaxed))) {
+	    tlock.unlock();
+	    break;
+	}
+#ifdef DSP_EPOLL
+	if (UNLIKELY(zpending.load(memory_order_relaxed)))
+	    msec = 0;
+#endif
+	tlock.unlock();
 	cache.store(0, memory_order_relaxed);
 #ifdef DSP_POLL
 	slock.lock();
@@ -581,6 +596,7 @@ int Dispatcher::onStart() {
 	    reclaim();
 #endif
     }
+    polling.store(false, memory_order_release);
     cleanup();
 #ifdef DSP_EPOLL
     close(wfd);
@@ -631,7 +647,9 @@ void Dispatcher::cleanup(void) {
 void Dispatcher::reap(DispatchObj &obj) {
     if (obj.flags & DSP_Polled) {
 	zlist.push_back(obj);
+	tlock.lock();
 	zpending.store(true, memory_order_relaxed);
+	tlock.unlock();
 	wakeup(0);
     } else {
 	olock.unlock();
@@ -816,69 +834,49 @@ void Dispatcher::handleEvents(const void *evts, uint nevts) {
 
 #ifdef DSP_POLL
 
-// slock stays held so a looked up socket cannot be freed: it leaves smap first
 void Dispatcher::handlePoll(const SocketSet &rs, const SocketSet &ws,
     const SocketSet &es) {
-    enum { READ, WRITE, ERR };
-    struct Ready {
-	DispatchSocket *ds;
-	int kind;
-    };
-    vector<Ready> batch;
     bool drain = false;
     uint rcnt = 0;
 
-    auto collect = [&](const SocketSet &fds, int kind) {
+    auto consume = [&](const SocketSet &fds, dspflag_t interest,
+	DispatchMsg msg) {
 	for (uint u = 0; u < fds.size(); u++) {
 	    socket_t fd = fds[u];
 	    DispatchSocket *ds;
+	    dspflag_t flags;
 
 	    if (UNLIKELY(fd == rsock)) {
 		drain = true;
 		continue;
 	    }
-	    rset.unset(fd);
-	    wset.unset(fd);
-	    if (LIKELY((ds = get_socket(fd)) != nullptr))
-		batch.push_back({ds, kind});
+	    if (UNLIKELY((ds = get_socket(fd)) == nullptr))
+		continue;
+	    flags = ds->flags;
+	    if (!(flags & interest))
+		continue;
+	    if (flags & DSP_PollRead)
+		rset.unset(fd);
+	    if (flags & DSP_SelectWrite)
+		wset.unset(fd);
+	    ds->flags &= ~(DSP_SelectAll | DSP_Armed);
+	    if (!(flags & DSP_Scheduled))
+		continue;
+	    ds->msg = msg;
+	    if (msg == DispatchRead && (flags & DSP_SelectAccept))
+		ds->msg = DispatchAccept;
+	    else if (msg == DispatchWrite && (flags & DSP_Connecting))
+		ds->msg = DispatchConnect;
+	    if (enqueue(*ds, ds->msg == DispatchAccept))
+		rcnt++;
 	}
     };
 
-    batch.reserve((size_t)rs.size() + ws.size() + es.size());
     slock.lock();
-    collect(rs, READ);
-    collect(ws, WRITE);
-    collect(es, ERR);
     olock.lock();
-    for (const Ready &r : batch) {
-	DispatchSocket &ds = *r.ds;
-	dspflag_t flags = ds.flags;
-
-	if (UNLIKELY(flags & DSP_Freed))
-	    continue;
-	if (r.kind == READ) {
-	    if (flags & DSP_Scheduled) {
-		ds.msg = (flags & DSP_SelectAccept) ? DispatchAccept :
-		    DispatchRead;
-		ds.flags &= ~(DSP_SelectAll | DSP_Scheduled);
-		if (enqueue(ds, ds.msg == DispatchAccept))
-		    rcnt++;
-	    } else {
-		ds.flags |= (flags & DSP_SelectAccept) ? DSP_Acceptable :
-		    DSP_Readable;
-		ds.flags &= ~DSP_SelectAll;
-	    }
-	} else {
-	    ds.flags &= ~DSP_SelectAll;
-	    if (flags & DSP_Scheduled) {
-		ds.msg = r.kind == WRITE ? DispatchWrite : DispatchClose;
-		if (enqueue(ds, false))
-		    rcnt++;
-	    } else {
-		ds.flags |= r.kind == WRITE ? DSP_Writeable : DSP_Closeable;
-	    }
-	}
-    }
+    consume(rs, DSP_PollRead, DispatchRead);
+    consume(es, DSP_SelectAll, DispatchClose);
+    consume(ws, DSP_SelectWrite, DispatchWrite);
     olock.unlock();
     slock.unlock();
     if (drain)
@@ -890,11 +888,9 @@ void Dispatcher::handlePoll(const SocketSet &rs, const SocketSet &ws,
 #endif
 
 DispatchTimer *Dispatcher::handleTimers(msec_t now) {
-    static constexpr uint BATCHSZ = TimerSet::BATCHSZ;
     uint cnt;
-    DispatchTimer *dts[BATCHSZ + 1];
 
-    while ((cnt = timers.get(now, dts, BATCHSZ)) > 0) {
+    while ((cnt = timers.get(now)) > 0) {
 	uint rcnt = 0;
 
 	tlock.unlock();
@@ -921,7 +917,7 @@ DispatchTimer *Dispatcher::handleTimers(msec_t now) {
 	    wake(rcnt);
 	tlock.lock();
     }
-    return dts[cnt];
+    return timers.peek();
 }
 
 #ifndef DSP_WIN32_ASYNC
@@ -949,11 +945,17 @@ bool Dispatcher::start(uint mthreads, uint stack) {
 }
 
 void Dispatcher::onStop() {
-    if (shutdown.exchange(true))
-	return;
-    while (!waitForMain(0)) {
+    const Thread *self = Thread::current();
+
+    tlock.lock();
+    if (!shutdown.exchange(true))
 	wakeup(0);
-	msleep(1);
+    tlock.unlock();
+    if (!self || self->getThreadGroup() != this) {
+	while (!waitForMain(0)) {
+	    wakeup(0);
+	    msleep(1);
+	}
     }
 }
 
@@ -978,8 +980,7 @@ void Dispatcher::wakeup(ulong msec) {
     if (msec)
 	EV_SET(&evt, 0, EVFILT_TIMER, EV_ADD | EV_ONESHOT, 0, msec, NULL);
     else
-	EV_SET(&evt, 1, EVFILT_USER, EV_ENABLE | EV_ONESHOT, NOTE_TRIGGER, 0,
-	    NULL);
+	EV_SET(&evt, 1, EVFILT_USER, EV_ENABLE, NOTE_TRIGGER, 0, NULL);
     RETRY(kevent(evtfd, &evt, 1, NULL, 0, &zerots));
 #endif
 #endif
@@ -1052,14 +1053,17 @@ void Dispatcher::setTimer(DispatchTimer &dt, DispatchObj::DispatchObjCB cb,
 void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
     socket_t fd = ds.fd();
 
-#ifdef DSP_EPOLL
+#if defined(DSP_EPOLL) || defined(DSP_POLL)
     // unregister before a delete is queued so no new events reference ds
     unmapSocket(ds, fd);
     cancelTimer(ds, del);
 #else
-    cancelTimer(ds, del);
-    if (!ds.mapped || fd == SOCK_INVALID)
+    cancelTimer(ds, false);
+    if (!ds.mapped || fd == SOCK_INVALID) {
+	if (del)
+	    cancelTimer(ds, true);
 	return;
+    }
 #ifdef DSP_WIN32_ASYNC
     slock.lock();
     smap.erase(fd);
@@ -1076,19 +1080,6 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
 #else
     olock.lock();
     ds.mapped = false;
-#ifdef DSP_POLL
-    dspflag_t flags = ds.flags;
-
-    ds.flags &= ~DSP_SelectAll;
-    olock.unlock();
-    slock.lock();
-    smap.erase(fd);
-    if (flags & (DSP_SelectAccept | DSP_SelectRead | DSP_SelectClose))
-	rset.unset(fd);
-    if (flags & DSP_SelectWrite)
-	wset.unset(fd);
-    slock.unlock();
-#else
     if (ds.flags & DSP_SelectAll) {
 #ifdef DSP_DEVPOLL
 	ds.flags &= ~DSP_SelectAll;
@@ -1120,29 +1111,32 @@ void Dispatcher::cancelSocket(DispatchSocket &ds, bool del) {
 	olock.unlock();
     }
 #endif
-#endif
+    if (del)
+	cancelTimer(ds, true);
 #endif
 }
 
 void Dispatcher::unmapSocket(DispatchSocket &ds, socket_t fd) {
     bool mapped;
 
+#ifdef DSP_POLL
+    slock.lock();
+#endif
     olock.lock();
     mapped = ds.mapped;
     ds.mapped = ds.rdrain = false;
-    ds.flags &= ~(DSP_SelectAll | DSP_IO);
+    ds.flags &= ~(DSP_SelectAll | DSP_IO | DSP_Armed);
     olock.unlock();
 #ifdef DSP_EPOLL
     if (mapped && fd != SOCK_INVALID)
 	RETRY(epoll_ctl(evtfd, EPOLL_CTL_DEL, fd, 0));
 #elif defined(DSP_POLL)
     if (mapped && fd != SOCK_INVALID) {
-	slock.lock();
 	smap.erase(fd);
 	rset.unset(fd);
 	wset.unset(fd);
-	slock.unlock();
     }
+    slock.unlock();
 #else
     (void)mapped;
     (void)fd;
@@ -1152,6 +1146,9 @@ void Dispatcher::unmapSocket(DispatchSocket &ds, socket_t fd) {
 void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
     ulong timeout, DispatchMsg m) {
     bool b;
+#ifdef DSP_POLL
+    bool newinterest = false;
+#endif
     dspflag_t flags;
     msec_t now = 0;
     msec_t tmt = 0;
@@ -1175,7 +1172,7 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 	POLLIN, POLLOUT, POLLIN | POLLOUT, POLLIN, POLLOUT, 0, 0, 0
     };
 #elif defined(DSP_EPOLL)
-    int op = EPOLL_CTL_MOD;
+    uint32_t events;
     static constexpr uint sockevts[] = {
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP, EPOLLOUT,
 	EPOLLIN | EPOLLPRI | EPOLLRDHUP | EPOLLOUT, EPOLLIN, EPOLLOUT, 0, 0, 0
@@ -1186,23 +1183,26 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 #endif
     // drained() callers skip reads until a poll clears it
     ds.rdrain = false;
+#ifdef DSP_POLL
+    slock.lock();
+#elif !defined(DSP_EPOLL)
     if (UNLIKELY(!ds.mapped)) {
-#ifdef DSP_EPOLL
-	op = EPOLL_CTL_ADD;
-#else
 	ds.mapped = true;
-#endif
-#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL) || defined(DSP_POLL)
+#if defined(DSP_WIN32_ASYNC) || defined(DSP_DEVPOLL)
 	slock.lock();
 	smap[ds.fd()] = &ds;
 	slock.unlock();
 #endif
     }
+#endif
     olock.lock();
     ds.callback(cb);
     flags = ds.flags;
     if (UNLIKELY(flags & (DSP_ReadyAll | DSP_Freed))) {
 	olock.unlock();
+#ifdef DSP_POLL
+	slock.unlock();
+#endif
 	return;
     }
     if (flags & ioarray[m]) {
@@ -1224,6 +1224,9 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 	    ds.flags &= ~(DSP_Closeable | DSP_Scheduled);
 	    ds.msg = DispatchClose;
 	}
+#ifdef DSP_POLL
+	slock.unlock();
+#endif
 	ready(ds, m == DispatchAccept);
 	return;
     }
@@ -1242,27 +1245,50 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
     ds.flags &= ~(DSP_SelectAll | DSP_IO);
     ds.flags |= sarray[m] | DSP_Scheduled | DSP_Armed;
 #ifdef DSP_EPOLL
-    if (UNLIKELY(op == EPOLL_CTL_ADD)) {
-	b = false;
-	ds.mapped = true;
-	ds.flags |= DSP_Polled;
-    }
-    // skip re-arming only when the last read drained the socket, checked
-    // under olock since a hangup event clears evmask
-    if (!b) {
-	uint32_t events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLET;
-
-	b = op == EPOLL_CTL_MOD && events == ds.evmask && drained;
-	ds.evmask = events;
-    }
+    events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLET;
 #ifdef EPOLLEXCLUSIVE
-    // connection() accepts until drained and MOD rejects EPOLLEXCLUSIVE
-    if (m == DispatchAccept && op == EPOLL_CTL_MOD)
+    // connection() drains accepts and MOD rejects EPOLLEXCLUSIVE
+    if (UNLIKELY(m == DispatchAccept))
 	b = true;
 #endif
+    b = ds.mapped && (b || (events == ds.evmask && drained));
 #endif
     ds.msg = DispatchNone;
+#ifdef DSP_POLL
+    if (!b) {
+	const socket_t fd = ds.fd();
+	const bool wasr = flags & DSP_PollRead;
+	const bool wasw = flags & DSP_SelectWrite;
+	const bool isr = sarray[m] & DSP_PollRead;
+	const bool isw = sarray[m] & DSP_SelectWrite;
+
+	if (UNLIKELY(!ds.mapped)) {
+	    smap[fd] = &ds;
+	    ds.mapped = true;
+	}
+	if (isr != wasr) {
+	    if (isr)
+		rset.set(fd);
+	    else
+		rset.unset(fd);
+	}
+	if (isw != wasw) {
+	    if (isw)
+		wset.set(fd);
+	    else
+		wset.unset(fd);
+	}
+	newinterest = (isr && !wasr) || (isw && !wasw);
+    }
+    slock.unlock();
+#endif
+#ifdef DSP_EPOLL
+    // Readiness can arrive before epoll_ctl() returns.
+    if (b)
+	olock.unlock();
+#elif !defined(DSP_POLL)
     olock.unlock();
+#endif
     if (timeout == DispatchTimer::DSP_NEVER) {
 	removeTimer(ds);
     } else {
@@ -1288,6 +1314,9 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
 	    tlock.unlock();
 	}
     }
+#ifdef DSP_POLL
+    olock.unlock();
+#endif
     if (b) {
 	if (tmt)
 	    wakeup((ulong)(tmt - now));
@@ -1303,54 +1332,44 @@ void Dispatcher::pollSocket(DispatchSocket &ds, DispatchObj::DispatchObjCB cb,
     }
 #else
 #ifdef DSP_POLL
-    const bool wasr = flags & (DSP_SelectAccept | DSP_SelectRead |
-	DSP_SelectClose);
-    const bool wasw = flags & DSP_SelectWrite;
-    const bool isr = m == DispatchRead || m == DispatchReadWrite || m ==
-	DispatchAccept || m == DispatchClose;
-    const bool isw = m == DispatchWrite || m == DispatchReadWrite || m ==
-	DispatchConnect;
-
-    slock.lock();
-    if (isr != wasr) {
-	if (isr)
-	    rset.set(ds.fd());
-	else
-	    rset.unset(ds.fd());
-    }
-    if (isw != wasw) {
-	if (isw)
-	    wset.set(ds.fd());
-	else
-	    wset.unset(ds.fd());
-    }
-    slock.unlock();
-    // the poller waits on a copy of the sets
-    if ((isr && !wasr) || (isw && !wasw)) {
-	if (wakeowner == this)
-	    wakedeferred = true;
-	else
-	    wakeup(0);
+    if (newinterest) {
+	wakeup(0);
+	return;
     }
 #elif defined(DSP_DEVPOLL)
     event_t evt = {ds.fd(), sockevts[m] | POLLERR | POLLHUP, 0};
 
     RETRY(pwrite(evtfd, &evt, sizeof (evt), 0));
 #elif defined(DSP_EPOLL)
+    int op = ds.mapped ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
     event_t evt;
+    int ret;
 
     evt.data.ptr = &ds;
-    evt.events = sockevts[m] | EPOLLERR | EPOLLHUP | EPOLLET;
+    evt.events = events;
 #ifdef EPOLLEXCLUSIVE
     if (UNLIKELY(m == DispatchAccept))
 	evt.events |= EPOLLEXCLUSIVE;
 #endif
-    int ret;
-
     RETRY(ret = epoll_ctl(evtfd, op, ds.fd(), &evt));
-    // closing the fd silently removed it from epoll so re-add the new fd
-    if (UNLIKELY(ret == -1 && op == EPOLL_CTL_MOD && errno == ENOENT))
-	RETRY(epoll_ctl(evtfd, EPOLL_CTL_ADD, ds.fd(), &evt));
+    if (UNLIKELY(ret == -1 && op == EPOLL_CTL_MOD && errno == ENOENT)) {
+	op = EPOLL_CTL_ADD;
+	RETRY(ret = epoll_ctl(evtfd, op, ds.fd(), &evt));
+    }
+    if (LIKELY(ret == 0)) {
+	ds.mapped = true;
+	ds.evmask = events;
+	ds.flags |= DSP_Polled;
+	olock.unlock();
+    } else {
+	if (op == EPOLL_CTL_ADD)
+	    ds.mapped = false;
+	ds.evmask = 0;
+	ds.flags &= ~(DSP_SelectAll | DSP_Armed);
+	removeTimer(ds);
+	ds.msg = DispatchClose;
+	ready(ds);
+    }
 #elif defined(DSP_KQUEUE)
     event_t chgs[6], evts[MIN_EVENTS];
     uint nevts = 0;
@@ -1428,16 +1447,22 @@ DispatchObj::~DispatchObj() {
 }
 
 void Dispatcher::cancelReady(DispatchObj &obj, bool del) {
+    bool queued = false;
+
     olock.lock();
     obj.flags &= ~DSP_Scheduled;
     if (obj.flags & DSP_ReadyAll)
 	removeReady(obj);
     if (del && !(obj.flags & DSP_Freed)) {
 	obj.flags |= DSP_Freed;
-	if (!(obj.flags & DSP_Active))
+	if (!(obj.flags & DSP_Active)) {
 	    rlist.push_front(obj);
+	    queued = true;
+	}
     }
     olock.unlock();
+    if (queued)
+	wake();
 }
 
 void Dispatcher::disown(DispatchObj &obj) {
@@ -1613,8 +1638,12 @@ DispatchListenSocket::DispatchListenSocket(Dispatcher &d, const Sockaddr &sa,
 void DispatchListenSocket::connection() {
     Socket s;
 
+    if (error())
+	return;
     while (accept(s, true, true)) { // NOSONAR
+#ifndef __linux__
 	s.movehigh();
+#endif
 	onAccept(s);
 // edge triggered: a skipped re-arm only fires again for new connections
 #if (defined(DSP_EPOLL) && defined(EPOLLEXCLUSIVE)) || defined(DSP_KQUEUE)

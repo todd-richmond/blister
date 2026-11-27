@@ -260,15 +260,24 @@ private:
 	chunked = on;
 	strm = on ? static_cast<iostream *>(&bstrm) : &sstrm;
     }
+    // buffered replies for expectv: 1 complete, 0 need input, -1 failed
+    int bufreplies(void);
     bool can8bit(void) const { return ext_8bitmime || canutf8(); }
     // SMTPUTF8 was declared for the transaction or there is no server
     bool canutf8(void) const { return utf8decl || fstrm; }
+    bool disconnect(void);
     bool downgrade(const tchar *cmd, tstring &id, bool utf8);
+    void dropexpect(void) {
+	expectv.clear();
+	gotn = 0;
+	badsts.clear();
+    }
     bool endreply(void);
     bool envarg(const tchar *cmd, tstring &id, const tchar *parms, bool brkt,
-	bool always, tstring &arg);
+	bool always, tstring &arg, bool *utf8 = nullptr);
     bool finish(tstring_view c);
     bool fits(size_t sz);
+    bool genboundary(void);
     tstring hdraddr(const RFC822Addr &addr, uint u, const tstring &orig,
 	const tstring &sent) const;
     string hdrtext(const tchar *s) const;
@@ -276,18 +285,24 @@ private:
     bool masked(const RFC822Addr &addr);
     bool rawdata(tstring_view msg);
     bool rcptcmd(tstring &id, const tchar *parms);
+    bool rcptsok(void);
     void recip(const tchar *hdr, const vector<tstring> &v);
     bool replies(void);
     bool reply(void);
+    // the line in sts: 1 ends a reply, 0 more follow, -1 invalid
+    int replyline(void);
     bool sendchunk(bool last);
     bool sendcmd(tstring_view s1, const tchar *s2, int retcode, bool check);
     bool sendend(tstring_view c);
+    bool settled(void);
     bool startdata(void);
     bool stuff(const void *p, size_t sz, bool dotstuff = true);
+    void tally(void);
     static size_t barelfs(const char *p, const char *end);
     static string base64line(string_view in);
     static void encodedwords(string &out, string_view text);
     static string encodewords(string_view text);
+    static bool hasparm(tstring_view parms, tstring_view name);
     static bool idna(string_view domain, string &out);
     static size_t ifind(tstring_view s, tstring_view needle);
     static bool punycode(const vector<char32_t> &in, string &out);
@@ -307,6 +322,7 @@ private:
 	bool delivery;
     };
     vector<tstring> acceptedv;
+    tstring badsts;
     size_t bdatsz = 0;
     vector<tstring> bccv;
     string boundary;
@@ -316,6 +332,7 @@ private:
     bool datasent = false;
     vector<Expect> expectv;
     tstring frm;
+    size_t gotn = 0;			// replies matched to expectv
     vector<tstring> hdrv;
     bool lmtp = false;
     size_t maxsz = 0;
@@ -324,6 +341,7 @@ private:
     bool pipelined = false;
     size_t refused = 0;
     vector<pair<tstring, tstring>> rejectedv;
+    uint rlines = 0;
     vector<tstring> resultsv;
     uint rtmo = 3 * 60 * 1000;
     tstring sub;

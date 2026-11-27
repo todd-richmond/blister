@@ -28,9 +28,10 @@
 #include <stdarg.h>
 #include <time.h>
 #include <winioctl.h>
+#include <array>
 #include <map>
 #include <mutex>
-#include <unordered_map>
+#include <tuple>
 #include <vector>
 
 //-V::303
@@ -77,36 +78,58 @@ string _wchartoastring(wstring_view s) {
 }
 
 /*
- * POSIX fcntl lock emulation: one process never conflicts with itself and
- * any subrange can be unlocked or converted. Each entry is one Windows lock,
- * which only an unlock of the identical range releases
+ * POSIX fcntl lock emulation: locks belong to the process and file so
+ * separate opens never conflict, any subrange can be unlocked or converted and
+ * closing any descriptor drops the file's locks. Each entry is one Windows lock
+ * taken through the requesting handle, which only an unlock of the identical
+ * range releases. Unlike POSIX, Windows locks are mandatory: other handles,
+ * including our own, can't read or write a locked range
  */
 // POSIX len 0 locks to EOF and beyond, stopping below the flock() byte
 #define LOCK_EOF	0xFFFFFFFE00000000ULL
 
 struct FileLock {
     ullong end;
+    HANDLE hdl;
     bool excl;
 };
 
-struct FileLocks {
-    map<ullong, FileLock> locks;
-    mutex mtx;
-};
+using FileKey = array<ullong, 2>;
+using FileLocks = map<ullong, FileLock>;
 
-static unordered_map<int, FileLocks> locktbl;
+static map<FileKey, FileLocks> locktbl;
 static mutex locktblmtx;
 
-static bool winlock(HANDLE hdl, ullong start, ullong end, bool excl,
-    bool test) {
+static bool filekey(HANDLE hdl, FileKey *key) {
+    BY_HANDLE_FILE_INFORMATION bhfi;
+
+    if (!GetFileInformationByHandle(hdl, &bhfi))
+	return false;
+    *key = {bhfi.dwVolumeSerialNumber, (ullong)bhfi.nFileIndexHigh << 32 |
+	bhfi.nFileIndexLow};
+    return true;
+}
+
+// requests never wait here: blocking callers retry without holding locktblmtx
+static bool winlock(HANDLE hdl, ullong start, ullong end, bool excl) {
     ullong n = end - start;
     OVERLAPPED ov{};
+    HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    DWORD done, err = ERROR_SUCCESS;
 
+    if (!event)
+	return false;
     ov.Offset = (DWORD)start;
     ov.OffsetHigh = (DWORD)(start >> 32);
-    return LockFileEx(hdl, (excl ? LOCKFILE_EXCLUSIVE_LOCK : 0) | (test ?
-	LOCKFILE_FAIL_IMMEDIATELY : 0), 0, (DWORD)n, (DWORD)(n >> 32), &ov) !=
-	0;
+    ov.hEvent = (HANDLE)((uintptr_t)event | 1U); // no IOCP notification
+    if (!LockFileEx(hdl, (excl ? LOCKFILE_EXCLUSIVE_LOCK : 0) |
+	LOCKFILE_FAIL_IMMEDIATELY, 0, (DWORD)n, (DWORD)(n >> 32), &ov) &&
+	(GetLastError() != ERROR_IO_PENDING ||
+	!GetOverlappedResult(hdl, &ov, &done, TRUE)))
+	err = GetLastError();
+    CloseHandle(event);
+    SetLastError(err);
+    return err == ERROR_SUCCESS;
 }
 
 static void winunlock(HANDLE hdl, ullong start, ullong end) {
@@ -120,23 +143,16 @@ static void winunlock(HANDLE hdl, ullong start, ullong end) {
 
 // conversions and splits of exclusive locks briefly drop the range: Windows
 // can neither convert a lock nor lock exclusively over a held range
-static DWORD setlock(int fd, ullong start, ullong end, bool unlock,
-    bool excl, bool test) {
-    vector<pair<ullong, ullong>> added, conv;
+static DWORD setlock(HANDLE hdl, const FileKey &key, ullong start, ullong end,
+    bool unlock, bool excl) {
+    vector<pair<ullong, ullong>> added;
+    vector<tuple<ullong, ullong, HANDLE>> conv;
     DWORD err = 0;
-    HANDLE hdl = to_handle(fd);
-    FileLocks *fl;
-    map<ullong, FileLock>::iterator it;
+    FileLocks::iterator it;
+    lock_guard lk(locktblmtx);
+    auto tbl = locktbl.try_emplace(key).first;
+    auto &locks = tbl->second;
     ullong pos = start;
-
-    {
-	lock_guard lk(locktblmtx);
-
-	fl = &locktbl[fd];
-    }
-
-    lock_guard lk(fl->mtx);
-    auto &locks = fl->locks;
     auto first = [&]() {
 	auto i = locks.lower_bound(start);
 
@@ -148,7 +164,7 @@ static DWORD setlock(int fd, ullong start, ullong end, bool unlock,
 	ullong next = it == locks.end() || it->first >= end ? end : it->first;
 
 	if (pos < next) {
-	    if (!winlock(hdl, pos, next, excl, test)) {
+	    if (!winlock(hdl, pos, next, excl)) {
 		err = GetLastError();
 		break;
 	    }
@@ -162,6 +178,7 @@ static DWORD setlock(int fd, ullong start, ullong end, bool unlock,
 	ullong a = it->first, b = it->second.end;
 	ullong is = (max)(a, start), ie = (min)(b, end);
 	bool left, old = it->second.excl, right;
+	HANDLE own = it->second.hdl;
 
 	if (!unlock && old == excl) {
 	    ++it;
@@ -169,43 +186,59 @@ static DWORD setlock(int fd, ullong start, ullong end, bool unlock,
 	}
 	// our own shared locks may overlap so keep the outer pieces gap free
 	if (old)
-	    winunlock(hdl, a, b);
-	left = a < is && winlock(hdl, a, is, old, true);
-	right = ie < b && winlock(hdl, ie, b, old, true);
+	    winunlock(own, a, b);
+	left = a < is && winlock(own, a, is, old);
+	right = ie < b && winlock(own, ie, b, old);
 	if (!old)
-	    winunlock(hdl, a, b);
+	    winunlock(own, a, b);
 	it = locks.erase(it);
 	if (left)
-	    locks.try_emplace(a, FileLock{is, old});
+	    locks.try_emplace(a, FileLock{is, own, old});
 	if (right)
-	    it = locks.try_emplace(ie, FileLock{b, old}).first;
+	    it = locks.try_emplace(ie, FileLock{b, own, old}).first;
 	if (unlock)
 	    continue;
-	if (winlock(hdl, is, ie, excl, test)) {
-	    locks.try_emplace(is, FileLock{ie, excl});
-	    conv.emplace_back(is, ie);
+	if (winlock(hdl, is, ie, excl)) {
+	    locks.try_emplace(is, FileLock{ie, hdl, excl});
+	    conv.emplace_back(is, ie, own);
 	} else {
 	    err = GetLastError();
-	    if (winlock(hdl, is, ie, old, true))
-		locks.try_emplace(is, FileLock{ie, old});
+	    if (winlock(own, is, ie, old))
+		locks.try_emplace(is, FileLock{ie, own, old});
 	}
     }
     if (!err) {
 	for (const auto &[a, b] : added)
-	    locks.try_emplace(a, FileLock{b, excl});
-	return 0;
+	    locks.try_emplace(a, FileLock{b, hdl, excl});
+    } else {
+	for (const auto &[a, b] : added)
+	    winunlock(hdl, a, b);
+	// requests only convert the other lock type
+	for (const auto &[a, b, own] : conv) {
+	    winunlock(hdl, a, b);
+	    if (winlock(own, a, b, !excl))
+		locks[a] = FileLock{b, own, !excl};
+	    else
+		locks.erase(a);
+	}
     }
-    for (const auto &[a, b] : added)
-	winunlock(hdl, a, b);
-    // requests only convert the other lock type
-    for (const auto &[a, b] : conv) {
-	winunlock(hdl, a, b);
-	if (winlock(hdl, a, b, !excl, true))
-	    locks[a].excl = !excl;
-	else
-	    locks.erase(a);
-    }
+    if (locks.empty())
+	locktbl.erase(tbl);
     return err;
+}
+
+// POSIX drops a process's locks on a file when any descriptor for it closes
+static void droplocks(HANDLE hdl) {
+    FileKey key;
+    lock_guard lk(locktblmtx);
+
+    if (locktbl.empty() || !filekey(hdl, &key))
+	return;
+    if (auto it = locktbl.find(key); it != locktbl.end()) {
+	for (const auto &[a, l] : it->second)
+	    winunlock(l.hdl, a, l.end);
+	locktbl.erase(it);
+    }
 }
 
 // POSIX emulation and CRT replacements keep C linkage
@@ -293,7 +326,7 @@ int wchmod(const wchar *path, int mode) {
     return -1;
 }
 
-int chsize(int fd, long len) {
+int chsize(int fd, llong len) {
     return ftruncate(fd, len);
 }
 
@@ -302,11 +335,7 @@ int close(int fd) {
 	errno = EINVAL;
 	return -1;
     }
-    {
-	lock_guard lk(locktblmtx);
-
-	locktbl.erase(fd);
-    }
+    droplocks(to_handle(fd));
     if (CloseHandle(to_handle(fd)))
 	return 0;
     dosmaperr(GetLastError());
@@ -382,26 +411,38 @@ FILE *fdopen(int fd, const char *how) {
     return _fdopen(_open_osfhandle(fd, *how == 'a' ? O_APPEND : 0), how);
 }
 
+/*
+ * Linux conversions unlock first and a repeated lock is a no-op: Windows would
+ * block on or stack our own lock so every request unlocks first, briefly
+ * dropping a lock of the same type. The byte is mandatory like fcntl locks
+ */
 int flock(int fd, int op) {
-    if (op == LOCK_UN) {
-	if (!UnlockFile(to_handle(fd), 0, (uint)-2, 1, 0)) {
-	    dosmaperr(GetLastError());
-	    return -1;
-	}
-    } else {
-	OVERLAPPED ov;
-	int flag = 0;
+    DWORD delay = 1, err;
+    HANDLE hdl = to_handle(fd);
+    int cmd = op & ~LOCK_NB;
+    OVERLAPPED ov{};
 
-	ZERO(ov);
-	ov.OffsetHigh = (UINT)-2;
-	if (op & LOCK_EX)
-	    flag |= LOCKFILE_EXCLUSIVE_LOCK;
-	if (op & LOCK_NB)
-	    flag |= LOCKFILE_FAIL_IMMEDIATELY;
-	if (!LockFileEx(to_handle(fd), flag, 0, 1, 0, &ov)) {
-	    dosmaperr(GetLastError());
+    if (cmd != LOCK_SH && cmd != LOCK_EX && cmd != LOCK_UN) {
+	errno = EINVAL;
+	return -1;
+    }
+    ov.OffsetHigh = (DWORD)(LOCK_EOF >> 32);
+    if (!UnlockFileEx(hdl, 0, 1, 0, &ov) && (err = GetLastError()) !=
+	ERROR_NOT_LOCKED) {
+	dosmaperr(err);
+	return -1;
+    }
+    while (cmd != LOCK_UN) {
+	if (winlock(hdl, LOCK_EOF, LOCK_EOF + 1, cmd == LOCK_EX))
+	    break;
+	if ((err = GetLastError()) != ERROR_LOCK_VIOLATION)
+	    return oserr();
+	if (op & LOCK_NB) {
+	    errno = EAGAIN;
 	    return -1;
 	}
+	Sleep(delay);
+	delay = (min)(delay * 2, 16UL);
     }
     return 0;
 }
@@ -416,17 +457,14 @@ int fsync(int fd) {
     return 0;
 }
 
-long filelength(int fd) {
+llong filelength(int fd) {
     LARGE_INTEGER sz;
 
     if (!GetFileSizeEx(to_handle(fd), &sz)) {
 	dosmaperr(GetLastError());
 	return -1;
-    } else if (sz.QuadPart > LONG_MAX) {
-	errno = EOVERFLOW;
-	return -1;
     }
-    return (long)sz.QuadPart;
+    return sz.QuadPart;
 }
 
 int isatty(int fd) {
@@ -458,26 +496,28 @@ static int lockrange(int fd, short whence, llong start, llong len,
     if (whence == SEEK_CUR) {
 	if (!SetFilePointerEx(to_handle(fd), li, &li, FILE_CURRENT))
 	    return oserr();
-	start += li.QuadPart;
     } else if (whence == SEEK_END) {
 	if (!GetFileSizeEx(to_handle(fd), &li))
 	    return oserr();
-	start += li.QuadPart;
-    }
-    if (len < 0) {
-	start += len;
-	len = -len;
-    }
-    if (start < 0) {
+    } else if (whence != SEEK_SET) {
 	errno = EINVAL;
 	return -1;
     }
-    *s = (ullong)start;
-    *e = len ? *s + (ullong)len : LOCK_EOF;
-    if (*e <= *s) {
+    if (start > LLONG_MAX - li.QuadPart) {
+	errno = EOVERFLOW;
+	return -1;
+    }
+    start += li.QuadPart;
+    if (start < 0 || (len < 0 && len < -start)) {
 	errno = EINVAL;
 	return -1;
     }
+    if (len > LLONG_MAX - start) {
+	errno = EOVERFLOW;
+	return -1;
+    }
+    *s = (ullong)(len < 0 ? start + len : start);
+    *e = len ? (ullong)(len > 0 ? start + len : start) : LOCK_EOF;
     return 0;
 }
 
@@ -485,22 +525,17 @@ static int lockrange(int fd, short whence, llong start, llong len,
  * conflicting lock type or F_UNLCK, ignoring our own locks like POSIX. Ranges
  * we hold shared can't reveal other shared holders, so a write query passes
  */
-static short getlock(int fd, ullong start, ullong end, bool excl) {
+static int getlock(int fd, ullong start, ullong end, bool excl) {
     vector<pair<ullong, ullong>> gaps;
     HANDLE hdl = to_handle(fd);
-    FileLocks *fl = NULL;
+    FileKey key;
     ullong pos = start;
+    lock_guard lk(locktblmtx);
 
-    {
-	lock_guard lk(locktblmtx);
-
-	if (auto it = locktbl.find(fd); it != locktbl.end())
-	    fl = &it->second;
-    }
-    if (fl) {
-	lock_guard lk(fl->mtx);
-
-	for (const auto &[a, l] : fl->locks) {
+    if (!filekey(hdl, &key))
+	return oserr();
+    if (auto t = locktbl.find(key); t != locktbl.end()) {
+	for (const auto &[a, l] : t->second) {
 	    if (l.end <= pos)
 		continue;
 	    if (a >= end)
@@ -513,21 +548,31 @@ static short getlock(int fd, ullong start, ullong end, bool excl) {
     if (pos < end)
 	gaps.emplace_back(pos, end);
     for (const auto &[a, b] : gaps) {
-	if (winlock(hdl, a, b, excl, true)) {
+	if (winlock(hdl, a, b, excl)) {
 	    winunlock(hdl, a, b);
-	} else if (excl && winlock(hdl, a, b, false, true)) {
-	    winunlock(hdl, a, b);
-	    return F_RDLCK;
 	} else {
+	    if (GetLastError() != ERROR_LOCK_VIOLATION)
+		return oserr();
+	    if (excl) {
+		if (winlock(hdl, a, b, false)) {
+		    winunlock(hdl, a, b);
+		    return F_RDLCK;
+		}
+		if (GetLastError() != ERROR_LOCK_VIOLATION)
+		    return oserr();
+	    }
 	    return F_WRLCK;
 	}
     }
     return F_UNLCK;
 }
 
+// a blocking request polls: waiting inside LockFileEx would hold locktblmtx
 static int setlockrange(int fd, short type, short whence, llong start,
-    llong len, bool test) {
-    DWORD err;
+    llong len, bool nowait) {
+    DWORD delay = 1, err;
+    HANDLE hdl = to_handle(fd);
+    FileKey key;
     ullong e, s;
 
     if (lockrange(fd, whence, start, len, &s, &e))
@@ -536,8 +581,14 @@ static int setlockrange(int fd, short type, short whence, llong start,
 	errno = EINVAL;
 	return -1;
     }
-    if ((err = setlock(fd, s, e, type == F_UNLCK, type == F_WRLCK, test)) ==
-	0)
+    if (!filekey(hdl, &key))
+	return oserr();
+    while ((err = setlock(hdl, key, s, e, type == F_UNLCK, type == F_WRLCK)) ==
+	ERROR_LOCK_VIOLATION && !nowait) {
+	Sleep(delay);
+	delay = (min)(delay * 2, 16UL);
+    }
+    if (!err)
 	return 0;
     if (err == ERROR_LOCK_VIOLATION)
 	errno = EAGAIN;
@@ -547,6 +598,7 @@ static int setlockrange(int fd, short type, short whence, llong start,
 }
 
 int lockf(int fd, int op, llong len) {
+    int err;
     ullong e, s;
 
     if (op != F_TEST)
@@ -554,9 +606,10 @@ int lockf(int fd, int op, llong len) {
 	    0, len, op == F_TLOCK);
     if (lockrange(fd, SEEK_CUR, 0, len, &s, &e))
 	return -1;
-    if (getlock(fd, s, e, true) == F_UNLCK)
+    if ((err = getlock(fd, s, e, true)) == F_UNLCK)
 	return 0;
-    errno = EACCES;
+    if (err != -1)
+	errno = EACCES;
     return -1;
 }
 
@@ -565,18 +618,15 @@ int lockfile(int fd, short op, short whence, ulong start, ulong len,
     return setlockrange(fd, op, whence, (llong)start, (llong)len, test != 0);
 }
 
-long lseek(int fd, long pos, int from) {
+llong lseek(int fd, llong pos, int from) {
     LARGE_INTEGER li;
 
     li.QuadPart = pos;
     if (!SetFilePointerEx(to_handle(fd), li, &li, (DWORD)from)) {
 	dosmaperr(GetLastError());
 	return -1;
-    } else if (li.QuadPart > LONG_MAX) {
-	errno = EOVERFLOW;
-	return -1;
     }
-    return (long)li.QuadPart;
+    return li.QuadPart;
 }
 
 /* read emulation - does not work if fd was opened O_TEXT */
@@ -695,7 +745,7 @@ ssize_t writev(int fd, const iovec *io, int num) {
     return out;
 }
 
-long tell(int fd) {
+llong tell(int fd) {
     return lseek(fd, 0, SEEK_CUR);
 }
 
@@ -1557,7 +1607,7 @@ int fcntl(int fd, int cmd, ...) {
     va_list ap;
     DWORD flags;
     struct flock *fl = NULL;
-    int arg = 0;
+    int arg = 0, err;
     ullong e, s;
 
     va_start(ap, cmd);
@@ -1591,8 +1641,9 @@ int fcntl(int fd, int cmd, ...) {
 		fl->l_len, cmd == F_SETLK);
 	if (lockrange(fd, fl->l_whence, fl->l_start, fl->l_len, &s, &e))
 	    return -1;
-	if ((fl->l_type = getlock(fd, s, e, fl->l_type == F_WRLCK)) !=
-	    F_UNLCK) {
+	if ((err = getlock(fd, s, e, fl->l_type == F_WRLCK)) == -1)
+	    return -1;
+	if ((fl->l_type = (short)err) != F_UNLCK) {
 	    fl->l_whence = SEEK_SET;
 	    fl->l_start = (llong)s;
 	    fl->l_len = e == LOCK_EOF ? 0 : (llong)(e - s);
@@ -1616,45 +1667,55 @@ int pipe(int fds[2]) {
     return 0;
 }
 
-// synchronous handles move the file pointer: POSIX leaves it alone
-ssize_t pread(int fd, void *buf, size_t len, llong off) {
-    DWORD err = 0, in;
-    HANDLE hdl = to_handle(fd);
+/*
+ * Windows can't read or write at an offset without advancing a synchronous
+ * handle's pointer, so save and restore it. The lock serializes pread/pwrite
+ * with each other but a concurrent read, write or lseek on the same fd still
+ * races. Overlapped handles may pend: wait so the kernel never outlives buf
+ */
+static ssize_t posio(int fd, void *buf, size_t len, llong off, bool wr) {
+    static mutex mtx;
+    DWORD err = 0, n = 0;
+    HANDLE event, hdl = to_handle(fd);
     OVERLAPPED ov{};
     LARGE_INTEGER pos = {};
+    bool ok, saved;
+    lock_guard lk(mtx);
 
-    if (!SetFilePointerEx(hdl, pos, &pos, FILE_CURRENT))
+    if (off < 0) {
+	errno = EINVAL;
+	return -1;
+    }
+    if (!(event = CreateEventW(NULL, TRUE, FALSE, NULL)))
 	return oserr();
+    ov.hEvent = (HANDLE)((uintptr_t)event | 1U); // no IOCP notification
     ov.Offset = (DWORD)off;
     ov.OffsetHigh = (DWORD)((ullong)off >> 32);
-    if (!ReadFile(hdl, buf, (DWORD)(min)(len, (size_t)MAXDWORD), &in, &ov))
+    len = (min)(len, (size_t)MAXDWORD);
+    saved = SetFilePointerEx(hdl, pos, &pos, FILE_CURRENT);
+    ok = wr ? WriteFile(hdl, buf, (DWORD)len, &n, &ov) :
+	ReadFile(hdl, buf, (DWORD)len, &n, &ov);
+    if (!ok && GetLastError() == ERROR_IO_PENDING)
+	ok = GetOverlappedResult(hdl, &ov, &n, TRUE);
+    if (!ok)
 	err = GetLastError();
-    SetFilePointerEx(hdl, pos, NULL, FILE_BEGIN);
-    if (!err)
-	return (ssize_t)in;
+    if (saved)
+	SetFilePointerEx(hdl, pos, NULL, FILE_BEGIN);
+    CloseHandle(event);
+    if (ok)
+	return (ssize_t)n;
     else if (err == ERROR_HANDLE_EOF)
 	return 0;
     dosmaperr(err);
     return -1;
 }
 
-ssize_t pwrite(int fd, const void *buf, size_t len, llong off) {
-    DWORD err = 0, out;
-    HANDLE hdl = to_handle(fd);
-    OVERLAPPED ov{};
-    LARGE_INTEGER pos = {};
+ssize_t pread(int fd, void *buf, size_t len, llong off) {
+    return posio(fd, buf, len, off, false);
+}
 
-    if (!SetFilePointerEx(hdl, pos, &pos, FILE_CURRENT))
-	return oserr();
-    ov.Offset = (DWORD)off;
-    ov.OffsetHigh = (DWORD)((ullong)off >> 32);
-    if (!WriteFile(hdl, buf, (DWORD)(min)(len, (size_t)MAXDWORD), &out, &ov))
-	err = GetLastError();
-    SetFilePointerEx(hdl, pos, NULL, FILE_BEGIN);
-    if (!err)
-	return (ssize_t)out;
-    dosmaperr(err);
-    return -1;
+ssize_t pwrite(int fd, const void *buf, size_t len, llong off) {
+    return posio(fd, const_cast<void *>(buf), len, off, true);
 }
 
 int usleep(useconds_t usec) {

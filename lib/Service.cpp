@@ -33,6 +33,8 @@
 #define DWORD_MULTIPLE(x) ((((x) + sizeof (DWORD) - 1 ) / sizeof (DWORD)) * \
     sizeof (DWORD))
 #define SERVICE_PREFIX T("service_")
+#elif defined(__linux__)
+extern "C" DLL_LOCAL int pidmem(pid_t pid, struct pidstat *psbuf);
 #endif
 
 static constexpr uint STATUS_LOOPS = 400;
@@ -1549,6 +1551,8 @@ void Daemon::configfile(int argc, const tchar * const *argv) {
     for (int i = 1; i < argc; i++) {
 	const tchar *p = argv[i];
 
+	if (tstreq(p, T("--")))
+	    break;
 	if (*p != '-')
 	    continue;
 	while (*p == '-')
@@ -1624,9 +1628,10 @@ int Daemon::onStart(int argc, const tchar * const *argv) {
     watch = cfg.get(T("watch.enable"), !console);
 #endif
     // workers share the log file
-    mp = watch && cfg.get(T("worker.count"), nworkers) > 1;
+    mp = watch;
     buffer = !mp && cfg.get(T("log.file.buffer.enable"), false);
     dlog.setmp(mp);
+    logmp = mp;
     if (!cfg.get(T("enable"), true)) {
 	dlog.note(Log::mod(name), Log::cmd(T("start")), Log::kv(T("sts"),
 	    T("disabled")));
@@ -1773,8 +1778,12 @@ bool Daemon::onRefresh(void) {
     cfg.set(T("name"), name.c_str(), Log::section());
     cfg.set(T("version"), ver.c_str());
     instance = cfg.get(T("instance"), T("default"));
-    if (!cfgfile.empty())
+    if (!cfgfile.empty()) {
 	dlog.set(cfg);
+	// buffering would clear the shared log setting
+	if (logmp && dlog.buffer())
+	    dlog.setmp(true);
+    }
     Service::Timer::dmsec = cfg.get(T("watch.timeout"), Timer::dmsec / 1000) *
 	1000;
     if (!worker() && refreshed)
@@ -1929,6 +1938,7 @@ int Daemon::spawned(int argc, const tchar * const *argv) {
     if (!onRefresh())
 	return 3;
     dlog.setmp(true);
+    logmp = true;
     onSpawn(hdls);
     if ((ret = onInit(argc, argv)) != 0)
 	return ret;
@@ -2017,7 +2027,7 @@ void Daemon::watch_handler(int sig, siginfo_t *si, void *) {
 
     if (sig == SIGINT)
 	daemon->qflag = Slow;
-    else if (sig == SIGTERM)
+    else if (sig == SIGTERM || sig == SIGABRT)
 	daemon->qflag = Fast;
     if (sig != SIGCHLD) {
 	daemon->sigsrc[sig] = (uint64_t)si->si_uid << 32 |
@@ -2129,8 +2139,10 @@ int Daemon::watchloop(void) {
 	    (void)kill(w.pid, sig);
 #endif
 	};
-	auto recycle = [&](Worker &w, const tchar *err,
-	    const struct pidstat &ps) {
+	auto recycle = [&](Worker &w, const tchar *err) {
+	    struct pidstat ps;
+
+	    (void)pidstat(w.pid, &ps);
 #ifdef _WIN32
 	    forward(w, SERVICE_CONTROL_STOP);
 #else
@@ -2203,6 +2215,7 @@ int Daemon::watchloop(void) {
 	if (pend & (1ULL << SIGHUP)) {
 	    forklock.lock();
 	    (void)onRefresh();
+	    dlog.stop();		// no flusher thread across fork
 	    forklock.unlock();
 	}
 	for (int sig : fwdsigs) {
@@ -2239,9 +2252,11 @@ int Daemon::watchloop(void) {
 	    }
 	    it = wkrs.erase(it);
 	    (void)GetExitCodeProcess(w.proc, &code);
-	    SetThreadpoolWait(w.wait, nullptr, nullptr);
-	    WaitForThreadpoolWaitCallbacks(w.wait, TRUE);
-	    CloseThreadpoolWait(w.wait);
+	    if (w.wait) {
+		SetThreadpoolWait(w.wait, nullptr, nullptr);
+		WaitForThreadpoolWaitCallbacks(w.wait, TRUE);
+		CloseThreadpoolWait(w.wait);
+	    }
 	    CloseHandle(w.ctl);
 	    CloseHandle(w.proc);
 	    reaped(w, (int)code, false);
@@ -2255,18 +2270,18 @@ int Daemon::watchloop(void) {
 		continue;
 	    w = *it;
 	    wkrs.erase(it);
-	    // a replacement must wait for the whole old group to free its
-	    // sockets and file locks; orphans adopted as subreaper end here
-	    (void)kill(-p, SIGKILL);
-	    for (;;) {
-		while (waitpid(-p, nullptr, WNOHANG) > 0)
-		    continue;
-		if (kill(-p, 0))
-		    break;
-		msleep(10);
-	    }
+	    if (!kill(-p, SIGKILL) || errno != ESRCH)
+		dying.push_back(w);
 	    reaped(w, WIFEXITED(sts) ? WEXITSTATUS(sts) : WIFSIGNALED(sts) ?
 		WTERMSIG(sts) : 0, WIFSIGNALED(sts));
+	}
+	// a replacement must wait for the whole old group to free its sockets
+	// and file locks; the slot stays reserved and orphans are reaped above
+	for (auto it = dying.begin(); it != dying.end(); ) {
+	    if (kill(-it->pid, 0) && errno == ESRCH)
+		it = dying.erase(it);
+	    else
+		++it;
 	}
 #endif
 	quit = qflag || !keep;
@@ -2300,23 +2315,41 @@ int Daemon::watchloop(void) {
 	    Status agg = Error;
 	    Worker *big = nullptr;
 	    uint64_t bigpss = 0;
+	    uint maxswap = cfg.get(T("watch.maxswap"), 0U);
+	    bool lowmem;
 	    tstring err;
 
 	    due = now + intvl;
+	    // PSS is costly on Linux: only its limit and the swap victim need it
+	    lowmem = maxswap && now - swapped >= cfg.get(T("watch.swapwait"),
+		// cppcheck-suppress unsignedLessThanZero
+		4U * 60 * 60) * 1000ULL && swap_pct() > maxswap;
+	    // swap_pct() returns zero on platforms without swap accounting.
+	    // cppcheck-suppress knownConditionTrueFalse
+	    const bool fullsample = maxpss || lowmem;
+
 	    for (Worker &w : wkrs) {
 		Status cur;
 		const tchar *why = nullptr;
-		struct pidstat ps;
+		struct pidstat ps{};
 		int ws;
+		bool sampled = false;
 
 		if (w.kill)
 		    continue;
 		ws = slotstatus(w.slot);
 		cur = ws < 0 ? Starting : (Status)ws;
-		(void)pidstat(w.pid, &ps);
-		if (maxpss && ps.pss > maxpss) {
+		if (fullsample)
+		    sampled = !pidstat(w.pid, &ps);
+		else if (maxsz)
+#ifdef __linux__
+		    sampled = !pidmem(w.pid, &ps);
+#else
+		    sampled = !pidstat(w.pid, &ps);
+#endif
+		if (sampled && maxpss && ps.pss > maxpss) {
 		    why = T("proportional size exceeds maximum");
-		} else if (maxsz && ps.sz > maxsz) {
+		} else if (sampled && maxsz && ps.sz > maxsz) {
 		    why = T("total size exceeds maximum");
 		} else if (cur != w.status) {
 		    w.status = cur;
@@ -2330,33 +2363,23 @@ int Daemon::watchloop(void) {
 		    why = T("stop timeout");
 		}
 		if (why) {
-		    recycle(w, why, ps);
+		    recycle(w, why);
 		    continue;
 		}
 		agg = (max)(agg, cur);
-		if (!big || ps.pss > bigpss) {
+		if (sampled && (!big || ps.pss > bigpss)) {
 		    big = &w;
 		    bigpss = ps.pss;
 		}
 	    }
-	    if (uint maxswap = cfg.get(T("watch.maxswap"), 0U); big &&
-		maxswap && now - swapped >= cfg.get(T("watch.swapwait"), 4U *
-		// cppcheck-suppress unsignedLessThanZero
-		60 * 60) * 1000ULL && swap_pct() > maxswap) {
-		struct pidstat ps;
-
-		(void)pidstat(big->pid, &ps);
-		recycle(*big, T("system swap use exceeds maximum"), ps);
+	    if (big && lowmem) {
+		recycle(*big, T("system swap use exceeds maximum"));
 		swapped = now;
-	    } else if (big && (agg == Running || agg == Stopped) &&
-		!check(agg, err)) {
+	    } else if ((agg == Running || agg == Stopped) && !check(agg, err)) {
 		for (Worker &w : wkrs) {
-		    struct pidstat ps;
-
 		    if (w.kill)
 			continue;
-		    (void)pidstat(w.pid, &ps);
-		    recycle(w, err.c_str(), ps);
+		    recycle(w, err.c_str());
 		}
 	    }
 	}
@@ -2378,14 +2401,15 @@ int Daemon::watchloop(void) {
 		}
 	    }
 	    // replacements wait for the old worker's whole group to exit
-	    while (wkrs.size() < count && now >= spawnat) {
+	    while (wkrs.size() + dying.size() < count && now >= spawnat) {
 		uint s = 0;
 #ifdef _WIN32
 		bool ok;
 		Worker w;
 #endif
 
-		while (ranges::contains(wkrs, s, &Worker::slot))
+		while (ranges::contains(wkrs, s, &Worker::slot) ||
+		    ranges::contains(dying, s, &Worker::slot))
 		    ++s;
 #ifdef _WIN32
 		w = {0, now, now, 0, s, Starting, first, false, nullptr,
@@ -2407,12 +2431,15 @@ int Daemon::watchloop(void) {
 		// a worker must not inherit a half refreshed watcher
 		forklock.lock();
 		onPreFork();
+		dlog.stop();
+		(void)dlog.close();
 		sigprocmask(SIG_BLOCK, &blk, &old);
 		if ((p = fork()) == 0) {
 		    sigset_t chld;
 
 		    slot = (int)s;
 		    wkrs.clear();
+		    dying.clear();
 		    ::close(wakefd[0]);
 		    ::close(wakefd[1]);
 		    wakefd[0] = wakefd[1] = -1;
@@ -2443,7 +2470,7 @@ int Daemon::watchloop(void) {
 	    }
 	    first = false;
 	}
-	if (quit && wkrs.empty())
+	if (quit && wkrs.empty() && dying.empty())
 	    break;
 	for (Worker &w : wkrs) {
 	    int ws = w.ran || w.kill ? Running : slotstatus(w.slot);
@@ -2482,6 +2509,8 @@ int Daemon::watchloop(void) {
 		wake = (min)(wake, w.kill);
 	}
 	if (pending)
+	    wake = (min)(wake, now + 100);
+	if (!dying.empty())
 	    wake = (min)(wake, now + 100);
 	(void)dlog.close();
 #ifdef _WIN32

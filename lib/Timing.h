@@ -84,8 +84,7 @@ public:
     };
 
     struct Row {
-	const tchar *key;
-	uint klen;
+	tstring key;
 	uint64_t cnt = 0, tot = 0;
 	uint64_t cnts[TIMINGSLOTS] = {};
     };
@@ -155,17 +154,17 @@ private:
     using timingmap = unordered_map<strhash_t, Stats *>;
 
     atomic<Stats *> cache[CACHESIZE]{};
-    atomic<Stats *> flist = nullptr;
-    Stats *prior = nullptr;
     mutable SpinRWLock lck;
+    // cleared/erased Stats are reused: lock-free add() may still hold them
+    timingmap retired;
     ThreadLocalClass<Tlsdata> tls;
     timingmap tmap;
 
+    friend class PrometheusWriter;
     friend class TimingEntry;
 
     void add(const tchar *key, uint klen, strhash_t hash, timing_t diff);
-    void defer(Stats *stats);
-    static void release(Stats *s);
+    vector<Row> snapshot(bool sort_key, size_t top) const;
     void start(Tlsdata &tlsd, tstring_view key, strhash_t hash);
     static tstring format(timing_t t);
 };

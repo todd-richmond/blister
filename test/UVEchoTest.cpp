@@ -41,10 +41,9 @@ static uint dsz;
 static ulong delay = 0, tmt = TIMEOUT, waitms = 0;
 static uint sockets = 20;
 static Sockaddr bind_addr, connect_addr;
-static atomic<uint> gerrs, gops;
 static atomic loops(LLONG_MAX);
 static atomic qflag = false;
-alignas(CACHELINE_SZ) static atomic<usec_t> gusecs;
+static TestStats stats;
 
 // every round trip or failure consumes one loop as in echotest
 static bool loop_exit(void) {
@@ -145,7 +144,7 @@ static void on_io_error(EchoClient *c, const tchar *what, bool is_timeout =
     if (loop_exit()) {
 	begin_teardown(c);
     } else {
-	gerrs.fetch_add(1, memory_order_relaxed);
+	stats.errs.fetch_add(1, memory_order_relaxed);
 	dtiming.add(T("error"), 0);
 	dloge(what, is_timeout ? T("timeout") : T("close"));
 	request_close_tcp(c);
@@ -246,14 +245,18 @@ static void on_client_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *) {
 	return;
     }
     usec = Timing::now() - c->begin;
+    if (UNLIKELY(!samepayload(c->rbuf, c->in, dbuf, dsz))) {
+	on_io_error(c, T("client echo data="));
+	return;
+    }
     c->in = 0;
     uv_timer_stop(&c->timer);
     if (loop_exit()) {
 	begin_teardown(c);
 	return;
     }
-    gops.fetch_add(1, memory_order_relaxed);
-    gusecs.fetch_add(usec, memory_order_relaxed);
+    stats.ops.fetch_add(1, memory_order_relaxed);
+    stats.usecs.fetch_add(usec, memory_order_relaxed);
     dtiming.add(T("echo"), usec);
     dlogt(T("client read="), dsz);
     if (waitms) {
@@ -501,8 +504,7 @@ int tmain(int argc, const tchar * const argv[]) {
     const tchar *host = nullptr;
     const tchar *path = T("echo this short test string as quickly as possible");
     int i;
-    ullong failed = 0;
-    timing_t last, now;
+    TestSocketPath endpoint;
     vector<Worker> workers;
 
     for (i = 1; i < argc; i++) {
@@ -548,8 +550,12 @@ int tmain(int argc, const tchar * const argv[]) {
 	threads = 1;
     if ((dbuf = loaddata(T("uvechotest"), path, dsz)) == nullptr)
 	return 1;
-    if (!host)
-	host = T("unix:./socket");
+#ifdef _WIN32
+    if (!endpoint.set(T("uvechotest"), host, T("127.0.0.1"), false))
+#else
+    if (!endpoint.set(T("uvechotest"), host, T("unix:./socket"), client && server))
+#endif
+	return 1;
     if (!bind_addr.set(host)) {
 	tcerr << T("uvechotest: unknown host ") << host << endl;
 	return 1;
@@ -564,11 +570,7 @@ int tmain(int argc, const tchar * const argv[]) {
 #ifndef _WIN32
     unixsock = bind_addr.family() == AF_UNIX;
     if (unixsock && server) {
-	const sockaddr_un *su = bind_addr;
-
 	unixfd = (int)socket(AF_UNIX, SOCK_STREAM, 0);
-	if (su->sun_path[0])
-	    unlink(su->sun_path);
 	if (unixfd == -1 ||
 	    ::bind(unixfd, bind_addr, bind_addr.size()) == -1) {
 	    tcerr << T("uvechotest: unable to bind ") << host << endl;
@@ -612,22 +614,10 @@ int tmain(int argc, const tchar * const argv[]) {
 	dlogi(Log::mod(T("uvecho")), Log::cmd(T("echo")), Log::kv(T("addr"),
 	    connect_addr.str()), Log::kv(T("data"), path));
 	dlog.flush();
-	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
-	last = Timing::now();
+	stats.start();
 	do {
-	    ullong cnt, cur_errs, cur_ops, cur_usecs;
-
 	    msleep(1000);
-	    cur_ops = gops.exchange(0, memory_order_relaxed);
-	    cur_errs = gerrs.exchange(0, memory_order_relaxed);
-	    cur_usecs = gusecs.exchange(0, memory_order_relaxed);
-	    now = Timing::now();
-	    cnt = cur_ops + cur_errs;
-	    failed += cur_errs;
-	    tcout << (cnt * 1000000 / (now - last)) << T("\t\t") <<
-		(cur_usecs / (cur_ops ? cur_ops : 1)) << '\t' << cur_errs <<
-		endl;
-	    last = now;
+	    stats.print(!qflag && loops.load(memory_order_relaxed) <= 0);
 	} while (loops.load(memory_order_relaxed) > 0 &&
 	    !qflag.load(memory_order_relaxed));
     } else {
@@ -639,7 +629,8 @@ int tmain(int argc, const tchar * const argv[]) {
 	uv_async_send(&w.stopper);
     for (Worker &w : workers)
 	w.thread.wait();
-    failed += gerrs.load(memory_order_relaxed);
+    if (client)
+	stats.print(true);
 
     if (unixfd != -1) {
 	close(unixfd);
@@ -648,5 +639,5 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     delete [] dbuf;
     tcout << dtiming.data() << endl;
-    return qflag.load(memory_order_relaxed) ? -1 : failed ? 1 : 0;
+    return qflag.load(memory_order_relaxed) ? -1 : stats.failed() ? 1 : 0;
 }

@@ -34,6 +34,7 @@ class BLISTERTLS MPHTTPDispatcher: public Dispatcher {
 public:
     using Dispatcher::Dispatcher;
 
+    // worker.acceptmany, read once by start() with worker.threads
     bool acceptmany(void) const { return many; }
     // listen address, nullptr before listen()
     const Sockaddr *address(void) const;
@@ -46,6 +47,7 @@ public:
     uint remaining(void) const;
     // binds without accepting: the watcher calls this from onInit()
     bool listen(MPHTTPListenSocket *ls, const tchar *host = T("*:8080"));
+    // reloads worker.maxrequests: an idle worker already past it exits
     void refresh(bool recycle);
     // exit once idle, as after maxrequests
     void retire(void);
@@ -54,17 +56,20 @@ public:
 
 private:
     atomic<uint> curcon = 0, maxreq = 0, totreq = 0;
-    atomic<bool> draining = false, quitting = false, retired = false;
+    atomic<bool> draining = false, quitting = false, retired = false,
+	stopping = false;
 #ifdef _WIN32
     MPHTTPDaemon *daemon = nullptr;
     socket_t insock = SOCK_INVALID;	// worker: inherited listen socket
     HANDLE timer = nullptr;
 #endif
     MPHTTPListenSocket *lsock = nullptr;
-    atomic<bool> many = true;
+    bool many = true;
 
     void closed(void);
     void drain(void);
+    // closed() must not rearm the listener once stopped
+    void onStop(void) override;
     void opened(void) { ++curcon; }
     void quit(void);
     // complete() not == so a lowered maxrequests still drains
@@ -100,9 +105,11 @@ protected:
 };
 
 /*
- * POST body from the request, a file named by X-File or a SysV shared memory
- * segment (file mapping name on Windows) named by X-Shm-Id and X-Shm-Size,
- * for large transfers from loopback or UNIX socket peers only
+ * POST body from the request or, when http.post.local is set, a regular file
+ * named by X-File or a SysV shared memory segment (file mapping name on
+ * Windows) named by X-Shm-Id and X-Shm-Size, for large transfers from loopback
+ * or UNIX socket peers only. A mapped file stays valid until the reply is sent
+ * or the socket is destroyed
  */
 class BLISTERTLS ShMemHTTPSocket: public MPHTTPSocket {
 public:
@@ -110,6 +117,8 @@ public:
     ~ShMemHTTPSocket() override { cleanup(true); }
 
 protected:
+    void *filemem = nullptr;		// X-File mapping
+    ulong filesz = 0;
     unique_ptr<char[]> out;		// reply buffer freed after reply
     void *shm = nullptr;
 #ifdef _WIN32

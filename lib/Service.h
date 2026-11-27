@@ -307,6 +307,8 @@ private:
     atomic<uint64_t> sigsrc[NSIG] = {};	// sender uid << 32 | pid
     int wakefd[2] = {-1, -1};
 #endif
+    vector<Worker> dying;		// reaped, process group still exists
+    bool logmp = false;			// log file shared by workers
     vector<Worker> wkrs;
 
     void configfile(int argc, const tchar * const *argv);

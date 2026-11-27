@@ -47,7 +47,7 @@ Other build systems:
 | `COMPILE_LLVM` | build with clang/clang++ from `PATH`; on Linux uses the libstdc++ of the `g++` in `PATH` |
 | `COMPILE_PCH` | precompiled headers (default on) |
 
-`configure` has equivalents for the sanitizer and PGO builds: `--enable-tsan` and `--with-pgo=generate|use`. Like CMake it uses OpenSSL 3 from the compiler prefix, else pkg-config; `--with-openssl=DIR|no` overrides.
+`configure` has equivalents for the sanitizer and PGO builds: `--enable-tsan` and `--with-pgo=generate|use`. Like CMake it uses OpenSSL 3.5 or newer from the compiler prefix, else pkg-config; `--with-openssl=DIR|no` overrides.
 
 ## Try it
 

@@ -37,6 +37,9 @@
 #pragma comment(lib, "user32.lib")
 #endif
 
+#ifndef _WIN32
+static constexpr ulong LockPos = LONG_MAX - 1;
+#endif
 static constexpr const tchar *USubst = T("\001\001");
 #if !defined(__APPLE__) && !defined(__linux__)
 #define NO_PERCENT_Z
@@ -98,30 +101,24 @@ Log &Log::log(Tlsdata &tlsd, const Log::Escalator &escalator) {
 int Log::FlushThread::onStart(void) {
     Locker lkr(l.lck);
 
-    while (!qflag) {
-	if (UNLIKELY(l.pauserequested)) {
-	    l.flushpaused = true;
-	    l.cv.broadcast();
-	    // cppcheck-suppress knownConditionTrueFalse
-	    while (l.pauserequested && !qflag)
+    for (;;) {
+	if (!qflag) {
+	    // drainbuffers() unlocks for I/O so recheck for data added meanwhile
+	    if (l.bufpending.empty() && l.bufcur->size() == 0) {
 		l.cv.wait(INFINITE);
-	    l.flushpaused = false;
-	    continue;
+		continue;
+	    }
+	    // sleep for buffer time before flush
+	    l.cv.wait(l.buftm);
 	}
-	// drainbuffers() unlocks for I/O so recheck for data added meanwhile
-	if (l.bufpending.empty() && l.bufcur->size() == 0) {
-	    l.cv.wait(INFINITE);
-	    continue;
-	}
-	// sleep for buffer time before flush
-	l.cv.wait(l.buftm);
-	// cppcheck-suppress knownConditionTrueFalse
-	if (qflag || l.pauserequested)
-	    continue;
+	l.flushing = true;
 	l.drainbuffers(true);
+	l.flushing = false;
+	l.cv.broadcast();
+	// cppcheck-suppress knownConditionTrueFalse
+	if (qflag)
+	    return 0;
     }
-    l.drainbuffers(true);
-    return 0;
 }
 
 bool Log::LogFile::close(void) {
@@ -146,9 +143,12 @@ void Log::LogFile::lock() {
 
 // lock and seek to the end, logging to stderr on failure
 bool Log::LogFile::lockend(void) {
-    if (!lockfile(fd, F_WRLCK, SEEK_SET, 0, 0, 0) &&
-	(len = (ulong)lseek(fd, 0, SEEK_END)) != (ulong)-1)
+    llong end;
+
+    if (!lockrange(F_WRLCK) && (end = lseek(fd, 0, SEEK_END)) >= 0) {
+	len = (ullong)end;
 	return true;
+    }
     tcerr << T("unable to lock log ") << path << T(": ") << tstrerror(errno) <<
 	endl;
     close();
@@ -156,32 +156,35 @@ bool Log::LogFile::lockend(void) {
     return false;
 }
 
-void Log::LogFile::print(const tchar *buf, uint chars) {
+void Log::LogFile::print(tstring_view s) {
     if (fd < 0) {
 	if (fd == -2) {
-	    tcout.write(buf, chars);
+	    tcout.write(s.data(), (streamsize)s.size());
 	    tcout.flush();
 	} else if (fd == -3) {
-	    tcerr.write(buf, chars);
+	    tcerr.write(s.data(), (streamsize)s.size());
 	    tcerr.flush();
 #ifdef _WIN32
-	} else if (fd == -4) {
-	    MessageBox(NULL, buf, NULL, MB_OK | MB_ICONWARNING |
-		MB_SETFOREGROUND);
-	} else if (fd == -5) {
-	    OutputDebugString(buf);
+	} else if (fd == -4 || fd == -5) {
+	    const tstring z(s);	// views need not be NUL terminated
+
+	    if (fd == -4)
+		MessageBox(NULL, z.c_str(), NULL, MB_OK | MB_ICONWARNING |
+		    MB_SETFOREGROUND);
+	    else
+		OutputDebugString(z.c_str());
 #endif
 	}
     } else {
-	uint charsz = (uint)(chars * sizeof (tchar));
-	long out = (long)write(fd, buf, charsz);
+	uint charsz = (uint)(s.size() * sizeof (tchar));
+	long out = (long)write(fd, s.data(), charsz);
 
 	if (out == (long)charsz) {
 	    if (file[0] != '>')
 		len += charsz;
-	} else if (out > 0 && !ftruncate(fd, (off_t)len)) {
-	    // rollback partial write
-	    lseek(fd, (off_t)len, SEEK_SET);
+	} else if (out > 0 && file[0] != '>' && !ftruncate(fd, (llong)len)) {
+	    // rollback partial write; never touch a caller-owned descriptor
+	    lseek(fd, (llong)len, SEEK_SET);
 	}
     }
 }
@@ -228,7 +231,11 @@ bool Log::LogFile::reopen(void) {
 		fd = -3;
 		return false;
 	    }
-	    tstrftime(buf, std::size(buf), file.c_str(), tm);
+	    if (!tstrftime(buf, std::size(buf), file.c_str(), tm)) {
+		close();
+		fd = -3;
+		return false;
+	    }
 	    if (!tlink(path.c_str(), buf)) {
 		break;
 	    } else if (errno == EEXIST) {
@@ -246,13 +253,11 @@ bool Log::LogFile::reopen(void) {
 void Log::LogFile::roll(void) {
     tDIR *dir;
     const struct tdirent *ent;
-    uint files = 0;
     ino_t inode = 0;
     time_t now;
+    const bool numbered = path == file;
     tstring::size_type pos;
-    tstring s1, s2, s3;
     struct stat sbuf;
-    tchar sep;
 
     if (fd < 0 || file[0] == '>')
 	return;
@@ -265,78 +270,73 @@ void Log::LogFile::roll(void) {
     if (fd < 0 || (!fstat(fd, &sbuf) && mp && sbuf.st_ino != inode))
 	return;
     now = ::time(NULL);
-    s1 = path;
-    if ((pos = s1.find_last_of(T("/\\"))) == s1.npos) {
-	sep = '/';
-	s2 = s1;
-	s1.erase();
-    } else {
-	sep = s1.at(pos);
-	s2 = s1.substr(pos + 1);
-	s1.erase(pos);
-    }
-    if ((dir = topendir(s1.empty() ? T(".") : s1.c_str())) != NULL) {
-	vector<pair<ulong, tstring>> entries;
+    pos = path.find_last_of(T("/\\"));
+    const size_t base = pos == path.npos ? 0 : pos + 1;
+    const tstring directory = path.substr(0, base);
+    const tstring prefix = path.substr(base) + '.';
 
-	while ((ent = treaddir(dir)) != NULL) {
-	    if (!tstring_view(ent->d_name).starts_with(s2))
-		continue;
-	    if (s1.empty()) {
-		s3 = ent->d_name;
-	    } else {
-		s3 = s1;
-		s3 += sep;
-		s3 += ent->d_name;
-	    }
-	    if (s3 == path && path != file)
-		continue;
-	    if (!sec && path == file) {
-		// optimized path for plain numbered file rotation
-		const tchar *suffix = ent->d_name + s2.size();
+    if (!(dir = topendir(directory.empty() ? T(".") : directory.c_str())))
+	return;
 
-		if (*suffix == '\0') {
-		    entries.emplace_back(ULONG_MAX, s3);
-		} else if (*suffix == '.' && istdigit(suffix[1])) {
-		    tchar *end;
-		    ulong n = tstrtoul(suffix + 1, &end, 10);
+    vector<tuple<ullong, time_t, tstring>> entries;
 
-		    if (!*end)
-			entries.emplace_back(ULONG_MAX - n, s3);
-		}
+    while ((ent = treaddir(dir)) != nullptr) {
+	const tstring_view name(ent->d_name);
+	ullong n = 0;
+
+	if (!name.starts_with(prefix) || name.size() == prefix.size())
+	    continue;
+	const tstring_view suffix = name.substr(prefix.size());
+
+	if (numbered) {
+	    tchar *end;
+
+	    if (suffix.front() < '1' || suffix.front() > '9')
 		continue;
-	    }
-	    if (tstat(s3.c_str(), &sbuf) == 0)
-		entries.emplace_back((ulong)sbuf.st_mtime, s3);
+	    errno = 0;
+	    n = (ullong)tstrtoll(suffix.data(), &end, 10);
+	    if (*end || errno == ERANGE || n >= (ullong)LLONG_MAX)
+		continue;
+	} else if (!istdigit(suffix.front()) ||
+	    suffix.find_first_not_of(T("0123456789-_.:+ TZ")) != suffix.npos) {
+	    continue;
 	}
-	tclosedir(dir);
-	ranges::sort(entries);
-	files = (uint)entries.size();
-	for (const auto &[age, name] : entries) {
-	    if ((!cnt && !sec) || (sec && age >= (ulong)now - sec) ||
-		(cnt && files < cnt) || tunlink(name.c_str()))
-		break;
+	tstring archive = directory + ent->d_name;
+
+	if (tlstat(archive.c_str(), &sbuf) || !S_ISREG(sbuf.st_mode))
+	    continue;
+	entries.emplace_back(numbered ? ULLONG_MAX - n : (ullong)sbuf.st_mtime,
+	    sbuf.st_mtime, std::move(archive));
+    }
+    tclosedir(dir);
+    ranges::sort(entries);
+    size_t files = entries.size() + (numbered ? 1U : 0U);
+
+    for (auto &[order, age, name] : entries) {
+	const bool old = sec && now > age && (ullong)(now - age) > sec;
+
+	if ((cnt || sec) && (!cnt || files >= cnt) && (!sec || old) &&
+	    !tunlink(name.c_str())) {
 	    --files;
+	    name.clear();
 	}
     }
-    if (path == file) {
-	auto numbered = [this](uint n) {
-	    return std::format(T("{}.{}"), file, n);
+    if (!numbered || cnt == 1) {
+	(void)tunlink(path.c_str());
+    } else {
+	auto shift = [&](const tstring &from, ullong n) {
+	    const tstring to = std::format(T("{}.{}"), file, n);
+
+	    return tlstat(to.c_str(), &sbuf) && errno == ENOENT &&
+		!trename(from.c_str(), to.c_str());
 	};
 
-	s1 = numbered(files);
-	for (uint u = files; u > 1; u--) {
-	    s2 = numbered(u - 1);
-	    (void)tunlink(s1.c_str());
-	    if (trename(s2.c_str(), s1.c_str()))
-		break;
-	    s1 = s2;
+	for (const auto &[order, age, name] : entries) {
+	    if (!name.empty() && !shift(name, ULLONG_MAX - order + 1))
+		return;
 	}
-	if (cnt == 1)
-	    (void)tunlink(file.c_str());
-	else
-	    (void)trename(file.c_str(), s1.c_str());
-    } else {
-	(void)tunlink(path.c_str());
+	if (!shift(file, 1))
+	    return;
     }
     close();
     lock();
@@ -400,28 +400,32 @@ void Log::LogFile::set(Level l, const tchar *f, uint c, ulong s, ulong t) {
     len = 0;
 }
 
+int Log::LogFile::lockrange(short type) const {
+#ifdef _WIN32
+    // Windows range locks are mandatory; keep this byte past the log data.
+    struct flock fl{type, SEEK_SET, LLONG_MAX - 1, 1, 0};
+
+    return fcntl(fd, F_SETLKW, &fl);
+#else
+    return lockfile(fd, type, SEEK_SET, LockPos, 1, 0);
+#endif
+}
+
 void Log::LogFile::unlock(void) const {
-    if (mp && fd >= 0)
-	(void)lockfile(fd, F_UNLCK, SEEK_SET, 0, 0, 0);
+    if (mp && fd >= 0 && file[0] != '>')
+	(void)lockrange(F_UNLCK);
 }
 
 WARN_PUSH_DISABLE(-Wstrict-overflow)
 Log::Log(Level l): lvl(l) {
     ffd.lvl = l;
-    format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
+    _format(T("[%Y-%m-%d %H:%M:%S.%# %z]"));
 }
 WARN_POP()
 
 Log::~Log() {
     stop();
-    // prevent close -> flush from restarting FlushThread
-    bufenable = false;
     (void)close();
-    delete bufcur;
-    for (auto *buf : bufpending)
-	delete buf;
-    for (auto *buf : buffree)
-	delete buf;
 }
 
 void Log::alertfile(Level l, const tchar *f, uint cnt, ulong sz, ulong tm) {
@@ -435,7 +439,11 @@ void Log::buffer(bool enable) {
     if (enable) {
 	if (mp)
 	    setmp(false);
+
+	Locker lkr(lck);
+
 	bufenable = true;
+	lkr.unlock();
 	start();
     } else {
 	// stop before disabling so unbuffered writes cannot race the flusher
@@ -448,11 +456,94 @@ void Log::buffer(bool enable) {
     }
 }
 
-bool Log::close(void) {
-    flush();
+void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong sec) {
+    PauseFlush pf(*this);
 
+    drainbuffers(false);
+    ffd.set(l, f, cnt, sz, sec);
+    updatelvl();
+}
+
+void Log::format(const tchar *s) {
+    FastLocker lkr(lck);
+
+    _format(s);
+}
+
+void Log::_format(const tchar *s) {
+    tstring::size_type pos;
+
+    fmt = s;
+    last_sec = -1;
+    if ((pos = fmt.find(T("%#"))) != fmt.npos)
+	fmt.replace(pos, 2, USubst);
+#ifdef NO_PERCENT_Z
+    if ((pos = fmt.find(T("%z"))) != fmt.npos)
+	fmt.replace(pos, 2, ZSubst);
+#endif
+}
+
+void Log::gmttime(bool b) {
+    PauseFlush pf(*this);
+
+    gmt = afd.gmt = ffd.gmt = b;
+}
+
+void Log::mail(Level l, const tchar *to, const tchar *from, const tchar
+    *host) {
     Locker lkr(lck);
 
+    _mail(l, to, from, host);
+    updatelvl();
+}
+
+void Log::_mail(Level l, const tchar *to, const tchar *from, const tchar
+    *host) {
+    maillvl = l;
+    if (to) {
+	mailfrom = from;
+	mailhost = host;
+	mailto = to;
+    }
+}
+
+void Log::syslog(bool b) {
+    Locker lkr(lck);
+
+    syslogenable = b;
+    if (b && !sysloghost.empty() && !syslogsock.open())
+	_syslog(sysloglvl, sysloghost.c_str(), syslogfac);
+    updatelvl();
+}
+
+void Log::syslog(Level l, const tchar *host, uint fac) {
+    Locker lkr(lck);
+
+    _syslog(l, host, fac);
+    updatelvl();
+}
+
+void Log::_syslog(Level l, const tchar *host, uint fac) {
+    sysloglvl = l;
+    if (!host)
+	return;
+    syslogfac = fac;
+    if (sysloghost != host) {
+	sysloghost = host;
+	syslogsock.close();
+    }
+    if (!syslogenable || sysloghost.empty() ||
+	!syslogaddr.set(sysloghost.c_str(), T("syslog"), Sockaddr::UDP) ||
+	!syslogsock.open(syslogaddr.family())) {
+	syslogenable = false;
+	syslogsock.close();
+    }
+}
+
+bool Log::close(void) {
+    PauseFlush pf(*this);
+
+    drainbuffers(false);
     afd.close();
     return ffd.close();
 }
@@ -597,38 +688,42 @@ void Log::strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz) 
 
 void Log::endlog(Tlsdata &tlsd) {
     Level clvl = tlsd.clvl;
-    bool aenabled = afd.enable && clvl <= afd.lvl;
-    bool fenabled = ffd.enable && clvl <= ffd.lvl;
+
+    if (clvl == None || clvl > level()) {
+	tlsd.clvl = None;
+	tlsd.sep = '\0';
+	tlsd.strm.reset();
+	return;
+    }
+
+    const Type tp = _type.load(memory_order_relaxed);
     size_t tmlen, taillvllen;
     time_t now_sec;
-    usec_t now_usec;
     tstring &strbuf(tlsd.strbuf);
     tstring &tailbuf(tlsd.tailbuf);
     size_t sz = (size_t)tlsd.strm.size();
 
     // build text without timestamp outside of lock
     tailbuf.erase();
-    if (_type == KeyVal) {
+    if (tp == KeyVal) {
 	tailbuf += T("ll=");
-	if (clvl >= None && clvl <= Trace)
-	    tailbuf += LevelStr2[clvl];
+	tailbuf += LevelStr2[clvl];
 	tailbuf += ' ';
-    } else if (_type != NoLevel) {
-	if (clvl >= None && clvl <= Trace)
-	    tailbuf += LevelStr[clvl];
-	if (_type == Syslog)
+    } else if (tp != NoLevel) {
+	tailbuf += LevelStr[clvl];
+	if (tp == Syslog)
 	    tailbuf += ':';
 	tailbuf += ' ';
     }
     taillvllen = tailbuf.size();
     if (!tlsd.prefix.empty()) {
 	tailbuf += tlsd.prefix;
-	if (_type == Syslog)
+	if (tp == Syslog)
 	    tailbuf += ':';
 	tailbuf += ' ';
     }
-    if (_type == KeyVal) {
-	const tchar *p = tlsd.strm.str();
+    if (tp == KeyVal) {
+	const tchar *p = tlsd.strm.view().data();
 	const tchar *end = p + sz;
 
 	tailbuf.append(T("txt=\""), 5);
@@ -649,11 +744,14 @@ void Log::endlog(Tlsdata &tlsd) {
 	}
 	tailbuf += '"';
     } else {
-	tailbuf.append(tlsd.strm.str(), sz);
+	tailbuf.append(tlsd.strm.view());
     }
     tailbuf += '\n';
 
     lck.lock();
+    bool aenabled = afd.enable && clvl <= afd.lvl;
+    bool fenabled = ffd.enable && clvl <= ffd.lvl;
+
     if (fenabled && !bufenable) {
 	// unbuffered logs must check size and roll inline
 	ffd.lock();
@@ -665,54 +763,60 @@ void Log::endlog(Tlsdata &tlsd) {
 	if (afd.sz && afd.len >= afd.sz)
 	    afd.roll();
     }
-    struct timeval now_tv;
+    const bool syslogit = syslogenable && clvl <= sysloglvl;
 
-    gettimeofday(&now_tv, NULL);
-    now_sec = now_tv.tv_sec;
-    now_usec = (usec_t)now_tv.tv_usec;
-    if (now_sec != last_sec) {
-	tchar tbuf[128];
-	struct tm tmbuf;
-	const struct tm *tm;
-
-	tm = gmt ? gmtime_r(&now_sec, &tmbuf) : localtime_r(&now_sec, &tmbuf);
-	tstrftime(tbuf, std::size(tbuf), fmt.c_str(), tm);
-	last_format = tbuf;
-	last_sec = now_sec;
-#ifdef NO_PERCENT_Z
-	tstring::size_type zpos;
-
-	if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
-	    int diff;
-	    tchar gmtoff[16];
-	    struct tm tmbuf2 {};
-	    const struct tm *tm2;
-
-	    tm2 = gmt ? localtime_r(&now_sec, &tmbuf2) : tm;
-	    tm = gmt ? tm : gmtime_r(&now_sec, &tmbuf2);
-	    diff = (tm2->tm_hour - tm->tm_hour) * 100 + tm2->tm_min - tm->tm_min;
-	    if (tm->tm_wday != tm2->tm_wday)
-		diff -= 2400 * (tm->tm_wday > tm2->tm_wday ||
-		    (tm->tm_wday == 0 && tm2->tm_wday == 6) ? 1 : -1);
-	    tsprintf(gmtoff, T("%+05d"), diff);
-	    last_format.replace(zpos, 2, gmtoff);
-	}
-#endif
-	upos = last_format.find(USubst);
-    }
-    if (_type == NoTime) {
+    if (tp == NoTime) {
 	strbuf.erase();
+	// only the syslog timestamp needs the clock
+	now_sec = syslogit ? ::time(NULL) : 0;
     } else {
+	struct timeval now_tv;
+
+	gettimeofday(&now_tv, NULL);
+	now_sec = now_tv.tv_sec;
+	if (now_sec != last_sec) {
+	    tchar tbuf[128];
+	    struct tm tmbuf;
+	    const struct tm *tm;
+
+	    tm = gmt ? gmtime_r(&now_sec, &tmbuf) :
+		localtime_r(&now_sec, &tmbuf);
+	    tstrftime(tbuf, std::size(tbuf), fmt.c_str(), tm);
+	    last_format = tbuf;
+	    last_sec = now_sec;
+#ifdef NO_PERCENT_Z
+	    tstring::size_type zpos;
+
+	    if ((zpos = last_format.find(ZSubst)) != last_format.npos) {
+		int diff;
+		tchar gmtoff[5];
+		struct tm tmbuf2 {};
+		const struct tm *tm2;
+
+		tm2 = gmt ? localtime_r(&now_sec, &tmbuf2) : tm;
+		tm = gmt ? tm : gmtime_r(&now_sec, &tmbuf2);
+		diff = (tm2->tm_hour - tm->tm_hour) * 100 + tm2->tm_min -
+		    tm->tm_min;
+		if (tm->tm_wday != tm2->tm_wday)
+		    diff -= 2400 * (tm->tm_wday > tm2->tm_wday ||
+			(tm->tm_wday == 0 && tm2->tm_wday == 6) ? 1 : -1);
+		// leading 1 zero pads to 4 digits, then becomes the sign
+		(void)to_chars(gmtoff, gmtoff + 5, 10000U + (uint)abs(diff));
+		gmtoff[0] = diff < 0 ? '-' : '+';
+		last_format.replace(zpos, 2, gmtoff, 5);
+	    }
+#endif
+	    upos = last_format.find(USubst);
+	}
 	if (upos == last_format.npos) {
 	    strbuf = last_format;
 	} else {
-	    tchar cbuf[8];
-	    auto [ep, ec] = to_chars(cbuf, cbuf + 6, (uint)now_usec);
-	    size_t dlen = (size_t)(ep - cbuf);
+	    tchar cbuf[7];
 
+	    // leading 1 zero pads to 6 digits
+	    (void)to_chars(cbuf, cbuf + 7, 1000000U + (uint)now_tv.tv_usec);
 	    strbuf.assign(last_format, 0, upos);
-	    strbuf.append(6 - dlen, '0');
-	    strbuf.append(cbuf, dlen);
+	    strbuf.append(cbuf + 1, 6);
 	    strbuf.append(last_format, upos + 2, last_format.npos);
 	}
 	if (!strbuf.empty())
@@ -769,7 +873,7 @@ void Log::endlog(Tlsdata &tlsd) {
     tlsd.sep = '\0';
     tlsd.strm.reset();
     tlsd.suppress = true;
-    if (syslogenable && clvl <= sysloglvl) {
+    if (syslogit) {
 	static constexpr const char mon[][4] = { "Jan", "Feb", "Mar", "Apr",
 	    "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 	struct tm tmbuf {};
@@ -781,7 +885,7 @@ void Log::endlog(Tlsdata &tlsd) {
 	    tmbuf.tm_sec, tstringtoastring(hostname));
 
 	if (!mailfrom.empty() && mailfrom != T("<>")) {
-	    ss += _type == KeyVal ? " nm=" : " ";
+	    ss += tp == KeyVal ? " nm=" : " ";
 	    ss += tstringtoastring(mailfrom.substr(0, mailfrom.find('@')));
 	}
 	format_to(back_inserter(ss), "[{}]: {}", getpid(),
@@ -816,22 +920,13 @@ void Log::endlog(Tlsdata &tlsd) {
 
 // queue the current buffer and continue writing into a free one
 void Log::rotatebuf(void) {
-    bufpending.push_back(bufcur);
+    bufpending.push_back(std::move(bufcur));
     if (buffree.empty()) {
-	bufcur = new tbufferstream;
+	bufcur = make_unique<tbufferstream>();
     } else {
-	bufcur = buffree.back();
+	bufcur = std::move(buffree.back());
 	buffree.pop_back();
     }
-}
-
-void Log::file(Level l, const tchar *f, uint cnt, ulong sz, ulong sec) {
-    PauseFlush pf(*this);
-    Locker lkr(lck);
-
-    drainbuffers(false);
-    ffd.set(l, f, cnt, sz, sec);
-    updatelvl();
 }
 
 // drain all pending buffers and allow other threads to continue writing
@@ -839,38 +934,25 @@ void Log::drainbuffers(bool unlockedio) {
     if (bufcur->size())
 	rotatebuf();
     while (!bufpending.empty()) {
-	tbufferstream *buf = bufpending.front();
+	unique_ptr<tbufferstream> buf = std::move(bufpending.front());
 
 	bufpending.pop_front();
 	if (unlockedio)
 	    lck.unlock();
 	ffd.lock();
-	ffd.print(buf->str(), (uint)buf->size());
+	ffd.print(buf->view());
 	if (ffd.sz && ffd.len >= ffd.sz)
 	    ffd.roll();
 	ffd.unlock();
-	buf->reset();
+	(*buf).reset();
 	if (unlockedio)
 	    lck.lock();
-	buffree.push_back(buf);
+	buffree.push_back(std::move(buf));
     }
 }
 
-void Log::format(const tchar *s) {
-    tstring::size_type pos;
-
-    fmt = s;
-    last_sec = 0;
-    if ((pos = fmt.find(T("%#"))) != fmt.npos)
-	fmt.replace(pos, 2, USubst);
-#ifdef NO_PERCENT_Z
-    if ((pos = fmt.find(T("%z"))) != fmt.npos)
-	fmt.replace(pos, 2, ZSubst);
-#endif
-}
-
 void Log::logv(int il, ...) {
-    if (UNLIKELY((Level)il > lvl))
+    if (UNLIKELY((Level)il <= None || (Level)il > level()))
 	return;
 
     Tlsdata &tlsd(*tls);
@@ -886,24 +968,6 @@ void Log::logv(int il, ...) {
 	log(tlsd, p);
     va_end(vl);
     endlog(tlsd);
-}
-
-void Log::mail(Level l, const tchar *to, const tchar *from, const tchar
-    *host) {
-    Locker lkr(lck);
-
-    _mail(l, to, from, host);
-    updatelvl();
-}
-
-void Log::_mail(Level l, const tchar *to, const tchar *from, const tchar
-    *host) {
-    maillvl = l;
-    if (to) {
-	mailfrom = from;
-	mailhost = host;
-	mailto = to;
-    }
 }
 
 tbufferstream &Log::quote(tbufferstream &os, tstring_view s) {
@@ -975,7 +1039,9 @@ void Log::set(const Config &cfg, const tchar *sect) {
     tstring s;
 
     stop();
-    lck.lock();
+
+    Locker lkr(lck);
+
     drainbuffers(false);
     bufsz = cfg.get(T("file.buffer.size"), 32U * 1024, sect);
     buftm = cfg.get(T("file.buffer.msec"), 1000UL, sect);
@@ -997,14 +1063,15 @@ void Log::set(const Config &cfg, const tchar *sect) {
     _syslog(str2enum(cfg.get(T("syslog.level"), T("err"), sect).c_str()),
 	cfg.get(T("syslog.host"), T("localhost"), sect).c_str(),
 	cfg.get(T("syslog.facility"), 1U, sect));
-    format(cfg.get(T("format"), T("[%Y-%m-%d %H:%M:%S.%# %z]"), sect).c_str());
+    _format(cfg.get(T("format"), T("[%Y-%m-%d %H:%M:%S.%# %z]"), sect).c_str());
     s = cfg.get(T("type"), T("simple"), sect);
-    _type = s == T("nolevel") ? NoLevel : s == T("notime") ? NoTime :
-	s == T("syslog") ? Syslog : s == T("keyval") ? KeyVal : Simple;
+    _type.store(s == T("nolevel") ? NoLevel : s == T("notime") ? NoTime :
+	s == T("syslog") ? Syslog : s == T("keyval") ? KeyVal : Simple,
+	memory_order_relaxed);
     afd.set(cfg, sect, T("alert"), false, T("warn"), T("stderr"));
     ffd.set(cfg, sect, T("file"), true, T("info"), T("stdout"));
     updatelvl();
-    lck.unlock();
+    lkr.unlock();
     buffer(bufenable);
 }
 
@@ -1014,7 +1081,6 @@ bool Log::setids(uid_t uid, gid_t gid) {
     return true;
 #else
     PauseFlush pf(*this);
-    Locker lkr(lck);
     // files open lazily: create them before the privilege drop
     auto own = [&](LogFile &f) {
 	if (f.enable && f.fd == -1)
@@ -1033,7 +1099,6 @@ void Log::setmp(bool b) {
 	buffer(false);
 
     PauseFlush pf(*this);
-    Locker lkr(lck);
 
     drainbuffers(false);
     ffd.close();
@@ -1064,21 +1129,18 @@ void Log::stop(void) {
 
 void Log::flush(void) {
     PauseFlush pf(*this);
-    Locker lkr(lck);
 
     drainbuffers(false);
 }
 
 bool Log::reopen(void) {
     PauseFlush pf(*this);
-    Locker lkr(lck);
 
     return ffd.reopen();
 }
 
 void Log::roll(void) {
     PauseFlush pf(*this);
-    Locker lkr(lck);
 
     ffd.roll();
 }
@@ -1093,29 +1155,5 @@ Log::Level Log::str2enum(const tchar *l) {
 	    return (Level)u;
     }
     return None;
-}
-
-void Log::syslog(Level l, const tchar *host, uint fac) {
-    Locker lkr(lck);
-
-    _syslog(l, host, fac);
-    updatelvl();
-}
-
-void Log::_syslog(Level l, const tchar *host, uint fac) {
-    sysloglvl = l;
-    if (!host)
-	return;
-    syslogfac = fac;
-    if (sysloghost != host) {
-	sysloghost = host;
-	syslogsock.close();
-    }
-    if (!syslogenable || sysloghost.empty() ||
-	!syslogaddr.set(sysloghost.c_str(), T("syslog"), Sockaddr::UDP) ||
-	!syslogsock.open(syslogaddr.family())) {
-	syslogenable = false;
-	syslogsock.close();
-    }
 }
 

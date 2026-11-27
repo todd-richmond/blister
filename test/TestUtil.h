@@ -18,12 +18,81 @@
 #ifndef TestUtil_h
 #define TestUtil_h
 
+#include "stdapi.h"
+#include <atomic>
 #include <fcntl.h>
 #include <signal.h>
 #ifndef _WIN32
 #include <sys/resource.h>
 #endif
 #include <sys/stat.h>
+#include "Thread.h"
+
+class TestSocketPath: nocopy {
+public:
+    TestSocketPath() = default;
+    ~TestSocketPath() {
+	if (!dir.empty())
+	    (void)trmdir(dir.c_str());
+    }
+
+    bool set(const tchar *prog, const tchar *&host, const tchar *fallback,
+	bool combined) {
+	if (host)
+	    return true;
+	if (!combined) {
+	    host = fallback;
+	} else {
+	    dir = T("./.blister.XXXXXX");
+	    if (!tmkdtemp(dir.data())) {
+		dir.clear();
+		tcerr << prog << T(": unable to make socket directory: ") <<
+		    tstrerror(errno) << endl;
+		return false;
+	    }
+	    path = T("unix:") + dir + T("/sock");
+	    host = path.c_str();
+	}
+	return true;
+    }
+
+private:
+    tstring dir, path;
+};
+
+class TestStats {
+public:
+    atomic<uint> errs = 0, ops = 0;
+    alignas(CACHELINE_SZ) atomic<usec_t> usecs = 0;
+
+    bool failed(void) const { return errors != 0; }
+    void print(bool final = false) {
+	const auto now = uticks();
+	const uint err = errs.exchange(0, memory_order_relaxed);
+	const uint ok = ops.exchange(0, memory_order_relaxed);
+	const auto us = usecs.exchange(0, memory_order_relaxed);
+	const auto elapsed = now - last;
+
+	errors += err;
+	if (!final || ok || err)
+	    tcout << ((usec_t)ok + err) * 1000000 / (elapsed ? elapsed : 1) <<
+		T("\t\t") << (ok ? us / ok : 0) << '\t' << err << endl;
+	last = now;
+    }
+    void start(void) {
+	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
+	last = uticks();
+    }
+
+private:
+    ullong errors = 0;
+    usec_t last = 0;
+};
+
+inline bool samepayload(const char *data, size_t sz, const char *expected,
+    size_t len) {
+    return sz == len && (!len || !memcmp(data, expected, len));
+}
 
 // file contents, or path itself when no such file exists
 inline char *loaddata(const tchar *prog, const tchar *path, uint &sz) {

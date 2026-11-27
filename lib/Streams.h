@@ -55,7 +55,7 @@ public:
 	const streamsize left = egptr() - gp;
 	int in;
 
-	if (left == bufsz || UNLIKELY(sync()))	// sync: output shares buf
+	if (left >= bufsz || UNLIKELY(sync()))	// sync: output shares buf
 	    return -1;
 	memmove(buf, gp, (size_t)left);
 	in = fd->read(buf + left, chunk(bufsz - left));
@@ -271,14 +271,20 @@ public:
     streamsize pcount(void) const { return sb.pcount(); }
     streamsize size(void) const { return pcount(); }
     const C *str(void) const { return sb.buffer(); }
-    void str(basic_string_view<C> sv) {
-	reset();
-	write(sv.data(), (streamsize)sv.size());
-    }
+    void str(basic_string_view<C> sv) { sb.assign(sv); }
     basic_string_view<C> view(void) const { return sb.view(); }
     C back(void) const { return sb.back(); }
 
-    void reset(void) { sb.reset(); }
+    void reset(void) {
+	sb.reset();
+	if (UNLIKELY(!plain() || this->precision() != 6)) {
+	    this->clear();
+	    this->flags(ios_base::skipws | ios_base::dec);
+	    this->width(0);
+	    this->precision(6);
+	    this->tie(nullptr);
+	}
+    }
     bufferstream &write(C c) { sb.write(c); return *this; }
     bufferstream &write(bool b) {
 	sb.write(b ? C('t') : C('f'));
@@ -329,38 +335,44 @@ public:
 	    is_same_v<T, char32_t>) {
 	    write((C)val);
 	} else if constexpr (is_integral_v<T>) {
-	    C buf[numeric_limits<T>::digits10 + 2];
-	    C *p = buf + std::size(buf);	// cppcheck-suppress uninitvar
-	    auto uval = (make_unsigned_t<T>)val;
+	    if constexpr (is_same_v<C, char> || is_same_v<C, wchar_t>) {
+		C buf[numeric_limits<T>::digits10 + 2];
 
-	    if constexpr (is_signed_v<T>)
-		if (val < 0)
-		    uval = 0 - uval;
-	    while (uval >= 100) {
-		auto const idx = (uval % 100) * 2;
-
-		uval /= 100;
-		*--p = (C)digit_pairs[idx + 1];
-		*--p = (C)digit_pairs[idx];
-	    }
-	    if (uval >= 10) {
-		auto const idx = uval * 2;
-
-		*--p = (C)digit_pairs[idx + 1];
-		*--p = (C)digit_pairs[idx];
+		// cppcheck-suppress uninitvar
+		write(buf, to_chars(buf, buf + std::size(buf), val).ptr - buf);
 	    } else {
-		*--p = (C)('0' + uval);
+		char nbuf[numeric_limits<T>::digits10 + 2];
+		C buf[std::size(nbuf)];
+		auto end = to_chars(nbuf, nbuf + std::size(nbuf), val).ptr;
+		streamsize n = end - nbuf;
+
+		if (n <= 0)
+		    return *this;
+		for (streamsize i = 0; i < n; ++i)
+		    buf[i] = (C)(uchar)nbuf[i];
+		write(buf, n);
 	    }
-	    if constexpr (is_signed_v<T>)
-		if (val < 0)
-		    *--p = (C)'-';
-	    write(p, buf + std::size(buf) - p);
 	} else if constexpr (is_floating_point_v<T>) {
-	    C buf[40];
-	    // %.6g like ostream; always fits
-	    // cppcheck-suppress uninitvar
-	    write(buf, to_chars(buf, buf + std::size(buf), val,
-		chars_format::general, 6).ptr - buf);
+	    if constexpr (is_same_v<C, char> || is_same_v<C, wchar_t>) {
+		C buf[40];
+
+		// %.6g like ostream; always fits
+		// cppcheck-suppress uninitvar
+		write(buf, to_chars(buf, buf + std::size(buf), val,
+		    chars_format::general, 6).ptr - buf);
+	    } else {
+		char nbuf[40];
+		C buf[std::size(nbuf)];
+		auto end = to_chars(nbuf, nbuf + std::size(nbuf), val,
+		    chars_format::general, 6).ptr;
+		streamsize n = end - nbuf;
+
+		if (n <= 0)
+		    return *this;
+		for (streamsize i = 0; i < n; ++i)
+		    buf[i] = (C)(uchar)nbuf[i];
+		write(buf, n);
+	    }
 	} else if constexpr (is_enum_v<T>) {
 	    write((underlying_type_t<T>)val);
 	} else if constexpr (is_convertible_v<const T &,
@@ -390,6 +402,21 @@ private:
     public:
 	explicit bufferbuf(ios::openmode m): basic_stringbuf<C>(m) {}
 
+	void assign(basic_string_view<C> sv) {
+	    const streamsize n = (streamsize)sv.size();
+	    C *base = basic_stringbuf<C>::pbase();
+	    const streamsize cap = basic_stringbuf<C>::epptr() - base;
+
+	    if (n <= cap) {
+		if (n)
+		    memmove(base, sv.data(), (size_t)n * sizeof (C));
+		basic_stringbuf<C>::setp(base, base + cap);
+		basic_stringbuf<C>::pbump((int)n);
+	    } else {
+		reset();
+		write(sv.data(), n);
+	    }
+	}
 	streamsize pcount(void) const {
 	    return basic_stringbuf<C>::pptr() - basic_stringbuf<C>::pbase();
 	}

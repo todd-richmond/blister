@@ -49,11 +49,15 @@ typedef DWORD tlskey_t;
 #include <pthread.h>
 
 typedef pthread_t thread_hdl_t;
-#if defined(__FreeBSD__) || defined(__OpenBSD__)
+#if defined(__FreeBSD__)
 #include <pthread_np.h>
 typedef ulong thread_id_t;
 #define THREAD_EQUAL(x, y)	((x) == (y))
 #define THREAD_ID()		(thread_id_t)pthread_getthreadid_np()
+#elif defined(__OpenBSD__)
+typedef pid_t thread_id_t;
+#define THREAD_EQUAL(x, y)	((x) == (y))
+#define THREAD_ID()		getthrid()
 #elif defined(__linux__)
 #include <sys/syscall.h>
 typedef pid_t thread_id_t;
@@ -994,7 +998,10 @@ using ThreadRoutine = int (*)(void *userdata);
 
 enum ThreadState: uint8_t { Init, Running, Suspended, Terminated };
 
-// manage OS native threads
+/*
+ * manage OS native threads. ~Thread() waits for a started OS thread, so it must
+ * not run on that thread. A wrapped thread is never joined except by wait()
+ */
 class BLISTER Thread: nocopy {
 public:
     explicit Thread(thread_hdl_t handle, ThreadGroup *tg = nullptr) noexcept;
@@ -1064,7 +1071,12 @@ private:
     friend class ThreadGroup;
 };
 
-// manage a group of one or more, possibly dissimilar threads
+/*
+ * manage a group of one or more, possibly dissimilar threads. A group must
+ * outlive its member Threads unless wait() returned them or remove() dropped
+ * them. Members must not be destroyed or restarted while another thread is in
+ * the group's wait() or destructor, which join and then detach them
+ */
 class BLISTER ThreadGroup: nocopy {
 public:
     ThreadGroup() = default;
@@ -1110,6 +1122,7 @@ private:
 
     template<class F> void control(F func);
     static int init(void *thisp);
+    static ThreadGroup *resolve(ThreadGroup *tg);
     friend class Thread;
 };
 

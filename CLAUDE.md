@@ -1,15 +1,15 @@
 # CLAUDE.md
 
-Blister: C++ async I/O library (reactor, config, logging, sockets, threads, HTTP/SMTP/TLS client/server) for Linux, Solaris, macOS, BSD and Windows (POSIX emulation).
+Blister: cross-platform C++ async I/O library. Class/API index: `lib/README.md`; test CLIs: `test/README.md`.
 
-## Build
-- Root: in-source CMake, already configured: `make -j4`, then `ctest` (~15s: HashFunctors, echotest/httptest plain and `-ssl`). No unit test framework; `test/` holds samples/load tests (`test/README.md`).
-- `-Werror` with `-Wshadow` (incl. stdapi names such as `next`) and `-Wsign-conversion`; C++23/C23, `-fno-exceptions -fno-rtti`.
-- `build/build [check|tsan] [BuildType]`: distclean + reconfigure; only when `CMakeLists.txt`/options change.
-- Static analysis (`CHECK_CLANG_TIDY`/`CPPCHECK`/`CPPLINT`/`IWYU`/`ALL`) is slow; only when asked.
-- PGO: `build/build Release -DPGO=generate`, run `test/echotest -h 127.0.0.1:8765 -l 200000 -e 50 -p 10 x`, `build/build Release -DPGO=use`; clean-build when switching flags.
-- Alternate configs: `cmake -S . -B <scratch>`; never `cmake <repo>` from elsewhere (pollutes the root cache).
-- Intermittent `.gch: Permission denied`/jobserver errors: rerun `make -j4`.
+## Build and test
+- Configured in-source CMake build: `make -j4 && ctest --output-on-failure`.
+- Strict C++23/C23: `-Werror`, `-Wshadow` (including stdapi names such as `next`), `-Wsign-conversion`, `-fno-exceptions -fno-rtti` for C++.
+- `build/build` distcleans before configuring. Use it only for build configuration changes; clean-build when switching PGO modes.
+- Use `cmake -S . -B "$TMPDIR/<build>"`; `cmake <repo>` from elsewhere can pick up the in-source cache.
+- Use separate scratch builds for `-DCHECK_TSAN=thread` and `-DCHECK_TSAN=address,undefined`. Do not enable static analysis unless asked.
+- If a build fails with intermittent `.gch: Permission denied` or jobserver errors, rerun `make -j4`.
+- Use `compile_commands.json` and `CMakeCache.txt` for exact compiler, flags, and OpenSSL paths. OpenSSL ≥3.5 is optional on Unix. Windows 11+ uses SChannel; don't claim native verification from Linux.
 
 ## Simplicity
 Prefer the simplest complete implementation.
@@ -36,11 +36,11 @@ Prefer:
 - Inline only constant-data paths; don't bloat runtime callers. `LIKELY`/`UNLIKELY`; `__forceinline` for tiny hot wrappers.
 - This VM has no HW perf counters: A/B by client or server CPU time with the server in a separate process.
 
-## Architecture
-Per-class docs in `lib/README.md`: update its terse entry when public API or config keys change.
-- `lib/stdapi.h`: portability base (PCH), Windows POSIX emulation, `tchar` layer (`T()`, `tstring`, `tstrcmp`...) for text that must work under `_UNICODE`, `BLISTER` export macro.
-- `lib/Dispatch`: reactor, `Dispatcher : ThreadGroup`. `DispatchObj` → `DispatchTimer` → `DispatchSocket`/`DispatchIOSocket` → client/server/listen sockets; `SimpleDispatchListenSocket<D,C>` spawns `C` per accept. `test/echotest` is the canonical example.
-- Runs as a shared library: no `thread_local` destructors.
+## Source layout
+- Update the terse `lib/README.md` entry when public API or config keys change.
+- `stdapi.h` is the PCH and portability base. Use `T()`/`tstring` for root text that supports `_UNICODE`; keep protocol bytes narrow. Windows POSIX shims live in `lib/Windows.cpp`.
+- `Dispatcher` lives in `lib/Dispatch.cpp`; see `test/EchoTest.cpp` for an end-to-end example.
+- For source-list changes, check CMake, Autotools, Visual Studio projects, and `build/Blister.xcodeproj`.
 
 ## Conventions
 - Assume full C++23 (concepts, ranges, `to_chars`, `format_to`); never add fallbacks.
@@ -60,10 +60,9 @@ Per-class docs in `lib/README.md`: update its terse entry when public API or con
 - Docs, comments, replies terse; no narration.
 
 ## Working in this repo
-- Skip build output: `build/` (except `build/build`), `CMakeFiles/`, `.cache/`, `.lto/`, `Testing/`, `autom4te.cache/`, `bak/`, `*.pch`. No vendored code.
-- `lib/` files over 24KB: grep or offset reads.
-- Scratch files in `$TMPDIR` (if unset, `/tmp/claude-$UID`), not named like system tools (`.` in PATH). Compile scratch tests with flags from `compile_commands.json` (`jq`), `-fsanitize=thread` or `address,undefined`, linking `lib/libblister.a -lpthread -ldl`.
-- HTTP: `cd test && ./uhttpd [-p port] [-s]` (default 8080, serves `test/htdocs`) + `curl`; stop with `timeout`, not `pkill -f`.
-- SMTP: `test/smtpsink -p <port>` or a byte-logging fake server.
+- Scope searches to sources; skip generated CMake, PCH, cache, `Testing/`, and backup directories. Use `rg` or offset reads for `lib/` files over 24 KB.
+- Put scratch files in `$TMPDIR` (fallback `/tmp/claude-$UID`); avoid names that shadow system tools (`.` in PATH).
+- HTTP: `test/uhttpd` + `curl` for static files, metrics, and MPHTTP; `test/httptest` for plain/TLS POST. SMTP: `test/smtpsink` + `test/smtpload`; use a scripted local peer for reply fragmentation and EOF cases.
+- For local network probes, start server and client in the same sandbox command. When binding port 0, connect to the actual address from `sockname()`. Bound probes with `timeout`, not `pkill -f`.
 - Don't run downloaded package code (pip, toolchains); verify output by hand.
 - Don't `git stash -- <path>` with staged changes.

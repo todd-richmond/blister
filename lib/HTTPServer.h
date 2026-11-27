@@ -117,6 +117,7 @@ private:
     ulong chunkin = 0;
     bool chunktrailer = false, postchunking = false;
     const char *cmd = nullptr;
+    bool connclose = false, connkeepalive = false;
     char *data = nullptr;
     ulong datasz = 0, sz = 0;
     unique_ptr<char[]> fbuf;
@@ -130,7 +131,6 @@ private:
     uint _status = 0;
     usec_t begin = 0;
     static bool date;
-    static string docroot;	// http.docroot, default ${installdir}/htdocs
     static atomic_bool paused;
 
     template<class M>
@@ -139,7 +139,6 @@ private:
 
 	return it == amap.end() ? nullptr : it->second;
     }
-    static void configure(const Config &cfg);
     static const char *httpdate(time_t t, char (&buf)[30]);
     static bool readfull(int fd, char *buf, size_t len);
     static string_view resource(string_view p);
@@ -248,7 +247,7 @@ public:
 	initializer_list<pair<string_view, bool>> states);
     void summary(const PrometheusFamily &f, ullong count, double sum,
 	PrometheusLabels labels = {});
-    // keys with the most total time; untimed keys are counters
+    // keys with the most total time
     void timing(const Timing &t, size_t top);
     // set before serving; p must outlive the writers
     static void prefix(string_view p) { pfx = p; }
@@ -261,9 +260,12 @@ private:
     string name;
     vector<string> names;
     bool om = false, quote = false, skip = false;
-    string s, tags;
+    string s;
+    vector<pair<string, string>> tags;
     static string_view pfx;
 
+    template<class C> void buckets(Type type, span<const double> bounds,
+	span<const C> counts, double sum, PrometheusLabels labels);
     void distribution(Type type, span<const double> bounds, span<const ulong>
 	counts, double sum, PrometheusLabels labels);
     static void escape(string &s, string_view val);
@@ -276,6 +278,7 @@ private:
 	V val, PrometheusLabels extra = {});
     static string underscore(string_view n, bool metric);
 
+    friend class HTTPServerSocket;
     friend class PrometheusMetrics;
 };
 
@@ -320,7 +323,7 @@ private:
 
     struct Family;
     struct Series {
-	unique_ptr<atomic<ulong>[]> cnts;
+	unique_ptr<atomic<uint64_t>[]> cnts;
 	const Family *fam = nullptr;
 	strhash_t hash = 0;
 	vector<PrometheusLabel> labels;		// views of text

@@ -18,7 +18,6 @@
 #ifndef TLSSocket_h
 #define TLSSocket_h
 
-#include <unordered_map>
 #include "Config.h"
 #include "HTTPClient.h"
 #include "HTTPServer.h"
@@ -30,8 +29,6 @@
 struct SChannelCreds;
 #else
 struct ssl_ctx_st;
-struct ssl_session_st;
-struct ssl_st;
 #endif
 
 /*
@@ -68,18 +65,14 @@ public:
     // shared client context: verifies unless reloaded with tls.verify false
     static TLSContext &client(void);
     static Info info(const Socket &s);
-    // host name for SNI, empty for an address without one
+    // requested host name for SNI, empty for an address without one
     static tstring sni(const Sockaddr &sa);
 
 private:
 #ifdef _WIN32
     atomic<SChannelCreds *> ctx = nullptr;
 #else
-    void clear(void);
-    static int onsession(ssl_st *ssl, ssl_session_st *sess);
-
     atomic<ssl_ctx_st *> ctx = nullptr;
-    unordered_map<string, ssl_session_st *, strhash, streq> sessions;
 #endif
     mutable RWLock lock;
     const bool srv;

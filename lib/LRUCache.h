@@ -76,10 +76,13 @@ public:
 	C entry(data, sz);
 	// cppcheck-suppress variableScope
 	lru_list freed;		// NOSONAR: destroyed after lkr unlocks
-	const msec_t tm = maxtm.load(memory_order_relaxed);
-	const msec_t now = LIKELY(tm) ? mticks() : 0;
+	msec_t tm = maxtm.load(memory_order_relaxed);
+	msec_t now = LIKELY(tm) ? mticks() : 0;
 	FastSpinLocker lkr(lock);
 
+	tm = maxtm.load(memory_order_relaxed);
+	if (UNLIKELY(tm && !now))
+	    now = mticks();
 	if (LIKELY(tm) && expired(now, last_purge, tm / 2)) {
 	    purge(now, freed);
 	    last_purge = now;
@@ -95,25 +98,27 @@ public:
 	return entry;
     }
     // takes ownership of new[] allocated data unless returning false
-    bool put(C &entry, const void *data, ulong sz) {
+    bool put(C &entry, ::byte *data, ulong sz) {
+	lru_list freed, node;	// NOSONAR: destroyed after lkr unlocks
+	msec_t now, tm;
+
 	if (UNLIKELY(sz > maxsz.load(memory_order_relaxed))) {
 	    entry.data = nullptr;
 	    entry.sz = 0;
 	    return false;
 	}
-
-	lru_list freed, node;	// NOSONAR: destroyed after lkr unlocks
-	const msec_t now = maxtm.load(memory_order_relaxed) ? mticks() : 0;
-
-	entry.data = shared_ptr<const void>(data, [](const void *p) {
-	    delete [] (const char *)p;
+	entry.data = shared_ptr<const void>(data, [](const ::byte *p) {
+	    delete [] p;
 	});
 	entry.sz = sz;
-	entry.touch(now);
 	node.emplace_front(entry);
 
 	FastSpinLocker lkr(lock);
 
+	tm = maxtm.load(memory_order_relaxed);
+	now = tm ? mticks() : 0;
+	entry.touch(now);
+	node.front().touch(now);
 	auto [it, added] = cache_map.try_emplace(lruhash_t(entry));
 
 	cache_list.splice(cache_list.begin(), node);
@@ -134,6 +139,11 @@ public:
 
 	maxcnt.store(cnt, memory_order_relaxed);
 	maxsz.store(sz, memory_order_relaxed);
+	if (tm && !maxtm.load(memory_order_relaxed)) {
+	    for (C &entry : cache_list)
+		entry.touch(now);
+	    last_purge = now;
+	}
 	maxtm.store(tm, memory_order_relaxed);
 	purge(now, freed);
     }

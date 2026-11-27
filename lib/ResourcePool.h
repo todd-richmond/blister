@@ -25,15 +25,18 @@
 #include "Dispatch.h"
 
 /*
- * pools of lazily created resources, each shared by at most maxcount users
- * and constructed outside the pool lock. lock() waits until all are idle and
- * blocks getters until unlock(); the holder may release() but not get/clear
+ * pools of lazily created resources, each shared by 1..maxcount users and
+ * constructed outside the pool lock. lock() waits until all are idle and
+ * blocks getters until unlock(); its holder may only release() or unlock()
  */
 template<default_initializable C>
 class BLISTER ResourcePool: nocopy {
 public:
     explicit ResourcePool(uint lim = 32, uint maxcount = 1): lmt(lim),
-	maxuse(maxcount) {}
+	maxuse(maxcount) {
+	if (UNLIKELY(!maxcount))
+	    abort();
+    }
     ~ResourcePool() { clear(); }
 
     [[nodiscard]] C *allocate(void) {
@@ -58,7 +61,7 @@ public:
 	vector<Entry> dead;
 	Locker lkr(lk);
 
-	reap(cnt, dead);
+	reap(cnt, 0, dead);
     }
     [[nodiscard]] C *get(void) { return getsticky(nullptr); }
     // waits for prefer while it is still pooled, else gets any resource
@@ -88,10 +91,10 @@ public:
 	Locker lkr(lk);
 	const uint old = exchange(lmt, lim);
 
-	if (lim > old)
+	if (lim < old)
+	    reap(numeric_limits<uint>::max(), lim, dead);
+	else if (lim > old)
 	    avail.broadcast();
-	else if (pool.size() > lim)
-	    reap((uint)pool.size() - lim, dead);
     }
     void lock(void) {
 	Locker lkr(lk);
@@ -115,9 +118,7 @@ public:
     void unlock(void) {
 	FastLocker lkr(lk);
 
-	locked = false;
-	avail.broadcast();
-	change.broadcast();
+	unblock();
     }
 
 private:
@@ -136,7 +137,13 @@ private:
 
 	lk.lock();
 	--pending;
-	return take(pool.emplace_back(0U, std::move(obj)));
+	C *p = take(pool.emplace_back(0U, std::move(obj)));
+
+	if (locked)
+	    change.broadcast();
+	else if (maxuse > 1)
+	    avail.broadcast();
+	return p;
     }
     // lk held: set locked once free, then wait for all users to release
     void drain(void) {
@@ -169,37 +176,44 @@ private:
 	}
 	return n + pending < lmt ? create() : nullptr;
     }
-    // remove up to cnt idle entries that exist now, waiting for busy ones
-    void reap(uint cnt, vector<Entry> &dead) {
-	cnt = (uint)min<size_t>(cnt, pool.size());
-	for (;;) {
-	    if (!locked) {
-		size_t keep = 0;
+    // remove up to cnt entries, waiting without allowing reacquisition
+    void reap(uint cnt, size_t keep, vector<Entry> &dead) {
+	while (locked)
+	    change.wait();
+	locked = true;
+	while (pending)
+	    change.wait();
+	cnt = (uint)min<size_t>(cnt, pool.size() > keep ? pool.size() - keep :
+	    0);
+	while (cnt) {
+	    size_t dst = 0;
 
-		for (size_t i = 0; i < pool.size(); ++i) {
-		    Entry &e = pool[i];
+	    for (size_t i = 0; i < pool.size(); ++i) {
+		Entry &e = pool[i];
 
-		    if (cnt && !e.inuse) {
-			dead.push_back(std::move(e));
-			--cnt;
-		    } else if (keep++ != i) {
-			pool[keep - 1] = std::move(e);
-		    }
-		}
-		if (keep != pool.size()) {
-		    avail.set((uint)(pool.size() - keep));
-		    pool.resize(keep);
+		if (cnt && !e.inuse) {
+		    dead.push_back(std::move(e));
+		    --cnt;
+		} else if (dst++ != i) {
+		    pool[dst - 1] = std::move(e);
 		}
 	    }
-	    if (!cnt || pool.empty())
-		return;
-	    change.wait();
+	    if (dst != pool.size())
+		pool.resize(dst);
+	    if (cnt)
+		change.wait();
 	}
+	unblock();
     }
     C *take(Entry &e) {
 	++e.inuse;
 	++used;
 	return e.obj.get();
+    }
+    void unblock(void) {
+	locked = false;
+	avail.broadcast();
+	change.broadcast();
     }
 
     Condvar avail { lk };
@@ -292,7 +306,10 @@ public:
     };
 
     explicit AsyncResourcePool(Dispatcher &d, uint lim = 32, uint maxcount = 1):
-	acv(d, lk), lmt(lim), maxuse(maxcount) {}
+	acv(d, lk), lmt(lim), maxuse(maxcount) {
+	if (UNLIKELY(!maxcount))
+	    abort();
+    }
     ~AsyncResourcePool() { clear(); }
 
     [[nodiscard]] C *allocate(void) {
@@ -317,7 +334,7 @@ public:
 	vector<Entry> dead;
 	Locker lkr(lk);
 
-	reap(cnt, dead);
+	reap(cnt, 0, dead);
     }
     uint limit(void) const {
 	FastLocker lkr(lk);
@@ -329,11 +346,10 @@ public:
 	Locker lkr(lk);
 	const uint old = exchange(lmt, lim);
 
-	if (lim > old) {
-	    if (acv)
-		acv.set(lim - old);
-	} else if (pool.size() > lim) {
-	    reap((uint)pool.size() - lim, dead);
+	if (lim < old) {
+	    reap(numeric_limits<uint>::max(), lim, dead);
+	} else if (lim > old && acv) {
+	    acv.set(lim - old);
 	}
     }
     void lock(void) {
@@ -347,8 +363,10 @@ public:
 
 	--it->inuse;
 	--used;
-	change.broadcast();
-	wake(it);
+	if (locked)
+	    change.broadcast();
+	else
+	    wake(it);
     }
     uint size(void) const {
 	FastLocker lkr(lk);
@@ -358,11 +376,7 @@ public:
     void unlock(void) {
 	FastLocker lkr(lk);
 
-	locked = false;
-	change.broadcast();
-	acv.broadcast();
-	for (Entry &e : pool)
-	    e.cv->broadcast();
+	unblock();
     }
 
 private:
@@ -384,7 +398,14 @@ private:
 
 	lk.lock();
 	--pending;
-	return take(pool.emplace_back(std::move(rcv), 0U, std::move(obj)));
+
+	C *p = take(pool.emplace_back(std::move(rcv), 0U, std::move(obj)));
+
+	if (locked)
+	    change.broadcast();
+	else if (acv)
+	    acv.set(maxuse - 1);
+	return p;
     }
     // lk held: set locked once free, then wait for all users to release
     void drain(void) {
@@ -417,39 +438,47 @@ private:
 	}
 	return n + pending < lmt ? create() : nullptr;
     }
-    // remove up to cnt idle entries that exist now, waiting for busy ones
-    void reap(uint cnt, vector<Entry> &dead) {
-	cnt = (uint)min<size_t>(cnt, pool.size());
-	for (;;) {
-	    if (!locked) {
-		size_t keep = 0;
+    // remove up to cnt entries, waiting without allowing reacquisition
+    void reap(uint cnt, size_t keep, vector<Entry> &dead) {
+	while (locked)
+	    change.wait();
+	locked = true;
+	while (pending)
+	    change.wait();
+	cnt = (uint)min<size_t>(cnt, pool.size() > keep ? pool.size() - keep :
+	    0);
+	while (cnt) {
+	    size_t dst = 0;
 
-		for (size_t i = 0; i < pool.size(); ++i) {
-		    Entry &e = pool[i];
+	    for (size_t i = 0; i < pool.size(); ++i) {
+		Entry &e = pool[i];
 
-		    if (cnt && !e.inuse) {
-			e.cv->requeue(acv);
-			dead.push_back(std::move(e));
-			--cnt;
-		    } else if (keep++ != i) {
-			pool[keep - 1] = std::move(e);
-		    }
-		}
-		if (keep != pool.size()) {
-		    if (acv)
-			acv.set((uint)(pool.size() - keep));
-		    pool.resize(keep);
+		if (cnt && !e.inuse) {
+		    e.cv->requeue(acv);
+		    dead.push_back(std::move(e));
+		    --cnt;
+		} else if (dst++ != i) {
+		    pool[dst - 1] = std::move(e);
 		}
 	    }
-	    if (!cnt || pool.empty())
-		return;
-	    change.wait();
+	    if (dst != pool.size())
+		pool.resize(dst);
+	    if (cnt)
+		change.wait();
 	}
+	unblock();
     }
     C *take(Entry &e) {
 	++e.inuse;
 	++used;
 	return e.obj.get();
+    }
+    void unblock(void) {
+	locked = false;
+	change.broadcast();
+	acv.broadcast();
+	for (Entry &e : pool)
+	    e.cv->broadcast();
     }
     // pass one wakeup to a sticky waiter on it, else to any waiter
     void wake(iterator it) {

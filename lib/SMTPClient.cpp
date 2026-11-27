@@ -18,11 +18,15 @@
 #include "stdapi.h"
 #include <algorithm>
 #include <array>
-#include <random>
 #include <ranges>
 #include "Log.h"
 #include "SMTPClient.h"
 #include "Thread.h"
+#ifdef _WIN32
+#include <bcrypt.h>
+#elif defined(__APPLE__) || defined(__sun)
+#include <sys/random.h>
+#endif
 
 #pragma warning(disable: 6328 6330)
 
@@ -1030,6 +1034,16 @@ size_t SMTPClient::ifind(tstring_view s, tstring_view needle) {
     return r.empty() ? tstring_view::npos : (size_t)(r.begin() - s.begin());
 }
 
+// parameter names match exactly, ignoring case and any =value
+bool SMTPClient::hasparm(tstring_view parms, tstring_view name) {
+    return ranges::any_of(views::split(parms, T(' ')), [name](const auto &part) {
+	const tstring_view p(part);
+	const tstring_view n = p.substr(0, p.find('='));
+
+	return n.size() == name.size() && ifind(n, name) == 0;
+    });
+}
+
 // RFC 3492 punycode encoder
 bool SMTPClient::punycode(const vector<char32_t> &in, string &out) {
     static constexpr uint32_t base = 36, tmin = 1, tmax = 26, skew = 38;
@@ -1335,12 +1349,8 @@ bool SMTPClient::sendcmd(tstring_view s1, const tchar *s2, int retcode, bool
     }
     if (pipelined || retcode == CMD_NOREPLY) {
 	// do not wait for a reply - PIPELINING, BDAT
-	if (!strm->good()) {
-	    sock.close();
-	    sts = T("000 socket disconnect");
-	    dlogd(Log::mod(T("smtp")), Log::kv(T("action"), T("disconnect")));
-	    return false;
-	}
+	if (!strm->good())
+	    return disconnect();
 	if (pipelined && retcode != CMD_NOREPLY)
 	    expectv.push_back({ {}, retcode, false });
 	return true;
@@ -1351,80 +1361,140 @@ bool SMTPClient::sendcmd(tstring_view s1, const tchar *s2, int retcode, bool
     return reply() && code() == retcode;
 }
 
-// read a line, a line that does not fit sets failbit
+// read a line, a line that does not fit sets failbit and one cut off by EOF
+// is incomplete
 static bool readline(istream &is, tstring &s) {
 #ifdef UNICODE
     char line[MAX_REPLY_LINE];
 
     is.getline(line, sizeof (line));
-    if (!is.fail())
+    if (is.good())
 	s = astringtotstring(string(line));
 #else
     s.resize_and_overwrite(MAX_REPLY_LINE, [&is](char *p, size_t n) {
 	is.getline(p, (streamsize)n);
-	return is.fail() ? 0 : (size_t)is.gcount() - (is.eof() ? 0 : 1);
+	return is.good() ? (size_t)is.gcount() - 1 : 0;
     });
 #endif
-    return !is.fail();
+    return is.good();
+}
+
+bool SMTPClient::disconnect(void) {
+    sock.close();
+    multi.erase();
+    rlines = 0;
+    sts = T("000 socket disconnect");
+    dlogd(Log::mod(T("smtp")), Log::kv(T("action"), T("disconnect")));
+    return false;
+}
+
+int SMTPClient::replyline(void) {
+    sts.erase(sts.find_last_not_of(T(" \t\r\n")) + 1);
+    // the text is optional: "250" is a complete reply
+    if (sts.length() < 3 || !istdigit(sts[0]) || !istdigit(sts[1]) ||
+	!istdigit(sts[2]) || (sts.length() > 3 && sts[3] != '-' &&
+	sts[3] != ' ') || rlines >= MAX_REPLY_LINES) {
+	dlogd(Log::mod(T("smtp")), Log::kv(T("data"), T("invalid")),
+	    Log::kv(T("reply"), sts.c_str()));
+	// the position in the reply stream is unknown
+	sock.close();
+	rlines = 0;
+	return -1;
+    }
+    if (rlines++)		// even after an empty first line
+	multi += '\n';
+    else
+	multi.erase();
+    if (sts.length() > 4)
+	multi += tstring_view(sts).substr(4);
+    dlogt(Log::mod(T("smtp")), Log::kv(T("reply"), sts.c_str()));
+    if (sts[3] == '-')
+	return 0;
+    rlines = 0;
+    return 1;
 }
 
 bool SMTPClient::reply() {
-    uint lines = 0;
+    int r = 0;
 
-    multi.erase();
-    do {
-	if (!readline(sstrm, sts)) {
-	    sock.close();
-	    sts = T("000 socket disconnect");
-	    dlogd(Log::mod(T("smtp")), Log::kv(T("action"), T("disconnect")));
-	    return false;
+    while (!r) {
+	if (!readline(sstrm, sts))
+	    return disconnect();
+	r = replyline();
+    }
+    return r > 0;
+}
+
+int SMTPClient::bufreplies(void) {
+    auto &sb = *sstrm.rdbuf();
+
+    while (gotn < max<size_t>(expectv.size(), 1)) {
+	const string_view in = sb.avail();
+	const size_t nl = in.substr(0, MAX_REPLY_LINE).find('\n');
+	int r;
+
+	if (nl == in.npos) {
+	    if (in.size() < MAX_REPLY_LINE)
+		return 0;
+	    disconnect();		// no room for a line this long
+	    return -1;
 	}
-	sts.erase(sts.find_last_not_of(T(" \t\r\n")) + 1);
-	// the text is optional: "250" is a complete reply
-	if (sts.length() < 3 || !istdigit(sts[0]) || !istdigit(sts[1]) ||
-	    !istdigit(sts[2]) || (sts.length() > 3 && sts[3] != '-' &&
-	    sts[3] != ' ') || lines++ >= MAX_REPLY_LINES) {
-	    dlogd(Log::mod(T("smtp")), Log::kv(T("data"), T("invalid")),
-		Log::kv(T("reply"), sts.c_str()));
-	    // the position in the reply stream is unknown
-	    sock.close();
-	    return false;
-	}
-	if (lines > 1)		// even after an empty first line
-	    multi += '\n';
-	if (sts.length() > 4)
-	    multi += tstring_view(sts).substr(4);
-	dlogt(Log::mod(T("smtp")), Log::kv(T("reply"), sts.c_str()));
-    } while (sts[3] == '-');
-    return true;
+#ifdef UNICODE
+	sts = astringtotstring(string(in.substr(0, nl)));
+#else
+	sts = in.substr(0, nl);
+#endif
+	sb.consume(nl + 1);
+	if ((r = replyline()) < 0)
+	    return r;
+	if (!r)
+	    continue;
+	if (expectv.empty())
+	    return 1;
+	tally();
+    }
+    return 1;
+}
+
+// match the reply in sts to the next expected one
+void SMTPClient::tally(void) {
+    Expect &e = expectv[gotn++];
+    const bool rcpt = !e.rcpt.empty() && !e.delivery;
+
+    resultsv.push_back(sts);
+    // RCPT 251: not local, will forward
+    if (code() == e.code || (rcpt && code() == 251)) {
+	if (rcpt)
+	    acceptedv.push_back(std::move(e.rcpt));
+	return;
+    }
+    dlogd(Log::mod(T("smtp")), Log::kv(T("expected"), e.code),
+	Log::kv(T("rcpt"), e.rcpt), Log::kv(T("reply"), sts));
+    if (!e.rcpt.empty())
+	rejectedv.emplace_back(std::move(e.rcpt), sts);
+    else if (badsts.empty())
+	badsts = sts;
+}
+
+// every expected reply is in: fail if one was refused other than for a RCPT
+bool SMTPClient::settled(void) {
+    const bool ok = badsts.empty();
+
+    if (!ok)
+	sts = std::move(badsts);
+    dropexpect();
+    return ok;
 }
 
 bool SMTPClient::replies() {
-    tstring bad;
-
-    for (auto &e : expectv) {
+    while (gotn < expectv.size()) {
 	if (!reply()) {
-	    expectv.clear();
+	    dropexpect();
 	    return false;
 	}
-	resultsv.push_back(sts);
-	if (code() == e.code) {
-	    if (!e.rcpt.empty() && !e.delivery)
-		acceptedv.push_back(std::move(e.rcpt));
-	    continue;
-	}
-	dlogd(Log::mod(T("smtp")), Log::kv(T("expected"), e.code),
-	    Log::kv(T("rcpt"), e.rcpt), Log::kv(T("reply"), sts));
-	if (!e.rcpt.empty())
-	    rejectedv.emplace_back(std::move(e.rcpt), sts);
-	else if (bad.empty())
-	    bad = sts;
+	tally();
     }
-    expectv.clear();
-    if (bad.empty())
-	return true;
-    sts = std::move(bad);
-    return false;
+    return settled();
 }
 
 bool SMTPClient::connect(const Sockaddr &addr, uint to) {
@@ -1451,7 +1521,8 @@ bool SMTPClient::connect(const Sockaddr &addr, uint to) {
     exts.erase();
     ext_8bitmime = ext_chunking = ext_smtputf8 = lmtp = pipelined = false;
     maxsz = 0;
-    expectv.clear();
+    dropexpect();
+    rlines = 0;
     resultsv.clear();
     timeout(rtmo, wtmo);
     dropinput();
@@ -1510,10 +1581,9 @@ bool SMTPClient::from(const tchar *id, const tchar *parms) {
     mime = false;
     utf8decl = false;
     bdatsz = 0;
-    if (!envarg(T("from"), sent, parms, true, true, s))
+    if (!envarg(T("from"), sent, parms, true, true, s, &utf8decl))
 	return false;
-    utf8decl = ifind(s, T("SMTPUTF8")) != tstring_view::npos;
-    frm = sent.empty() ? T("<>") : sent;
+    frm = sent.empty() ? T("<>") : std::move(sent);
     return cmd(T("MAIL FROM:"), s.c_str());
 }
 
@@ -1569,8 +1639,10 @@ bool SMTPClient::rcpt(const tchar *id, const tchar *parms) {
 // id is replaced with the address sent to the server
 bool SMTPClient::rcptcmd(tstring &id, const tchar *parms) {
     tstring arg;
+    bool ok = downgrade(T("rcpt"), id, canutf8());
 
-    if (downgrade(T("rcpt"), id, canutf8())) {
+    // cmd() adds the brackets only if there are no parameters after them
+    if (ok && parms && *parms) {
 	if (id[0] == '<') {
 	    arg = id;
 	} else {
@@ -1578,12 +1650,12 @@ bool SMTPClient::rcptcmd(tstring &id, const tchar *parms) {
 	    arg += id;
 	    arg += T('>');
 	}
-	if (parms && *parms) {
-	    arg += T(' ');
-	    arg += parms;
-	}
+	arg += T(' ');
+	arg += parms;
     }
-    if (arg.empty() || !cmd(T("RCPT TO:"), arg.c_str())) {
+    // 251 is a forward; a bad reply closes the socket
+    if (!ok || !(cmd(T("RCPT TO:"), arg.empty() ? id.c_str() : arg.c_str()) ||
+	(code() == 251 && sock.open()))) {
 	rejectedv.emplace_back(id, sts);
 	return false;
     }
@@ -1625,12 +1697,12 @@ bool SMTPClient::downgrade(const tchar *c, tstring &id, bool utf8) {
 // the address or parms need it. always declares 8BITMIME before the body is
 // known
 bool SMTPClient::envarg(const tchar *c, tstring &id, const tchar *parms,
-    bool brkt, bool always, tstring &arg) {
+    bool brkt, bool always, tstring &arg, bool *declared) {
     const tstring_view p(parms ? parms : T(""));
-    bool hasparm = ifind(p, T("SMTPUTF8")) != tstring_view::npos;
-    bool utf8 = (hasparm || highbit(id)) && (ext_smtputf8 || fstrm);
+    const bool given = hasparm(p, T("SMTPUTF8"));
+    const bool utf8 = (given || highbit(id)) && (ext_smtputf8 || fstrm);
 
-    if (hasparm && !utf8) {
+    if (given && !utf8) {
 	sts = T("550 5.6.7 SMTPUTF8 required but unavailable");
 	dlogd(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("exts"), exts),
 	    Log::status(sts));
@@ -1649,11 +1721,13 @@ bool SMTPClient::envarg(const tchar *c, tstring &id, const tchar *parms,
 	arg += T(' ');
 	arg += parms;
     }
-    if (utf8 && !hasparm)
+    if (utf8 && !given)
 	arg += T(" SMTPUTF8");
     // declared up front as 8bit MIME parts need it (RFC 6152)
-    if (always && ext_8bitmime && ifind(p, T("BODY=")) == tstring_view::npos)
+    if (always && ext_8bitmime && !hasparm(p, T("BODY")))
 	arg += T(" BODY=8BITMIME");
+    if (declared)
+	*declared = utf8;
     dlogt(Log::mod(T("smtp")), Log::cmd(c), Log::kv(T("arg"), arg));
     return true;
 }
@@ -1749,6 +1823,23 @@ static void msgid(char *out) {
     encode<B64>((const uchar *)buf, 12, out, false);
 }
 
+// the boundary must be unpredictable so content cannot contain it
+bool SMTPClient::genboundary(void) {
+    uint64_t rnd[2];
+
+#ifdef _WIN32
+    if (BCryptGenRandom(nullptr, (PUCHAR)rnd, sizeof (rnd),
+	BCRYPT_USE_SYSTEM_PREFERRED_RNG)) {
+#else
+    if (getentropy(rnd, sizeof (rnd))) {
+#endif
+	sts = T("451 4.3.0 Random source unavailable");
+	return false;
+    }
+    boundary = format("--{:016x}{:016x}", rnd[0], rnd[1]);
+    return true;
+}
+
 // fill in the Date header template
 static bool datehdr(char *date) {
     static constexpr const char days[][4] = { "Sun", "Mon", "Tue", "Wed",
@@ -1795,7 +1886,7 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 #endif
 
     mime = m;
-    if (!datehdr(date) || !startdata())
+    if (!datehdr(date) || (mime && !genboundary()) || !startdata())
 	return false;
     msgid(id);
     *strm << "Message-ID: <" << string_view(id, 16) << '@' <<
@@ -1843,11 +1934,6 @@ bool SMTPClient::data(bool m, const tchar *txt) {
 	}
     }
     if (mime) {
-	thread_local mt19937 rng(random_device {}());
-	thread_local uniform_int_distribution<uint> dist;
-
-	boundary = format("--{:x}{:x}{:x}{:x}", dist(rng), dist(rng), dist(rng),
-	    dist(rng));
 	*strm << "MIME-Version: 1.0" << crlf;
 	*strm << "Content-Type: multipart/mixed; boundary=\"" << boundary <<
 	    '"' << crlf << crlf <<
@@ -2057,8 +2143,10 @@ bool SMTPClient::sendend(tstring_view c) {
 bool SMTPClient::endreply(void) {
     if (expectv.empty())
 	return fstrm || (reply() && code() == 250);
-    if (!replies())
-	return false;
+    return replies() && rcptsok();
+}
+
+bool SMTPClient::rcptsok(void) {
     if (acceptedv.empty() || (lmtp && rejectedv.size() - refused ==
 	acceptedv.size())) {
 	sts = rejectedv.empty() ? T("554 5.5.1 No valid recipients") :
@@ -2121,48 +2209,49 @@ bool AsyncSMTPClient::rcpt(const tchar *id, DispatchObjCB cb, DispatchObj &co,
     return ret && wait(cb, co, false);
 }
 
-// read until every expected reply is buffered so completing does not block
+// process replies as they arrive so completing never blocks
 void AsyncSMTPClient::check(bool timedout) {
     auto &sb = *sstrm.rdbuf();
-    const size_t need = fstrm ? 0 : max<size_t>(expectv.size(), 1);
+    int r = fstrm ? 1 : -1;
 
-    while (!timedout) {
-	const string_view in = sb.avail();
-	size_t lines = 0;
-	int n;
+    if (timedout) {
+	disconnect();
+    } else if (!fstrm) {
+	for (r = bufreplies(); !r; r = bufreplies()) {
+	    const int n = sb.fill();
 
-	for (size_t pos = 0, nl; lines < need && (nl = in.find('\n', pos)) !=
-	    in.npos; pos = nl + 1) {
-	    if (nl - pos < 4 || in[pos + 3] != '-')
-		lines++;
-	}
-	if (lines == need || (n = sb.fill()) < 0)
-	    break;			// reply() reports errors
-	if (!n) {
-	    waiter.readable(Waiter::onread, rtmo == SOCK_INFINITE ?
-		DispatchTimer::DSP_NEVER : rtmo);
-	    return;
+	    if (n < 0) {		// EOF or error inside a reply
+		disconnect();
+		r = -1;
+		break;
+	    }
+	    if (!n) {
+		waiter.readable(Waiter::onread, rtmo == SOCK_INFINITE ?
+		    DispatchTimer::DSP_NEVER : rtmo);
+		return;
+	    }
 	}
     }
     waiter.cancel();
     if (!fstrm)
 	sock.blocking(true);
-    if (timedout) {
-	sock.close();
-	expectv.clear();
-	sts = T("000 socket disconnect");
+    if (r < 0) {
+	dropexpect();
 	okay = false;
+    } else if (!end) {
+	okay = settled() && rejectedv.size() == refused;
+    } else if (expectv.empty()) {
+	okay = fstrm || code() == 250;
     } else {
-	okay = end ? endreply() : replies() && rejectedv.size() == refused;
+	okay = settled() && rcptsok();
     }
     caller->ready(done);
 }
 
 bool AsyncSMTPClient::wait(DispatchObjCB cb, DispatchObj &co, bool e) {
     if (!fstrm && (!sstrm.flush() || !sock.blocking(false))) {
-	sock.close();
-	expectv.clear();
-	sts = T("000 socket disconnect");
+	disconnect();
+	dropexpect();
 	return false;
     }
     caller = &co;

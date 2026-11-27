@@ -117,10 +117,9 @@ public:
     bool listen(const Sockaddr &sa, ulong timeout);
 };
 
-static atomic<uint> errs, ops;
 static atomic loops(LLONG_MAX);
 static atomic_bool qflag;
-alignas(CACHELINE_SZ) static atomic<usec_t> usecs;
+static TestStats stats;
 
 static inline bool loop_exit(void) {
     return loops.fetch_sub(1, memory_order_relaxed) <= 0 || qflag;
@@ -130,7 +129,7 @@ void EchoTest::EchoClientSocket::fail(const tchar *what) {
     if (loop_exit()) {
 	erase();
     } else {
-	errs.fetch_add(1, memory_order_relaxed);
+	stats.errs.fetch_add(1, memory_order_relaxed);
 	dtiming.add(T("error"), 0);
 	dloge(T("client "), what, T("="), msg == DispatchTimeout ?
 	    T("timeout") : T("close"));
@@ -175,13 +174,18 @@ void EchoTest::EchoClientSocket::input(void) {
 	in)) == (uint)-1))) {
 	fail(T("read"));
     } else if (LIKELY((in += len) >= dsz)) {
-	timing_t usec = Timing::now() - begin;
+	const timing_t usec = Timing::now() - begin;
+
+	if (UNLIKELY(!samepayload(rbuf, in, dbuf, dsz))) {
+	    fail(T("echo data"));
+	    return;
+	}
 
 	if (UNLIKELY(loop_exit())) {
 	    erase();
 	} else {
-	    ::ops.fetch_add(1, memory_order_relaxed);
-	    ::usecs.fetch_add(usec, memory_order_relaxed);
+	    stats.ops.fetch_add(1, memory_order_relaxed);
+	    stats.usecs.fetch_add(usec, memory_order_relaxed);
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read="), len);
 	    if (wait) {
@@ -330,12 +334,12 @@ static void signal_handler(int) { qflag = true; }
 
 int tmain(int argc, const tchar * const argv[]) {
     bool client = true, server = true;
-    ulong delay = 0, failed = 0, tmt = TIMEOUT, wait = 0;
+    ulong delay = 0, tmt = TIMEOUT, wait = 0;
+    TestSocketPath endpoint;
     Config config;
     EchoTest et(config);
     const tchar *host = nullptr;
     int i;
-    timing_t last, now;
     const tchar *path = T("echo this short test string as quickly as possible");
     Sockaddr sa;
     uint sockets = 20, threads = 20;
@@ -384,8 +388,8 @@ int tmain(int argc, const tchar * const argv[]) {
     }
     if ((dbuf = loaddata(T("echotest"), path, dsz)) == nullptr)
 	return 1;
-    if (!host)
-	host = T("unix:./socket");
+    if (!endpoint.set(T("echotest"), host, T("unix:./socket"), client && server))
+	return 1;
     if (!sa.set(host)) {
 	tcerr << T("echo: unknown host ") << host << endl;
 	return 1;
@@ -421,35 +425,24 @@ int tmain(int argc, const tchar * const argv[]) {
 	dlogi(Log::mod(T("echo")), Log::cmd(T("echo")), Log::kv(T("addr"),
 	    sa.str()), Log::kv(T("data"), path));
 	dlog.flush();
-	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	if (sa.host() == T("*"))
 	    sa.host(T("localhost"));
 	et.connect(sa, sockets, delay, tmt, wait);
 	Thread::MainThread.priority(10);
-	last = Timing::now();
+	stats.start();
 	do {
-	    ulong cnt, err, ok;
-
 	    if (et.waitForMain(1000))
 		break;
-	    now = Timing::now();
-	    // swap counters so increments between read and reset are kept
-	    err = errs.exchange(0, memory_order_relaxed);
-	    failed += err;
-	    ok = ops.exchange(0, memory_order_relaxed);
-	    cnt = ok + err;
-	    tcout << (timing_t)cnt * 1000000 / (now - last) << T("\t\t") <<
-		(usecs.exchange(0, memory_order_relaxed) / (ok ? ok : 1)) <<
-		'\t' << err << endl;
-	    last = now;
+	    stats.print(!qflag && loops.load(memory_order_relaxed) <= 0);
 	} while (loops.load() > 0 && !qflag);
     } else {
 	while (!qflag && !et.waitForMain(1000))
 	    continue;
     }
     et.stop();
-    failed += errs.load(memory_order_relaxed);
+    if (client)
+	stats.print(true);
     delete [] dbuf;
     tcout << dtiming.data() << endl;
-    return qflag ? -1 : failed ? 1 : 0;
+    return qflag ? -1 : stats.failed() ? 1 : 0;
 }

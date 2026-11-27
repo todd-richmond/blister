@@ -21,9 +21,8 @@
 #ifdef sun
 #include <procfs.h>
 #elif defined(__APPLE__)
-#include <mach/task.h>
-#include <mach/mach_init.h>
-#include <mach/mach_port.h>
+#include <libproc.h>
+#include <mach/mach_time.h>
 #endif
 
 int lockfile(int fd, short type, short whence, ulong start, ulong len,
@@ -42,28 +41,25 @@ int lockfile(int fd, short type, short whence, ulong start, ulong len,
     return ret;
 }
 
-int pidstat(pid_t pid, struct pidstat *psbuf) {
+static int procstats(pid_t pid, struct pidstat *psbuf, int full) {
+    (void)full;
     if (!pid)
 	pid = getpid();
     memset(psbuf, 0, sizeof (*psbuf));
 #if defined(__APPLE__)
-    mach_msg_type_number_t msg_type = TASK_BASIC_INFO_COUNT;
-    task_t task = MACH_PORT_NULL;
-    struct task_basic_info tinfo;
+    mach_timebase_info_data_t tb;
+    struct proc_taskinfo ti;
 
-    if (task_for_pid(current_task(), pid, &task) != KERN_SUCCESS)
+    // same-user access: task_for_pid() needs root or an entitlement
+    if (proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &ti, (int)sizeof (ti)) !=
+	(int)sizeof (ti) || mach_timebase_info(&tb) != KERN_SUCCESS ||
+	!tb.denom)
 	return -1;
-    ZERO(tinfo);
-    if (!task_info(task, TASK_BASIC_INFO, (task_info_t)&tinfo, &msg_type)) {
-	psbuf->pss = psbuf->rss = tinfo.resident_size / 1024;
-	psbuf->sz = tinfo.virtual_size / 1024;
-	psbuf->stime = (ulong)tinfo.system_time.seconds * 1000 +
-	    (ulong)tinfo.system_time.microseconds / 1000;
-	psbuf->utime = (ulong)tinfo.user_time.seconds * 1000 +
-	    (ulong)tinfo.user_time.microseconds / 1000;
-    }
-    // NOLINTNEXTLINE(readability-suspicious-call-argument)
-    mach_port_deallocate(mach_task_self(), task);
+    psbuf->pss = psbuf->rss = ti.pti_resident_size / 1024;
+    psbuf->sz = ti.pti_virtual_size / 1024;
+    // CPU times are in mach absolute time units
+    psbuf->stime = ti.pti_total_system * tb.numer / tb.denom / 1000000;
+    psbuf->utime = ti.pti_total_user * tb.numer / tb.denom / 1000000;
 #elif defined(sun)
     char buf[PATH_MAX];
     FILE *f;
@@ -103,6 +99,8 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 	psbuf->rss = rpages * (ulong)pgkb;
     }
     fclose(f);
+    if (!full)
+	return 0;
     snprintf(buf, sizeof (buf), "/proc/%ld/smaps_rollup", (long)pid);
     if ((f = fopen(buf, "r")) != NULL) {
 	while (fgets(buf, (int)sizeof (buf), f) != NULL) {
@@ -143,3 +141,13 @@ int pidstat(pid_t pid, struct pidstat *psbuf) {
 #endif
     return 0;
 }
+
+int pidstat(pid_t pid, struct pidstat *psbuf) {
+    return procstats(pid, psbuf, 1);
+}
+
+#ifdef __linux__
+DLL_LOCAL int pidmem(pid_t pid, struct pidstat *psbuf) {
+    return procstats(pid, psbuf, 0);
+}
+#endif

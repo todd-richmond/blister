@@ -50,16 +50,9 @@ public:
 	const tchar *defhost, const tchar *flags, F opt);
 
 protected:
-    class LoadCmd {
-    public:
-	LoadCmd(const tchar *c, const tchar *a, bool s = false):
-	    arg(a ? a : T("")), cmd(c), delay(s) {}
-	virtual ~LoadCmd() = default;
-
-	tstring arg, cmd;
+    struct Stats {
 	ulong count = 0, err = 0, tcount = 0, terr = 0;
 	ulong maxusec = 0, tmaxusec = 0, tminusec = 0, tusec = 0, usec = 0;
-	bool delay;			// sleep command
 
 	void complete(bool sts, ulong diff) {
 	    count++;
@@ -74,6 +67,16 @@ protected:
 	    tminusec = tminusec ? min(tminusec, diff) : diff;
 	    tmaxusec = max(tmaxusec, diff);
 	}
+    };
+    class LoadCmd {
+    public:
+	LoadCmd(const tchar *c, const tchar *a, bool s = false):
+	    arg(a ? a : T("")), cmd(c), delay(s) {}
+	virtual ~LoadCmd() = default;
+
+	tstring arg, cmd;
+	bool delay;
+	Stats stats;
     };
     struct BodyFile {
 	unique_ptr<char[]> cache;
@@ -99,8 +102,8 @@ protected:
     }
     static void fail(LoadCmd &cmd) {
 	statlock.lock();
-	cmd.err++;
-	cmd.terr++;
+	cmd.stats.err++;
+	cmd.stats.terr++;
 	statlock.unlock();
     }
     static const char *load(uint idx, usec_t &iousec, unique_ptr<char[]> &buf);
@@ -394,7 +397,7 @@ inline int Load::onStart(void) {
 	    cusec += diff;
 	    last = now;
 	    statlock.lock();
-	    cmd->complete(ret, diff);
+	    cmd->stats.complete(ret, diff);
 	    statlock.unlock();
 	    if (!check(*cmd, ret, diff))
 		break;
@@ -434,33 +437,42 @@ inline void Load::print(tostream &os, usec_t last) {
     ulong tminusec = 0, maxusec = 0, tmaxusec = 0;
     ulong ops = 0, tops = 0, err = 0, terr = 0;
     bufferstream<tchar> bs;
+    vector<Stats> rows;
 
+    rows.reserve(cmds.size());
+    {
+	SpinLocker lkr(statlock);
+
+	for (const auto &cmd : cmds)
+	    rows.push_back(cmd->stats);
+    }
     bs << T("CMD     ops/sec msec/op maxmsec  errors OPS/SEC MSEC/OP  ERRORS ")
-	T("MINMSEC MAXMSEC") << endl;
-    statlock.lock();
-    for (const auto &cmd : cmds) {
+	T("MINMSEC MAXMSEC") << '\n';
+    for (size_t i = 0; i < cmds.size(); ++i) {
+	const auto &cmd = cmds[i];
+	const Stats &st = rows[i];
+
 	if (cmd->delay)
 	    continue;
-	ops += cmd->count;
-	tops += cmd->tcount;
-	err += cmd->err;
-	terr += cmd->terr;
-	if (cmd->maxusec > maxusec)
-	    maxusec = cmd->maxusec;
-	if (cmd->tminusec && (!tminusec || cmd->tminusec < tminusec))
-	    tminusec = cmd->tminusec;
-	if (cmd->tmaxusec > tmaxusec)
-	    tmaxusec = cmd->tmaxusec;
+	ops += st.count;
+	tops += st.tcount;
+	err += st.err;
+	terr += st.terr;
+	if (st.maxusec > maxusec)
+	    maxusec = st.maxusec;
+	if (st.tminusec && (!tminusec || st.tminusec < tminusec))
+	    tminusec = st.tminusec;
+	if (st.tmaxusec > tmaxusec)
+	    tmaxusec = st.tmaxusec;
 	bs << std::format(T("{:<7}"), cmd->cmd) <<
-	    format(per(cmd->count, lusec) * 1000000) <<
-	    format(per(cmd->usec, cmd->count) / 1000) <<
-	    format(cmd->maxusec / 1000) << format(cmd->err) <<
-	    format(per(cmd->tcount, wusec) * 1000000) <<
-	    format(per(cmd->tusec, cmd->tcount) / 1000) <<
-	    format(cmd->terr) << format(cmd->tminusec / 1000) <<
-	    format(cmd->tmaxusec / 1000) << endl;
+	    format(per(st.count, lusec) * 1000000) <<
+	    format(per(st.usec, st.count) / 1000) <<
+	    format(st.maxusec / 1000) << format(st.err) <<
+	    format(per(st.tcount, wusec) * 1000000) <<
+	    format(per(st.tusec, st.tcount) / 1000) <<
+	    format(st.terr) << format(st.tminusec / 1000) <<
+	    format(st.tmaxusec / 1000) << '\n';
     }
-    statlock.unlock();
     bs << T("ALL    ") << format(per(count, lusec) * 1000000) <<
 	format(per(usec, count) / 1000) <<
 	format(maxusec / 1000) << format(err) <<
@@ -479,14 +491,12 @@ inline void Load::print(tostream &os, usec_t last) {
 inline void Load::reset(bool all) {
     statlock.lock();
     for (const auto &cmd : cmds) {
-	cmd->count = 0;
-	cmd->err = 0;
-	cmd->usec = cmd->maxusec = 0;
-	if (all) {
-	    cmd->tcount = 0;
-	    cmd->terr = 0;
-	    cmd->tusec = cmd->tminusec = cmd->tmaxusec = 0;
-	}
+	Stats &st = cmd->stats;
+
+	if (all)
+	    st = {};
+	else
+	    st.count = st.err = st.usec = st.maxusec = 0;
     }
     statlock.unlock();
     usec = 0;
@@ -640,8 +650,9 @@ int Load::run(int argc, tchar *argv[], const tchar *wld,
 	fs.close();
     while ((thread = ThreadGroup::MainThreadGroup.wait()) != nullptr)
 	delete thread;
-    return ranges::any_of(cmds, [](const auto &c) { return c->terr != 0; }) ?
-	1 : 0;
+    return ranges::any_of(cmds, [](const auto &c) {
+	return c->stats.terr != 0;
+    }) ? 1 : 0;
 }
 
 #endif // Load_h

@@ -148,6 +148,9 @@ public:
 	bool append = false, ulong sz = 0) {
 	return load(is, prestr, append, sz, {});
     }
+    bool readunscoped(tistream &is) {
+	return load(is, T(""), false, 0, {}, true);
+    }
     template<typename T> requires is_arithmetic_v<T>
     Config &set(const tchar *key, T val, const tchar *sect = nullptr) {
 	if constexpr (is_same_v<T, tchar>) {
@@ -218,6 +221,8 @@ protected:
     // dir resolves relative #include paths
     bool load(tistream &is, const tchar *prestr, bool append, ulong sz,
 	tstring_view dir);
+    bool load(tistream &is, const tchar *prestr, bool append, ulong sz,
+	tstring_view dir, bool unscoped);
     static tstring_view dirname(tstring_view path) {
 	auto pos = path.find_last_of(T("/\\"));
 
@@ -229,7 +234,7 @@ protected:
 private:
     // key is stored after val
     struct KV {
-	uint vlen;
+	uint vlen, order, slen;
 	bool expand;
 	tchar quote;
 	tchar val[];
@@ -258,6 +263,7 @@ private:
     strhash_t sum = 0;
     const bool ck;
     bool ini = false;
+    uint order = 0;		// nonzero while retaining literal key order
 
     void clear_locked(void);
     void expandkv(const KV *kv, tstring &val) const;
@@ -285,7 +291,7 @@ private:
 	}
 	return def;
     }
-    bool parse(tistream &is, tstring_view dir, uint depth = 0);
+    bool parse(tistream &is, tstring_view dir, bool unscoped, uint depth = 0);
     Config &set(const tchar *key, size_t klen, const tchar *val, size_t vlen,
 	const tchar *sect, size_t slen, bool append = false);
     static void delkv(const KV *kv) { delete [] (const char *)kv; }
@@ -310,6 +316,8 @@ public:
     using Config::read;
     bool read(const tchar *file = nullptr, const tchar *_pre = nullptr,
 	bool append = false);
+    using Config::readunscoped;
+    bool readunscoped(const tchar *file);
     using Config::write;
     bool write(void) const { return write(nullptr, iniformat()); }
     bool write(const tchar *file, bool ini = false) const;

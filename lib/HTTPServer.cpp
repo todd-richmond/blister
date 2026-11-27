@@ -38,7 +38,6 @@ static constexpr ulong MaxRead = 64UL * 1024;	// larger files are mmapped
 static constexpr char CRLF[] = "\r\n";
 
 bool HTTPServerSocket::date;
-string HTTPServerSocket::docroot; // NOLINT(runtime/string)
 atomic_bool HTTPServerSocket::paused;
 
 // Prometheus default buckets
@@ -47,9 +46,9 @@ static constexpr double DurationBounds[] = {
 };
 
 static struct {
-    atomic<ulong> accepted, conns;
-    atomic<ulong> codes[5];
-    atomic<ulong> durations[std::size(DurationBounds) + 1];
+    atomic<uint64_t> accepted, conns;
+    atomic<uint64_t> codes[5];
+    atomic<uint64_t> durations[std::size(DurationBounds) + 1];
     atomic<usec_t> duration;
     atomic<ullong> rxbytes, txbytes;
 } stats;
@@ -147,12 +146,6 @@ bool HTTPServerSocket::readfull(int fd, char *buf, size_t len) {
 
 HTTPServerSocket::HTTPServerSocket(Dispatcher &d, const Socket &sock):
     DispatchServerSocket(d, sock) {
-    static const bool configured = [&d] {
-	configure(d.config());
-	return true;
-    }();
-
-    (void)configured;
     stats.accepted.fetch_add(1, memory_order_relaxed);
     stats.conns.fetch_add(1, memory_order_relaxed);
 }
@@ -297,11 +290,12 @@ void HTTPServerSocket::readpost() {
 	if (postin <= pos)
 	    break;
 
+	const ulong avail = postin - pos;
 	const char *lf = (const char *)memchr(postdata + pos, '\n',
-	    (size_t)postin - pos);
+	    min(avail, MaxChunkLine + 1));
 
 	if (!lf) {
-	    if (postin - pos > MaxChunkLine) {
+	    if (avail > MaxChunkLine) {
 		error(400, true);
 		return;
 	    }
@@ -394,6 +388,7 @@ void HTTPServerSocket::parse(void) {
     path = "/";
     prot = "HTTP/1.0";
     method = Method::Other;
+    connclose = connkeepalive = false;
     postin = postsz = 0;
     // scan() ended the header block with a NUL, so any earlier one is injected
     if (strlen(data) != (size_t)(postdata - 3 - data)) {
@@ -531,6 +526,10 @@ void HTTPServerSocket::parse(void) {
 		error(400, true);
 		return;
 	    }
+	    if (stringieq(buf, "connection")) {
+		connclose |= hastoken(it->second, "close");
+		connkeepalive |= hastoken(it->second, "keep-alive");
+	    }
 	    it->second = p;
 	}
 	if (!crlf || !end[1])
@@ -656,25 +655,14 @@ void HTTPServerSocket::urldecode(char *buf, attrmap &amap) const {
     }
 }
 
-void HTTPServerSocket::configure(const Config &cfg) {
-    tstring dir(cfg.get(T("installdir")));
-
-    docroot = tstringtoastring(cfg.get(T("docroot"), dir.empty() ?
-	tstring(T("htdocs")) : dir + T("/htdocs"), section()));
-}
-
 void HTTPServerSocket::keepalive(void) {
-    const char *val = attr("Pragma");
+    const char *conn = attr("Connection");
+    const char *pragma;
 
-    ka = prot[7] == '1';		// HTTP 1.1
-    if (val != nullptr && stringieq(val, "keep-alive")) {
-	ka = true;
-    } else if ((val = attr("Connection")) != nullptr) {
-	if (hastoken(val, "close"))
-	    ka = false;
-	else if (hastoken(val, "keep-alive"))
-	    ka = true;
-    }
+    ka = !connclose && !(conn && hastoken(conn, "close")) &&
+	(prot[7] == '1' || connkeepalive ||
+	(conn && hastoken(conn, "keep-alive")) ||
+	((pragma = attr("Pragma")) && stringieq(pragma, "keep-alive")));
     if (ka)
 	hdrs.write("Connection: keep-alive\r\n");
     else if (prot[7] == '1')
@@ -701,7 +689,8 @@ void HTTPServerSocket::send(void) {
 	    const size_t n = min<size_t>(left, v.iov_len);
 
 	    v.iov_len -= (iovlen_t)n;
-	    v.iov_base = (char *)v.iov_base + n;
+	    if (n)
+		v.iov_base = (char *)v.iov_base + n;
 	    left -= n;
 	    more |= v.iov_len != 0;
 	}
@@ -770,18 +759,21 @@ void HTTPServerSocket::reply(const char *p, ulong len) {
     // RFC 9110 6.4.1: these have no body and 204/304 no length either
     const bool nolen = _status == 204 || _status == 304;
     const bool nobody = nolen || method == Method::Head;
+    const string_view body(ss.view());
     const usec_t elapsed = uticks() - begin;
 
     if (len == (ulong)-1)
 	len = p ? (ulong)strlen(p) : 0;
     if (!nolen) {
-	hdrs.writev("Content-Length: ", (ulong)ss.size() + len, CRLF);
+	hdrs.writev("Content-Length: ", (ullong)body.size() + len, CRLF);
     }
     hdrs.write(CRLF);
-    iov[0].iov_base = (char *)hdrs.str();	// NOSONAR
-    iov[0].iov_len = (iovlen_t)hdrs.size();
-    iov[1].iov_base = (char *)ss.str();		// NOSONAR
-    iov[1].iov_len = nobody ? 0 : (iovlen_t)ss.size();
+    const string_view headers(hdrs.view());
+
+    iov[0].iov_base = (char *)headers.data();	// NOSONAR
+    iov[0].iov_len = (iovlen_t)headers.size();
+    iov[1].iov_base = (char *)body.data();	// NOSONAR
+    iov[1].iov_len = nobody ? 0 : (iovlen_t)body.size();
     iov[2].iov_base = (char *)p;		// NOSONAR
     iov[2].iov_len = nobody ? 0 : (iovlen_t)len;
     if (_status >= 100 && _status < 600)
@@ -953,7 +945,7 @@ void HTTPServerSocket::metrics(PrometheusWriter &w) const {
 	{"code", "1xx"}, {"code", "2xx"}, {"code", "3xx"}, {"code", "4xx"},
 	{"code", "5xx"}
     };
-    array<ulong, std::size(stats.durations)> durations;
+    array<uint64_t, std::size(stats.durations)> durations;
 
     for (size_t i = 0; i < std::size(durations); ++i)
 	durations[i] = stats.durations[i].load(memory_order_relaxed);
@@ -964,9 +956,11 @@ void HTTPServerSocket::metrics(PrometheusWriter &w) const {
     for (size_t i = 0; i < std::size(codes); ++i)
 	w.counter({"http_requests", "HTTP requests by status class"},
 	    stats.codes[i].load(memory_order_relaxed), {codes[i]});
-    w.histogram({"http_request_duration", "HTTP request duration",
-	"seconds"}, DurationBounds, durations, (double)stats.duration.load(
-	memory_order_relaxed) / 1e6);
+    w.family({"http_request_duration", "HTTP request duration", "seconds"},
+	PrometheusWriter::Histogram);
+    w.buckets(PrometheusWriter::Histogram, DurationBounds,
+	span<const uint64_t>(durations), (double)stats.duration.load(
+	memory_order_relaxed) / 1e6, {});
     w.counter({"http_request_body", "HTTP request body size", "bytes"},
 	stats.rxbytes.load(memory_order_relaxed));
     w.counter({"http_response", "HTTP response size", "bytes"},
@@ -981,7 +975,7 @@ void HTTPServerSocket::metrics(PrometheusWriter &w) const {
 void HTTPServerSocket::get(bool head) {
     const char *ext, *val;
     int fd;
-    string s(docroot);
+    string s;
     time_t since;
     struct stat statbuf;
     uint sts = 200;
@@ -989,6 +983,13 @@ void HTTPServerSocket::get(bool head) {
     if (!strcmp(path, "/metrics")) {
 	sendmetrics();
 	return;
+    }
+    const Config &cfg = dspr.config();
+
+    s = tstringtoastring(cfg.get(T("docroot"), nullptr, section()));
+    if (s.empty()) {
+	s = tstringtoastring(cfg.get(T("installdir")));
+	s += s.empty() ? "htdocs" : "/htdocs";
     }
     staticfile = true;
     if (*path != '/')
@@ -1018,7 +1019,8 @@ void HTTPServerSocket::get(bool head) {
     size_t dot = s.rfind('.');
 
     ext = dot != s.npos && dot > s.rfind('/') ? s.c_str() + dot + 1 : nullptr;
-    if ((fd = ::open(s.c_str(), O_RDONLY | O_CLOEXEC | O_SEQUENTIAL)) == -1) {
+    if ((fd = ::open(s.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK |
+	O_SEQUENTIAL)) == -1) {
 	error(404);
 	return;
     }
@@ -1039,6 +1041,13 @@ void HTTPServerSocket::get(bool head) {
 	(since = parse_date(achartotchar(val))) != 0 &&
 	since < statbuf.st_mtime)
 	sts = 412;
+#ifdef _WIN32
+    if (sts == 200 && statbuf.st_size >= (ulong)-1) {
+	::close(fd);
+	error(500);
+	return;
+    }
+#endif
     status(sts, mimetype(ext), statbuf.st_mtime);
     if (sts == 200 && !head)
 	reply(fd, (ulong)statbuf.st_size);
@@ -1225,10 +1234,18 @@ void PrometheusWriter::counter(const PrometheusFamily &f, ullong val,
 
 void PrometheusWriter::distribution(Type type, span<const double> bounds,
     span<const ulong> counts, double sum, PrometheusLabels labels) {
+    buckets(type, bounds, counts, sum, labels);
+}
+
+template<class C>
+void PrometheusWriter::buckets(Type type, span<const double> bounds,
+    span<const C> counts, double sum, PrometheusLabels labels) {
     bool gauge = type == GaugeHistogram;
-    ulong cnt = 0;
+    uint64_t cnt = 0;
     string le;
 
+    if (skip)
+	return;
     for (size_t i = 0; i < counts.size(); ++i) {
 	cnt += counts[i];
 	le.clear();
@@ -1277,8 +1294,17 @@ void PrometheusWriter::family(const PrometheusFamily &f, Type type) {
     name = std::move(n);
     quote = esc == Utf8 && !PrometheusStr::legacy(name, true);
     skip = !names.empty() && ranges::none_of(names, [&](const string &m) {
-	return m == name || (m.size() == name.size() + sfx.size() &&
-	    m.starts_with(name) && m.ends_with(sfx));
+	if (!m.starts_with(name))
+	    return false;
+	const string_view tail = string_view(m).substr(name.size());
+
+	if (tail.empty() || tail == sfx)
+	    return true;
+	if (type == GaugeHistogram)
+	    return tail == "_bucket" || tail == "_gcount" || tail == "_gsum";
+	return ((type == Histogram || type == Summary) &&
+	    (tail == "_count" || tail == "_sum")) ||
+	    (type == Histogram && tail == "_bucket");
     });
     if (skip)
 	return;
@@ -1350,12 +1376,17 @@ void PrometheusWriter::labels(const Config &cfg) {
 	if (n.empty() || (val = cfg.get(tstring(T("prometheus.label.")) +=
 	    n)).empty())
 	    continue;
-	if (!tags.empty())
-	    tags += ',';
-	labelname(tags, tstringtoastring(tstring(n)));
-	tags += "=\"";
-	escape(tags, tstringtoastring(val));
-	tags += '"';
+	string key(tstringtoastring(tstring(n))), text;
+
+	if (esc != Utf8 && !PrometheusStr::legacy(key, false))
+	    key = underscore(key, false);
+	if (ranges::find(tags, key, &pair<string, string>::first) != tags.end())
+	    continue;
+	labelname(text, key);
+	text += "=\"";
+	escape(text, tstringtoastring(val));
+	text += '"';
+	tags.emplace_back(std::move(key), std::move(text));
     }
 }
 
@@ -1386,8 +1417,16 @@ template<class V>
 void PrometheusWriter::sample(string_view suffix, PrometheusLabels labels,
     V val, PrometheusLabels extra) {
     auto out = back_inserter(s);
-    bool comma = !tags.empty();
-    const bool lbls = comma || !labels.empty() || !extra.empty();
+    bool comma = false;
+    const bool lbls = !tags.empty() || !labels.empty() || !extra.empty();
+    const auto has = [this](PrometheusLabels ls, string_view key) {
+	return ranges::any_of(ls, [this, key](const PrometheusLabel &l) {
+	    if (esc != Utf8 && !(l.name.flags & PrometheusStr::Name) &&
+		!PrometheusStr::legacy(l.name, false))
+		return underscore(l.name, false) == key;
+	    return l.name == key;
+	});
+    };
 
     if (skip)
 	return;
@@ -1403,7 +1442,14 @@ void PrometheusWriter::sample(string_view suffix, PrometheusLabels labels,
 	if (lbls)
 	    s += '{';
     }
-    s += tags;
+    for (const auto &[key, text] : tags) {
+	if (has(labels, key) || has(extra, key))
+	    continue;
+	if (comma)
+	    s += ',';
+	comma = true;
+	s += text;
+    }
     for (PrometheusLabels ls : {labels, extra}) {
 	for (const PrometheusLabel &l : ls) {
 	    if (comma)
@@ -1452,33 +1498,24 @@ void PrometheusWriter::timing(const Timing &t, size_t top) {
 	    a[i] = (double)Timing::Limits[i] / 1e6;
 	return a;
     }();
-    vector<Timing::Row> rows(t.snapshot());
+    if (!top)
+	return;
+    const vector<Timing::Row> rows(t.snapshot(false, top));
 
-    if (rows.size() > top)
-	rows.resize(top);
-    for (bool timed : {true, false}) {
-	for (const Timing::Row &row : rows) {
-	    ulong cnts[Timing::TIMINGSLOTS] = {};
+    if (rows.empty())
+	return;
+    family({"timing", "Call durations", "seconds"}, Histogram);
+    if (skip)
+	return;
+    for (const Timing::Row &row : rows) {
 #ifdef UNICODE
-	    const string key(tstringtoastring(tstring(row.key, row.klen)));
+	const string key(tstringtoastring(row.key));
 #else
-	    const string_view key(row.key, row.klen);
+	const string_view key(row.key);
 #endif
-	    const PrometheusLabel lbl{"key", key};
 
-	    if (!row.tot != !timed)
-		continue;
-	    if (!timed) {
-		family({"timing_calls", "Untimed call counts"}, Counter);
-		sample("_total", {lbl}, row.cnt);
-		continue;
-	    }
-	    for (uint u = 0; u < Timing::TIMINGSLOTS; ++u)
-		cnts[u] = (ulong)row.cnts[u];
-	    family({"timing", "Call durations", "seconds"}, Histogram);
-	    distribution(Histogram, bounds, cnts, (double)row.tot / 1e6,
-		{lbl});
-	}
+	buckets(Histogram, bounds, span<const uint64_t>(row.cnts),
+	    (double)row.tot / 1e6, {{"key", key}});
     }
 }
 
@@ -1520,6 +1557,7 @@ PrometheusMetrics::Family &PrometheusMetrics::family(const PrometheusStr
 
 void PrometheusMetrics::report(PrometheusWriter &w) const {
     FastSpinRLocker lkr(lck);
+    vector<uint64_t> cnts;
     vector<const Family *> sorted;
 
     sorted.reserve(fams.size());
@@ -1532,6 +1570,11 @@ void PrometheusMetrics::report(PrometheusWriter &w) const {
     });
     for (const Family *fam : sorted) {
 	w.family({fam->name, fam->help, fam->unit}, type);
+	if (w.skip)
+	    continue;
+	if (type == PrometheusWriter::Histogram ||
+	    type == PrometheusWriter::GaugeHistogram)
+	    cnts.resize(fam->bounds.size() + 1);
 	for (const Series *ser : fam->series) {
 	    const PrometheusLabels lbls(ser->labels.data(), ser->labels.size());
 	    llong sum = (llong)ser->sum.load(memory_order_relaxed);
@@ -1545,11 +1588,10 @@ void PrometheusMetrics::report(PrometheusWriter &w) const {
 		    memory_order_relaxed));
 		w.sample("_sum", lbls, sum);
 	    } else {
-		vector<ulong> cnts(fam->bounds.size() + 1);
-
 		for (size_t i = 0; i < cnts.size(); ++i)
 		    cnts[i] = ser->cnts[i].load(memory_order_relaxed);
-		w.distribution(type, fam->bounds, cnts, (double)sum, lbls);
+		w.buckets(type, fam->bounds, span<const uint64_t>(cnts),
+		    (double)sum, lbls);
 	    }
 	}
     }
@@ -1591,7 +1633,7 @@ PrometheusMetrics::Series *PrometheusMetrics::series(const PrometheusStr
 	ser.labels.emplace_back(own(pos, l.name.size()), own(pos +
 	    l.name.size(), l.value.size()));
     }
-    ser.cnts = make_unique<atomic<ulong>[]>(fam.bounds.size() + 1);
+    ser.cnts = make_unique<atomic<uint64_t>[]>(fam.bounds.size() + 1);
     ser.fam = &fam;
     ser.hash = hash;
     fam.series.push_back(&ser);
@@ -1636,6 +1678,6 @@ void PrometheusMetrics::update(const PrometheusStr &name, llong val,
 	    type == PrometheusWriter::GaugeHistogram)
 	    ser->cnts[(size_t)(ranges::lower_bound(ser->fam->bounds,
 		(double)val) - ser->fam->bounds.begin())].fetch_add(op == Add ?
-		1 : (ulong)-1, memory_order_relaxed);
+		1 : (uint64_t)-1, memory_order_relaxed);
     }
 }

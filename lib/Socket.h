@@ -102,8 +102,12 @@ class BLISTER Sockaddr {
 public:
     enum Proto { TCP, UDP, TCP4, UDP4, TCP6, UDP6, UNIX, UNSPEC };
 
-    explicit Sockaddr(const addrinfo *ai) { set(ai); }
-    explicit Sockaddr(const hostent *h) { set(h); }
+    explicit Sockaddr(const addrinfo *ai, tstring_view reqhost = {}) {
+	set(ai, reqhost);
+    }
+    explicit Sockaddr(const hostent *h, tstring_view reqhost = {}) {
+	set(h, reqhost);
+    }
     explicit Sockaddr(Proto proto = TCP): addr() { family(proto); }
     explicit Sockaddr(const sockaddr &sa) { set(sa); }
     explicit Sockaddr(const tchar *host, Proto proto = TCP) {
@@ -137,7 +141,7 @@ public:
     operator const sockaddr_un *() const { return &addr.sau; }
 
     const void *address(void) const;
-    void clear(void) { ZERO(addr); name.clear(); }
+    void clear(void) { ZERO(addr); name.clear(); requested.clear(); }
     sockaddr *data(void) { clear(); return &addr.sa; }
     ushort family(void) const { return addr.sa.sa_family; }
     void family(sa_family_t fam) { addr.sa.sa_family = fam; }
@@ -171,12 +175,15 @@ public:
     ushort port(void) const;
     void port(ushort port);
     Proto proto(void) const;
+    const tstring &requestedhost(void) const { return requested; }
     bool service(const tchar *service, Proto proto = TCP);
-    bool set(const addrinfo *h);
+    bool set(const addrinfo *ai);
+    bool set(const addrinfo *ai, tstring_view reqhost);
     bool set(const tchar *host, Proto proto = TCP);
     bool set(const tchar *host, ushort port, Proto proto = TCP);
     bool set(const tchar *host, const tchar *service, Proto proto = TCP);
     bool set(const hostent *h);
+    bool set(const hostent *h, tstring_view reqhost);
     bool set(const sockaddr &sa);
     // Linux abstract names are the bytes up to the address length
     ushort size(void) const {
@@ -184,8 +191,9 @@ public:
 	    addr.sau.sun_path[1] ? (ushort)(offsetof(sockaddr_un, sun_path) +
 	    1 + strlen(addr.sau.sun_path + 1)) : size(family());
     }
-    // like host() but never does a reverse DNS lookup
     tstring str(void) const {
+	if (!requested.empty())
+	    return str(requested);
 	return str(!name.empty() || !(ipv4() || ipv6()) ? host() : ip());
     }
     bool v4addr(in_addr *addr4) const {
@@ -235,12 +243,19 @@ private:
 
     sockaddr_any addr;
     mutable tstring name;
+    tstring requested;
     static constexpr sa_family_t families[] = {
 	AF_UNSPEC, AF_UNSPEC, AF_INET, AF_INET, AF_INET6, AF_INET6, AF_UNIX,
 	AF_UNSPEC
     };
 
     tstring str(const tstring &val) const;
+
+    static Proto familyhint(const tchar *&host, Proto proto);
+    static addrinfo *resolve(const tchar *host, const tchar *service,
+	Proto proto, const tchar **requested);
+
+    friend class SockaddrList;
 };
 
 // Socket address list for hosts that resolve to multiple results
@@ -555,9 +570,13 @@ protected:
     ssize_t wrret(ssize_t out) const {
 	return UNLIKELY(out < 0 && blocked() && !timedout(true)) ? 0 : out;
     }
-    static bool stalesock(const Sockaddr &sa, int type);
 
     SocketBuf *sbuf;
+
+private:
+#ifndef _WIN32
+    static int pollone(socket_t fd, short events, uint msec);
+#endif
 };
 
 /*

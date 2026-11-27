@@ -272,25 +272,39 @@ bool HTTPResponse::idempotent(const tchar *op) {
 bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
     string_view host, bool keep, const void *data, ulong &datasz) {
     const tstring_view hdrs(hstrm.str(), (size_t)hstrm.size());
-    auto bad = [](const tchar *s) {
-	for (const tchar *p = s; *p; p++) {
-	    if ((tuchar)*p <= ' ' || *p == 0x7f)
+    const tstring_view method(op), target(path);
+    auto bad = [](tstring_view v) {
+	for (tchar c : v) {
+	    if ((tuchar)c <= ' ' || c == 0x7f)
 		return true;
 	}
-	return !*s;
+	return v.empty();
     };
 
-    if (bad(op) || bad(path)) {
+    if (bad(method) || bad(target)) {
 	hstrm.reset();
 	sockerr = EINVAL;
 	return false;
     }
-    out.reserve(max(MaxCopy, 256 + hdrs.size()));
-    out = tchartoachar(op);
+
+#ifdef UNICODE
+    const string wireop = wchartoastring(method), wirepath =
+	wchartoastring(target), wirehdrs = wchartoastring(hdrs);
+#else
+    const string_view wireop = method, wirepath = target, wirehdrs = hdrs;
+#endif
+    const bool defhost = !hashost(hdrs);
+    const size_t need = 128 + wireop.size() + wirepath.size() + wirehdrs.size() +
+	(defhost ? host.size() : 0);
+
+    out.clear();
+    out.reserve(need + (data && need <= MaxCopy && datasz <= MaxCopy - need ?
+	datasz : 0));
+    out += wireop;
     out += ' ';
-    out += tchartoachar(path);
+    out += wirepath;
     out += " HTTP/1.1\r\n";
-    if (!hashost(hdrs)) {
+    if (defhost) {
 	out += "Host: ";
 	out += host;
 	out += "\r\n";
@@ -307,11 +321,11 @@ bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
 	out += "\r\n";
     }
     out += keep ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-    if (!hdrs.empty())
-	out.append(tchartoachar(hdrs.data()), hdrs.size());
+    out += wirehdrs;
     out += "\r\n";
     hstrm.reset();
-    if (data && datasz && out.size() + datasz <= MaxCopy) {
+    if (data && datasz && out.size() <= MaxCopy &&
+	datasz <= MaxCopy - out.size()) {
 	out.append((const char *)data, datasz);
 	datasz = 0;
     }
@@ -322,27 +336,79 @@ bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
 HTTPResponse::Body HTTPResponse::framing(const HTTPHeaders &hdrs, uint sts,
     bool head, bool http11, bool &keep, ulong &len) {
     using enum Body;
-    const tchar *p = hdrs.find(T("Connection"));
-    const tchar *te = hdrs.find(T("Transfer-Encoding"));
+    const bool nobody = head || sts == 204 || sts == 304 || sts / 100 == 1;
+    bool close = false, keepalive = false, length = false;
+    bool encoding = false, chunked = false, seenchunked = false;
+    auto trim = [](tstring_view v) {
+	v.remove_prefix(min(v.find_first_not_of(T(" \t")), v.size()));
+	return v.substr(0, v.find_last_not_of(T(" \t")) + 1);
+    };
 
-    keep = sts != 101 && !(p && hastoken(p, T("close"))) && (http11 || (p &&
-	hastoken(p, T("keep-alive"))));
     len = 0;
-    if (head || sts == 204 || sts == 304 || sts / 100 == 1)
-	return None;
-    if (te) {
-	const tstring_view v(te);
-	const size_t pos = v.rfind(',');
+    for (const auto &h : hdrs.hdrs) {
+	const tstring_view name(hdrs.buf.data() + h.name, h.val - h.name);
+	tstring_view v(hdrs.buf.data() + h.val, h.vlen);
 
-	// RFC 9112 6.3: possible smuggling
-	if (hdrs.find(T("Content-Length")))
-	    keep = false;
-	// only a final chunked coding delimits the body
-	if (hastoken(pos == v.npos ? v : v.substr(pos + 1), T("chunked")))
+	if (stringieq(name, T("Connection"))) {
+	    close |= hastoken(v, T("close"));
+	    keepalive |= hastoken(v, T("keep-alive"));
+	} else if (!nobody && stringieq(name, T("Content-Length"))) {
+	    for (;;) {
+		const size_t comma = v.find(',');
+		const auto nstr = trim(v.substr(0, comma));
+		ulong n;
+
+#ifdef UNICODE
+		const string bytes = wchartoastring(nstr);
+#else
+		const string_view bytes = nstr;
+#endif
+		if (!parsenum(bytes, n, false) || (length && len != n))
+		    return Bad;
+		len = n;
+		length = true;
+		if (comma == v.npos)
+		    break;
+		v.remove_prefix(comma + 1);
+	    }
+	} else if (!nobody && stringieq(name, T("Transfer-Encoding"))) {
+	    for (;;) {
+		size_t i = 0;
+		bool quoted = false;
+
+		for (; i < v.size() && (quoted || v[i] != ','); ++i) {
+		    if (quoted && v[i] == '\\' && i + 1 < v.size())
+			++i;
+		    else if (v[i] == '"')
+			quoted = !quoted;
+		}
+		const auto coding = trim(v.substr(0, i));
+		const size_t semi = coding.find(';');
+
+		if (quoted || coding.empty())
+		    return Bad;
+		encoding = true;
+		chunked = stringieq(trim(coding.substr(0, semi)), T("chunked"));
+		if (chunked) {
+		    if (seenchunked || semi != coding.npos)
+			return Bad;
+		    seenchunked = true;
+		}
+		if (i == v.size())
+		    break;
+		v.remove_prefix(i + 1);
+	    }
+	}
+    }
+    keep = sts != 101 && !close && (http11 || keepalive);
+    if (nobody)
+	return None;
+    if (encoding) {
+	if (chunked) {
+	    keep &= !length;
 	    return Chunked;
-    } else if ((p = hdrs.find(T("Content-Length"))) != nullptr) {
-	if (!parsenum(tchartoachar(p), len, false))
-	    return Bad;
+	}
+    } else if (length) {
 	return len ? Length : None;
     }
     keep = false;
@@ -363,12 +429,13 @@ void HTTPHeaders::add(string_view hdr) {
     val.remove_prefix(min(val.find_first_not_of(" \t"), val.size()));
     val = val.substr(0, val.find_last_not_of(" \t") + 1);
 
-    Hdr h{(uint)buf.size(), 0, 0};
+    Hdr h;
 
+    h.name = (uint)buf.size();
     tappend(buf, name);
-    h.nlen = (uint)buf.size() - h.name;
     h.val = (uint)buf.size();
     tappend(buf, val);
+    h.vlen = (uint)buf.size() - h.val;
     buf.push_back('\0');
     hdrs.push_back(h);
 }
@@ -613,6 +680,16 @@ long HTTPParser<S>::take(HTTPResponse &r, ulong want) {
     return n;
 }
 
+HTTPClient::~HTTPClient() {
+    parser.reset();
+}
+
+bool HTTPClient::close(void) {
+    streaming = false;
+    parser.reset();
+    return sock.close();
+}
+
 bool HTTPClient::connect(Socket &s, bool keepalive) {
     Sockaddr sa(Sockaddr::UNSPEC);
 
@@ -621,6 +698,7 @@ bool HTTPClient::connect(Socket &s, bool keepalive) {
     ka = keepalive;
     addr = sa;
     hostval = hosthdr(addr);
+    shared = true;
     sock = s;
     setup();
     dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("fd"),
@@ -629,20 +707,27 @@ bool HTTPClient::connect(Socket &s, bool keepalive) {
 }
 
 bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
+    const bool same = sa == addr && sa.requestedhost() == addr.requestedhost();
+
     ka = keepalive;
     cto = to;
-    if (sock.open() && sa == addr)
+    if (same && sock.open())
 	return true;
-    if (hostval.empty() || sa != addr) {
+    if (!same || hostval.empty()) {
 	addr = sa;
 	hostval = hosthdr(addr);
     }
-    sock.close();
+    if (shared) {
+	sock = SOCK_INVALID;
+	shared = false;
+    } else {
+	sock.close();
+    }
     if (!sock.connect(addr, to)) {
 	sockerr = sock.err();
 	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
 	    addr.str()), Log::error(sock.errstr()));
-	sock.close();
+	close();
 	return false;
     }
     setup();
@@ -650,7 +735,7 @@ bool HTTPClient::connect(const Sockaddr &sa, bool keepalive, uint to) {
 	sockerr = sock.err() ? sock.err() : EPROTO;
 	dlogi(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
 	    addr.str()), Log::error(sock.errstr()));
-	sock.close();
+	close();
 	return false;
     }
     dlogd(Log::mod(T("http")), Log::cmd(T("connect")), Log::kv(T("addr"),
@@ -677,55 +762,61 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     bool keep = false;
     bool ret = false;
 
+    if (streaming)
+	close();
     reset();
     if (!buildreq(req, op, path, hostval, ka, msgh ? nullptr : data,
 	datasz))
 	return false;
 
     const bool head = !tstrcmp(op, T("HEAD"));
-    const ulong total = (ulong)req.size() + datasz;
-#ifndef _WIN32
-    iovec iov[2] = { { (void *)req.data(), req.size() },
-	{ (void *)data, datasz } };
-
-    if (msgh) {
-	msgh->msg_iov = iov;
-	msgh->msg_iovlen = datasz ? 2 : 1;
+    if (datasz > SIZE_MAX - req.size()) {
+	sockerr = EOVERFLOW;
+	return false;
     }
-#endif
-
     for (bool first = true; sock.open() || (!msgh && connect(addr, ka,
 	cto)); first = false) {
-	const msec_t start = mticks();
-	ulong off = 0;
+	const bool retry = first && ka && !msgh;
+	const bool idem = retry && idempotent(op);
+	const bool timed = idem && rto > 200;
+	const msec_t start = timed ? mticks() : 0;
+	size_t off = 0;
 	bool sent = true;
 
 	if (msgh) {
 #ifdef _WIN32
 	    sent = false;
+	    sock.err(EOPNOTSUPP);
 #else
-	    const ssize_t n = sock.sendmsg(*msgh, MSG_NOSIGNAL);
+	    iovec iov[2] = { { (void *)req.data(), req.size() },
+		{ (void *)data, datasz } };
+	    msghdr msg = *msgh;
+
+	    msg.msg_iov = iov;
+	    msg.msg_iovlen = datasz ? 2 : 1;
+	    const ssize_t n = sock.sendmsg(msg, sock.layer() ? 0 : MSG_NOSIGNAL);
 
 	    sent = n > 0;
-	    off = sent ? (ulong)n : 0;
+	    off = sent ? (size_t)n : 0;
 #endif
 	}
-	// ancillary data goes with the first byte so only finish the rest
-	if (sent && off < total)
+	if (sent)
 	    sent = transmit(data, datasz, off);
 	if (sent) {
-	    const Step s = receive(head, keep);
+	    const Step step = receive(head, keep);
 
-	    ret = s == Step::Done;
-	    if (s != Step::Sock || sts)
+	    ret = step == Step::Done;
+	    if (step != Step::Sock || sts)
 		break;
 	} else {
 	    sockerr = sock.err();
 	}
-	sock.close();
-	// retry once if a stale keep-alive connection failed quickly
-	if (first && ka && !msgh && (!sent || (idempotent(op) &&
-	    rto > (mticks() - start) + 200))) {
+	// TLS can send bytes before reporting any write progress.
+	const bool again = retry && (sent ? timed && mticks() - start <
+	    rto - 200 : idem || (!off && !sock.layer()));
+
+	close();
+	if (again) {
 	    dlogd(Log::mod(T("http")), Log::cmd(T("reconnect")),
 		Log::kv(T("addr"), addr.ipstr()));
 	    continue;
@@ -742,7 +833,7 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
     else if (!sockerr)
 	sockerr = sock.err();
     if ((!keep && !msgh) || !ret)
-	sock.close();
+	close();
     return ret;
 }
 WARN_POP()
@@ -751,8 +842,7 @@ bool HTTPClient::sendbegin(const tchar *op, const tchar *path) {
     ulong len = Unknown;
 
     if (streaming)
-	sock.close();
-    streaming = false;
+	close();
     reset();
     if (!buildreq(req, op, path, hostval, ka, nullptr, len))
 	return false;
@@ -761,7 +851,7 @@ bool HTTPClient::sendbegin(const tchar *op, const tchar *path) {
     streaming = parser.buf().write(req.data(), (streamsize)req.size()) ==
 	(streamsize)req.size();
     if (!streaming)
-	sock.close();
+	close();
     return streaming;
 }
 
@@ -832,22 +922,42 @@ bool HTTPClient::sendend(void) {
 }
 
 void HTTPClient::setup(void) {
+    streaming = false;
     sock.nodelay(true);
     sock.rtimeout(rto);
     sock.wtimeout(wto);
     parser.reset();
 }
 
-// the buffer coalesces the header and body into one writev. off bytes of
-// them have already been sent
-bool HTTPClient::transmit(const void *data, ulong datasz, ulong off) {
-    auto &sb = parser.buf();
-    const ulong skip = min(off, (ulong)req.size());
-    const auto hsz = (streamsize)(req.size() - skip);
-    const auto dsz = (streamsize)(datasz - (off - skip));
+bool HTTPClient::transmit(const void *data, ulong datasz, size_t &off) {
+    const size_t hsz = req.size();
+    const size_t total = hsz + datasz;
 
-    return sb.write(req.data() + skip, hsz) == hsz &&
-	sb.write((const char *)data + (off - skip), dsz) == dsz && !sb.sync();
+    while (off < total) {
+	const size_t h = off < hsz ? min(hsz - off, (size_t)INT_MAX) : 0;
+	ssize_t n;
+
+	if (h && datasz && h == hsz - off && h < (size_t)INT_MAX) {
+	    iovec iov[2];
+
+	    iov[0].iov_base = req.data() + off;
+	    iov[0].iov_len = (iovlen_t)h;
+	    iov[1].iov_base = (char *)data;
+	    iov[1].iov_len = (iovlen_t)min((size_t)datasz, (size_t)INT_MAX - h);
+	    n = sock.writev(iov, 2);
+	} else if (h) {
+	    n = sock.write(req.data() + off, (uint)h);
+	} else {
+	    const size_t done = off - hsz;
+
+	    n = sock.write((const char *)data + done,
+		(uint)min(datasz - (ulong)done, (ulong)INT_MAX));
+	}
+	if (n <= 0)
+	    return false;
+	off += (size_t)n;
+    }
+    return true;
 }
 
 void AsyncHTTPClient::Request::result_grow(DispatchObjCB cb, DispatchObj &co,
@@ -874,6 +984,7 @@ bool AsyncHTTPClient::Request::setup(DispatchObjCB cb, DispatchObj &co,
     datap = data;
     datasz = len;
     attempts = 0;
+    uncertain = false;
     written = 0;
     reset();
     if (!buildreq(req, op, path, c.host, true, data, datasz)) {
@@ -1009,7 +1120,6 @@ void AsyncHTTPClient::shake(void) {
 
 void AsyncHTTPClient::down(int err, Down how) {
     deque<Request *> all(rq), dead;
-    const size_t nrq = rq.size();
 
     all.insert(all.end(), wq.begin(), wq.end());
     rq.clear();
@@ -1021,16 +1131,12 @@ void AsyncHTTPClient::down(int err, Down how) {
     parser.reset();
     for (size_t i = 0; i < all.size(); i++) {
 	Request *r = all[i];
-	// only the oldest request can have broken the connection so it gets
-	// one retry and the requests behind it are resent without penalty
-	const bool sent = how == Down::Retry && i == 0 && r->written;
+	const bool retry = how == Down::Retry && i == 0;
 
-	// a fully sent non-idempotent request may have been applied
-	if (how == Down::Fail || (sent && r->attempts) || (i < nrq &&
-	    !r->idem)) {
+	if (how == Down::Fail || (retry && r->attempts) || !r->replayable()) {
 	    dead.push_back(r);
 	} else {
-	    if (sent)
+	    if (retry)
 		++r->attempts;
 	    r->reset();
 	    r->written = 0;
@@ -1208,6 +1314,7 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
 
     // limit the requests that must be resent if the server closes
     while (!wq.empty() && rq.size() < MaxPipeline) {
+	Request &oldest = *wq.front();
 	const size_t room = MaxPipeline - rq.size();
 	int cnt = 0;
 	size_t total = 0;
@@ -1217,7 +1324,7 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
 	    total += len;
 	};
 
-	for (size_t i = 0; i < min(wq.size(), room); i++) {
+	for (size_t i = 0, count = min(wq.size(), room); i < count; i++) {
 	    const Request &r = *wq[i];
 	    ulong off = r.written;
 
@@ -1238,7 +1345,11 @@ AsyncHTTPClient::Flow AsyncHTTPClient::writeall(void) {
 	if (!cnt)
 	    break;
 
-	ssize_t n = sock.writev(iov, cnt);
+	// A TLS write can send bytes before reporting progress.
+	if (!oldest.idem && sock.layer())
+	    oldest.uncertain = true;
+
+	const ssize_t n = sock.writev(iov, cnt);
 
 	if (n < 0) {
 	    down(sock.err(), Down::Retry);

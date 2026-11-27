@@ -41,6 +41,7 @@
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
+#include <unordered_map>
 #endif
 #include "Log.h"
 #include "TLSSocket.h"
@@ -692,7 +693,8 @@ ssize_t TLSLayer::write(const Socket &s, const iovec *iov, int count) {
 		ulong sz = min((ulong)iov[i].iov_len - off,
 		    sizes.cbMaximumMessage - n);
 
-		memcpy(data + n, (const char *)iov[i].iov_base + off, sz);
+		if (sz)
+		    memcpy(data + n, (const char *)iov[i].iov_base + off, sz);
 		n += sz;
 		if ((off += sz) == (ulong)iov[i].iov_len) {
 		    ++i;
@@ -881,13 +883,12 @@ bool TLSContext::layer(Socket &s, const tchar *host) const {
     }
     // no name: the cert must list the peer IP
     if (!srv && name.empty() && c->verify) {
-	if (!s.peername(sa)) {
+	if (!s.peername(sa) || (name = sa.ip()).empty()) {
 	    if (c->release())
 		delete c;
 	    s.err(EPROTO);
 	    return false;
 	}
-	name = sa.ip();
     }
     s.layer(new TLSLayer(c, s.fd(), srv, name, host && *host));
     return true;
@@ -1031,6 +1032,8 @@ private:
     static constexpr uint Partial = 0x100;
 
     long fail(const Socket &s, int ret, Op op);
+    __attribute__((noinline)) ssize_t gather(const Socket &s, const iovec *iov,
+	int count);
     static long onread(BIO *b, int op, const char *, size_t len, int, long,
 	int ret, size_t *done);
     long send(const Socket &s, const void *buf, ulong len);
@@ -1132,6 +1135,12 @@ void TLSLayer::shutdown(void) {
  * SSL_write requires since grouping restarts at the first unsent iovec
  */
 ssize_t TLSLayer::write(const Socket &s, const iovec *iov, int count) {
+    if (count == 1)
+	return iov[0].iov_len ? send(s, iov[0].iov_base, iov[0].iov_len) : 0;
+    return gather(s, iov, count);
+}
+
+ssize_t TLSLayer::gather(const Socket &s, const iovec *iov, int count) {
     char buf[8192];
     ssize_t out = 0, ret = 0;
     ulong used = 0;
@@ -1163,6 +1172,75 @@ ssize_t TLSLayer::write(const Socket &s, const iovec *iov, int count) {
 	return out ? out : ret;
     return out;
 }
+
+/*
+ * Client sessions per SSL_CTX, owned by it through ex_data so the new-session
+ * callback never outlives its cache and a reload starts empty. Keeps the
+ * newest resumable session per host and peer
+ */
+class DLL_LOCAL SessionCache {
+public:
+    static bool attach(SSL_CTX *c) {
+	auto *sc = new SessionCache;
+
+	if (!SSL_CTX_set_ex_data(c, index(), sc)) {
+	    delete sc;
+	    return false;
+	}
+	SSL_CTX_sess_set_new_cb(c, add);
+	return true;
+    }
+    static void resume(SSL *ssl, const string &key) {
+	SessionCache *sc = get(SSL_get_SSL_CTX(ssl));
+
+	sc->lock.lock_shared();
+	if (auto it = sc->sessions.find(key); it != sc->sessions.end())
+	    SSL_set_session(ssl, it->second);
+	sc->lock.unlock_shared();
+    }
+
+private:
+    SessionCache() = default;
+    ~SessionCache() { clear(); }
+
+    static int add(SSL *ssl, SSL_SESSION *sess) {
+	SessionCache *sc = get(SSL_get_SSL_CTX(ssl));
+	const auto *l = static_cast<const TLSLayer *>(SSL_get_app_data(ssl));
+
+	if (l->key.empty() || !SSL_SESSION_is_resumable(sess))
+	    return 0;
+	sc->lock.lock();
+	if (sc->sessions.size() >= MAXSESSIONS)
+	    sc->clear();
+	if (auto [it, added] = sc->sessions.try_emplace(l->key, sess); !added) {
+	    SSL_SESSION_free(it->second);
+	    it->second = sess;
+	}
+	sc->lock.unlock();
+	return 1;
+    }
+    void clear(void) {
+	for (const auto &[_, sess] : sessions)
+	    SSL_SESSION_free(sess);
+	sessions.clear();
+    }
+    static SessionCache *get(const SSL_CTX *c) {
+	return static_cast<SessionCache *>(SSL_CTX_get_ex_data(c, index()));
+    }
+    static int index(void) {
+	static const int idx = SSL_CTX_get_ex_new_index(0, nullptr, nullptr,
+	    nullptr, [](void *, void *p, CRYPTO_EX_DATA *, int, long, void *) {
+	    delete static_cast<SessionCache *>(p);
+	});
+
+	return idx;
+    }
+
+    static constexpr size_t MAXSESSIONS = 1024;
+
+    RWLock lock;
+    unordered_map<string, SSL_SESSION *, strhash, streq> sessions;
+};
 
 static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
     bool verify, tstring &err, tstring &keysrc) {
@@ -1255,6 +1333,8 @@ static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
     } else {
 	SSL_CTX_set_session_cache_mode(ctx.get(), SSL_SESS_CACHE_CLIENT |
 	    SSL_SESS_CACHE_NO_INTERNAL_STORE);
+	if (!SessionCache::attach(ctx.get()))
+	    return fail(T("cannot create session cache"));
 	if (certfile.empty())
 	    return ctx.release();
     }
@@ -1283,14 +1363,7 @@ static SSL_CTX *newctx(const Config &cfg, const tchar *sect, bool server,
 }
 
 TLSContext::~TLSContext() {
-    clear();
     SSL_CTX_free(ctx.load(memory_order_relaxed));
-}
-
-void TLSContext::clear(void) {
-    for (const auto &[_, sess] : sessions)
-	SSL_SESSION_free(sess);
-    sessions.clear();
 }
 
 bool TLSContext::init(const Config &cfg, const tchar *sect, tstring &err) {
@@ -1304,18 +1377,13 @@ bool TLSContext::init(const Config &cfg, const tchar *sect, tstring &err) {
     if (!srv || cfg.get(T("tls.enable"), false, sect)) {
 	if ((c = newctx(cfg, sect, srv, verify, err, keysrc)) == nullptr)
 	    return false;
-	if (srv) {
+	if (srv)
 	    dlogi(Log::mod(sect ? sect : T("tls")), Log::cmd(T("tls")),
 		Log::kv(T("key"), keysrc));
-	} else {
-	    SSL_CTX_set_app_data(c, this);
-	    SSL_CTX_sess_set_new_cb(c, onsession);
-	}
     }
     // live SSLs hold their own context reference
     lock.lock();
     old = ctx.exchange(c, memory_order_relaxed);
-    clear();
     lock.unlock();
     SSL_CTX_free(old);
     return true;
@@ -1384,14 +1452,13 @@ bool TLSContext::layer(Socket &s, const tchar *host) const {
 	key += tstringtoastring(sa.str());
     }
     lock.lock_shared();
-    if (SSL_CTX *c = ctx.load(memory_order_relaxed); c && (ssl = SSL_new(c)) &&
-	!key.empty()) {
-	if (auto it = sessions.find(key); it != sessions.end())
-	    SSL_set_session(ssl, it->second);
-    }
+    if (SSL_CTX *c = ctx.load(memory_order_relaxed); c)
+	ssl = SSL_new(c);
     lock.unlock_shared();
     if (!ssl || !SSL_set_fd(ssl, (int)s.fd()))
 	return fail();
+    if (!key.empty())
+	SessionCache::resume(ssl, key);
     if (srv) {
 	SSL_set_accept_state(ssl);
     } else {
@@ -1420,30 +1487,6 @@ bool TLSContext::layer(Socket &s, const tchar *host) const {
     return true;
 }
 
-// keep the newest resumable session per host and peer
-int TLSContext::onsession(SSL *ssl, SSL_SESSION *sess) {
-    auto *tc = static_cast<TLSContext *>(SSL_CTX_get_app_data(
-	SSL_get_SSL_CTX(ssl)));
-    const auto *l = static_cast<const TLSLayer *>(SSL_get_app_data(ssl));
-
-    if (l->key.empty() || !SSL_SESSION_is_resumable(sess))
-	return 0;
-    tc->lock.lock();
-    // sessions from a context replaced by init() skip its verify rules
-    if (SSL_get_SSL_CTX(ssl) != tc->ctx.load(memory_order_relaxed)) {
-	tc->lock.unlock();
-	return 0;
-    }
-    if (tc->sessions.size() >= 1024)
-	tc->clear();
-    if (auto [it, added] = tc->sessions.try_emplace(l->key, sess); !added) {
-	SSL_SESSION_free(it->second);
-	it->second = sess;
-    }
-    tc->lock.unlock();
-    return 1;
-}
-
 #endif
 
 WARN_PUSH_DISABLE(26403)
@@ -1467,13 +1510,7 @@ bool TLSContext::handshake(Socket &s, const Sockaddr &peer) const {
 }
 
 tstring TLSContext::sni(const Sockaddr &sa) {
-    tstring s(sa.str());
-
-    if (s == sa.ipstr())
-	return {};
-    if (size_t pos = s.rfind(':'); sa.port() && pos != s.npos)
-	s.resize(pos);
-    return s;
+    return sa.requestedhost();
 }
 
 static constexpr ulong HANDSHAKE_TIMEOUT = 30UL * 1000;
