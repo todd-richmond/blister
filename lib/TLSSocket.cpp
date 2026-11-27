@@ -66,7 +66,9 @@ static int protomin(const tstring &ver) {
 
 TLSContext::~TLSContext() = default;
 
-bool TLSContext::init(const Config &cfg, const tchar *sect, tstring &err) {
+// TLS-enabled builds replace the context in init() and attach a socket layer.
+bool TLSContext::init(const Config &cfg, const tchar *sect, // NOSONAR
+    tstring &err) {
     if (srv && cfg.get(T("tls.enable"), false, sect)) {
 	err = T("TLS not available");
 	return false;
@@ -78,7 +80,7 @@ bool TLSContext::init(const Config &cfg, const tchar *sect, tstring &err) {
 TLSContext::Info TLSContext::info(const Socket &) { return {}; }
 
 // cppcheck-suppress constParameterReference
-bool TLSContext::layer(Socket &s, const tchar *) const {
+bool TLSContext::layer(Socket &s, const tchar *) const { // NOSONAR
     s.err(EPROTONOSUPPORT);
     return false;
 }

@@ -133,12 +133,12 @@ public:
     friend tostream &operator <<(tostream &os, const Sockaddr &sa) {
 	return os << sa.str();
     }
-    operator const in_addr *() const { return &addr.sa4.sin_addr; }
-    operator const in6_addr *() const { return &addr.sa6.sin6_addr; }
-    operator const sockaddr *() const { return &addr.sa; }
-    operator const sockaddr_in *() const { return &addr.sa4; }
-    operator const sockaddr_in6 *() const { return &addr.sa6; }
-    operator const sockaddr_un *() const { return &addr.sau; }
+    explicit operator const in_addr *() const { return &addr.sa4.sin_addr; }
+    explicit operator const in6_addr *() const { return &addr.sa6.sin6_addr; }
+    explicit operator const sockaddr *() const { return &addr.sa; }
+    explicit operator const sockaddr_in *() const { return &addr.sa4; }
+    explicit operator const sockaddr_in6 *() const { return &addr.sa6; }
+    explicit operator const sockaddr_un *() const { return &addr.sau; }
 
     const void *address(void) const;
     void clear(void) { ZERO(addr); name.clear(); requested.clear(); }
@@ -292,7 +292,8 @@ public:
     }
 
 private:
-    struct Range {
+    class Range {
+    public:
 	auto operator <=>(const Range &) const = default;
 
 	uint32_t rmin, rmax;
@@ -360,7 +361,7 @@ public:
     friend bool operator !(const Socket &s) {
 	return s.fd() == SOCK_INVALID;
     }
-    operator socket_t() const { return fd(); }
+    explicit operator socket_t() const { return fd(); }
 
     bool __forceinline blocked(void) const { return sbuf->blocked(); }
     bool __forceinline interrupted(void) const { return sbuf->interrupted(); }
@@ -573,8 +574,8 @@ protected:
 
     SocketBuf *sbuf;
 
-private:
 #ifndef _WIN32
+private:
     static int pollone(socket_t fd, short events, uint msec);
 #endif
 };
@@ -612,10 +613,13 @@ public:
     bool set(const Socket &sock) { return set(sock.fd()); }
     bool unset(socket_t fd);
     bool unset(const Socket &sock) { return unset(sock.fd()); }
-    bool ipoll(SocketSet &iset, SocketSet &eset, uint msec = SOCK_INFINITE);
+    // POSIX poll uses per-set scratch; serialize calls on the same set.
+    bool ipoll(SocketSet &iset, SocketSet &eset,
+	uint msec = SOCK_INFINITE) const;
     bool iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
-	uint msec = SOCK_INFINITE);
-    bool opoll(SocketSet &oset, SocketSet &eset, uint msec = SOCK_INFINITE);
+	uint msec = SOCK_INFINITE) const;
+    bool opoll(SocketSet &oset, SocketSet &eset,
+	uint msec = SOCK_INFINITE) const;
 
     static bool iopoll(const SocketSet &rset, SocketSet &iset,
 	const SocketSet &wset, SocketSet &oset, SocketSet &eset,

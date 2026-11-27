@@ -821,7 +821,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
     Locker lkr(cvlck);
     msec_t end = 0;
     // remaining msec with the deadline set at the first need to block
-    auto left = [&] -> ulong {
+    auto left = [&end, msec] {
 	if (!msec || msec == INFINITE)
 	    return msec;
 
@@ -829,7 +829,7 @@ Thread *ThreadGroup::wait(ulong msec, bool all) {
 
 	if (!end)
 	    end = now + msec;
-	return now < end ? (ulong)(end - now) : 0;
+	return now < end ? (ulong)(end - now) : 0UL;
     };
 
     do {

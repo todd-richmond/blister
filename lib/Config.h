@@ -233,7 +233,8 @@ protected:
 
 private:
     // key is stored after val
-    struct KV {
+    class KV {
+    public:
 	uint vlen, order, slen;
 	bool expand;
 	tchar quote;

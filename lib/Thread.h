@@ -828,7 +828,7 @@ public:
 	nullptr) { open(manual, set, name); }
     ~Event() { close(); }
 
-    __forceinline operator HANDLE(void) const { return hdl; }
+    __forceinline explicit operator HANDLE(void) const { return hdl; }
     __forceinline HANDLE handle(void) const { return hdl; }
 
     bool close(void) {
@@ -860,7 +860,7 @@ public:
     }
     ~SharedSemaphore() { close(); }
 
-    __forceinline operator HANDLE(void) const { return hdl; }
+    __forceinline explicit operator HANDLE(void) const { return hdl; }
     __forceinline HANDLE handle(void) const { return hdl; }
 
     bool close(void) {
@@ -900,7 +900,7 @@ public:
     static tchar **envv;
     static Process self;
 
-    operator HANDLE(void) const { return hdl; }
+    explicit operator HANDLE(void) const { return hdl; }
     bool mask(DWORD_PTR m) const {
 	return SetProcessAffinityMask(hdl, m) != 0;
     }

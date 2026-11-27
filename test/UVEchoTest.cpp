@@ -63,7 +63,8 @@ static int unixfd = -1;		// listening fd duplicated into every worker
 
 struct Worker;
 
-struct EchoClient: nocopy {
+class EchoClient: nocopy {
+public:
     timing_t begin = 0;
     uv_connect_t connreq;
     bool done = false;		// permanently stopped; loop budget is exhausted
@@ -144,7 +145,7 @@ static void on_io_error(EchoClient *c, const tchar *what, bool is_timeout =
     if (loop_exit()) {
 	begin_teardown(c);
     } else {
-	stats.errs.fetch_add(1, memory_order_relaxed);
+	stats.error();
 	dtiming.add(T("error"), 0);
 	dloge(what, is_timeout ? T("timeout") : T("close"));
 	request_close_tcp(c);
@@ -255,8 +256,7 @@ static void on_client_read(uv_stream_t *s, ssize_t nread, const uv_buf_t *) {
 	begin_teardown(c);
 	return;
     }
-    stats.ops.fetch_add(1, memory_order_relaxed);
-    stats.usecs.fetch_add(usec, memory_order_relaxed);
+    stats.success(usec);
     dtiming.add(T("echo"), usec);
     dlogt(T("client read="), dsz);
     if (waitms) {
@@ -312,8 +312,8 @@ static void start_client(EchoClient *c) {
     dlogd(T("connecting"));
     uv_timer_start(&c->timer, on_connect_timeout, tmt, 0);
     if (unixsock ? connect_unix(c, connect_addr) :
-	uv_tcp_connect(&c->connreq, &c->sock.tcp, connect_addr,
-	on_client_connect))
+	uv_tcp_connect(&c->connreq, &c->sock.tcp,
+	static_cast<const sockaddr *>(connect_addr), on_client_connect))
 	on_io_error(c, T("client connect="));
 }
 
@@ -434,7 +434,7 @@ static int bind_listener(Handle *listener, const Sockaddr &addr) {
     if (fd == -1)
 	return uv_translate_sys_error(errno);
     setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof (one));
-    if (::bind(fd, addr, addr.size()) == -1)
+    if (::bind(fd, static_cast<const sockaddr *>(addr), addr.size()) == -1)
 	err = uv_translate_sys_error(errno);
     else if ((err = uv_tcp_open(&listener->tcp, fd)) == 0)
 	return 0;
@@ -443,7 +443,7 @@ static int bind_listener(Handle *listener, const Sockaddr &addr) {
 }
 #else
 static int bind_listener(Handle *listener, const Sockaddr &addr) {
-    return uv_tcp_bind(&listener->tcp, addr, 0);
+    return uv_tcp_bind(&listener->tcp, static_cast<const sockaddr *>(addr), 0);
 }
 #endif
 
@@ -572,7 +572,8 @@ int tmain(int argc, const tchar * const argv[]) {
     if (unixsock && server) {
 	unixfd = (int)socket(AF_UNIX, SOCK_STREAM, 0);
 	if (unixfd == -1 ||
-	    ::bind(unixfd, bind_addr, bind_addr.size()) == -1) {
+	    ::bind(unixfd, static_cast<const sockaddr *>(bind_addr),
+	    bind_addr.size()) == -1) {
 	    tcerr << T("uvechotest: unable to bind ") << host << endl;
 	    return 1;
 	}

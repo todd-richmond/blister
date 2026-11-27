@@ -26,8 +26,10 @@
 #include <sys/file.h>
 #endif
 #include <sys/stat.h>
-#if defined(__SSE2__) && !defined(_WIN32)
-#include <emmintrin.h>
+#if defined(__AVX2__)
+#include <immintrin.h>
+#elif defined(__ARM_NEON)
+#include <arm_neon.h>
 #endif
 #include "Config.h"
 #include "Log.h"
@@ -548,54 +550,55 @@ bool Log::close(void) {
     return ffd.close();
 }
 
-// 16 byte SIMD scans; strings under 16 bytes use the scalar loops
-#if !defined(_WIN32) && (defined(__SSE2__) || defined(__ARM_NEON))
-#define SIMD16
-#ifdef __SSE2__
-using simd16 = __m128i;
+#if !defined(UNICODE) && (defined(__AVX2__) || defined(__ARM_NEON))
+#define LOG_SIMD
+#ifdef __AVX2__
+using logvec = __m256i;
+static constexpr uint logwidth = 32;
 
-static __forceinline simd16 load16(const char *p) {
-    return _mm_loadu_si128((const __m128i *)p);
+static __forceinline logvec logload(const char *p) {
+    return _mm256_loadu_si256((const __m256i *)p);
 }
 
-// offset of the first flagged byte or 16 if none
-static __forceinline uint first16(simd16 m) {
-    return (uint)countr_zero((uint)_mm_movemask_epi8(m) | 0x10000U);
+static __forceinline uint logfirst(logvec m) {
+    return (uint)countr_zero((uint)_mm256_movemask_epi8(m));
 }
 
-// control chars other than tab
-static __forceinline simd16 esc16(simd16 c) {
-    return _mm_andnot_si128(_mm_cmpeq_epi8(c, _mm_set1_epi8('\t')),
-	_mm_cmpeq_epi8(_mm_min_epu8(c, _mm_set1_epi8(0x1f)), c));
+static __forceinline logvec logeq(logvec c, char ch) {
+    return _mm256_cmpeq_epi8(c, _mm256_set1_epi8(ch));
 }
 
-// signed < '!' also flags bytes >= 0x80
-static __forceinline simd16 quote16(simd16 c) {
-    return _mm_or_si128(_mm_or_si128(_mm_cmplt_epi8(c, _mm_set1_epi8('!')),
-	_mm_cmpeq_epi8(c, _mm_set1_epi8('"'))), _mm_or_si128(
-	_mm_cmpeq_epi8(c, _mm_set1_epi8('\\')),
-	_mm_cmpeq_epi8(c, _mm_set1_epi8(0x7f))));
+static __forceinline logvec logctrl(logvec c) {
+    return _mm256_cmpeq_epi8(_mm256_min_epu8(c, _mm256_set1_epi8(0x1f)), c);
 }
 
-static __forceinline simd16 dq16(simd16 c) {
-    return _mm_or_si128(_mm_cmpeq_epi8(c, _mm_set1_epi8('"')),
-	_mm_cmpeq_epi8(c, _mm_set1_epi8('\\')));
+static __forceinline logvec logesc(logvec c) {
+    return _mm256_andnot_si256(logeq(c, '\t'), logctrl(c));
 }
 
-// control chars, '"', '\\' and DEL
-static __forceinline simd16 qesc16(simd16 c) {
-    return _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(_mm_min_epu8(c,
-	_mm_set1_epi8(0x1f)), c), _mm_cmpeq_epi8(c, _mm_set1_epi8(0x7f))),
-	dq16(c));
+static __forceinline logvec logdq(logvec c) {
+    return _mm256_or_si256(logeq(c, '"'), logeq(c, '\\'));
+}
+
+static __forceinline logvec logquote(logvec c) {
+    // Signed comparison also flags bytes >= 0x80.
+    return _mm256_or_si256(_mm256_or_si256(logdq(c), logeq(c, 0x7f)),
+	_mm256_cmpgt_epi8(_mm256_set1_epi8('!'), c));
+}
+
+static __forceinline logvec logqesc(logvec c) {
+    return _mm256_or_si256(_mm256_or_si256(logctrl(c), logeq(c, 0x7f)),
+	logdq(c));
 }
 #else
-using simd16 = uint8x16_t;
+using logvec = uint8x16_t;
+static constexpr uint logwidth = 16;
 
-static __forceinline simd16 load16(const char *p) {
+static __forceinline logvec logload(const char *p) {
     return vld1q_u8((const uint8_t *)p);
 }
 
-static __forceinline uint first16(simd16 m) {
+static __forceinline uint logfirst(logvec m) {
     // narrow to 4 bits per byte
     const uint64_t bits = vget_lane_u64(vreinterpret_u64_u8(
 	vshrn_n_u16(vreinterpretq_u16_u8(m), 4)), 0);
@@ -603,40 +606,50 @@ static __forceinline uint first16(simd16 m) {
     return (uint)countr_zero(bits) >> 2;
 }
 
-static __forceinline simd16 esc16(simd16 c) {
+static __forceinline logvec logesc(logvec c) {
     return vbicq_u8(vcltq_u8(c, vdupq_n_u8(' ')), vceqq_u8(c,
 	vdupq_n_u8('\t')));
 }
 
-static __forceinline simd16 quote16(simd16 c) {
+static __forceinline logvec logquote(logvec c) {
     return vorrq_u8(vorrq_u8(vcltq_s8(vreinterpretq_s8_u8(c),
 	vdupq_n_s8('!')), vceqq_u8(c, vdupq_n_u8('"'))), vorrq_u8(
 	vceqq_u8(c, vdupq_n_u8('\\')), vceqq_u8(c, vdupq_n_u8(0x7f))));
 }
 
-static __forceinline simd16 dq16(simd16 c) {
+static __forceinline logvec logdq(logvec c) {
     return vorrq_u8(vceqq_u8(c, vdupq_n_u8('"')), vceqq_u8(c,
 	vdupq_n_u8('\\')));
 }
 
-static __forceinline simd16 qesc16(simd16 c) {
+static __forceinline logvec logqesc(logvec c) {
     return vorrq_u8(vorrq_u8(vcltq_u8(c, vdupq_n_u8(' ')), vceqq_u8(c,
-	vdupq_n_u8(0x7f))), dq16(c));
+	vdupq_n_u8(0x7f))), logdq(c));
 }
 #endif
 
-// first byte in [p, end) flagged by match, or p if under 16 bytes
 template<class F>
-static __forceinline const char *scan16(const char *p, const char *end,
+static __forceinline const char *logscan(const char *p, const char *end,
     F match) {
     if (end - p < 16)
 	return p;
-    for (; end - p > 16; p += 16) {
-	if (uint u = first16(match(load16(p))); u < 16)
+#ifdef __AVX2__
+    if (end - p < logwidth) {
+	// Two in-bounds halves cover 16-31 bytes without a scalar scan.
+	const char *tail = end - 16;
+	const auto lo = _mm_loadu_si128((const __m128i *)p);
+	const auto hi = _mm_loadu_si128((const __m128i *)tail);
+	const uint u = logfirst(match(_mm256_set_m128i(hi, lo)));
+
+	return u < 16 ? p + u : tail + (u - 16);
+    }
+#endif
+    for (; end - p > logwidth; p += logwidth) {
+	if (uint u = logfirst(match(logload(p))); u < logwidth)
 	    return p + u;
     }
-    p = end - 16;		// may overlap the previous block
-    return p + first16(match(load16(p)));
+    p = end - logwidth;		// may overlap the previous block
+    return p + logfirst(match(logload(p)));
 }
 #endif
 
@@ -644,8 +657,8 @@ void Log::strm_write_esc(tbufferstream &strm, const tchar *data, streamsize sz) 
     const tchar *q = data;
     const tchar *end = data + sz;
 
-#ifdef SIMD16
-    q = scan16(q, end, esc16);
+#ifdef LOG_SIMD
+    q = logscan(q, end, logesc);
 #endif
     while (q < end && LIKELY(!((tuchar)*q < ' ' && *q != '\t')))
 	++q;
@@ -730,8 +743,8 @@ void Log::endlog(Tlsdata &tlsd) {
 	for (;;) {
 	    const tchar *q = p;
 
-#ifdef SIMD16
-	    q = scan16(q, end, dq16);
+#ifdef LOG_SIMD
+	    q = logscan(q, end, logdq);
 #endif
 	    while (q < end && *q != '"' && *q != '\\')
 		++q;
@@ -985,8 +998,8 @@ tbufferstream &Log::quote(tbufferstream &os, tstring_view s) {
     const tchar *p = s.data();
     const tchar *end = p + s.size();
 
-#ifdef SIMD16
-    p = scan16(p, end, quote16);
+#ifdef LOG_SIMD
+    p = logscan(p, end, logquote);
 #endif
     while (p < end && !((tuchar)*p >= 0x80 || needquote[(tuchar)*p]))
 	++p;
@@ -999,8 +1012,8 @@ tbufferstream &Log::quote(tbufferstream &os, tstring_view s) {
 
     os.write(T('"'));
     for (;; ++p) {
-#ifdef SIMD16
-	p = scan16(p, end, qesc16);
+#ifdef LOG_SIMD
+	p = logscan(p, end, logqesc);
 #endif
 	while (p < end && (tuchar)*p >= ' ' && *p != '"' && *p != '\\' &&
 	    *p != 0x7f)

@@ -122,7 +122,8 @@ public:
     static __forceinline timing_t start(void) { return now(); }
 
 private:
-    struct DLL_LOCAL Stats: nocopy {
+    class DLL_LOCAL Stats: nocopy {
+    public:
 	// hash, tot and slots 0-5 (< 1s) share the first cache line
 	alignas(64) strhash_t hash;
 	atomic<uint64_t> tot = 0;

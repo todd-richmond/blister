@@ -62,11 +62,9 @@ private:
 
 class TestStats {
 public:
-    atomic<uint> errs = 0, ops = 0;
-    alignas(CACHELINE_SZ) atomic<usec_t> usecs = 0;
-
+    void error(void) { errs.fetch_add(1, memory_order_relaxed); }
     bool failed(void) const { return errors != 0; }
-    void print(bool final = false) {
+    void print(bool done = false) {
 	const auto now = uticks();
 	const uint err = errs.exchange(0, memory_order_relaxed);
 	const uint ok = ops.exchange(0, memory_order_relaxed);
@@ -74,7 +72,7 @@ public:
 	const auto elapsed = now - last;
 
 	errors += err;
-	if (!final || ok || err)
+	if (!done || ok || err)
 	    tcout << ((usec_t)ok + err) * 1000000 / (elapsed ? elapsed : 1) <<
 		T("\t\t") << (ok ? us / ok : 0) << '\t' << err << endl;
 	last = now;
@@ -83,8 +81,14 @@ public:
 	tcout << T("Op/Sec\t\tUs/Op\tErr") << endl;
 	last = uticks();
     }
+    void success(usec_t us) {
+	ops.fetch_add(1, memory_order_relaxed);
+	usecs.fetch_add(us, memory_order_relaxed);
+    }
 
 private:
+    atomic<uint> errs = 0, ops = 0;
+    alignas(CACHELINE_SZ) atomic<usec_t> usecs = 0;
     ullong errors = 0;
     usec_t last = 0;
 };

@@ -110,7 +110,8 @@ private:
      * SizedObjectList counter changed only under olock and read unlocked;
      * wake() fences before reading it to pair with workers going idle
      */
-    struct ObjectListAtomicSize {
+    class ObjectListAtomicSize {
+    public:
 	__forceinline void inc(void) { add(1); }
 	__forceinline void dec(void) {
 	    n.store(n.load(memory_order_relaxed) - 1, memory_order_relaxed);
@@ -123,6 +124,7 @@ private:
 	    return n.load(memory_order_seq_cst);
 	}
 
+    private:
 	atomic<uint> n = 0;
     };
 

@@ -35,7 +35,7 @@ struct TestCacheEntry: LRUCacheEntry {
     using LRUCacheEntry::LRUCacheEntry;
 };
 
-struct GatedCacheEntry: LRUCacheEntry {
+struct GatedCacheEntry: LRUCacheEntry {	// NOSONAR: copy only gates
     using LRUCacheEntry::LRUCacheEntry;
     GatedCacheEntry(const GatedCacheEntry &other): LRUCacheEntry(other) {
 	if (block.exchange(false)) {
@@ -45,9 +45,9 @@ struct GatedCacheEntry: LRUCacheEntry {
 	}
     }
 
-    static inline atomic<bool> block = false;
-    static inline atomic<bool> hold = false;
-    static inline atomic<bool> started = false;
+    static inline atomic block = false;
+    static inline atomic hold = false;
+    static inline atomic started = false;
 };
 
 struct GatedResource {
@@ -57,8 +57,8 @@ struct GatedResource {
 	    this_thread::yield();
     }
 
-    static inline atomic<bool> hold = false;
-    static inline atomic<bool> started = false;
+    static inline atomic hold = false;
+    static inline atomic started = false;
 };
 
 struct TestResource {};
@@ -449,7 +449,7 @@ WARN_POP()
 
 	tests++;
 	if (!cache.put(entry, data, 4) ||
-	    cache.get(key, sizeof (key) - 1).data.get() != data)
+	    cache.get(key, sizeof (key) - 1).value().get() != data)
 	    fail(T("FAIL: LRU cache byte ownership"));
 	cache.resize(64, 60000);
 	tests++;
@@ -466,7 +466,7 @@ WARN_POP()
 	GatedCacheEntry::hold.store(true);
 	GatedCacheEntry::started.store(false);
 	GatedCacheEntry::block.store(true);
-	thread inserter([&] { cache.put(entry, data, 1); });
+	jthread inserter([&cache, &entry, data] { cache.put(entry, data, 1); });
 	while (!GatedCacheEntry::started.load())
 	    this_thread::yield();
 	cache.resize(64, 60000);
@@ -479,15 +479,15 @@ WARN_POP()
     {
 	tcout << T("Testing resource pool shrink synchronization...\n");
 	ResourcePool<GatedResource> pool(1);
-	GatedResource *resource;
-	atomic<bool> limited = false;
+	const GatedResource *resource;
+	atomic limited = false;
 
 	GatedResource::started.store(false);
 	GatedResource::hold.store(true);
-	thread creator([&] { resource = pool.get(); });
+	jthread creator([&pool, &resource] { resource = pool.get(); });
 	while (!GatedResource::started.load())
 	    this_thread::yield();
-	thread limiter([&] {
+	jthread limiter([&pool, &limited] {
 	    pool.limit(0);
 	    limited.store(true);
 	});
@@ -506,17 +506,18 @@ WARN_POP()
     }
     {
 	ResourcePool<TestResource> pool(2, 2);
-	TestResource *first = pool.get();
-	TestResource *second = pool.allocate();
-	TestResource *acquired = nullptr;
-	atomic<bool> limited = false, got = false;
+	const TestResource *first = pool.get();
+	const TestResource *second = pool.allocate();
+	const TestResource *acquired = nullptr;
+	atomic limited = false;
+	atomic got = false;
 
-	thread limiter([&] {
+	jthread limiter([&pool, &limited] {
 	    pool.limit(1);
 	    limited.store(true);
 	});
 	this_thread::sleep_for(chrono::milliseconds(20));
-	thread getter([&] {
+	jthread getter([&pool, &acquired, &got] {
 	    acquired = pool.get();
 	    got.store(true);
 	});
@@ -611,9 +612,8 @@ WARN_POP()
 	    fail(T("FAIL: bufferstream str preserves formatting"));
     }
     {
-	struct MockStream {
-	    mutable bool readone = false;
-
+	class MockStream {
+	public:
 	    int read(void *buf, uint) const {
 		if (readone)
 		    return 0;
@@ -623,11 +623,14 @@ WARN_POP()
 	    }
 	    int write(const void *, uint) const { return 0; }
 	    ssize_t writev(iovec *, int) const { return 0; }
+
+	private:
+	    mutable bool readone = false;
 	};
 
 	tcout << T("Testing unbuffered faststreambuf fill...\n");
 	MockStream mock;
-	faststreambuf<MockStream> strm(mock, 0);
+	faststreambuf strm(mock, 0);
 	bool okay = strm.sgetc() == 'x' && strm.fill() < 0 &&
 	    strm.avail() == "x";
 

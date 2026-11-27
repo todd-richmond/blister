@@ -274,7 +274,24 @@ bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
     const tstring_view hdrs(hstrm.str(), (size_t)hstrm.size());
     const tstring_view method(op), target(path);
     auto bad = [](tstring_view v) {
-	for (tchar c : v) {
+	static constexpr size_t block = 64;
+	size_t i = 0;
+
+	// Reduce whole blocks so the compiler can vectorize long targets.
+	for (; v.size() - i >= block; i += block) {
+	    uchar mask = 0;
+
+	    for (size_t j = 0; j < block; ++j) {
+		const tchar c = v[i + j];
+
+		mask |= (uchar)(((tuchar)c <= ' ') | (c == 0x7f));
+	    }
+	    if (mask)
+		return true;
+	}
+	for (; i < v.size(); ++i) {
+	    const tchar c = v[i];
+
 	    if ((tuchar)c <= ' ' || c == 0x7f)
 		return true;
 	}
@@ -755,10 +772,8 @@ HTTPClient::Step HTTPClient::receive(bool head, bool &keep) {
     return s;
 }
 
-WARN_PUSH_DISABLE(26461)
 bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
-    // cppcheck-suppress constParameterPointer
-    ulong datasz, msghdr *msgh) {
+    ulong datasz, const msghdr *msgh) {
     bool keep = false;
     bool ret = false;
 
@@ -836,7 +851,6 @@ bool HTTPClient::send(const tchar *op, const tchar *path, const void *data,
 	close();
     return ret;
 }
-WARN_POP()
 
 bool HTTPClient::sendbegin(const tchar *op, const tchar *path) {
     ulong len = Unknown;

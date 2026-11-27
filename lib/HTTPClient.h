@@ -264,23 +264,23 @@ public:
 	return connect(Sockaddr(host, port), keepalive, timeout);
     }
     bool cmd(const tchar *cmd, const tchar *path, const void *data = nullptr,
-	ulong len = 0, msghdr *msgh = nullptr) {
+	ulong len = 0, const msghdr *msgh = nullptr) {
 	return send(cmd, path, data, len, msgh);
     }
     bool del(const tchar *path) { return send(T("DELETE"), path); }
     bool get(const tchar *path) { return send(T("GET"), path); }
     bool head(const tchar *path) { return send(T("HEAD"), path); }
     bool options(const tchar *path) { return send(T("OPTIONS"), path); }
-    bool patch(const tchar *path, const void *data, ulong len, msghdr *msgh =
-	nullptr) {
+    bool patch(const tchar *path, const void *data, ulong len,
+	const msghdr *msgh = nullptr) {
 	return send(T("PATCH"), path, data, len, msgh);
     }
-    bool post(const tchar *path, const void *data, ulong len, msghdr *msgh =
-	nullptr) {
+    bool post(const tchar *path, const void *data, ulong len,
+	const msghdr *msgh = nullptr) {
 	return send(T("POST"), path, data, len, msgh);
     }
-    bool put(const tchar *path, const void *data, ulong len, msghdr *msgh =
-	nullptr) {
+    bool put(const tchar *path, const void *data, ulong len,
+	const msghdr *msgh = nullptr) {
 	return send(T("PUT"), path, data, len, msgh);
     }
     void timeout(uint r, uint w = SOCK_INFINITE) {
@@ -318,7 +318,7 @@ protected:
     // after each connect, such as to start TLS
     virtual bool onconnect(void) { return true; }
     bool send(const tchar *op, const tchar *path, const void *data = nullptr,
-	ulong datasz = 0, msghdr *msgh = nullptr);
+	ulong datasz = 0, const msghdr *msgh = nullptr);
     // socket options and an empty parser for a new connection
     void setup(void);
 

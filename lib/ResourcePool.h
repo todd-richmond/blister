@@ -18,8 +18,8 @@
 #define ResourcePool_h
 
 #include <algorithm>
+#include <climits>
 #include <concepts>
-#include <limits>
 #include <memory>
 #include <vector>
 #include "Dispatch.h"
@@ -30,7 +30,7 @@
  * blocks getters until unlock(); its holder may only release() or unlock()
  */
 template<default_initializable C>
-class BLISTER ResourcePool: nocopy {
+class BLISTER_TEMPLATE ResourcePool: nocopy {
 public:
     explicit ResourcePool(uint lim = 32, uint maxcount = 1): lmt(lim),
 	maxuse(maxcount) {
@@ -57,7 +57,7 @@ public:
 	    ret.push_back(hold ? take(e) : e.obj.get());
 	return ret;
     }
-    void clear(uint cnt = numeric_limits<uint>::max()) {
+    void clear(uint cnt = UINT_MAX) {
 	vector<Entry> dead;
 	Locker lkr(lk);
 
@@ -92,7 +92,7 @@ public:
 	const uint old = exchange(lmt, lim);
 
 	if (lim < old)
-	    reap(numeric_limits<uint>::max(), lim, dead);
+	    reap(UINT_MAX, lim, dead);
 	else if (lim > old)
 	    avail.broadcast();
     }
@@ -229,10 +229,10 @@ private:
 };
 
 template<default_initializable C>
-class BLISTER AsyncResourcePool: nocopy {
+class BLISTER_TEMPLATE AsyncResourcePool: nocopy {
 public:
     // Waiters must be destroyed before the pool
-    class BLISTER Waiter: public AsyncCondvar::Waiter {
+    class BLISTER_TEMPLATE Waiter: public AsyncCondvar::Waiter {
     public:
 	explicit Waiter(AsyncResourcePool &p): AsyncCondvar::Waiter(p.acv),
 	    pool(p) {}
@@ -330,7 +330,7 @@ public:
 	    ret.push_back(hold ? take(e) : e.obj.get());
 	return ret;
     }
-    void clear(uint cnt = numeric_limits<uint>::max()) {
+    void clear(uint cnt = UINT_MAX) {
 	vector<Entry> dead;
 	Locker lkr(lk);
 
@@ -347,7 +347,7 @@ public:
 	const uint old = exchange(lmt, lim);
 
 	if (lim < old) {
-	    reap(numeric_limits<uint>::max(), lim, dead);
+	    reap(UINT_MAX, lim, dead);
 	} else if (lim > old && acv) {
 	    acv.set(lim - old);
 	}

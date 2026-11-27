@@ -33,7 +33,7 @@
  * writev. Get and put share one buffer: consume all input before writing
  */
 template<class C>
-class BLISTER faststreambuf: public streambuf, private nocopy {
+class BLISTER_TEMPLATE faststreambuf: public streambuf, private nocopy {
 public:
     explicit faststreambuf(streamsize sz = 4096, char *p = nullptr) {
 	faststreambuf::setbuf(p, sz);
@@ -537,7 +537,8 @@ public:
     }
 
 private:
-    struct null_buffer: public basic_streambuf<tchar> {
+    class null_buffer: public basic_streambuf<tchar> {
+    protected:
 	streamsize xsputn(const tchar *, streamsize n) override { return n; }
 	int_type overflow(int_type c) override {
 	    return traits_type::not_eof(c);

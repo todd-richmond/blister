@@ -193,23 +193,23 @@ static DWORD setlock(HANDLE hdl, const FileKey &key, ullong start, ullong end,
 	    winunlock(own, a, b);
 	it = locks.erase(it);
 	if (left)
-	    locks.try_emplace(a, FileLock{is, own, old});
+	    locks.try_emplace(a, is, own, old);
 	if (right)
-	    it = locks.try_emplace(ie, FileLock{b, own, old}).first;
+	    it = locks.try_emplace(ie, b, own, old).first;
 	if (unlock)
 	    continue;
 	if (winlock(hdl, is, ie, excl)) {
-	    locks.try_emplace(is, FileLock{ie, hdl, excl});
+	    locks.try_emplace(is, ie, hdl, excl);
 	    conv.emplace_back(is, ie, own);
 	} else {
 	    err = GetLastError();
 	    if (winlock(own, is, ie, old))
-		locks.try_emplace(is, FileLock{ie, own, old});
+		locks.try_emplace(is, ie, own, old);
 	}
     }
     if (!err) {
 	for (const auto &[a, b] : added)
-	    locks.try_emplace(a, FileLock{b, hdl, excl});
+	    locks.try_emplace(a, b, hdl, excl);
     } else {
 	for (const auto &[a, b] : added)
 	    winunlock(hdl, a, b);
@@ -435,7 +435,7 @@ int flock(int fd, int op) {
     while (cmd != LOCK_UN) {
 	if (winlock(hdl, LOCK_EOF, LOCK_EOF + 1, cmd == LOCK_EX))
 	    break;
-	if ((err = GetLastError()) != ERROR_LOCK_VIOLATION)
+	if (GetLastError() != ERROR_LOCK_VIOLATION)
 	    return oserr();
 	if (op & LOCK_NB) {
 	    errno = EAGAIN;

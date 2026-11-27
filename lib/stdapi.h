@@ -104,6 +104,13 @@
 #endif
 #endif
 
+// Windows callers instantiate header-only templates for their own types.
+#ifdef _WIN32
+#define BLISTER_TEMPLATE
+#else
+#define BLISTER_TEMPLATE	BLISTER
+#endif
+
 #ifdef _WIN32
 #ifdef _DEBUG
 #pragma inline_depth(0)	// with /Ob1: only __forceinline expands
@@ -1547,8 +1554,9 @@ constexpr U rapidload(const B *p) {
     U u = 0;
 
     if consteval {
+	// The hash's length branches only call this with sizeof (U) bytes left.
 	for (size_t i = 0; i < sizeof (U); ++i)
-	    u |= (U)(uint8_t)p[i] << (i * 8);
+	    u |= (U)(uint8_t)p[i] << (i * 8);	// NOSONAR
     } else {
 	memcpy(&u, p, sizeof (u));
 	if constexpr (endian::native == endian::big)
@@ -1701,18 +1709,21 @@ constexpr auto ifold = [] {
 }();
 
 // literal key with compile time length and hash; runtime keys hash on lookup
+// implicit by design so literals and strings pass directly as lookup keys
 template<typename C, bool icase>
-struct basic_strkey: basic_string_view<C> {
+class basic_strkey: public basic_string_view<C> {
+public:
     template<size_t N>
     // cppcheck-suppress noExplicitConstructor
-    consteval basic_strkey(const C (&s)[N]): basic_string_view<C>(strview(s)),
-	hash(keyhash(strview(s))) {}
+    consteval basic_strkey(const C (&s)[N]):	// NOSONAR
+	basic_string_view<C>(strview(s)), hash(keyhash(strview(s))) {}
     template<typename K> requires (!const_array<K> &&
 	!same_as<remove_cvref_t<K>, basic_strkey> &&
 	is_convertible_v<K, basic_string_view<C>>)
     // cppcheck-suppress noExplicitConstructor
     // NOLINTNEXTLINE(runtime/explicit)
-    constexpr basic_strkey(K &&s): basic_string_view<C>(std::forward<K>(s)) {}
+    constexpr basic_strkey(K &&s):	// NOSONAR
+	basic_string_view<C>(std::forward<K>(s)) {}
 
     strhash_t hash = 0;
 
@@ -1741,10 +1752,11 @@ using strikey = basic_strkey<tchar, true>;
 using strkey = basic_strkey<tchar, false>;
 
 // literal only strkey for callers that keep the pointer
-struct strlit: strkey {
+class strlit: public strkey {
+public:
     template<size_t N>
     // cppcheck-suppress noExplicitConstructor
-    consteval strlit(const tchar (&s)[N]): strkey(s) {}
+    consteval strlit(const tchar (&s)[N]): strkey(s) {}	// NOSONAR
 };
 
 template<typename T>
@@ -1976,13 +1988,15 @@ protected:
 };
 
 // default non-atomic size-counter policy for SizedObjectList
-struct ObjectListSize {
+class ObjectListSize {
+public:
     __forceinline uint get(void) const { return n; }
     __forceinline void add(uint v) { n += v; }
     __forceinline void dec(void) { --n; }
     __forceinline void inc(void) { ++n; }
     __forceinline void zero(void) { n = 0; }
 
+private:
     uint n = 0;
 };
 

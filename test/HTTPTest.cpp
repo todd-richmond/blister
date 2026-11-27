@@ -115,13 +115,12 @@ static const tchar *check(uint sts, const char *data, ulong size) {
 }
 
 static void good(timing_t usec) {
-    stats.ops.fetch_add(1, memory_order_relaxed);
-    stats.usecs.fetch_add(usec, memory_order_relaxed);
+    stats.success(usec);
     dtiming.add(T("post"), usec);
 }
 
 static void bad(const tstring &why) {
-    stats.errs.fetch_add(1, memory_order_relaxed);
+    stats.error();
     dtiming.add(T("error"), 0);
     dloge(T("client post="), why);
 }

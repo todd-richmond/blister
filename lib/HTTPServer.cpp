@@ -402,7 +402,7 @@ void HTTPServerSocket::parse(void) {
     p = buf + strcspn(buf, " \t\r");
     // a bare LF would be a line end to a lenient peer
     if (p == buf || (*p != ' ' && *p != '\t') ||
-	memchr(buf, '\n', strcspn(buf, "\r"))) {
+	buf[strcspn(buf, "\r\n")] == '\n') {
 	cmd = "BADCMD";
 	error(400, true);
 	return;
@@ -469,21 +469,11 @@ void HTTPServerSocket::parse(void) {
     buf = p;
     attrs.clear();
     while (*buf) {
-	bool crlf = true;
+	end = buf + strcspn(buf, "\r\n");
+	const bool crlf = *end == '\r' && end[1] == '\n';
 
-	if ((end = strchr(buf, '\r')) == nullptr) {
-	    end = buf + strlen(buf);
-	    crlf = false;
-	} else if (end[1] != '\n') {
-	    // only the final CR is followed by the NUL scan() inserted
-	    if (end[1]) {
-		error(400, true);
-		return;
-	    }
-	    crlf = false;
-	}
-	// a bare LF would be a line end to a lenient peer
-	if (memchr(buf, '\n', (size_t)(end - buf))) {
+	// scan() replaces the final CR's LF with NUL; reject other bare CR/LF.
+	if (*end && !crlf && (*end != '\r' || end[1])) {
 	    error(400, true);
 	    return;
 	}
@@ -1260,10 +1250,17 @@ void PrometheusWriter::buckets(Type type, span<const double> bounds,
 }
 
 void PrometheusWriter::escape(string &s, string_view val) {
-    for (char c : val) {
-	if (c == '"' || c == '\\' || c == '\n')
-	    s += '\\';
+    for (;;) {
+	const size_t pos = val.find_first_of("\"\\\n");
+
+	s += val.substr(0, pos);
+	if (pos == val.npos)
+	    break;
+	const char c = val[pos];
+
+	s += '\\';
 	s += c == '\n' ? 'n' : c;
+	val.remove_prefix(pos + 1);
     }
 }
 

@@ -153,19 +153,22 @@ private:
 };
 
 // literals are hashed and classified at compile time
-struct PrometheusStr: string_view {
+class PrometheusStr: public string_view {
+public:
     enum: uchar { Known = 1, Name = 2, Clean = 4 };
 
     template<size_t N>
     // cppcheck-suppress noExplicitConstructor
-    consteval PrometheusStr(const char (&s)[N]): string_view(strview(s)),
-	hash(charhash(data(), size())), flags(classify(*this)) {}
+    consteval PrometheusStr(const char (&s)[N]): // NOSONAR: literal API
+	string_view(strview(s)), hash(charhash(data(), size())),
+	flags(classify(*this)) {}
     template<typename K> requires (!const_array<K> &&
 	!same_as<remove_cvref_t<K>, PrometheusStr> &&
 	is_convertible_v<K, string_view>)
     // cppcheck-suppress noExplicitConstructor
     // NOLINTNEXTLINE(runtime/explicit)
-    constexpr PrometheusStr(K &&s): string_view(std::forward<K>(s)) {}
+    constexpr PrometheusStr(K &&s): // NOSONAR: implicit string API
+	string_view(std::forward<K>(s)) {}
 
     // Name: legacy label name; Clean: value needs no escaping
     static constexpr uchar classify(string_view s) {

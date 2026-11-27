@@ -129,7 +129,7 @@ void EchoTest::EchoClientSocket::fail(const tchar *what) {
     if (loop_exit()) {
 	erase();
     } else {
-	stats.errs.fetch_add(1, memory_order_relaxed);
+	stats.error();
 	dtiming.add(T("error"), 0);
 	dloge(T("client "), what, T("="), msg == DispatchTimeout ?
 	    T("timeout") : T("close"));
@@ -184,8 +184,7 @@ void EchoTest::EchoClientSocket::input(void) {
 	if (UNLIKELY(loop_exit())) {
 	    erase();
 	} else {
-	    stats.ops.fetch_add(1, memory_order_relaxed);
-	    stats.usecs.fetch_add(usec, memory_order_relaxed);
+	    stats.success(usec);
 	    dtiming.add(T("echo"), usec);
 	    dlogt(T("client read="), len);
 	    if (wait) {

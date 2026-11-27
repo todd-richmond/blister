@@ -50,7 +50,8 @@ public:
 	const tchar *defhost, const tchar *flags, F opt);
 
 protected:
-    struct Stats {
+    class Stats {
+    public:
 	ulong count = 0, err = 0, tcount = 0, terr = 0;
 	ulong maxusec = 0, tmaxusec = 0, tminusec = 0, tusec = 0, usec = 0;
 

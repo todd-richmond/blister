@@ -85,7 +85,7 @@ addrinfo *Sockaddr::resolve(const tchar *host, const tchar *service, Proto proto
     const tchar **requested) {
     struct addrinfo *ai, hints{};
     bool any = false;
-    const bool ipv6 = host && tstrchr(host, ':');
+    const bool ipv6 = host && tstring_view(host).contains(T(':'));
 
     hints.ai_family = families[proto];
     if (!host || !*host || *host == '*') {
@@ -250,7 +250,7 @@ bool Sockaddr::set(const tchar *host, Proto proto) {
 	host = s.c_str();
 	p = p[1] ? p + 1 : nullptr;
     } else if ((p = tstrchr(host, ':')) != nullptr) {
-	if (tstrchr(p + 1, ':')) {
+	if (tstring_view(p + 1).contains(T(':'))) {
 	    p = nullptr; // IPv6 ports require brackets
 	} else {
 	    s.assign(host, p);
@@ -345,8 +345,8 @@ tstring Sockaddr::service_name(ushort port, Proto proto) {
     char buf[NI_MAXSERV];
     Sockaddr sa(nullptr, port, proto);
 
-    if (getnameinfo(sa, sa.size(), NULL, 0, buf, sizeof (buf), dgram(proto) ?
-	NI_DGRAM : 0)) {
+    if (getnameinfo(static_cast<const sockaddr *>(sa), sa.size(), NULL, 0,
+	buf, sizeof (buf), dgram(proto) ? NI_DGRAM : 0)) {
 	tchar pbuf[8];
 
 	to_str(pbuf, pbuf + std::size(pbuf), port);
@@ -565,7 +565,8 @@ bool Socket::bind(const Sockaddr &sa, bool reuse) {
     if (sa.family() == AF_INET6 &&
 	IN6_IS_ADDR_UNSPECIFIED((const in6_addr *)sa))
 	(void)setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, false);
-    if (!check(::bind(sbuf->sock, sa, sa.size())))
+    if (!check(::bind(sbuf->sock, static_cast<const sockaddr *>(sa),
+	sa.size())))
 	return false;
     if (sa.proto() == Sockaddr::UNIX && ((const sockaddr_un *)sa)->sun_path[0])
 	sbuf->unlink(sa.path());
@@ -582,7 +583,8 @@ bool Socket::connect(const Sockaddr &sa, uint msec) {
 
     if (timed && !blocking(false))
 	return false;
-    if (check(::connect(sbuf->sock, sa, sa.size()))) {
+    if (check(::connect(sbuf->sock, static_cast<const sockaddr *>(sa),
+	sa.size()))) {
 	ret = true;
     } else if (msec && msec != SOCK_INFINITE &&
 #ifdef _WIN32
@@ -1066,7 +1068,7 @@ int Socket::write(const void *buf, uint sz, const Sockaddr &sa) const {
 	if (!iotimeo(true))
 	    return -1;
 	if (check(out = (int)sendto(sbuf->sock, (const char *)buf,
-	    (SOCK_SIZE_T)sz, 0, sa, sa.size())))
+	    (SOCK_SIZE_T)sz, 0, static_cast<const sockaddr *>(sa), sa.size())))
 	    break;
     } while (interrupted());
     return (int)wrret(out);
@@ -1103,7 +1105,8 @@ ssize_t Socket::writev(const iovec *iov, int count, const Sockaddr &sa)
     if (!iotimeo(true))
 	return -1;
     return wrret(check(WSASendTo(sbuf->sock, (iovec *)iov, // NOSONAR
-	(DWORD)count, &n, 0, sa, sa.size(), NULL, NULL)) ? (ssize_t)n : -1);
+	(DWORD)count, &n, 0, static_cast<const sockaddr *>(sa), sa.size(),
+	NULL, NULL)) ? (ssize_t)n : -1);
 #else
     msghdr msgh {};
 
@@ -1115,7 +1118,7 @@ ssize_t Socket::writev(const iovec *iov, int count, const Sockaddr &sa)
 #endif
 }
 
-bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
+bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) const {
 #ifdef _WIN32
     struct timeval tv = { (long)(msec / 1000), long((msec % 1000) * 1000) };
 
@@ -1148,7 +1151,7 @@ bool SocketSet::ipoll(SocketSet &iset, SocketSet &eset, uint msec) {
 #endif
 }
 
-bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
+bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) const {
 #ifdef _WIN32
     struct timeval tv = { (long)(msec / 1000), (long)((msec % 1000) * 1000) };
 
@@ -1182,7 +1185,7 @@ bool SocketSet::opoll(SocketSet &oset, SocketSet &eset, uint msec) {
 }
 
 bool SocketSet::iopoll(SocketSet &iset, SocketSet &oset, SocketSet &eset,
-    uint msec) {
+    uint msec) const {
 #ifdef _WIN32
     struct timeval tv = { (long)(msec / 1000), (long)((msec % 1000) * 1000) };
 

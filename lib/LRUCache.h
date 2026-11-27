@@ -34,21 +34,24 @@ public:
     LRUCacheEntry(const void *d, ulong s): hash(rapid_hash(d, s)) {}
 
     __forceinline explicit operator bool() const { return data != nullptr; }
-    __forceinline operator lruhash_t() const { return hash; }
+    __forceinline explicit operator lruhash_t() const { return hash; }
+    ulong size(void) const { return sz; }
     __forceinline msec_t touch(void) const { return msec; }
-
     __forceinline void touch(msec_t now) { msec = now; }
-
-    shared_ptr<const void> data;
-    ulong sz = 0;
+    const shared_ptr<const void> &value(void) const { return data; }
 
 private:
+    template<derived_from<LRUCacheEntry> C>
+    friend class LRUCache;
+
+    shared_ptr<const void> data;
     lruhash_t hash;
     msec_t msec = 0;
+    ulong sz = 0;
 };
 
 template<derived_from<LRUCacheEntry> C>
-class BLISTER LRUCache: nocopy {
+class BLISTER_TEMPLATE LRUCache: nocopy {
 public:
     using lru_list = list<C>;
     using lru_map = unordered_map<lruhash_t, typename lru_list::iterator>;
@@ -87,7 +90,7 @@ public:
 	    purge(now, freed);
 	    last_purge = now;
 	}
-	auto it = cache_map.find(entry);
+	auto it = cache_map.find(lruhash_t(entry));
 	if (it != cache_map.end() &&
 	    (!tm || !expired(now, it->second->touch(), tm))) {
 	    cache_list.splice(cache_list.begin(), cache_list, it->second);
