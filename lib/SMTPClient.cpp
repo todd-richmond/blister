@@ -2211,12 +2211,13 @@ bool AsyncSMTPClient::rcpt(const tchar *id, DispatchObjCB cb, DispatchObj &co,
 
 // process replies as they arrive so completing never blocks
 void AsyncSMTPClient::check(bool timedout) {
-    auto &sb = *sstrm.rdbuf();
     int r = fstrm ? 1 : -1;
 
     if (timedout) {
 	disconnect();
     } else if (!fstrm) {
+	auto &sb = *sstrm.rdbuf();
+
 	for (r = bufreplies(); !r; r = bufreplies()) {
 	    const int n = sb.fill();
 

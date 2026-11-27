@@ -23,10 +23,10 @@
 #include "Log.h"
 
 static constexpr ulong MaxBody = 256UL * 1024 * 1024;
-static constexpr size_t MaxCopy = size_t{4} * 1024; // request with small body
+static constexpr size_t MaxCopy = size_t{4} * 1024;	// request + small body
 static constexpr size_t MaxHdrs = size_t{64} * 1024;	// status + header bytes
 static constexpr size_t MaxPipeline = 16;
-static constexpr ulong MaxKeep = 64UL * 1024;	// reused response buffer
+static constexpr ulong MaxKeep = 64UL * 1024;		// reused response buf
 
 static constexpr auto hex_lut = [] {
     array<uchar, 256> t{};
@@ -267,8 +267,7 @@ bool HTTPResponse::idempotent(const tchar *op) {
 	!tstrcmp(op, m); });
 }
 
-// a small body is appended, zeroing datasz, since a copy is cheaper than a
-// second iovec
+// append small body, zeroing datasz, since a copy is faster than a second iovec
 bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
     string_view host, bool keep, const void *data, ulong &datasz) {
     const tstring_view hdrs(hstrm.str(), (size_t)hstrm.size());
@@ -284,7 +283,7 @@ bool HTTPResponse::buildreq(string &out, const tchar *op, const tchar *path,
 	    for (size_t j = 0; j < block; ++j) {
 		const tchar c = v[i + j];
 
-		mask |= (uchar)(((tuchar)c <= ' ') | (c == 0x7f));
+		mask |= (uchar)((tuchar)c <= ' ' || c == 0x7f);
 	    }
 	    if (mask)
 		return true;
